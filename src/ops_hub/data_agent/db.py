@@ -1,0 +1,134 @@
+import os
+from pathlib import Path
+import sqlite3
+
+
+def get_db_path() -> Path:
+    configured = os.environ.get("BUSINESS_DATA_AGENT_DB_PATH")
+    if configured:
+        return Path(configured)
+    return Path.cwd() / "data" / "agent.db"
+
+
+def open_db() -> sqlite3.Connection:
+    db_path = get_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    connection = sqlite3.connect(db_path)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA journal_mode = WAL")
+    
+    # 1. Create Contracts Table
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS contracts (
+          id TEXT PRIMARY KEY,
+          party_a TEXT NOT NULL,
+          party_b TEXT NOT NULL,
+          origin_station TEXT,
+          destination_station TEXT,
+          transport_mode TEXT,
+          transport_type TEXT,
+          price REAL,
+          cargo_name TEXT,
+          doc_path TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    # 2. Create/Update Release Batches Table
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS release_batches (
+          id TEXT PRIMARY KEY,
+          batch_key TEXT NOT NULL UNIQUE,
+          contract_id TEXT,
+          contract_no TEXT,
+          ship_name TEXT NOT NULL,
+          cargo_name TEXT NOT NULL,
+          consignor TEXT,
+          consignee TEXT,
+          trade_type TEXT,
+          transport_mode TEXT,
+          destination_station TEXT,
+          yard_location TEXT,
+          customs_release_qty REAL,
+          notice_date TEXT NOT NULL,
+          batch_date TEXT,
+          batch_sequence TEXT,
+          batch_quantity REAL,
+          total_planned_quantity REAL,
+          remaining_quantity REAL,
+          batch_count INTEGER NOT NULL DEFAULT 0,
+          origin_station TEXT,
+          agent_name TEXT,
+          customer_name TEXT,
+          id_label TEXT,
+          actual_wagon_count INTEGER DEFAULT 0,
+          source_file_name TEXT,
+          source_json TEXT NOT NULL,
+          searchable_text TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    
+    migrate_release_batches_schema(connection)
+
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_release_batches_notice_date ON release_batches(notice_date)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_release_batches_ship_name ON release_batches(ship_name)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_contracts_party_b ON contracts(party_b)"
+    )
+    connection.commit()
+
+    return connection
+
+
+def migrate_release_batches_schema(connection: sqlite3.Connection) -> None:
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(release_batches)").fetchall()
+    }
+
+    # Handle older migrations
+    if "latest_batch_date" in columns and "batch_date" not in columns:
+        connection.execute(
+            "ALTER TABLE release_batches RENAME COLUMN latest_batch_date TO batch_date"
+        )
+    if "latest_batch_sequence" in columns and "batch_sequence" not in columns:
+        connection.execute(
+            "ALTER TABLE release_batches RENAME COLUMN latest_batch_sequence TO batch_sequence"
+        )
+    if "latest_batch_quantity" in columns and "batch_quantity" not in columns:
+        connection.execute(
+            "ALTER TABLE release_batches RENAME COLUMN latest_batch_quantity TO batch_quantity"
+        )
+
+    # Add new business fields if they don't exist
+    new_fields = {
+        "origin_station": "TEXT",
+        "agent_name": "TEXT",
+        "customer_name": "TEXT",
+        "id_label": "TEXT",
+        "actual_wagon_count": "INTEGER DEFAULT 0",
+        "is_weighed": "INTEGER DEFAULT 0",
+        "loading_weight": "REAL",
+        "return_weight": "REAL",
+        "tail_cargo_weight": "REAL",
+        "tail_cargo_status": "TEXT",
+        "tail_cargo_remark": "TEXT"
+    }
+    
+    for field, type_def in new_fields.items():
+        if field not in columns:
+            connection.execute(f"ALTER TABLE release_batches ADD COLUMN {field} {type_def}")
+
+    connection.commit()

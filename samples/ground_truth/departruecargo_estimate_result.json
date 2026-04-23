@@ -1,0 +1,27 @@
+{
+  "input": {
+    "group_name": "铁晟业务工作群",
+    "wxid": "18919596289@chatroom",
+    "msg_time": 1710000000
+  },
+  "expect": {
+    "relative_image_path": "铁晟业务工作群/出港计划通知单/24-03/departruecargo.png",
+    "artifact_relative_path": "铁晟业务工作群/出港计划通知单/240310-1-data.json",
+    "final_category": "出港计划通知单",
+    "route_action": "departure_plan_extract",
+    "payload_expectations": [
+      {
+        "path": "header_info.通知日期",
+        "equals": "2026年03月27日"
+      },
+      {
+        "path": "cargo_info.货物名称",
+        "equals": "铜精矿"
+      },
+      {
+        "path": "remarks",
+        "equals": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,2137 @@
+source_path,source_folder,predicted_label,confidence,evidence,detected_title,decision,reason,qwen_took_ms,qwen_elapsed_s,qwen_raw_text
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/15a12f92e5f16cc480d4275b8fe6456e_decoded.jpg,出港计划通知单,出港计划通知单,1.0,标题明确显示为锦州港货物出港计划通知单。,锦州港货物出港计划通知单,auto,match_and_high_confidence,3412,3.424,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物出港计划通知单"",
+  ""evidence"": ""标题明确显示为锦州港货物出港计划通知单。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/1af3ac70c58ad139d893a94c04127e46_decoded.jpg,出港计划通知单,出港计划通知单,1.0,标题明确显示为锦州港货物出港计划通知单。,锦州港货物出港计划通知单,auto,match_and_high_confidence,3080,3.083,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物出港计划通知单"",
+  ""evidence"": ""标题明确显示为锦州港货物出港计划通知单。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/55db979ab1ad171a979cee5287ab4ace_decoded.jpg,出港计划通知单,出港计划通知单,1.0,标题明确显示为锦州港货物出港计划通知单。,锦州港货物出港计划通知单,auto,match_and_high_confidence,3132,3.135,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物出港计划通知单"",
+  ""evidence"": ""标题明确显示为锦州港货物出港计划通知单。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/5fa4f016d53f29f555a90899d2aaabf1_decoded.jpg,出港计划通知单,出港计划通知单,1.0,文档标题明确标注为“锦州港货物出港计划通知单”。,锦州港货物出港计划通知单,auto,match_and_high_confidence,3129,3.132,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物出港计划通知单"",
+  ""evidence"": ""文档标题明确标注为“锦州港货物出港计划通知单”。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/68ca575e5cc8ad7cb0767303ccf682ec_decoded.jpg,出港计划通知单,出港计划通知单,1.0,标题明确显示为锦州港货物出港计划通知单。,锦州港货物出港计划通知单,auto,match_and_high_confidence,3077,3.08,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物出港计划通知单"",
+  ""evidence"": ""标题明确显示为锦州港货物出港计划通知单。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/6d1d1d603a8b6bc58bbc5aad02198b7d_decoded.jpg,出港计划通知单,出港计划通知单,1.0,标题明确显示为锦州港货物出港计划通知单。,锦州港货物出港计划通知单,auto,match_and_high_confidence,3078,3.081,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物出港计划通知单"",
+  ""evidence"": ""标题明确显示为锦州港货物出港计划通知单。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/880816f9b287e4a9a2e07616b98fd164_decoded.jpg,出港计划通知单,出港计划通知单,1.0,标题明确显示为货物出港计划通知单。,锦州港货物出港计划通知单,auto,match_and_high_confidence,3013,3.015,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物出港计划通知单"",
+  ""evidence"": ""标题明确显示为货物出港计划通知单。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/96accaddb65b00cf2fb0eaa997a45025_decoded.jpg,出港计划通知单,出港计划通知单,1.0,文档标题明确标注为“锦州港货物出港计划通知单”。,锦州港货物出港计划通知单,auto,match_and_high_confidence,3128,3.131,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物出港计划通知单"",
+  ""evidence"": ""文档标题明确标注为“锦州港货物出港计划通知单”。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/9d6be0cfd4d90573a259a46d060b3a60_decoded.jpg,出港计划通知单,出港计划通知单,1.0,标题明确显示为锦州港货物出港计划通知单。,锦州港货物出港计划通知单,auto,match_and_high_confidence,3133,3.136,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物出港计划通知单"",
+  ""evidence"": ""标题明确显示为锦州港货物出港计划通知单。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/b40b92442c168ea4880c02bf7ecdd78c_decoded.jpg,出港计划通知单,出港计划通知单,1.0,标题明确为货物出港计划通知单，内容包含发货单位、货物名称、运输方式及详细的计划进度。,锦州港货物出港计划通知单,auto,match_and_high_confidence,3275,3.278,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物出港计划通知单"",
+  ""evidence"": ""标题明确为货物出港计划通知单，内容包含发货单位、货物名称、运输方式及详细的计划进度。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/b668f509974db77687e05bcef37378b2_decoded.jpg,出港计划通知单,出港计划通知单,1.0,标题明确显示为货物出港计划通知单。,锦州港货物出港计划通知单,auto,match_and_high_confidence,3013,3.016,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物出港计划通知单"",
+  ""evidence"": ""标题明确显示为货物出港计划通知单。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/bac271975ad811146e192075045a958d_decoded.jpg,出港计划通知单,出港计划通知单,1.0,标题明确显示为锦州港货物出港计划通知单。,锦州港货物出港计划通知单,auto,match_and_high_confidence,3078,3.081,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物出港计划通知单"",
+  ""evidence"": ""标题明确显示为锦州港货物出港计划通知单。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/c09786df5ed797a65ac9046dfe981387_decoded.jpg,出港计划通知单,出港计划通知单,1.0,标题明确显示为锦州港货物出港计划通知单，内容包含发货单位、货物名称、计划时间等信息。,锦州港货物出港计划通知单,auto,match_and_high_confidence,3354,3.357,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物出港计划通知单"",
+  ""evidence"": ""标题明确显示为锦州港货物出港计划通知单，内容包含发货单位、货物名称、计划时间等信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/cc4a48932d87166ba43533e99da88425_decoded.jpg,出港计划通知单,出港计划通知单,1.0,标题明确显示为货物出港计划通知单。,锦州港货物出港计划通知单,auto,match_and_high_confidence,3089,3.093,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物出港计划通知单"",
+  ""evidence"": ""标题明确显示为货物出港计划通知单。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/出港计划通知单/d49158d27f8e27e66866dcd4c06ea6b3_decoded.jpg,出港计划通知单,出港计划通知单,1.0,文档标题明确标注为“出港计划通知单”。,锦州港货物 出港计划通知单,auto,match_and_high_confidence,3057,3.06,"{
+  ""category"": ""出港计划通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港货物 出港计划通知单"",
+  ""evidence"": ""文档标题明确标注为“出港计划通知单”。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/003423d9c8bb58182b6af1f976774f3f_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含编号和手写数字列表的表格，看起来是某种作业记录。,检装单,review,label_mismatch,3064,3.067,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""检装单"",
+  ""evidence"": ""这是一张包含编号和手写数字列表的表格，看起来是某种作业记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/03f78b047f4cf5cc0ca8f9ab7bd2c752_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含日期、车号、原件号等信息的表格类手写记录。,锦州港接车入库理货单,review,label_mismatch,3174,3.179,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""锦州港接车入库理货单"",
+  ""evidence"": ""这是一张包含日期、车号、原件号等信息的表格类手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/0972ea7baa8b537a5ceb8a6d92db226f_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含序号、车号、重量、到站等信息的表格类手写记录。,检车清单,review,label_mismatch,3085,3.089,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张包含序号、车号、重量、到站等信息的表格类手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/09a9972569bf7824997de3613cc50c26_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含编号、数量或代码等信息的表格类手写记录。,检装单,review,label_mismatch,3035,3.038,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""检装单"",
+  ""evidence"": ""这是一张包含编号、数量或代码等信息的表格类手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/159157f49ad18f2936fc72839f601da2_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含序号、车皮号、重量、站、备注等列的手写表格记录。,检车清单,review,label_mismatch,3098,3.101,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张包含序号、车皮号、重量、站、备注等列的手写表格记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/16bc389aea0633bfa0d3b15cf97804e9_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一份包含编号、车号、重量、到站等信息的表格类手写记录。,检车清单,review,label_mismatch,3046,3.049,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一份包含编号、车号、重量、到站等信息的表格类手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/181515e518a49e8c33da7d4078d58a67_decoded.jpg,手写箱号车号表,手写记录,0.9,表格包含序号、车号、重量、重量、站、备注等手写列，属于物流或运输相关的记录表。,,review,label_mismatch,3127,3.131,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含序号、车号、重量、重量、站、备注等手写列，属于物流或运输相关的记录表。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/1fad0e596459f4a1be7912be5070234b_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一张包含编号、车号、重量等信息的纯手写表格记录。,检车清单,review,label_mismatch,3048,3.051,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张包含编号、车号、重量等信息的纯手写表格记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/2334889486d06c1f295f7c34a41c1101_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一张包含日期、发货单位、车号、原发件、原残、工账等手工记录内容的表格。,锦州港接车入库货单,review,label_mismatch,3314,3.317,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""锦州港接车入库货单"",
+  ""evidence"": ""这是一张包含日期、发货单位、车号、原发件、原残、工账等手工记录内容的表格。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/234408f7bbb9b22b141cdd787f0101a6_decoded.jpg,手写箱号车号表,手写记录,0.9,表格包含序号、车号、重量、到结等手写数据，属于日常业务记录。,,review,label_mismatch,3034,3.037,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含序号、车号、重量、到结等手写数据，属于日常业务记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/2cfcebbef7721577fae21e0709c51d40_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一张包含日期、单位、编号及各项作业数据的纸质手写表格。,锦州港接车入库理货单,review,label_mismatch,3179,3.182,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""锦州港接车入库理货单"",
+  ""evidence"": ""这是一张包含日期、单位、编号及各项作业数据的纸质手写表格。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/313180afffa6a704ea046cd4f9fa89ed_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含序号、车皮号、重量、到站等信息的表格，内容为手写记录。,检车清单,review,label_mismatch,3126,3.13,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张包含序号、车皮号、重量、到站等信息的表格，内容为手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/4a1238c0b37f671127aebc2b4cfe2bf9_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含序号、车号、重量、到站等信息的表格类手写记录。,,review,label_mismatch,3017,3.02,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""这是一张包含序号、车号、重量、到站等信息的表格类手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/4a6b3da4c275c9a80079eef3bc5b0867_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含序号、车皮号、重量等信息的表格，内容为手写记录。,检车清单,review,label_mismatch,3082,3.085,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张包含序号、车皮号、重量等信息的表格，内容为手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/4bed5fc866dbcb8a799ede419546483b_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一张包含车号、重量、站点等信息的表格，内容为手写记录。,检车清单,review,label_mismatch,3088,3.091,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张包含车号、重量、站点等信息的表格，内容为手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/57fb223f3a146596dae6470b6016b69c_decoded.jpg,手写箱号车号表,手写箱号车号表,0.85,表格包含序号、车号/箱号等列，内容为手写的一系列数字编号。,,auto,match_and_high_confidence,3127,3.13,"{
+  ""category"": ""手写箱号车号表"",
+  ""confidence"": 0.85,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含序号、车号/箱号等列，内容为手写的一系列数字编号。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/58f03b045a5a57e5ba85fa2fe2b727a5_decoded.jpg,手写箱号车号表,请车表,0.95,页面顶部标题为“请车清单”，内容为车辆编号与重量等信息的列表。,请车清单,review,label_mismatch,3090,3.093,"{
+  ""category"": ""请车表"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""请车清单"",
+  ""evidence"": ""页面顶部标题为“请车清单”，内容为车辆编号与重量等信息的列表。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/5b47ea2747c6cd8bd0f316e872b7d87e_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一张包含编号、车号、标准、实际等列的手写表格记录。,检车清单,review,label_mismatch,3069,3.072,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张包含编号、车号、标准、实际等列的手写表格记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/5d9c2f16233a0c30a5929d81979f9ced_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一张包含序号、车皮号、重量、到达、备注等列的手写表格记录。,检车清单,review,label_mismatch,3120,3.124,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张包含序号、车皮号、重量、到达、备注等列的手写表格记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/5f32874ca8f3f97fe4ef26887af3dde2_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一份包含序号、编号、规格、标准、结论等列的手写表格记录。,检车清单,review,label_mismatch,3076,3.091,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一份包含序号、编号、规格、标准、结论等列的手写表格记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/68e901661acb5400d2cd6757454465fb_decoded.jpg,手写箱号车号表,手写记录,0.9,表格内容为手写的数字列表，没有明确的业务标题。,,review,label_mismatch,2914,2.918,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格内容为手写的数字列表，没有明确的业务标题。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/70b3ac62b83913d1aa052f444aa41607_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一份包含序号、车皮号、重量、到站等信息的列式手写记录表。,检车清单,review,label_mismatch,3120,3.123,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一份包含序号、车皮号、重量、到站等信息的列式手写记录表。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/7ddf5ae03b9c83895be43d0246d496e1_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含多列手写数字的表格，看起来是某种业务数据的记录。,,review,label_mismatch,2982,2.985,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""这是一张包含多列手写数字的表格，看起来是某种业务数据的记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/805443e4ddd0c11f3995048134be0218_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一张包含日期、车号、货量等信息的物流理货手写表格。,锦州港接车入库理货单,review,label_mismatch,3178,3.181,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""锦州港接车入库理货单"",
+  ""evidence"": ""这是一张包含日期、车号、货量等信息的物流理货手写表格。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/834c47592e27fd405f2daab2e79b9800_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一张包含编号、车号、重量等信息的表格，内容为手写记录。,检车清单,review,label_mismatch,3074,3.077,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张包含编号、车号、重量等信息的表格，内容为手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/9098616033bf04350ceae1292689f400_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含编号、数值和勾选标记的手写表格记录。,检车清单,review,label_mismatch,2999,3.002,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张包含编号、数值和勾选标记的手写表格记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/98d5813fcb8c90d25cff9c95cdc44f5f_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一张包含多列手写数据、序号和表格结构的物流理货记录单。,锦州港接车接入库理货单,review,label_mismatch,3191,3.195,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""锦州港接车接入库理货单"",
+  ""evidence"": ""这是一张包含多列手写数据、序号和表格结构的物流理货记录单。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/a40eddd423de96ae901dadb29c37aacb_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张手写的表格，包含序号、车号、重量、站点等列，属于日常业务记录。,检车清单,review,label_mismatch,3056,3.059,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张手写的表格，包含序号、车号、重量、站点等列，属于日常业务记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/b0033cbdcaf7a2597a8260b075a8e314_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张手写的表格，包含序号、车皮号、重量、到达站等列，属于手写记录。,检车清单,review,label_mismatch,3157,3.16,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张手写的表格，包含序号、车皮号、重量、到达站等列，属于手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/b36670f659b7a5cb4a5073f4c9207af8_decoded.jpg,手写箱号车号表,请车表,0.95,表头标题为'检车清单'，内容包含车号、重量、到达等列，符合请车/检车业务逻辑。,检车清单,review,label_mismatch,3251,3.254,"{
+  ""category"": ""请车表"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""表头标题为'检车清单'，内容包含车号、重量、到达等列，符合请车/检车业务逻辑。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/bb4b80addaaf456426f6217507693081_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含编号、数字和手写备注的表格类手写记录。,,review,label_mismatch,2970,2.973,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""这是一张包含编号、数字和手写备注的表格类手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/bf3ce0ab31ac17a37e1a6084f1b95e4c_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含编号、车号、重量等信息的表格类手写记录。,,review,label_mismatch,2965,2.97,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""这是一张包含编号、车号、重量等信息的表格类手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/c36a78231ee7fc752b2604273c2402fd_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含序号、车号、重量、站名等信息的表格类手写记录。,检车清单,review,label_mismatch,3074,3.076,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张包含序号、车号、重量、站名等信息的表格类手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/d1d87aa0731a842ce75fd4e08d352460_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含序号、车号、重量、到达、结账等列的手写表格记录。,调度车单,review,label_mismatch,3092,3.095,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""调度车单"",
+  ""evidence"": ""这是一张包含序号、车号、重量、到达、结账等列的手写表格记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/d3371a3d4095d280631c0991a122c1cc_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含序号、车号、重量、站等列的表格，内容为手写记录的物流或运输数据。,,review,label_mismatch,3125,3.128,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""这是一张包含序号、车号、重量、站等列的表格，内容为手写记录的物流或运输数据。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/d4791ac6955a3f142e3a44ce83e7f573_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张包含序号、车号、标高、重量、到站等信息的纸质手写表格。,检车清单,review,label_mismatch,3125,3.129,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张包含序号、车号、标高、重量、到站等信息的纸质手写表格。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/d47b78d07a441e305f93c09fd39c368b_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一张包含编号和手写数字列表的表格，属于手写记录。,,review,label_mismatch,2979,2.983,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""这是一张包含编号和手写数字列表的表格，属于手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/d82332a83a009d1fbf7d7daf3ca8188c_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一张包含序号、车皮号、重量、到达站等信息的表格类手写记录。,检车清单,review,label_mismatch,3108,3.112,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张包含序号、车皮号、重量、到达站等信息的表格类手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/db5643295607dbe57eabaeb11f96b185_decoded.jpg,手写箱号车号表,手写记录,0.9,这是一张手写的表格，包含序号、车号、重量等列，属于手写记录类文档。,检车清单,review,label_mismatch,3125,3.129,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张手写的表格，包含序号、车号、重量等列，属于手写记录类文档。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/ec0607d646d44b76d3f0aba04f536bdb_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一张包含序号、车号、标高、库到等列的手写表格记录。,检车清单,review,label_mismatch,3108,3.111,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""检车清单"",
+  ""evidence"": ""这是一张包含序号、车号、标高、库到等列的手写表格记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写箱号车号表/fff2672102e95a404fde06f0a82643db_decoded.jpg,手写箱号车号表,手写记录,0.95,这是一张包含序号、车号、重量、到站等信息的表格类手写记录。,,review,label_mismatch,3021,3.025,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""这是一张包含序号、车号、重量、到站等信息的表格类手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/11624922b2aacabc31fe650f0bd2378f_decoded.jpg,手写记录,手写记录,0.95,这是一份包含日期、工作计划、日常记录和完成情况的手写工作日志。,工作计划,auto,match_and_high_confidence,3048,3.051,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""工作计划"",
+  ""evidence"": ""这是一份包含日期、工作计划、日常记录和完成情况的手写工作日志。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/3a202955b09ef31e4b6ef286da575f97_decoded.jpg,手写记录,手写记录,0.95,这是一份包含日期、工作计划和日常记录的手写工作日志。,工作计划,auto,match_and_high_confidence,2957,2.96,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""工作计划"",
+  ""evidence"": ""这是一份包含日期、工作计划和日常记录的手写工作日志。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/3bc461abc6012f618e4d2867e72ac27c_decoded.jpg,手写记录,手写记录,0.95,纸张上写有具体的数值、时间及工作内容，属于手写记录。,,auto,match_and_high_confidence,2991,2.993,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""纸张上写有具体的数值、时间及工作内容，属于手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/42718fa0e944af19c385c3aca0cd233d_decoded.jpg,手写记录,手写记录,0.95,这是一份包含日期、值班人员、工作计划和日常记录的手写工作日志。,值班人员,auto,match_and_high_confidence,3027,3.031,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""值班人员"",
+  ""evidence"": ""这是一份包含日期、值班人员、工作计划和日常记录的手写工作日志。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/5ef59eb46f6ed146a3c1d110485b315c_decoded.jpg,手写记录,手写记录,0.95,页面内容为手写的工作内容记录，包含日期、任务描述及完成情况。,,auto,match_and_high_confidence,2941,2.944,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""页面内容为手写的工作内容记录，包含日期、任务描述及完成情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/64fd7a73b8f16b01322331b6515cb10c_decoded.jpg,手写记录,手写记录,0.95,纸张上写有手写的数量、规格及工作记录内容。,,auto,match_and_high_confidence,2954,2.958,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""纸张上写有手写的数量、规格及工作记录内容。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/657a3f628d598fb20f6581341ec25c5f_decoded.jpg,手写记录,手写记录,0.95,这是一张包含日期、工作计划、日常记录和事项的纸质手写记录文档。,,auto,match_and_high_confidence,2981,2.984,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""这是一张包含日期、工作计划、日常记录和事项的纸质手写记录文档。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/6c5d826870478d7cc1b48872e98665a9_decoded.jpg,手写记录,日现场工作记录表,0.95,文档标题为班前记录表，内容包含作业规范、安全注意事项及日期等现场管理信息。,货车码头公司站台作业班前记录表,review,label_mismatch,3304,3.308,"{
+  ""category"": ""日现场工作记录表"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""货车码头公司站台作业班前记录表"",
+  ""evidence"": ""文档标题为班前记录表，内容包含作业规范、安全注意事项及日期等现场管理信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/7254ce9f05c5a120cdfbbc4f1a2bd56f_decoded.jpg,手写记录,其他/不确定,0.9,图片显示的是一份包含规章制度和手写备注的纸质文档，并非特定的物流或现场记录表。,,review,label_mismatch,3112,3.116,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是一份包含规章制度和手写备注的纸质文档，并非特定的物流或现场记录表。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/7fab5dd7e9a0653fd315eec46d77aabe_decoded.jpg,手写记录,手写记录,0.95,纸张上写有关于货物数量和装箱情况的手写记录。,,auto,match_and_high_confidence,2967,2.97,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""纸张上写有关于货物数量和装箱情况的手写记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/8fcb34143cce2adb6d995a96a3323b24_decoded.jpg,手写记录,其他/不确定,0.9,图片内容为一份关于车辆作业规范和安全要求的规章制度文档，并非物流现场的计划、记录或实景照片。,关于车辆配合作业记录,review,label_mismatch,3256,3.259,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""关于车辆配合作业记录"",
+  ""evidence"": ""图片内容为一份关于车辆作业规范和安全要求的规章制度文档，并非物流现场的计划、记录或实景照片。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/90f3683ec108cefd9c43cdbbbe253373_decoded.jpg,手写记录,手写记录,0.95,页面内容为手写的数值、单位及简短文字记录，属于日常工作记录。,,auto,match_and_high_confidence,2961,2.965,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""页面内容为手写的数值、单位及简短文字记录，属于日常工作记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/98584ed02e345bfbd80b0443bc87e1a8_decoded.jpg,手写记录,日现场工作记录表,0.95,文档包含日期、工作计划、日常记录及具体作业内容，属于典型的现场工作记录。,工作计划 / 日常记录,review,label_mismatch,3127,3.131,"{
+  ""category"": ""日现场工作记录表"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""工作计划 / 日常记录"",
+  ""evidence"": ""文档包含日期、工作计划、日常记录及具体作业内容，属于典型的现场工作记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/aac98b8ee304f8fa887f3f775c32e339_decoded.jpg,手写记录,手写记录,0.95,纸张上写满了手写的文字内容，看起来像是日常的工作记录或笔记。,,auto,match_and_high_confidence,2957,2.961,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""纸张上写满了手写的文字内容，看起来像是日常的工作记录或笔记。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/b4789a4d8dea674e6b358e72a8264fa5_decoded.jpg,手写记录,其他/不确定,0.9,图片内容为一份关于散装箱作业的安全提示/规章制度，并非上述特定业务表格。,散装箱安全提示,review,label_mismatch,3156,3.159,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""散装箱安全提示"",
+  ""evidence"": ""图片内容为一份关于散装箱作业的安全提示/规章制度，并非上述特定业务表格。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/b8e3643acac376970fedd862983de30d_decoded.jpg,手写记录,其他/不确定,0.9,图片内容为一份关于货车司机站台作业的安全规范或注意事项，并非上述特定业务单据。,货车司机站台作业前纪念卡,review,label_mismatch,3244,3.247,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""货车司机站台作业前纪念卡"",
+  ""evidence"": ""图片内容为一份关于货车司机站台作业的安全规范或注意事项，并非上述特定业务单据。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/d7528b687187d7ecf1809a96087c6201_decoded.jpg,手写记录,照片-装卸现场情况,0.85,图片展示了装卸作业相关的安全规章制度文件，背景为货车车厢内部。,散装箱安全提示,review,label_mismatch,3190,3.193,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.85,
+  ""detected_title"": ""散装箱安全提示"",
+  ""evidence"": ""图片展示了装卸作业相关的安全规章制度文件，背景为货车车厢内部。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/d77a74a2f09ad417ae0b5cdbb34b8315_decoded.jpg,手写记录,手写记录,1.0,这是一张包含日期、工作计划和日常记录的手写笔记。,,auto,match_and_high_confidence,2915,2.92,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 1.0,
+  ""detected_title"": """",
+  ""evidence"": ""这是一张包含日期、工作计划和日常记录的手写笔记。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/e370afa4f83aefdb7db848e78371df01_decoded.jpg,手写记录,手写记录,0.95,纸张上写满了手写的文字记录，没有明显的表格标题。,,auto,match_and_high_confidence,2941,2.944,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""纸张上写满了手写的文字记录，没有明显的表格标题。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/f4cd383a72a2e7346f73db3116416d57_decoded.jpg,手写记录,手写记录,0.95,这是一份包含日期、工作计划和日常记录的手写文档。,2016年3月2/1日至2016年3月22日,auto,match_and_high_confidence,3273,3.277,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""2016年3月2/1日至2016年3月22日"",
+  ""evidence"": ""这是一份包含日期、工作计划和日常记录的手写文档。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/手写记录/fa6c1e5c20e77f0420948230bc13ed0b_decoded.jpg,手写记录,手写记录,0.95,这是一份包含日期、工作计划、日常记录和完成情况的手写工作日志。,工作计划,auto,match_and_high_confidence,3047,3.051,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""工作计划"",
+  ""evidence"": ""这是一份包含日期、工作计划、日常记录和完成情况的手写工作日志。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/001a560a7dc9a4a81cec900b789aae55_decoded.jpg,日现场工作记录表,请车表,0.9,表格包含日期、地点、车号、物流公司及目的地等调度信息。,,review,label_mismatch,2882,2.885,"{
+  ""category"": ""请车表"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含日期、地点、车号、物流公司及目的地等调度信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/0304b60a2ddc9e00ed910e192f33e8e4_decoded.jpg,日现场工作记录表,其他/不确定,0.9,图片仅显示表格的一行内容，缺乏完整的文档结构和标题信息。,,review,label_mismatch,2918,2.921,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图片仅显示表格的一行内容，缺乏完整的文档结构和标题信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/1ed590e7d4b55855ff1e046f59af9131_decoded.jpg,日现场工作记录表,其他/不确定,0.8,图片内容为包含日期、名称、数值等信息的表格，但缺乏明确的标题或业务场景特征，无法确定具体业务类型。,,review,label_mismatch,3106,3.109,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.8,
+  ""detected_title"": """",
+  ""evidence"": ""图片内容为包含日期、名称、数值等信息的表格，但缺乏明确的标题或业务场景特征，无法确定具体业务类型。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/280ed12abf9e2a60f8ac8d5f32b9eb71_decoded.jpg,日现场工作记录表,日现场工作记录表,0.9,表格包含日期、人员姓名、物料名称、数量及作业内容，属于典型的现场工作记录。,,auto,match_and_high_confidence,2996,2.998,"{
+  ""category"": ""日现场工作记录表"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含日期、人员姓名、物料名称、数量及作业内容，属于典型的现场工作记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/33a7a85c3e98664dcdf21262bbde8acc_decoded.jpg,日现场工作记录表,其他/不确定,0.8,表格内容包含日期、到站、收货人、船名等物流信息，但不属于给出的特定业务单据类别。,日期 到站 收货人 船名 代理 道线 节数 备注,review,label_mismatch,3408,3.411,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.8,
+  ""detected_title"": ""日期 到站 收货人 船名 代理 道线 节数 备注"",
+  ""evidence"": ""表格内容包含日期、到站、收货人、船名等物流信息，但不属于给出的特定业务单据类别。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/3e6f261fcf25230c8b0cf8c7e3d47255_decoded.jpg,日现场工作记录表,日现场工作记录表,0.9,表格包含日期、到站、船名、品名、节数、监装人等作业记录信息。,,auto,match_and_high_confidence,3013,3.016,"{
+  ""category"": ""日现场工作记录表"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含日期、到站、船名、品名、节数、监装人等作业记录信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/495a32d1754e9d67729e3fd85a0c06db_decoded.jpg,日现场工作记录表,日现场工作记录表,0.9,表格包含日期、人员、物料类型、数量及作业内容，属于典型的日常工作记录。,,auto,match_and_high_confidence,2930,2.933,"{
+  ""category"": ""日现场工作记录表"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含日期、人员、物料类型、数量及作业内容，属于典型的日常工作记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/4aa33d516f00d1fe19d9f5afbdcff375_decoded.jpg,日现场工作记录表,其他/不确定,0.8,表格内容包含日期、地点、货物名称、数量及人员信息，看似是某种物流或调度记录，但缺乏明确的标题，且不完全符合给定类别中的特定格式。,,review,label_mismatch,3252,3.255,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.8,
+  ""detected_title"": """",
+  ""evidence"": ""表格内容包含日期、地点、货物名称、数量及人员信息，看似是某种物流或调度记录，但缺乏明确的标题，且不完全符合给定类别中的特定格式。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/4ec4710dbded61900d50997c67474380_decoded.jpg,日现场工作记录表,其他/不确定,0.9,图片内容为一行包含日期、地名、货物名称及人员信息的文本，不符合任何特定表单类别。,,review,label_mismatch,2967,2.97,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图片内容为一行包含日期、地名、货物名称及人员信息的文本，不符合任何特定表单类别。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/6135888fbbf85bd3a88992a963cb5032_decoded.jpg,日现场工作记录表,其他/不确定,0.8,表格内容包含日期、地点、物料名称、数量及人员名单，更像是一种物流或生产调度记录，不属于给定列表中的特定类别。,,review,label_mismatch,3111,3.113,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.8,
+  ""detected_title"": """",
+  ""evidence"": ""表格内容包含日期、地点、物料名称、数量及人员名单，更像是一种物流或生产调度记录，不属于给定列表中的特定类别。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/665988c1ec479bd08d82b0669d7f8e91_decoded.jpg,日现场工作记录表,日现场工作记录表,0.9,表格包含日期、到达站、船名、品名、线路、节数、监装人等作业记录信息。,,auto,match_and_high_confidence,3087,3.089,"{
+  ""category"": ""日现场工作记录表"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含日期、到达站、船名、品名、线路、节数、监装人等作业记录信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/a675e2878cd5ac10a12af5dcc953b647_decoded.jpg,日现场工作记录表,日现场工作记录表,0.9,表格包含日期、到达站、船名、品名、线路、节数等作业记录信息。,,auto,match_and_high_confidence,3060,3.063,"{
+  ""category"": ""日现场工作记录表"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含日期、到达站、船名、品名、线路、节数等作业记录信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/a6f4e8d62ad20cc057f7734375254f9f_decoded.jpg,日现场工作记录表,其他/不确定,0.8,表格内容包含日期、人名、地点、物资类型及数量，看似某种物流或作业记录，但缺乏明确标题且格式不属于典型分类。,,review,label_mismatch,3212,3.214,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.8,
+  ""detected_title"": """",
+  ""evidence"": ""表格内容包含日期、人名、地点、物资类型及数量，看似某种物流或作业记录，但缺乏明确标题且格式不属于典型分类。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/b06f8f22d3331d4e884d6573531da2f3_decoded.jpg,日现场工作记录表,其他/不确定,0.8,表格内容包含日期、地点、人员及编号，但不属于明确的通知单、记录表或现场照片。,,review,label_mismatch,3040,3.043,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.8,
+  ""detected_title"": """",
+  ""evidence"": ""表格内容包含日期、地点、人员及编号，但不属于明确的通知单、记录表或现场照片。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/ce009bab534d52c1f0905ecc505dccfb_decoded.jpg,日现场工作记录表,日现场工作记录表,0.9,表格包含日期、站点、船名、品名、车数、班组等作业记录信息。,,auto,match_and_high_confidence,3072,3.075,"{
+  ""category"": ""日现场工作记录表"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含日期、站点、船名、品名、车数、班组等作业记录信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/dc53710b19a2b128ce9e6aa79988b49b_decoded.jpg,日现场工作记录表,日现场工作记录表,0.9,表格包含日期、地点、物料名称、数量及人员信息，属于典型的日常作业记录。,,auto,match_and_high_confidence,3002,3.006,"{
+  ""category"": ""日现场工作记录表"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含日期、地点、物料名称、数量及人员信息，属于典型的日常作业记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/df20c8fe42f50f78e8c13d03b63f4581_decoded.jpg,日现场工作记录表,其他/不确定,0.8,表格内容包含日期、地点、人员及编号，但缺乏明确的业务标题，无法确定具体用途。,,review,label_mismatch,3049,3.051,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.8,
+  ""detected_title"": """",
+  ""evidence"": ""表格内容包含日期、地点、人员及编号，但缺乏明确的业务标题，无法确定具体用途。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/ee276305989435ce4ca4929c5424bd43_decoded.jpg,日现场工作记录表,请车表,0.9,表格包含日期、地点、车号、物流公司及目的地等调度信息。,,review,label_mismatch,2831,2.834,"{
+  ""category"": ""请车表"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含日期、地点、车号、物流公司及目的地等调度信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/f9dac6a4fcd2e53fbd00faa5e75ede57_decoded.jpg,日现场工作记录表,日现场工作记录表,0.9,表格包含日期、到达站、船名、品名、线路、车数、班组及备注，属于典型的日常作业记录格式。,,auto,match_and_high_confidence,3191,3.194,"{
+  ""category"": ""日现场工作记录表"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含日期、到达站、船名、品名、线路、车数、班组及备注，属于典型的日常作业记录格式。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/日现场工作记录表/fb28eb444deca64dcb8aab7576cab0cc_decoded.jpg,日现场工作记录表,请车表,0.9,表格包含日期、到达站、船名、品名、线路、车数、班组等调度运输相关信息。,,review,label_mismatch,3099,3.102,"{
+  ""category"": ""请车表"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含日期、到达站、船名、品名、线路、车数、班组等调度运输相关信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/06f7d87639df5fc48c1690a0e18f3b7b_decoded.jpg,检装车通知单,检装车通知单,0.95,文档标题明确包含“检、装车通知单”，且内容为车辆信息、车号及装载高度的列表。,锦州港施朵玛公司卡车货运疏Fl检、装车通知单,auto,match_and_high_confidence,3434,3.437,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""锦州港施朵玛公司卡车货运疏Fl检、装车通知单"",
+  ""evidence"": ""文档标题明确包含“检、装车通知单”，且内容为车辆信息、车号及装载高度的列表。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/1079f3115a13514628075f4f2261ddeb_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确标注为“检、装车通知单”。,锦州港派出码公司火运货物疏运检、装车通知单,auto,match_and_high_confidence,3180,3.184,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港派出码公司火运货物疏运检、装车通知单"",
+  ""evidence"": ""文档标题明确标注为“检、装车通知单”。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/12acd85ed17c77f8fb81f6ceedf9779a_decoded.jpg,检装车通知单,检装车通知单,0.95,文档标题明确包含“检、装车通知单”，且内容为车辆信息与装载记录表格。,锦州港染码公司火运货物ш烷检、装车通知单,auto,match_and_high_confidence,3339,3.342,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""锦州港染码公司火运货物ш烷检、装车通知单"",
+  ""evidence"": ""文档标题明确包含“检、装车通知单”，且内容为车辆信息与装载记录表格。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/1a51d5aaef54eab2e5c2309cd4334cb9_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确标注为“检、装车通知单”。,锦州港朵杂公司火车运货物疏检、装车通知单,auto,match_and_high_confidence,3236,3.238,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港朵杂公司火车运货物疏检、装车通知单"",
+  ""evidence"": ""文档标题明确标注为“检、装车通知单”。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/1a7f0d3e26bfda8c0b4d96c86182b71d_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确显示为检装、装车通知单。,锦州港码公司火车货物ш烷装、装车通知单,auto,match_and_high_confidence,3149,3.152,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港码公司火车货物ш烷装、装车通知单"",
+  ""evidence"": ""文档标题明确显示为检装、装车通知单。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/1bd30c0361acb0cfd839530dc9ac31ec_decoded.jpg,检装车通知单,检装车通知单,0.95,标题明确显示为检装、装车通知单，内容包含车号、装载高度等信息。,锦州港务码公司火车运货物ш烷检、装车通知单,auto,match_and_high_confidence,3354,3.357,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""锦州港务码公司火车运货物ш烷检、装车通知单"",
+  ""evidence"": ""标题明确显示为检装、装车通知单，内容包含车号、装载高度等信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/1d5a447d82c45b66c51ddf973060fb55_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确标注为检、装车通知单。,锦州港杂码公司火车运货物疏运检、装车通知单,auto,match_and_high_confidence,3209,3.211,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港杂码公司火车运货物疏运检、装车通知单"",
+  ""evidence"": ""文档标题明确标注为检、装车通知单。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/2108c5bdfeabf9ac322725237b0957d8_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确包含“检肠、装车通知单”，内容为车辆信息与装载记录表。,锦州港绍冯码头公司火车运物资疏运检肠、装车通知单,auto,match_and_high_confidence,3391,3.394,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港绍冯码头公司火车运物资疏运检肠、装车通知单"",
+  ""evidence"": ""文档标题明确包含“检肠、装车通知单”，内容为车辆信息与装载记录表。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/38537cb443e0fc7f6977b3280c181b92_decoded.jpg,检装车通知单,手写记录,0.9,表格内容包含车号、装载高度等信息，且有手写填写的痕迹。,锦州港杂码头公司火车货物疏运检检、装车清单通知单,review,label_mismatch,3292,3.295,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""锦州港杂码头公司火车货物疏运检检、装车清单通知单"",
+  ""evidence"": ""表格内容包含车号、装载高度等信息，且有手写填写的痕迹。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/411c31d2da7c31e23864e0b45a586f16_decoded.jpg,检装车通知单,手写记录,0.9,该文档为手写填写的火车货物检装通知单，包含车号、装载高度等记录。,绵州 철码公司 火车货物疏检检、装车通知单,review,label_mismatch,3290,3.292,"{
+  ""category"": ""手写记录"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""绵州 철码公司 火车货物疏检检、装车通知单"",
+  ""evidence"": ""该文档为手写填写的火车货物检装通知单，包含车号、装载高度等记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/425f57e549c1abc90b3f6393cb84c652_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确包含“装车通知单”字样。,锦州港浩码公司火车运货物疏 Thorn 检、装车通知单,auto,match_and_high_confidence,3239,3.242,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港浩码公司火车运货物疏 Thorn 检、装车通知单"",
+  ""evidence"": ""文档标题明确包含“装车通知单”字样。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/4bfc12b8a2b76b6a03568b85862daa1f_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确包含“装车通知单”，且内容为车辆信息、装载高度等物流作业记录。,锦州港荣码公司卡运货物流转、装车通知单,auto,match_and_high_confidence,3324,3.326,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港荣码公司卡运货物流转、装车通知单"",
+  ""evidence"": ""文档标题明确包含“装车通知单”，且内容为车辆信息、装载高度等物流作业记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/61c9fb07b09abb5a862af7f231422f6e_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确显示为“装车通知单”，内容包含车号、车型、收货人等物流信息。,锦州港染码公司卡运货物班列/装车通知单,auto,match_and_high_confidence,3341,3.344,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港染码公司卡运货物班列/装车通知单"",
+  ""evidence"": ""文档标题明确显示为“装车通知单”，内容包含车号、车型、收货人等物流信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/67e5e45ad9347aa17a7581ab0761db24_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确标注为“检车通知单”，内容包含车号、节数等装检车信息。,锦州港岛窑公司氧化铝货运装、检车通知单,auto,match_and_high_confidence,3309,3.312,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港岛窑公司氧化铝货运装、检车通知单"",
+  ""evidence"": ""文档标题明确标注为“检车通知单”，内容包含车号、节数等装检车信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/6906289cbb7db56d4e1f6a6cb2792b98_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确包含“检、装车通知单”字样，且内容为车辆信息登记表。,绵池港派出公司火车货运疏检、装车通知单,auto,match_and_high_confidence,3310,3.313,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""绵池港派出公司火车货运疏检、装车通知单"",
+  ""evidence"": ""文档标题明确包含“检、装车通知单”字样，且内容为车辆信息登记表。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/7571926b2e06ea4aa24a88d722b87159_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确显示为“检车通知单”，内容为车辆装载与检查的记录表格。,锦州港润公司矿化硅氧化铝货运装、检车通知单,auto,match_and_high_confidence,3309,3.313,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港润公司矿化硅氧化铝货运装、检车通知单"",
+  ""evidence"": ""文档标题明确显示为“检车通知单”，内容为车辆装载与检查的记录表格。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/75ad6bf8fb229a6bc499f2ad70fedc34_decoded.jpg,检装车通知单,检装车通知单,0.95,文档标题明确标注为检、装车通知单，且内容为车辆信息登记表。,锦州港亚洲公司火车运货物疏港检、装车通知单,auto,match_and_high_confidence,3294,3.297,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""锦州港亚洲公司火车运货物疏港检、装车通知单"",
+  ""evidence"": ""文档标题明确标注为检、装车通知单，且内容为车辆信息登记表。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/7758e25f4389979c78bb840faf21e87e_decoded.jpg,检装车通知单,检装车通知单,1.0,标题明确显示为‘检装车通知单’，内容为车辆信息与装载记录。,绵池港杂车公司火车货物疏检、装车通知单,auto,match_and_high_confidence,3256,3.259,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""绵池港杂车公司火车货物疏检、装车通知单"",
+  ""evidence"": ""标题明确显示为‘检装车通知单’，内容为车辆信息与装载记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/87ea0723bb64a5c3dad26e160eb9b13f_decoded.jpg,检装车通知单,检装车通知单,0.95,文档标题明确包含“检检、装车通知单”，内容为车辆信息与装载数据的列表。,铁矿物资货运疏运检检、装车通知单,auto,match_and_high_confidence,3293,3.296,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""铁矿物资货运疏运检检、装车通知单"",
+  ""evidence"": ""文档标题明确包含“检检、装车通知单”，内容为车辆信息与装载数据的列表。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/8a4c18c21564f04cd2400f0a54ab24a1_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确包含“装车通知单”，内容为车辆号、件数等装车信息。,锦州港系列氧化铝货运装车通知单,auto,match_and_high_confidence,3217,3.22,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港系列氧化铝货运装车通知单"",
+  ""evidence"": ""文档标题明确包含“装车通知单”，内容为车辆号、件数等装车信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/932e8b867205c126d0478d64ef31186e_decoded.jpg,检装车通知单,检装车通知单,1.0,图片顶端标题明确显示为“检装车通知单”。,检装车通知单,auto,match_and_high_confidence,3003,3.006,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""检装车通知单"",
+  ""evidence"": ""图片顶端标题明确显示为“检装车通知单”。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/94a80f7df259759484d39c9923b59040_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确包含“检装车通知单”字样。,锦州港杂码公司火车运货物资检检、装车通知单,auto,match_and_high_confidence,3237,3.24,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港杂码公司火车运货物资检检、装车通知单"",
+  ""evidence"": ""文档标题明确包含“检装车通知单”字样。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/94edcf45aff17d63e213632d97f12af4_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确显示为检、装车通知单。,铁运物资疏运检、装车通知单,auto,match_and_high_confidence,3056,3.059,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""铁运物资疏运检、装车通知单"",
+  ""evidence"": ""文档标题明确显示为检、装车通知单。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/95e9d67c51202e8943794ffa3d56482e_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确标注为“检装、装车通知单”。,钦州港染务码公司火运货物疏运检装、装车通知单,auto,match_and_high_confidence,3227,3.229,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""钦州港染务码公司火运货物疏运检装、装车通知单"",
+  ""evidence"": ""文档标题明确标注为“检装、装车通知单”。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/9803774dde1bb8927916af717d8dfbcb_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确包含“检修、装车通知单”，内容为车辆、车号及装货信息列表。,锦州港朵杂公司氧化铝炼殊检修、装车通知单,auto,match_and_high_confidence,3353,3.356,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港朵杂公司氧化铝炼殊检修、装车通知单"",
+  ""evidence"": ""文档标题明确包含“检修、装车通知单”，内容为车辆、车号及装货信息列表。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/a98bdcbf5074dd9e0e0db2faff4fe223_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确包含“装车通知单”，内容为车辆编号、装载高度等物流作业信息。,铁矿砂货运物流班次、装车通知单,auto,match_and_high_confidence,3261,3.264,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""铁矿砂货运物流班次、装车通知单"",
+  ""evidence"": ""文档标题明确包含“装车通知单”，内容为车辆编号、装载高度等物流作业信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/ace2df36fd1f14b52837647072f45965_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确包含“检、装车通知单”。,锦州港杂码公司火车运货物疏港检、装车通知单,auto,match_and_high_confidence,3227,3.229,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港杂码公司火车运货物疏港检、装车通知单"",
+  ""evidence"": ""文档标题明确包含“检、装车通知单”。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/b2b0b2948608d78d8e72b6668b3c3a47_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确包含“检、装车通知单”。,锦州港杂码头公司火车运货物疏运检、装车通知单,auto,match_and_high_confidence,3237,3.24,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港杂码头公司火车运货物疏运检、装车通知单"",
+  ""evidence"": ""文档标题明确包含“检、装车通知单”。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/b70664c16b15c6ff777cbee15d3f1763_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确标注为检检、装车通知单，内容包含车号、装载高度等物流信息。,锦州港杂码公司火车货运物流检检、装车通知单,auto,match_and_high_confidence,3418,3.421,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港杂码公司火车货运物流检检、装车通知单"",
+  ""evidence"": ""文档标题明确标注为检检、装车通知单，内容包含车号、装载高度等物流信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/d1d0ca5d3c2ba9a9af6cf2bb159938b6_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确包含“检装车通知单”字样。,锦州港杂码公司火车运货物资检检、装车通知单,auto,match_and_high_confidence,3246,3.249,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港杂码公司火车运货物资检检、装车通知单"",
+  ""evidence"": ""文档标题明确包含“检装车通知单”字样。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/d5372483598e3a77772d9d7237674858_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确标注为“检装车通知单”。,锦州港杂码公司火车货运物流检检、装车通知单,auto,match_and_high_confidence,3233,3.236,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港杂码公司火车货运物流检检、装车通知单"",
+  ""evidence"": ""文档标题明确标注为“检装车通知单”。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/dff7d62338960a83e6380545e5e40a5f_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确显示为“检装车通知单”。,锦州港炼铁公司氧化铝货运检装检、装车通知单,auto,match_and_high_confidence,3187,3.19,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港炼铁公司氧化铝货运检装检、装车通知单"",
+  ""evidence"": ""文档标题明确显示为“检装车通知单”。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/e58dc2f456d3542469dc29cea61f6ce3_decoded.jpg,检装车通知单,检装车通知单,1.0,图片顶端标题明确显示为“检装车通知单”。,检装车通知单,auto,match_and_high_confidence,3011,3.014,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""检装车通知单"",
+  ""evidence"": ""图片顶端标题明确显示为“检装车通知单”。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/e89e26e116c63e61be6f98eb631ed196_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确包含“检、装车通知单”字样。,锦州港រី码公司火运物资疏运检、装车通知单,auto,match_and_high_confidence,3248,3.251,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港រី码公司火运物资疏运检、装车通知单"",
+  ""evidence"": ""文档标题明确包含“检、装车通知单”字样。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/e8f8a075a87d7c2b2a8e61750a681acc_decoded.jpg,检装车通知单,检装车通知单,0.95,文档标题明确包含检、装车通知单字样，内容为车辆编号与装载信息的列表。,锦州港采码公司火车务物资疏运检、装车通知单,auto,match_and_high_confidence,3407,3.41,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""锦州港采码公司火车务物资疏运检、装车通知单"",
+  ""evidence"": ""文档标题明确包含检、装车通知单字样，内容为车辆编号与装载信息的列表。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/ea9efb67b7696a361cf95feffe4754a5_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确标注为“检装车通知单”。,锦州港杂码公司火车运货物疏检、装车通知单,auto,match_and_high_confidence,3214,3.217,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港杂码公司火车运货物疏检、装车通知单"",
+  ""evidence"": ""文档标题明确标注为“检装车通知单”。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/f2ac401bf6a883d392625248878c7bc5_decoded.jpg,检装车通知单,检装车通知单,0.95,标题明确包含检检、装车通知单字样，且表格内容为车辆、车号及装货信息。,锦州港朵垒公司铜矿吨袋火灾运输检检、装车通知单,auto,match_and_high_confidence,3445,3.448,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""锦州港朵垒公司铜矿吨袋火灾运输检检、装车通知单"",
+  ""evidence"": ""标题明确包含检检、装车通知单字样，且表格内容为车辆、车号及装货信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/f5e00eb7357d8494aee2e40d93e69205_decoded.jpg,检装车通知单,检装车通知单,0.95,文档标题明确包含“装车通知单”，且内容为车辆编号、装载高度等检装信息。,绵港 철路站公司火车货物疏检舱、装车通知单,auto,match_and_high_confidence,3348,3.351,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""绵港 철路站公司火车货物疏检舱、装车通知单"",
+  ""evidence"": ""文档标题明确包含“装车通知单”，且内容为车辆编号、装载高度等检装信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/f62667356103f2d3cb88ca6d1fd293ee_decoded.jpg,检装车通知单,检装车通知单,1.0,标题明确显示为检、装车通知单，内容包含车号、装载高度等信息。,锦州港荣码公司卡运货物流检、装车通知单,auto,match_and_high_confidence,3306,3.309,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港荣码公司卡运货物流检、装车通知单"",
+  ""evidence"": ""标题明确显示为检、装车通知单，内容包含车号、装载高度等信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/检装车通知单/fcb55cdeb05a9b2075d4da5f1fc5f768_decoded.jpg,检装车通知单,检装车通知单,1.0,文档标题明确标注为“装车通知单”，内容包含车号、装载高度等班列装车信息。,锦州港绍兴码公司火运货物班列/装车通知单,auto,match_and_high_confidence,3387,3.39,"{
+  ""category"": ""检装车通知单"",
+  ""confidence"": 1.0,
+  ""detected_title"": ""锦州港绍兴码公司火运货物班列/装车通知单"",
+  ""evidence"": ""文档标题明确标注为“装车通知单”，内容包含车号、装载高度等班列装车信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/164a7ed158549894a2b4dbd40d874d5a_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示的是一辆敞车（敞车/货车车厢）的内部空间及作业环境。,,auto,match_and_high_confidence,3182,3.186,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一辆敞车（敞车/货车车厢）的内部空间及作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/18c7972363f0c38c7aa599a6cdb03ae8_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示的是一辆敞车或货车车厢内部的空载情况。,,auto,match_and_high_confidence,3101,3.105,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一辆敞车或货车车厢内部的空载情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/2223a171fe8ddc9ec81801dd6585ea09_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示了敞车车厢内部及工人正在进行清理作业的情况。,,auto,match_and_high_confidence,3064,3.067,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了敞车车厢内部及工人正在进行清理作业的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/24a1e09e4089d3b12f9da9f7365e10b2_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,一名工人在敞车内部进行作业或检查。,,auto,match_and_high_confidence,2981,2.984,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""一名工人在敞车内部进行作业或检查。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/281b4d63a56645e8cf18ae76279e2ad9_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示的是一辆敞车（或类似敞开式货车）的内部空载及带有少量杂草的情况。,,auto,match_and_high_confidence,3240,3.243,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一辆敞车（或类似敞开式货车）的内部空载及带有少量杂草的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/2bd5ed922b70feb849f41515c96431e2_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示的是敞车车厢内部的空载情况及少量杂物。,,auto,match_and_high_confidence,3084,3.087,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是敞车车厢内部的空载情况及少量杂物。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/2eb0f39a5a1fcc0cac062a2a5bf2e825_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图中显示一名工人在敞车（敞顶货车）内部进行作业或检查。,,auto,match_and_high_confidence,3113,3.117,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中显示一名工人在敞车（敞顶货车）内部进行作业或检查。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/2f68d076f94af4604adefdc074bdf1fc_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示了敞车车厢内部的空置状态及一名正在作业的人员。,,auto,match_and_high_confidence,3115,3.119,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了敞车车厢内部的空置状态及一名正在作业的人员。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/32daa54ff03cf076e2dc347eafe49e1a_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示了敞车车厢内部的空载情况及一名正在作业的人员。,,auto,match_and_high_confidence,3109,3.113,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了敞车车厢内部的空载情况及一名正在作业的人员。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/33a6ed734d17516b3bcb4a3b62ecfd65_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示的是一辆敞车车厢内部的空载情况及底部的杂物。,,auto,match_and_high_confidence,3127,3.13,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一辆敞车车厢内部的空载情况及底部的杂物。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/35068229730393c7b29c56ac061ce43b_decoded.jpg,照片-敞车内部情况和作业,照片-装卸现场情况,0.9,图片展示了货车车厢内部及作业现场的情况。,,review,label_mismatch,2970,2.975,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了货车车厢内部及作业现场的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/43f7ceab0cd396a6dcc844e6d53738fa_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图中显示一名工人在大型敞车或货车车厢内部进行作业。,,auto,match_and_high_confidence,3082,3.086,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中显示一名工人在大型敞车或货车车厢内部进行作业。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/4cd4f08d18bf252f5af95d545c7cd907_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,一名工人在敞车内部进行清理作业。,,auto,match_and_high_confidence,2969,2.977,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""一名工人在敞车内部进行清理作业。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/4eb20ebb853f54441eac1e03d6f46cff_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图中显示一名工人在敞车内部进行清理或作业。,,auto,match_and_high_confidence,3017,3.021,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中显示一名工人在敞车内部进行清理或作业。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/58015ba567ea755e73d76cecd216b70a_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示了敞车车厢内部的空载情况及作业环境。,,auto,match_and_high_confidence,3060,3.064,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了敞车车厢内部的空载情况及作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/59bad4f2a7cbaddb84b33a8fd15a5359_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图中显示一名工人在敞车内部进行作业。,,auto,match_and_high_confidence,2993,2.996,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中显示一名工人在敞车内部进行作业。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/61b63db2b349bcf04e8c5a48362cc095_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片显示的是一辆大型敞车（dump truck/open wagon）的内部装载情况。,,auto,match_and_high_confidence,3147,3.15,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是一辆大型敞车（dump truck/open wagon）的内部装载情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/65ed04382c7c52d3b2cdcfe509a5c4f2_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示的是一辆敞车车厢内部的空置状态及少量杂物。,,auto,match_and_high_confidence,3115,3.118,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一辆敞车车厢内部的空置状态及少量杂物。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/6a9a2d59c89288710d0456cd8c66ac6d_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,一名工人在敞车内部进行清扫作业。,,auto,match_and_high_confidence,2998,3.001,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""一名工人在敞车内部进行清扫作业。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/6cde2f2bddfd1da32d777266307d2053_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示了敞车车厢内部的结构以及一名工人在车厢内的作业情况。,,auto,match_and_high_confidence,3127,3.13,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了敞车车厢内部的结构以及一名工人在车厢内的作业情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/6e1df5a8a957c39406dc7eab3476d7e8_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示的是一辆敞车或货车车厢内部的空载情况及底部的杂物。,,auto,match_and_high_confidence,3172,3.175,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一辆敞车或货车车厢内部的空载情况及底部的杂物。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/71828b2f76a75fdb1b195fa8fd084621_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片显示的是一辆敞车（dump car）内部装载物的情况。,,auto,match_and_high_confidence,3061,3.064,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是一辆敞车（dump car）内部装载物的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/74e3bad5b37e382be2a0484decaba6bd_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示了敞车车厢内部的空置状态及一名正在作业的人员。,,auto,match_and_high_confidence,3090,3.094,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了敞车车厢内部的空置状态及一名正在作业的人员。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/7c6606b5329c66bdf017fd66a787abfe_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片显示的是敞车车厢内部装载的散装物料情况。,,auto,match_and_high_confidence,3063,3.066,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是敞车车厢内部装载的散装物料情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/86595ac44115438f3496e580a5d12ef1_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示的是敞车车厢内部的空载或作业状态。,,auto,match_and_high_confidence,3031,3.035,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是敞车车厢内部的空载或作业状态。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/88751779078f2f01ee07cad3f13a0fe4_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片显示的是敞车车厢内部及作业现场情况。,,auto,match_and_high_confidence,2998,3.001,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是敞车车厢内部及作业现场情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/970b4c47c481d3691a0366a9633af108_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示的是敞车车厢内部的空载情况。,,auto,match_and_high_confidence,3004,3.007,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是敞车车厢内部的空载情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/aa6d06bfba80214b89449823b01c294c_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,一名工人正在敞车内部进行清理作业。,,auto,match_and_high_confidence,2948,2.951,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""一名工人正在敞车内部进行清理作业。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/b2c6debd42e6bc155da4a47692c0ad7f_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示的是敞车车厢内部的底面情况，带有少量杂物。,,auto,match_and_high_confidence,3085,3.09,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是敞车车厢内部的底面情况，带有少量杂物。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/b3471dc758e8175314c1ece2d1e03ad0_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图中展示了敞车车厢内部的空置状态以及一名工人在车厢内的作业情况。,,auto,match_and_high_confidence,3193,3.199,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了敞车车厢内部的空置状态以及一名工人在车厢内的作业情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/b9c55233df641eb7c6c916f02935fd84_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示的是一辆敞车（敞车/货车车厢）的内部空载情况。,,auto,match_and_high_confidence,3601,3.608,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一辆敞车（敞车/货车车厢）的内部空载情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/bcdbf0323b73039372799a9cfa7f098e_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示了一个大型敞车车厢的内部空间及作业环境。,,auto,match_and_high_confidence,3236,3.239,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了一个大型敞车车厢的内部空间及作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/bd1838b1cb2a284667bdc7b7f14e9e86_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示了敞车车厢内部的空载情况及一名工作人员在车厢内的作业场景。,,auto,match_and_high_confidence,3146,3.15,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了敞车车厢内部的空载情况及一名工作人员在车厢内的作业场景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/bea24cac11b96092c07ee76a197251c9_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示的是一辆敞车（dump truck/open truck）的内部装载空间情况。,,auto,match_and_high_confidence,3127,3.13,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一辆敞车（dump truck/open truck）的内部装载空间情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/c9bbde9a0e875daec208028acba4469e_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示的是一辆敞车车厢内部的空载情况及车厢底部的杂物。,,auto,match_and_high_confidence,3137,3.141,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一辆敞车车厢内部的空载情况及车厢底部的杂物。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/cca21410e790c15ebe73f16f01e3e0a4_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示的是一辆敞车车厢内部的空载情况及散落的杂物。,,auto,match_and_high_confidence,3127,3.131,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一辆敞车车厢内部的空载情况及散落的杂物。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/da72bddb26cf22970b022ecb35768581_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片展示了敞车车厢内部的空载情况及少量残留杂物。,,auto,match_and_high_confidence,3073,3.077,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了敞车车厢内部的空载情况及少量残留杂物。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/dd6d4e2c2ea20bff33de28c1545999ee_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,一名工人在敞车内部进行清理作业。,,auto,match_and_high_confidence,2955,2.958,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""一名工人在敞车内部进行清理作业。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/de4a1f3e02fb59fdb356c2844819555b_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片显示敞车车厢内部及作业人员正在进行清理或检查作业。,,auto,match_and_high_confidence,3057,3.061,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示敞车车厢内部及作业人员正在进行清理或检查作业。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/e9152ed3c67c076b83569504dcb10b61_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片显示的是敞车车厢内部及作业人员正在进行检查或清理作业。,,auto,match_and_high_confidence,3074,3.077,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是敞车车厢内部及作业人员正在进行检查或清理作业。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-敞车内部情况和作业/eba12d889c7a8adaa4a380203ab4c3ed_decoded.jpg,照片-敞车内部情况和作业,照片-敞车内部情况和作业,0.95,图片显示的是一辆敞车内部，一名工人正在车厢内作业。,,auto,match_and_high_confidence,3055,3.058,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是一辆敞车内部，一名工人正在车厢内作业。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-杂物垃圾-塑料布/494bdbce85acd1069df6cf3f02c7d0fc_decoded.jpg,照片-杂物垃圾-塑料布,照片-杂物垃圾-塑料布,0.95,图片显示在土堆或车厢内有明显的塑料薄膜垃圾。,,auto,match_and_high_confidence,3037,3.041,"{
+  ""category"": ""照片-杂物垃圾-塑料布"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示在土堆或车厢内有明显的塑料薄膜垃圾。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-杂物垃圾-塑料布/acdd5dadecdda27df4863587fa3894b5_decoded.jpg,照片-杂物垃圾-塑料布,照片-杂物垃圾-塑料布,0.95,图片中心位置堆放着大量的蓝色塑料薄膜或塑料布。,,auto,match_and_high_confidence,3024,3.027,"{
+  ""category"": ""照片-杂物垃圾-塑料布"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片中心位置堆放着大量的蓝色塑料薄膜或塑料布。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-检查工人/0a307da5dd02fa32425c142a45d299df_decoded.jpg,照片-检查工人,照片-装卸现场情况,0.9,图中显示三名穿着工作服的工人站在集装箱前，属于装卸作业现场的场景。,,review,label_mismatch,3116,3.119,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图中显示三名穿着工作服的工人站在集装箱前，属于装卸作业现场的场景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-检查工人/4b4eaf818e2fb46107066ea2b1150f2b_decoded.jpg,照片-检查工人,照片-装卸现场情况,0.9,图中显示工人在集装箱和货车旁进行现场作业或检查。,,review,label_mismatch,3007,3.011,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图中显示工人在集装箱和货车旁进行现场作业或检查。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-检查工人/e62e64ae8a0c00911da608ff71c6b1ad_decoded.jpg,照片-检查工人,照片-装卸现场情况,0.9,图中显示工作人员在空旷的装卸场地进行沟通或记录，背景有货运列车。,,review,label_mismatch,3086,3.089,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图中显示工作人员在空旷的装卸场地进行沟通或记录，背景有货运列车。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-火车涂写mark/583f171c7094bf3737607fb7eb81faa8_decoded.jpg,照片-火车涂写mark,照片-火车涂写mark,0.95,图片显示火车车体侧面上的手写标记数字。,,auto,match_and_high_confidence,2958,2.961,"{
+  ""category"": ""照片-火车涂写mark"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示火车车体侧面上的手写标记数字。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-火车涂写mark/5986bbce993570d837d90a4361618f57_decoded.jpg,照片-火车涂写mark,照片-火车涂写mark,0.95,火车车体上的手写数字和汉字标记,,auto,match_and_high_confidence,2945,2.949,"{
+  ""category"": ""照片-火车涂写mark"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""火车车体上的手写数字和汉字标记""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-火车涂写mark/7c4c77f2f0ec516c090d1f203ee341bf_decoded.jpg,照片-火车涂写mark,照片-火车涂写mark,0.95,图片显示的是带有手写涂鸦标记的工业金属容器或车厢侧面。,,auto,match_and_high_confidence,3052,3.056,"{
+  ""category"": ""照片-火车涂写mark"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是带有手写涂鸦标记的工业金属容器或车厢侧面。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-火车涂写mark/8d14b1413d525ff776addf97eb09abbd_decoded.jpg,照片-火车涂写mark,照片-火车涂写mark,0.95,火车车厢侧面有手写的数字和时间标记,,auto,match_and_high_confidence,2962,2.965,"{
+  ""category"": ""照片-火车涂写mark"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""火车车厢侧面有手写的数字和时间标记""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-火车涂写mark/b07ebc4397d9939ca76c2138d3a9afae_decoded.jpg,照片-火车涂写mark,照片-火车涂写mark,1.0,火车车体上可见手写的数字标记,,auto,match_and_high_confidence,2896,2.9,"{
+  ""category"": ""照片-火车涂写mark"",
+  ""confidence"": 1.0,
+  ""detected_title"": """",
+  ""evidence"": ""火车车体上可见手写的数字标记""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-火车涂写mark/c4f442cc16795a6ef4b28936e045d0f9_decoded.jpg,照片-火车涂写mark,照片-火车涂写mark,0.95,火车车厢侧面手写的日期、时间及地点标记,,auto,match_and_high_confidence,2971,2.975,"{
+  ""category"": ""照片-火车涂写mark"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""火车车厢侧面手写的日期、时间及地点标记""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-火车涂写mark/c8dd03e7329aee553698ac6a1ee8d544_decoded.jpg,照片-火车涂写mark,照片-火车涂写mark,0.95,图片显示火车车体金属表面上的手写标记。,,auto,match_and_high_confidence,2946,2.95,"{
+  ""category"": ""照片-火车涂写mark"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示火车车体金属表面上的手写标记。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-火车涂写mark/c975658c6ac9ef398907082902759466_decoded.jpg,照片-火车涂写mark,照片-火车涂写mark,0.95,车厢侧面有手写的日期和时间标记,,auto,match_and_high_confidence,2936,2.94,"{
+  ""category"": ""照片-火车涂写mark"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""车厢侧面有手写的日期和时间标记""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-火车涂写mark/d5f51c2ae0a6ca3542c7ad4214db10e7_decoded.jpg,照片-火车涂写mark,照片-火车涂写mark,0.95,金属车体表面上的手写数字标记,,auto,match_and_high_confidence,2902,2.906,"{
+  ""category"": ""照片-火车涂写mark"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""金属车体表面上的手写数字标记""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-火车涂写mark/d71c5fbdd7726c11b3c88383c73360f5_decoded.jpg,照片-火车涂写mark,照片-火车涂写mark,0.9,金属车厢内壁上的手写标记,,auto,match_and_high_confidence,2896,2.901,"{
+  ""category"": ""照片-火车涂写mark"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""金属车厢内壁上的手写标记""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/04cc2b5bee8f11d3130b06dc8b95e38f_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了装卸作业现场，包含车辆、集装箱及作业区域环境。,,auto,match_and_high_confidence,3052,3.056,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了装卸作业现场，包含车辆、集装箱及作业区域环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/0738386080eb50eb3b68e8be2a551269_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.9,图片显示了夜间装卸作业现场，包含卡车、物料堆和作业环境。,,auto,match_and_high_confidence,3064,3.067,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示了夜间装卸作业现场，包含卡车、物料堆和作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/086b23386c739221cb397205fea25472_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了集装箱卡车在作业现场的实景。,,auto,match_and_high_confidence,2988,2.992,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱卡车在作业现场的实景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/0bf763fbe2b1bfb7a9dffb9f10052a7a_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了卡车、装卸机械及堆场作业现场的实景。,,auto,match_and_high_confidence,3030,3.033,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了卡车、装卸机械及堆场作业现场的实景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/0fa61776d03acf25800ff899142a6cf0_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了集装箱、卡车、吊车以及装卸作业的现场场景。,,auto,match_and_high_confidence,3069,3.073,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了集装箱、卡车、吊车以及装卸作业的现场场景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/114c6f5f22b2c916d36be0896ea4ff5b_decoded.jpg,照片-装卸现场情况,照片-敞车内部情况和作业,0.95,图片展示了一辆翻斗车/敞车内部的空载或作业状态。,,review,label_mismatch,3071,3.076,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了一辆翻斗车/敞车内部的空载或作业状态。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/133c2ac398b1b80c3bc1d8e4aee8db7d_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了夜间铁路货运装卸现场，包含敞车车厢和正在作业的工程机械。,,auto,match_and_high_confidence,3130,3.133,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了夜间铁路货运装卸现场，包含敞车车厢和正在作业的工程机械。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/1450deaa44d066ab0e2b965f926c19fc_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了露天装卸作业现场，包含物料堆、大型机械设备及作业环境。,,auto,match_and_high_confidence,3101,3.105,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了露天装卸作业现场，包含物料堆、大型机械设备及作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/145b484fb39663971aa56ad8e214ad9d_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了堆积的物料、工程车辆及作业现场的整体环境。,,auto,match_and_high_confidence,3039,3.042,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了堆积的物料、工程车辆及作业现场的整体环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/19786bc79aacce3b9d6b162d999593d5_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装卸作业现场，包含一列敞车货运列车和一台正在作业的装载机械。,,auto,match_and_high_confidence,3159,3.161,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装卸作业现场，包含一列敞车货运列车和一台正在作业的装载机械。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/1abc71a6b732033dd0b0d79559d5358e_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了大型工程机械正在进行装卸作业的现场场景。,,auto,match_and_high_confidence,2989,2.993,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了大型工程机械正在进行装卸作业的现场场景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/1d6df90dc81de8b5d4847a70051c1386_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了卡车在装卸货物的作业现场场景。,,auto,match_and_high_confidence,2972,2.975,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了卡车在装卸货物的作业现场场景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/1d78618c376819bab52709e088c6a0be_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了集装箱卡车在装卸作业现场的情况。,,auto,match_and_high_confidence,2985,2.988,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱卡车在装卸作业现场的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/21430c23150b499bb0fbbc988c620dfc_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了夜间装卸作业现场，包含大型车辆、货运列车及作业场地。,,auto,match_and_high_confidence,3097,3.1,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了夜间装卸作业现场，包含大型车辆、货运列车及作业场地。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/25e1c316fe774c1330d7306ea67b20b7_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了装载煤炭的敞车列车、装卸机械以及作业现场的整体环境。,,auto,match_and_high_confidence,3113,3.117,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了装载煤炭的敞车列车、装卸机械以及作业现场的整体环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/278d5ef3a7a85425e06eb09f783968ad_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片显示装卸现场，一台装载机正在向敞车内装料。,,auto,match_and_high_confidence,3038,3.042,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示装卸现场，一台装载机正在向敞车内装料。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/2a191d5f93195b7fa73eddaa3d90307f_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装卸作业现场，包含装载机械和敞车货车。,,auto,match_and_high_confidence,3035,3.039,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装卸作业现场，包含装载机械和敞车货车。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/2e74b1d8961e7d8c7d763504c3ad8a58_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了堆积的物料、装卸机械及作业现场的整体环境。,,auto,match_and_high_confidence,3050,3.054,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了堆积的物料、装卸机械及作业现场的整体环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/313411d814e290d87f2fc4adbe645676_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了夜间装卸作业现场，包含大型卡车和装载设备。,,auto,match_and_high_confidence,3053,3.056,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了夜间装卸作业现场，包含大型卡车和装载设备。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/3372bb716b0fb57798759cdb6995122b_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了露天作业现场，包含大型卡车、物料堆和作业环境。,,auto,match_and_high_confidence,3069,3.073,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了露天作业现场，包含大型卡车、物料堆和作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/3608e6841346b1538a82bff8811ec293_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了卡车、装载机以及堆放的物料，属于典型的装卸作业现场场景。,,auto,match_and_high_confidence,3130,3.133,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了卡车、装载机以及堆放的物料，属于典型的装卸作业现场场景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/396b75adfae6cbe672bf1a0e7bc44129_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装载机正在向敞车内装载物料的作业现场。,,auto,match_and_high_confidence,3049,3.052,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装载机正在向敞车内装载物料的作业现场。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/3e5d3bff5a6addecfd775f0363ed1ae0_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装卸作业现场，包含大型工程机械、堆积的物料及覆盖物。,,auto,match_and_high_confidence,3103,3.106,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装卸作业现场，包含大型工程机械、堆积的物料及覆盖物。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/3fa004bfb829df5cfcced29701cd604b_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了大型机械在堆积物料的作业现场情况。,,auto,match_and_high_confidence,2990,2.993,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了大型机械在堆积物料的作业现场情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/423f01912a204d101edb19eb81631b4d_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装卸作业现场，包含装载机械、货运车辆及作业场地。,,auto,match_and_high_confidence,3069,3.072,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装卸作业现场，包含装载机械、货运车辆及作业场地。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/4607fd8af097aa555d6adf8747ebbc27_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了夜间大型工程车辆（如自卸车和装载机）在作业现场的情况。,,auto,match_and_high_confidence,3116,3.119,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了夜间大型工程车辆（如自卸车和装载机）在作业现场的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/46b45c90791c7fe87e07767d521a9874_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装卸作业现场，包含装载机械、敞车货车厢以及堆积的物料。,,auto,match_and_high_confidence,3149,3.153,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装卸作业现场，包含装载机械、敞车货车厢以及堆积的物料。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/4e13bbba4f06b427947e22d3c556ca01_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了装卸作业现场，包含挖掘机、堆积物及作业场地。,,auto,match_and_high_confidence,3051,3.054,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了装卸作业现场，包含挖掘机、堆积物及作业场地。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/547f90adc9703e7dfec988c918064a46_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了港口或堆场作业现场，包含大型龙门吊、集装箱及装卸车辆。,,auto,match_and_high_confidence,3146,3.149,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了港口或堆场作业现场，包含大型龙门吊、集装箱及装卸车辆。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/552432a40a010cc5d2f37febe4eac108_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装卸作业现场，包含大型物料堆和装载机械。,,auto,match_and_high_confidence,3037,3.04,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装卸作业现场，包含大型物料堆和装载机械。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/590321d7d19b08ec0fee2cbb8b9e61b5_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装卸机械正在对敞车进行作业的现场场景。,,auto,match_and_high_confidence,3002,3.006,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装卸机械正在对敞车进行作业的现场场景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/5efaa6ea353245508cd31532ea37e407_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了卡车、物料堆和作业现场的整体环境。,,auto,match_and_high_confidence,3004,3.008,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了卡车、物料堆和作业现场的整体环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/5fa35b7afcb65cedc1bc67f86f13d87b_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了夜间装卸作业现场，包含卡车、装载设备及作业环境。,,auto,match_and_high_confidence,3082,3.085,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了夜间装卸作业现场，包含卡车、装载设备及作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/6105edfbc6af2037cb451568ab33a545_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了集装箱装卸作业现场，包含叉车、集装箱及货物。,,auto,match_and_high_confidence,3086,3.089,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了集装箱装卸作业现场，包含叉车、集装箱及货物。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/6270cf6d9980768ceac7638820b6e451_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了起重机正在对火车敞车进行装卸作业的现场场景。,,auto,match_and_high_confidence,3049,3.053,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了起重机正在对火车敞车进行装卸作业的现场场景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/670bf057fd3265cb38a085122eac207e_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了夜间装卸作业现场，包含货车、集装箱、物料堆和作业环境。,,auto,match_and_high_confidence,3144,3.148,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了夜间装卸作业现场，包含货车、集装箱、物料堆和作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/7658d9f0438b6e69cf4af6f460d00946_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.9,图片显示的是夜间作业现场，包含大型工程车辆和作业环境。,,auto,match_and_high_confidence,2996,2.999,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是夜间作业现场，包含大型工程车辆和作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/849f5deb7c137a8a7e68cf261f6b77f1_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了装卸作业现场，包含大型机械设备、物料堆积及作业环境。,,auto,match_and_high_confidence,3088,3.092,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了装卸作业现场，包含大型机械设备、物料堆积及作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/8714515089fe2c24e8ba698ece88e1a7_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,1.0,图中展示了装卸作业现场，包含装载机械和货运列车。,,auto,match_and_high_confidence,3016,3.02,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 1.0,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装卸作业现场，包含装载机械和货运列车。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/89bb4d1a5f9023afcd137ad49a61039d_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中显示装载机正在向敞车车厢内装料的作业现场。,,auto,match_and_high_confidence,3031,3.035,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中显示装载机正在向敞车车厢内装料的作业现场。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/8b3259df6319d773af0933cacba1ace0_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了堆场或装卸作业现场，包含大型工程机械和开阔作业场地。,,auto,match_and_high_confidence,3082,3.085,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了堆场或装卸作业现场，包含大型工程机械和开阔作业场地。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/924c332c6626438cd4c5bef6479222ef_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了装卸作业现场，包含车辆、货运车厢及作业环境。,,auto,match_and_high_confidence,3051,3.054,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了装卸作业现场，包含车辆、货运车厢及作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/984619e64c6eb9ba618d64c0e7ae3fcb_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了大型工程机械、卡车及装卸作业现场的整体环境。,,auto,match_and_high_confidence,3035,3.039,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了大型工程机械、卡车及装卸作业现场的整体环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/9b43cfdc6d67e79d4cd2b12dbbd063c8_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了装卸作业现场，包含卡车、装载机以及堆放的物料。,,auto,match_and_high_confidence,3100,3.105,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了装卸作业现场，包含卡车、装载机以及堆放的物料。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/a229c528dbce6f8eeafa66d95ae25a33_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了卡车、堆积的物料以及作业现场的整体环境。,,auto,match_and_high_confidence,3038,3.042,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了卡车、堆积的物料以及作业现场的整体环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/a3af4fc2955848beef61988024dcaeb6_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装载机正在向火车敞车进行装料作业的现场场景。,,auto,match_and_high_confidence,3050,3.067,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装载机正在向火车敞车进行装料作业的现场场景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/a6213a56b050c8a48d927c069231b634_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了夜间装卸作业现场，包含货车、装卸设备及堆放的物料。,,auto,match_and_high_confidence,3131,3.135,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了夜间装卸作业现场，包含货车、装卸设备及堆放的物料。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/a689cb68ab1b6715e3960223ed06f727_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装卸作业现场，包含大型工程车辆和物料堆场。,,auto,match_and_high_confidence,3035,3.038,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装卸作业现场，包含大型工程车辆和物料堆场。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/aee7792191dcfec20188c4b7d8c5e6a2_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了装卸作业现场，包含货车、装载设备及作业环境。,,auto,match_and_high_confidence,3054,3.057,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了装卸作业现场，包含货车、装载设备及作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/b63fa2ff40ac23ba07554276a551d716_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装卸作业现场，包括货车、挖掘机、装载设备以及正在进行物料装卸的过程。,,auto,match_and_high_confidence,3169,3.171,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装卸作业现场，包括货车、挖掘机、装载设备以及正在进行物料装卸的过程。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/b7948f971a29b3dea42a1816ae70d983_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中显示了卡车、堆积的物料以及装卸作业现场的场景。,,auto,match_and_high_confidence,3058,3.061,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中显示了卡车、堆积的物料以及装卸作业现场的场景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/c7b4758d88d6d66ba585c5350c123c25_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了夜间装卸作业现场，包含挖掘机、货车及正在装载的敞车。,,auto,match_and_high_confidence,3135,3.137,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了夜间装卸作业现场，包含挖掘机、货车及正在装载的敞车。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/d41e8eae288d0d617e31c823acdbdec7_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了装卸作业现场，包含车辆、货车厢及作业环境。,,auto,match_and_high_confidence,3034,3.041,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了装卸作业现场，包含车辆、货车厢及作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/d43b7caf38ba3ead717f4c92e14ecf9c_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了集装箱、货车、铁路货车及堆放的轮胎，属于装卸作业现场的概览图。,,auto,match_and_high_confidence,3214,3.217,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱、货车、铁路货车及堆放的轮胎，属于装卸作业现场的概览图。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/d6e81c224df2c3b3605d0288ef6aeac9_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了装卸作业现场，包含装载机、集装箱卡车及作业环境。,,auto,match_and_high_confidence,3102,3.106,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了装卸作业现场，包含装载机、集装箱卡车及作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/d79673e885edba72d269d11f77476667_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了港口或堆场装卸作业现场，包含车辆、物料堆和作业环境。,,auto,match_and_high_confidence,3114,3.118,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了港口或堆场装卸作业现场，包含车辆、物料堆和作业环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/de84c69153d435a0623383ede78d25be_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了露天作业现场，包含长列敞车货车厢及施工机械。,,auto,match_and_high_confidence,3071,3.075,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了露天作业现场，包含长列敞车货车厢及施工机械。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/e083fb43b826e0baf4eb8a3c9bab6d64_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装卸作业现场，包含装载机械和一列敞车货运列车。,,auto,match_and_high_confidence,3102,3.106,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装卸作业现场，包含装载机械和一列敞车货运列车。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/e2e149456409f0318c5e0001e7075dac_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装卸作业现场，包含装载机械和正在作业的敞车列车。,,auto,match_and_high_confidence,3092,3.095,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装卸作业现场，包含装载机械和正在作业的敞车列车。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/e4643f037fb142f19d7c41430629ddcd_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了装卸作业现场，包含货车、装载机械及作业过程。,,auto,match_and_high_confidence,3057,3.061,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了装卸作业现场，包含货车、装载机械及作业过程。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/e534a42e7a75f37b3e5fabaa7bc27a8c_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了装卸作业现场，包含大型工程机械和堆放的物料。,,auto,match_and_high_confidence,3049,3.052,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了装卸作业现场，包含大型工程机械和堆放的物料。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/e5a2cd7f8d638eb14795e03667381dce_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了堆放的物料、大型车辆及作业现场的整体环境。,,auto,match_and_high_confidence,3044,3.048,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了堆放的物料、大型车辆及作业现场的整体环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/eea3d7dab9726c9cc6aec00ab9cfad46_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装卸机械正在对敞车进行作业的现场场景。,,auto,match_and_high_confidence,3004,3.007,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装卸机械正在对敞车进行作业的现场场景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/f60456908b68ec4f551bbb4f39339c84_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图中展示了装卸作业现场，包含长列敞车和正在作业的装载机械。,,auto,match_and_high_confidence,3082,3.086,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了装卸作业现场，包含长列敞车和正在作业的装载机械。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-装卸现场情况/f9b06f0847ef9ac75091783729fa77fd_decoded.jpg,照片-装卸现场情况,照片-装卸现场情况,0.95,图片展示了卡车、集装箱以及装卸作业现场的实景。,,auto,match_and_high_confidence,3035,3.038,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了卡车、集装箱以及装卸作业现场的实景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/08ee33d5f7a272b4dc27c91db64cbc5e_decoded.jpg,照片-货垛,照片-装卸现场情况,0.85,图片展示了堆放着覆盖塑料布的货物及开阔的装卸作业场地。,,review,label_mismatch,3065,3.069,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.85,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了堆放着覆盖塑料布的货物及开阔的装卸作业场地。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/1c12e0762db176933438ec04704d6a40_decoded.jpg,照片-货垛,照片-装卸现场情况,0.9,图片展示了大面积的散装物料堆积现场。,,review,label_mismatch,2949,2.953,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了大面积的散装物料堆积现场。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/344b47a7723806d6e3ec35a01d57fd11_decoded.jpg,照片-货垛,照片-装卸现场情况,0.95,图片展示了堆积的大量散装物料及作业现场环境。,,review,label_mismatch,3008,3.012,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了堆积的大量散装物料及作业现场环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/37893c48db89703da1d8226912e88ac7_decoded.jpg,照片-货垛,照片-敞车内部情况和作业,0.9,图片显示的是敞车车厢内堆放的散装货物情况。,,review,label_mismatch,3024,3.027,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是敞车车厢内堆放的散装货物情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/39cf21785135fb28559d5375a8cedddd_decoded.jpg,照片-货垛,照片-装卸现场情况,0.95,图中展示了露天堆场中卡车正在进行喷淋作业的现场情况。,,review,label_mismatch,3053,3.056,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中展示了露天堆场中卡车正在进行喷淋作业的现场情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/59c12b6e18f66caee090c73e6a5917c6_decoded.jpg,照片-货垛,照片-装卸现场情况,0.9,图片显示的是露天堆场或矿区装卸作业现场的物料堆积情况。,,review,label_mismatch,3074,3.078,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是露天堆场或矿区装卸作业现场的物料堆积情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/614ecef4f94d190f9c4c73d9785b03e4_decoded.jpg,照片-货垛,照片-装卸现场情况,0.95,图片展示了堆积的大量散装物料及作业现场环境。,,review,label_mismatch,3007,3.015,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了堆积的大量散装物料及作业现场环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/69bbce945eb02dec995f7ba375bc85ce_decoded.jpg,照片-货垛,照片-货垛,0.95,图中显示的是堆积如山的散装货物，属于货垛。,,auto,match_and_high_confidence,2961,2.964,"{
+  ""category"": ""照片-货垛"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图中显示的是堆积如山的散装货物，属于货垛。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/70cf702b24b4219b13c5edd506b39181_decoded.jpg,照片-货垛,照片-装卸现场情况,0.85,图片展示了堆放着大型覆盖物货物的装卸作业现场环境。,,review,label_mismatch,3020,3.023,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.85,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了堆放着大型覆盖物货物的装卸作业现场环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/7ec16f66f7282f865f9f373e980e74bd_decoded.jpg,照片-货垛,照片-装卸现场情况,0.85,图片显示的是堆积的大量散装物料，属于装卸作业现场的堆场情况。,,review,label_mismatch,3103,3.107,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.85,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是堆积的大量散装物料，属于装卸作业现场的堆场情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/88c6eae8054f80a6afa0d0b5c5f7abd2_decoded.jpg,照片-货垛,照片-装卸现场情况,0.8,图片显示的是装卸现场的地面与堆积物情况。,,review,label_mismatch,2957,2.961,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.8,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是装卸现场的地面与堆积物情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/8dfd1a2f442c603c83d718238bedbfa5_decoded.jpg,照片-货垛,照片-装卸现场情况,0.9,图片显示的是堆积的土石料或散装物料的现场情况。,,review,label_mismatch,3027,3.03,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是堆积的土石料或散装物料的现场情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/b5179b97e512664c35ac17d15f16ed0d_decoded.jpg,照片-货垛,照片-装卸现场情况,0.9,图片展示了堆积的物料、覆盖用的塑料布以及作业现场的整体环境。,,review,label_mismatch,3055,3.058,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了堆积的物料、覆盖用的塑料布以及作业现场的整体环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/c2b993fd04bf880fd8efc8995e148ab5_decoded.jpg,照片-货垛,照片-装卸现场情况,0.85,图片展示了露天堆场或矿场的大型物料堆积情况。,,review,label_mismatch,3037,3.04,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.85,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了露天堆场或矿场的大型物料堆积情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-货垛/d6058d5e0d67ac0ccdf039152ba6da02_decoded.jpg,照片-货垛,照片-装卸现场情况,0.9,图片展示了大面积的散装物料堆积及作业现场环境。,,review,label_mismatch,2996,3.0,"{
+  ""category"": ""照片-装卸现场情况"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了大面积的散装物料堆积及作业现场环境。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/00241398f374bcc61b4af84c856d2292_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部的空置状态及内部结构。,,auto,match_and_high_confidence,3033,3.037,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部的空置状态及内部结构。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/01f0cc6c02a6a206390f11693bbfe8e1_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是集装箱内部的空箱状态。,,auto,match_and_high_confidence,2993,2.996,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是集装箱内部的空箱状态。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/0a7fcfe06b8f3e58fab058d5460c32a9_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是一个空集装箱的内部视图。,,auto,match_and_high_confidence,2994,2.997,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一个空集装箱的内部视图。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/0b2ca43f8abe24a21d4f3ce34db7d3d6_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部的结构及覆盖的塑料薄膜情况。,,auto,match_and_high_confidence,3069,3.073,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部的结构及覆盖的塑料薄膜情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/0c17cac45a38eb7754fbf107894c76fa_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片显示的是一个集装箱内部的空置状态。,,auto,match_and_high_confidence,3006,3.011,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是一个集装箱内部的空置状态。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/115698bc9627f48c57b663fb2186d80d_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片显示集装箱内部装满了散装物料。,,auto,match_and_high_confidence,3004,3.007,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示集装箱内部装满了散装物料。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/23bd5226a2e9ef821ffe2b0703a1dcf0_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,1.0,图片展示的是一个空集装箱的内部视图。,,auto,match_and_high_confidence,2974,2.977,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 1.0,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一个空集装箱的内部视图。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/286f7b25888f22a58f8af8917a8483e9_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了一个空集装箱的内部视图。,,auto,match_and_high_confidence,2972,2.976,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了一个空集装箱的内部视图。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/29b72f44f516a3126b9f15803d56537a_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部装载物的情况。,,auto,match_and_high_confidence,2987,2.99,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部装载物的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/3021ad798b6480a44f01f48c5baabe34_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是集装箱或货车车厢内部的空置状态及内衬情况。,,auto,match_and_high_confidence,3133,3.136,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是集装箱或货车车厢内部的空置状态及内衬情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/30877603194a14df979778e509c09a22_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部的空箱状态及内壁情况。,,auto,match_and_high_confidence,3053,3.057,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部的空箱状态及内壁情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/31c5afc110af0365e4c0e1416bd39d4f_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是一个空集装箱的内部视图。,,auto,match_and_high_confidence,2993,2.997,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一个空集装箱的内部视图。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/3be14c32db99fb419f7867bae52d3e8f_decoded.jpg,照片-集装箱内情况和作业,照片-敞车内部情况和作业,0.9,图片显示的是类似敞车或货运车厢内部的结构和装载情况。,,review,label_mismatch,3064,3.068,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是类似敞车或货运车厢内部的结构和装载情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/3e994b44d7664427110cf0f2f879252b_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是集装箱内部被塑料布覆盖的情况。,,auto,match_and_high_confidence,3000,3.003,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是集装箱内部被塑料布覆盖的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/43cc84f432ec5bad0968c3fa6485453a_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,一名工人在集装箱内部进行清理或铺设塑料布的操作。,,auto,match_and_high_confidence,3055,3.058,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""一名工人在集装箱内部进行清理或铺设塑料布的操作。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/43d3a7e82ea800ee7754df762d322546_decoded.jpg,照片-集装箱内情况和作业,照片-敞车内部情况和作业,0.95,图片显示的是一个类似敞车或集装箱内部装满散装物料的情况。,,review,label_mismatch,3095,3.098,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是一个类似敞车或集装箱内部装满散装物料的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/45091857613adeb569197bde5883ba02_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,一名工人正在集装箱内部进行作业，处理蓝色塑料布。,,auto,match_and_high_confidence,3033,3.037,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""一名工人正在集装箱内部进行作业，处理蓝色塑料布。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/45ef4a17279b67a6f5feab142ce868b9_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,1.0,图片展示的是一个空集装箱的内部视图。,,auto,match_and_high_confidence,2974,2.977,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 1.0,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一个空集装箱的内部视图。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/4bcd9b86b5d27a03b3298cedd34c5063_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部被塑料布覆盖的情况。,,auto,match_and_high_confidence,3002,3.005,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部被塑料布覆盖的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/4df4230dc3d710b7c604489f06b40e02_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,一名工人正在集装箱内部进行作业。,,auto,match_and_high_confidence,2961,2.964,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""一名工人正在集装箱内部进行作业。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/511687ae8fcf941d0dadbc9004f9d045_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是集装箱内部的空箱状态及结构情况。,,auto,match_and_high_confidence,3038,3.041,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是集装箱内部的空箱状态及结构情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/53379ec2d227008204e0a0e517490035_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部被塑料薄膜覆盖的情况。,,auto,match_and_high_confidence,3021,3.024,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部被塑料薄膜覆盖的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/5587dfe720f037a4099dd9b68be82027_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了一个空集装箱的内部视图。,,auto,match_and_high_confidence,2974,2.977,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了一个空集装箱的内部视图。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/5bb99a1b25c89105854398b87e561a76_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部被蓝色塑料布覆盖的情况。,,auto,match_and_high_confidence,3021,3.024,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部被蓝色塑料布覆盖的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/5dffb25d132b944a41140e548a3250e8_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部被塑料布覆盖的情况。,,auto,match_and_high_confidence,3007,3.01,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部被塑料布覆盖的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/5e31728b82b1203b976ce2ec76b58ca8_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是一个空集装箱的内部视图，显示了箱体状况。,,auto,match_and_high_confidence,3085,3.088,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一个空集装箱的内部视图，显示了箱体状况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/5e6991144fe97f23d37c3ebab4a71d2d_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部被塑料薄膜覆盖的情况。,,auto,match_and_high_confidence,3018,3.022,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部被塑料薄膜覆盖的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/605fc08856d2952f024ceb51852e03cf_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是一个空集装箱的内部视图。,,auto,match_and_high_confidence,2992,2.995,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一个空集装箱的内部视图。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/6342db42eb596af3cf81db936a2476ce_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是集装箱内部的空箱状态及内衬塑料布情况。,,auto,match_and_high_confidence,3082,3.086,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是集装箱内部的空箱状态及内衬塑料布情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/6418282415628427ab41ead0a55e079a_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片显示的是一个集装箱或货车厢内部的空置状态。,,auto,match_and_high_confidence,3071,3.075,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是一个集装箱或货车厢内部的空置状态。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/6900bede8d7c577021906002282d7e34_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部被塑料薄膜覆盖的情况。,,auto,match_and_high_confidence,3022,3.025,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部被塑料薄膜覆盖的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/6b457dce40a955d9832298966501322a_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片显示的是集装箱或货车车厢内部的空舱情况。,,auto,match_and_high_confidence,3066,3.069,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是集装箱或货车车厢内部的空舱情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/72012335333b1f79571151e7bc54d37c_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片显示集装箱内部装满了散装物料。,,auto,match_and_high_confidence,3004,3.007,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示集装箱内部装满了散装物料。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/7bf6182e07ab4f06607460557f09efd5_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是一个空集装箱的内部结构和状况。,,auto,match_and_high_confidence,3018,3.022,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一个空集装箱的内部结构和状况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/906b177450eeb9642ddda0f179891d61_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是货车或集装箱内部的空舱情况。,,auto,match_and_high_confidence,3038,3.041,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是货车或集装箱内部的空舱情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/928d6694981a8b795327b3f9224177df_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了一个空集装箱的内部视图。,,auto,match_and_high_confidence,2967,2.97,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了一个空集装箱的内部视图。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/97c564e083f65e6736614c7f43020a25_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,一名工人在集装箱内部进行作业或检查。,,auto,match_and_high_confidence,2990,2.993,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""一名工人在集装箱内部进行作业或检查。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/9e1350834f23bae48cc78b577c454e41_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了一个空集装箱的内部结构和状况。,,auto,match_and_high_confidence,3005,3.008,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了一个空集装箱的内部结构和状况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/a2e421e9dc2ea569387118d449c48824_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部装载散装物料的情况。,,auto,match_and_high_confidence,3032,3.036,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部装载散装物料的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/a900ad3b996c359783cf482c984196e0_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部的空置状态及一名工作人员在其中的作业场景。,,auto,match_and_high_confidence,3099,3.102,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部的空置状态及一名工作人员在其中的作业场景。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/b2adbaa2f9aaa4acd6088e883587ddf1_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是集装箱内部的空箱状态。,,auto,match_and_high_confidence,2988,2.991,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是集装箱内部的空箱状态。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/b4522083be53d6d3fcdd818b4bd2409a_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是集装箱内部空箱状态。,,auto,match_and_high_confidence,2970,2.974,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是集装箱内部空箱状态。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/b4c6cae06bf69853b421f0d090e4ae46_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是一个空集装箱的内部结构和状况。,,auto,match_and_high_confidence,3021,3.024,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一个空集装箱的内部结构和状况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/c69a04fd7b819f229d5fdfcfbc665bea_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是集装箱内部的空箱状态及内部衬垫情况。,,auto,match_and_high_confidence,3068,3.072,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是集装箱内部的空箱状态及内部衬垫情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/cfc4bc2b09352563f8c311b767bb5901_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了一个集装箱内部的空置状态及内衬塑料布的情况。,,auto,match_and_high_confidence,3082,3.086,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了一个集装箱内部的空置状态及内衬塑料布的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/d17201b144090314fe58d0f460d0b795_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,一名工人正在集装箱内部进行作业或检查。,,auto,match_and_high_confidence,2990,2.993,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""一名工人正在集装箱内部进行作业或检查。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/d29a4923bdd3c96cc8866ec8ca3f2515_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,1.0,图片展示的是一个空集装箱的内部视图。,,auto,match_and_high_confidence,2975,2.979,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 1.0,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一个空集装箱的内部视图。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/d3883020839f9e1215b2b4489d79d071_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部的空置状态及内部衬垫情况。,,auto,match_and_high_confidence,3070,3.074,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部的空置状态及内部衬垫情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/d3ecbc10d8f33d152ec2345f2b0f00a6_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是集装箱内部空箱状态及铺设的塑料薄膜。,,auto,match_and_high_confidence,3084,3.088,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是集装箱内部空箱状态及铺设的塑料薄膜。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/d82d5c949d66f4d1a921547889a6f74e_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部装满散装物料的情况。,,auto,match_and_high_confidence,3032,3.034,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部装满散装物料的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/d965b624c4fcf8d40a6f65676906720b_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是一个空集装箱的内部视图。,,auto,match_and_high_confidence,2990,2.994,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一个空集装箱的内部视图。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/dc86a082b2c9f433a355fb670291b2e9_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是集装箱或货车车厢内部的空置状态及内部结构。,,auto,match_and_high_confidence,3119,3.127,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是集装箱或货车车厢内部的空置状态及内部结构。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/dcb4d8fd1d0103a257455d1d5b216e43_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片显示集装箱内部被蓝色塑料布覆盖的情况。,,auto,match_and_high_confidence,3003,3.007,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示集装箱内部被蓝色塑料布覆盖的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/df08b80d13c8500c335128d1ee213fff_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部装载散装物料的情况。,,auto,match_and_high_confidence,3037,3.041,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部装载散装物料的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/df177104a81fdb36358d7178416762f0_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是集装箱内部的空箱状态。,,auto,match_and_high_confidence,2988,2.992,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是集装箱内部的空箱状态。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/e00daedc4e5e22a7e1f58d951e3a0403_decoded.jpg,照片-集装箱内情况和作业,照片-敞车内部情况和作业,0.95,图片显示的是敞车车厢内部装载物的情况。,,review,label_mismatch,2993,2.996,"{
+  ""category"": ""照片-敞车内部情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片显示的是敞车车厢内部装载物的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/e2f10b3cb630489b8051bb70f547ec31_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是集装箱内部被塑料布覆盖的情况。,,auto,match_and_high_confidence,3006,3.009,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是集装箱内部被塑料布覆盖的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/e50847e4d765a010f2db7855779f7105_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是一个空集装箱的内部视图。,,auto,match_and_high_confidence,2988,2.991,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一个空集装箱的内部视图。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/f338a6bbb2ed8a1cc6dfd46fa4c1b50c_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部被塑料布覆盖的情况。,,auto,match_and_high_confidence,3005,3.008,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部被塑料布覆盖的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/f79ed96e2f107c0c475955951257cae2_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部装载散装物料的情况。,,auto,match_and_high_confidence,3037,3.04,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部装载散装物料的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/f922e953c762dd8296dc8c3817bf3a89_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示了集装箱内部的空置状态及铺设的塑料布。,,auto,match_and_high_confidence,3082,3.086,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示了集装箱内部的空置状态及铺设的塑料布。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/fa955128a10c7cb28ffb804721ec69e7_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是集装箱内部被塑料布覆盖的情况。,,auto,match_and_high_confidence,3005,3.008,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是集装箱内部被塑料布覆盖的情况。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/照片-集装箱内情况和作业/fcccb797688aada4c6872aa40c2629eb_decoded.jpg,照片-集装箱内情况和作业,照片-集装箱内情况和作业,0.95,图片展示的是一个空集装箱的内部视图。,,auto,match_and_high_confidence,2987,2.99,"{
+  ""category"": ""照片-集装箱内情况和作业"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""图片展示的是一个空集装箱的内部视图。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/耗材统计表/3aa8b1835df9f0877ec2abc183be69b7_decoded.jpg,耗材统计表,耗材统计表,0.95,表格列出了各种物品的品名、尺寸和剩余数量，属于典型的物料或耗材统计。,品名 尺寸 余量,auto,match_and_high_confidence,3108,3.111,"{
+  ""category"": ""耗材统计表"",
+  ""confidence"": 0.95,
+  ""detected_title"": ""品名 尺寸 余量"",
+  ""evidence"": ""表格列出了各种物品的品名、尺寸和剩余数量，属于典型的物料或耗材统计。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/耗材统计表/51ddf5261a128490a15f8febd6c7f690_decoded.jpg,耗材统计表,耗材统计表,1.0,表格列出了各种物品的品名、尺寸和余量，属于典型的物资或耗材库存统计表。,,auto,match_and_high_confidence,2995,2.998,"{
+  ""category"": ""耗材统计表"",
+  ""confidence"": 1.0,
+  ""detected_title"": """",
+  ""evidence"": ""表格列出了各种物品的品名、尺寸和余量，属于典型的物资或耗材库存统计表。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/耗材统计表/52d256d5f04f2fb8670ca45e409d4c30_decoded.jpg,耗材统计表,耗材统计表,1.0,表格列出了各种物品名称、尺寸及剩余数量，属于典型的物料或耗材库存统计表。,,auto,match_and_high_confidence,2985,2.988,"{
+  ""category"": ""耗材统计表"",
+  ""confidence"": 1.0,
+  ""detected_title"": """",
+  ""evidence"": ""表格列出了各种物品名称、尺寸及剩余数量，属于典型的物料或耗材库存统计表。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/耗材统计表/690f53e6361f5fd03304f2d000597d07_decoded.jpg,耗材统计表,耗材统计表,0.95,表格列出了各种物品名称、尺寸及剩余数量，属于典型的物资或耗材统计。,,auto,match_and_high_confidence,2953,2.956,"{
+  ""category"": ""耗材统计表"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""表格列出了各种物品名称、尺寸及剩余数量，属于典型的物资或耗材统计。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/耗材统计表/7b59e10cc79be65ef958d31c14b0ccc5_decoded.jpg,耗材统计表,耗材统计表,0.95,表格列出了各种物品名称、尺寸及剩余数量，属于典型的物资或耗材库存统计。,,auto,match_and_high_confidence,2966,2.969,"{
+  ""category"": ""耗材统计表"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""表格列出了各种物品名称、尺寸及剩余数量，属于典型的物资或耗材库存统计。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/耗材统计表/7d2185aa93d0f6f95b1a10bbf02658ef_decoded.jpg,耗材统计表,耗材统计表,0.95,表格列出了各种物品名称、尺寸及剩余数量，属于典型的物资或耗材统计。,,auto,match_and_high_confidence,2952,2.955,"{
+  ""category"": ""耗材统计表"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""表格列出了各种物品名称、尺寸及剩余数量，属于典型的物资或耗材统计。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/耗材统计表/f347b0c77db3d6287f898a4dbe609724_decoded.jpg,耗材统计表,耗材统计表,0.95,表格列出了各种物品名称、尺寸及剩余数量，属于典型的物资或耗材统计。,,auto,match_and_high_confidence,2947,2.95,"{
+  ""category"": ""耗材统计表"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""表格列出了各种物品名称、尺寸及剩余数量，属于典型的物资或耗材统计。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/耗材统计表/f3e06053cc73f2474d118d02bc7c6c4f_decoded.jpg,耗材统计表,耗材统计表,0.95,表格列出了各种物品名称、尺寸及对应的数量，属于典型的物资或耗材统计表。,,auto,match_and_high_confidence,2966,2.969,"{
+  ""category"": ""耗材统计表"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""表格列出了各种物品名称、尺寸及对应的数量，属于典型的物资或耗材统计表。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/请车表/71c046e4ba5be23fb81ea3fcfe717162_decoded.jpg,请车表,请车表,0.95,表格包含车号、品名、需求量、托运人及收货人等物流调度信息。,,auto,match_and_high_confidence,3055,3.057,"{
+  ""category"": ""请车表"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含车号、品名、需求量、托运人及收货人等物流调度信息。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/请车表/7693cce1180bd7cb5098e4cdcb42e3d6_decoded.jpg,请车表,其他/不确定,0.9,表格内容为运输调度或车辆调度记录，不属于提供的特定类别。,,review,label_mismatch,2973,2.976,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格内容为运输调度或车辆调度记录，不属于提供的特定类别。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/请车表/85af2ad12f5e41a7301880ae67247488_decoded.jpg,请车表,其他/不确定,0.8,表格内容涉及运输调度、车号、目的地及托运人信息，但标题不完整且不属于预设的特定业务单据类别。,,review,label_mismatch,3260,3.264,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.8,
+  ""detected_title"": """",
+  ""evidence"": ""表格内容涉及运输调度、车号、目的地及托运人信息，但标题不完整且不属于预设的特定业务单据类别。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/请车表/8d37ee7cfa05d3b4557549f50c46b8a5_decoded.jpg,请车表,请车表,0.9,表格包含日期、目的地、品名、车号、承运人等信息，符合车辆调度或请车记录特征。,请车、作业车号及时日表,auto,match_and_high_confidence,3275,3.277,"{
+  ""category"": ""请车表"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""请车、作业车号及时日表"",
+  ""evidence"": ""表格包含日期、目的地、品名、车号、承运人等信息，符合车辆调度或请车记录特征。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/请车表/8d37ee7cfa05d3b4557549f50c46b8a5_h_decoded.jpg,请车表,其他/不确定,0.8,表格内容涉及日期、品名、车号、托运人等物流信息，但标题模糊且不属于标准化的单一业务单据类别。,需求、车号数日况表,review,label_mismatch,3356,3.36,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.8,
+  ""detected_title"": ""需求、车号数日况表"",
+  ""evidence"": ""表格内容涉及日期、品名、车号、托运人等物流信息，但标题模糊且不属于标准化的单一业务单据类别。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/请车表/9734b8a05815f3ab6d94817dc2bdf500_decoded.jpg,请车表,其他/不确定,0.8,表格内容涉及车辆、品名、托运人、受理号等物流运输信息，但标题模糊且不属于标准化的单一业务单据。,及送款、受理车号日及表,review,label_mismatch,3317,3.32,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.8,
+  ""detected_title"": ""及送款、受理车号日及表"",
+  ""evidence"": ""表格内容涉及车辆、品名、托运人、受理号等物流运输信息，但标题模糊且不属于标准化的单一业务单据。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/请车表/e80d31d92a0155b29ad95152e6c3ce71_decoded.jpg,请车表,其他/不确定,0.9,该图片为电子表格截图，内容涉及物流运输记录（如车站、品名、需求、托运人、收货人等），但不属于所给特定类别的标准名称。,,review,label_mismatch,3332,3.335,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""该图片为电子表格截图，内容涉及物流运输记录（如车站、品名、需求、托运人、收货人等），但不属于所给特定类别的标准名称。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/请车表/e87d540b53ee0d297b249923a156e70c_decoded.jpg,请车表,请车表,0.95,表格包含日期、站点、品名、车辆、托运人等信息，格式符合物流调度中的请车/派车记录。,,auto,match_and_high_confidence,3153,3.156,"{
+  ""category"": ""请车表"",
+  ""confidence"": 0.95,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含日期、站点、品名、车辆、托运人等信息，格式符合物流调度中的请车/派车记录。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/请车表/e9b789a62fbb8a02741b7ceeb1df54b5_decoded.jpg,请车表,请车表,0.9,表格包含日期、目的地、品名、车号、承运人等信息，符合车辆调度或请车记录特征。,请车、作业车号及时日表,auto,match_and_high_confidence,3264,3.267,"{
+  ""category"": ""请车表"",
+  ""confidence"": 0.9,
+  ""detected_title"": ""请车、作业车号及时日表"",
+  ""evidence"": ""表格包含日期、目的地、品名、车号、承运人等信息，符合车辆调度或请车记录特征。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/请车表/e9b789a62fbb8a02741b7ceeb1df54b5_h_decoded.jpg,请车表,其他/不确定,0.8,表格内容涉及日期、品名、车号、托运人等物流信息，但标题模糊且不属于标准化的单一业务单据类别。,需求、车号数日况表,review,label_mismatch,3362,3.365,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.8,
+  ""detected_title"": ""需求、车号数日况表"",
+  ""evidence"": ""表格内容涉及日期、品名、车号、托运人等物流信息，但标题模糊且不属于标准化的单一业务单据类别。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/请车表/f314bbfed20baea1726ac989259a8e9c_decoded.jpg,请车表,其他/不确定,0.8,表格内容为车辆调度与收货人信息，并非所列特定业务单据，且标题不完整。,及需求、受理车号日报表,review,label_mismatch,3162,3.164,"{
+  ""category"": ""其他/不确定"",
+  ""confidence"": 0.8,
+  ""detected_title"": ""及需求、受理车号日报表"",
+  ""evidence"": ""表格内容为车辆调度与收货人信息，并非所列特定业务单据，且标题不完整。""
+}"
+/Users/qicai21/Desktop/业务群图片_分析结果/请车表/fa752172555237cfdc16afc7c0b9dc49_decoded.jpg,请车表,请车表,0.9,表格包含日期、目的地、品名、车辆需求、承运人、受理、去向、备注等物流调度信息。,,auto,match_and_high_confidence,3117,3.12,"{
+  ""category"": ""请车表"",
+  ""confidence"": 0.9,
+  ""detected_title"": """",
+  ""evidence"": ""表格包含日期、目的地、品名、车辆需求、承运人、受理、去向、备注等物流调度信息。""
+}"

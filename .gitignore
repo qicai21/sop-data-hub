@@ -1,0 +1,28 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+*.log
+*.egg-info/
+dist/
+build/
+.venv/
+*.db
+
+# 运行时数据
+data/
+
+# 大型样本图片（开发端使用，不入库）
+业务群图片/
+
+# 旧目录（迁移完成后保留在磁盘但不入库）
+wechat_ops_agent/
+业务Agent核心技能转移清单/
+business-data-agent/
+
+# IDE
+.idea/
+.vscode/
+
+# 预览缓存
+_previews/

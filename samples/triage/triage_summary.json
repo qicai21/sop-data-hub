@@ -1,0 +1,99 @@
+{
+  "root": "/Users/qicai21/Desktop/业务群图片_分析结果",
+  "output_root": "/Users/qicai21/Desktop/业务群图片_分析结果/_triage_fixed",
+  "auto_threshold": 0.82,
+  "counts": {
+    "total": 356,
+    "auto": 266,
+    "review": 90,
+    "skipped": 0
+  },
+  "per_folder": {
+    "出港计划通知单": {
+      "auto": 15,
+      "review": 0,
+      "total": 15
+    },
+    "手写箱号车号表": {
+      "auto": 1,
+      "review": 40,
+      "total": 41
+    },
+    "手写记录": {
+      "auto": 14,
+      "review": 7,
+      "total": 21
+    },
+    "日现场工作记录表": {
+      "auto": 8,
+      "review": 12,
+      "total": 20
+    },
+    "检装车通知单": {
+      "auto": 38,
+      "review": 2,
+      "total": 40
+    },
+    "照片-敞车内部情况和作业": {
+      "auto": 40,
+      "review": 1,
+      "total": 41
+    },
+    "照片-杂物垃圾-塑料布": {
+      "auto": 2,
+      "review": 0,
+      "total": 2
+    },
+    "照片-检查工人": {
+      "auto": 0,
+      "review": 3,
+      "total": 3
+    },
+    "照片-火车涂写mark": {
+      "auto": 10,
+      "review": 0,
+      "total": 10
+    },
+    "照片-装卸现场情况": {
+      "auto": 64,
+      "review": 1,
+      "total": 65
+    },
+    "照片-货垛": {
+      "auto": 1,
+      "review": 14,
+      "total": 15
+    },
+    "照片-集装箱内情况和作业": {
+      "auto": 60,
+      "review": 3,
+      "total": 63
+    },
+    "耗材统计表": {
+      "auto": 8,
+      "review": 0,
+      "total": 8
+    },
+    "请车表": {
+      "auto": 5,
+      "review": 7,
+      "total": 12
+    }
+  },
+  "labels": [
+    "出港计划通知单",
+    "手写箱号车号表",
+    "手写记录",
+    "日现场工作记录表",
+    "检装车通知单",
+    "照片-敞车内部情况和作业",
+    "照片-杂物垃圾-塑料布",
+    "照片-检查工人",
+    "照片-火车涂写mark",
+    "照片-装卸现场情况",
+    "照片-货垛",
+    "照片-集装箱内情况和作业",
+    "耗材统计表",
+    "请车表"
+  ]
+}

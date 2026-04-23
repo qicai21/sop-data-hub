@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ops-data-hub"
+version = "1.0.0"
+description = "运营数据枢纽 — 图像识别、数据处理与Agent自动化"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.28",
+    "Pillow>=9.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+yaml = ["pyyaml>=6.0"]
+
+[project.scripts]
+ops-hub = "ops_hub.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,43 @@
+{
+  "input": {
+    "group_name": "铁晟业务工作群",
+    "wxid": "18919596289@chatroom",
+    "msg_time": 1710000000
+  },
+  "expect": {
+    "relative_image_path": "铁晟业务工作群/检装车通知单/24-03/inspectiondoc.png",
+    "artifact_relative_path": "铁晟业务工作群/检装车通知单/240310-1-data.json",
+    "final_category": "检装车通知单",
+    "route_action": "inspection_slip_extract",
+    "payload_expectations": [
+      {
+        "path": "extracted.is_inspection",
+        "equals": true
+      },
+      {
+        "path": "extracted.meta.daoxian",
+        "equals": "煤四"
+      },
+      {
+        "path": "extracted.meta.jieshu",
+        "equals": 53
+      },
+      {
+        "path": "extracted.meta.date",
+        "equals": "2026年3月24日"
+      },
+      {
+        "path": "extracted.rows_count",
+        "equals": 53
+      },
+      {
+        "path": "extracted.car_nos[0]",
+        "equals": "4891584"
+      },
+      {
+        "path": "extracted.car_nos[1]",
+        "equals": "1615610"
+      }
+    ]
+  }
+}

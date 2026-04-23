@@ -1,0 +1,38 @@
+# ops-data-hub 运行时配置
+# 环境变量 OPS_HUB_* 会覆盖此文件中的同名配置
+
+# ── 路径 ──────────────────────────────────────────────
+
+# 微信图片来源目录（wx-ops-agent 落盘的原图目录）
+# 服务器上通常是: /path/to/wx-ops-agent/data/images/铁晟业务工作群
+wechat_images_dir: ""
+
+# 分类处理后的图片保存目录
+classified_output_dir: data/classified
+
+# 结构化识别结果保存目录
+extraction_output_dir: data/extractions
+
+# 95306 铁路发运数据库路径
+# 服务器上通常是: /path/to/95306-agent/data/freight.db
+db_95306_path: ""
+
+# 放货批次数据库路径
+agent_db_path: data/agent.db
+
+# ── VLM 服务 ─────────────────────────────────────────
+
+# Gemma-4 / Qwen3-VL 推理服务地址
+vlm_service_url: http://127.0.0.1:8018/generate
+
+# ── 自动识别策略 ─────────────────────────────────────
+
+# 分类命中这些类别后，自动触发深度识别引擎
+auto_extract_categories:
+  - 出港计划通知单
+  - 检装车通知单
+
+# ── 批处理 ───────────────────────────────────────────
+
+# 每处理 N 张图片输出一次进度日志
+batch_log_interval: 10

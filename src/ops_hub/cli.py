@@ -1,6 +1,8 @@
 """ops-data-hub 命令行工具
 
 用法:
+    python -m ops_hub process <image>           处理单张图片 (微信新图钩子)
+    python -m ops_hub batch <dir>               批量处理目录下所有图片
     python -m ops_hub classify <image>          分类单张图片
     python -m ops_hub inspect <image>           识别检装车通知单
     python -m ops_hub departure <image>         识别出港计划通知单
@@ -16,6 +18,45 @@ import argparse
 import json
 import sys
 from pathlib import Path
+
+
+from pathlib import Path
+
+
+def cmd_process(args: argparse.Namespace) -> None:
+    from ops_hub.config import load_settings
+    from ops_hub.runner import process_new_image
+
+    settings = load_settings(args.config)
+    if args.service_url:
+        settings.vlm_service_url = args.service_url
+
+    print(f"🔄 开始处理图片: {args.image}")
+    result = process_new_image(args.image, settings, force_extract=args.force_extract)
+    
+    if not result.success:
+        print(f"❌ 处理失败: {result.error}")
+        sys.exit(1)
+        
+    print(f"✅ 分类: {result.category} (置信度: {result.confidence:.2f})")
+    print(f"   归档至: {result.saved_path}")
+    if result.was_extracted:
+        print(f"   已深度识别，结果保存至: {result.extraction_saved_path}")
+    elif result.category in settings.auto_extract_categories:
+        print("   ⚠️ 触发深度识别但未成功提取数据。")
+    else:
+        print("   📌 该类别无需深度识别。")
+
+
+def cmd_batch(args: argparse.Namespace) -> None:
+    from ops_hub.config import load_settings
+    from ops_hub.runner import batch_process
+
+    settings = load_settings(args.config)
+    if args.service_url:
+        settings.vlm_service_url = args.service_url
+
+    batch_process(args.dir, settings, force_extract=args.force_extract)
 
 
 def cmd_classify(args: argparse.Namespace) -> None:
@@ -125,8 +166,21 @@ def main() -> None:
         prog="ops-hub",
         description="运营数据枢纽 — 图像识别、数据处理与Agent自动化",
     )
+    parser.add_argument("-c", "--config", help="配置文件路径 (默认加载 config/settings.yaml)")
     parser.add_argument("--service-url", help="VLM 服务地址 (默认 http://127.0.0.1:8018/generate)")
     subparsers = parser.add_subparsers(dest="command", help="可用命令")
+
+    # process
+    p_proc = subparsers.add_parser("process", help="处理单张图片 (分类+归档+按需识别)")
+    p_proc.add_argument("image", help="图片路径")
+    p_proc.add_argument("--force-extract", action="store_true", help="强制触发深度识别")
+    p_proc.set_defaults(func=cmd_process)
+
+    # batch
+    p_batch = subparsers.add_parser("batch", help="批量处理目录下的所有图片")
+    p_batch.add_argument("dir", help="图片源目录")
+    p_batch.add_argument("--force-extract", action="store_true", help="强制对所有图片触发深度识别")
+    p_batch.set_defaults(func=cmd_batch)
 
     # classify
     p_cls = subparsers.add_parser("classify", help="分类单张图片")

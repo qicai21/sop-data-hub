@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from hashlib import sha1
 import json
 from pathlib import Path
@@ -9,6 +10,8 @@ from typing import Any, Dict, List, Optional
 
 from ops_hub.data_agent.db import open_db
 from ops_hub.data_agent.json_utils import read_json, to_searchable_text, write_json
+
+WORKSPACE_DOCS_DIR = Path.home() / ".openclaw" / "workspace" / "ops-data-hub" / "Docs"
 
 
 @dataclass
@@ -622,8 +625,14 @@ def normalize_partial_date(
 
 
 def parse_destination_station(text: str) -> Optional[str]:
-    match = re.search(r"到站[:：]\s*([^，。；]+)", str(text))
-    return match.group(1).strip() if match else None
+    text = str(text)
+    match = re.search(r"到站[:：]\s*([^，。；\n]+)", text)
+    if match:
+        return canonicalize_station_text(match.group(1).strip())
+    match = re.search(r"[（(]\s*(?:铁路|公路)?\s*([^\s）)]+)", text)
+    if match:
+        return canonicalize_station_text(match.group(1).strip())
+    return None
 
 
 def parse_yard_location(text: str) -> Optional[str]:
@@ -649,6 +658,87 @@ def hash_text(value: str) -> str:
     return sha1(value.encode("utf-8")).hexdigest()
 
 
+def _split_aliases(text: str) -> list[str]:
+    if not text:
+        return []
+    text = text.strip()
+    if not text:
+        return []
+    text = text.replace("（", "(").replace("）", ")")
+    if "(" in text and text.endswith(")"):
+        base, inside = text[:-1].split("(", 1)
+        aliases = [base.strip()]
+        aliases.extend(part.strip() for part in re.split(r"[，,、/；;\s]+", inside) if part.strip())
+        return [alias for alias in aliases if alias]
+    return [text]
+
+
+@lru_cache(maxsize=1)
+def load_station_alias_map() -> Dict[str, str]:
+    mapping: Dict[str, str] = {}
+    path = WORKSPACE_DOCS_DIR / "收发货单位和车站匹配关系.md"
+    if not path.exists():
+        return mapping
+    for line in path.read_text(encoding="utf-8").splitlines():
+        raw = line.strip()
+        if not raw.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in raw.strip("|").split("|")]
+        if len(cells) < 2:
+            continue
+        left, right = cells[0], cells[1]
+        if "单位简称" in left or ":---" in left:
+            continue
+        standard_station = right.split("(", 1)[0].strip()
+        if not standard_station:
+            continue
+        for alias in _split_aliases(left):
+            mapping[alias] = standard_station
+        for alias in _split_aliases(right):
+            mapping[alias] = standard_station
+        mapping[standard_station] = standard_station
+    return mapping
+
+
+def canonicalize_station_text(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    raw = str(text).strip()
+    if not raw:
+        return None
+    alias_map = load_station_alias_map()
+    if raw in alias_map:
+        return alias_map[raw]
+    for alias, standard in sorted(alias_map.items(), key=lambda item: len(item[0]), reverse=True):
+        if alias and alias in raw:
+            return standard
+    return raw
+
+
+def normalize_sequence_label(value: Optional[str], raw_line: Optional[str] = None) -> Optional[str]:
+    text = f"{value or ''} {raw_line or ''}"
+    if not text.strip():
+        return None
+    if str(value).startswith("lot"):
+        return str(value)
+    sequence_patterns = [
+        (r"第?一次(?:下达)?(?:计划)?", "lot01"),
+        (r"第?二次(?:下达)?(?:计划)?", "lot02"),
+        (r"第?三次(?:下达)?(?:计划)?", "lot03"),
+        (r"第?四次(?:下达)?(?:计划)?", "lot04"),
+        (r"第?五次(?:下达)?(?:计划)?", "lot05"),
+        (r"第?六次(?:下达)?(?:计划)?", "lot06"),
+        (r"第?七次(?:下达)?(?:计划)?", "lot07"),
+        (r"第?八次(?:下达)?(?:计划)?", "lot08"),
+        (r"第?九次(?:下达)?(?:计划)?", "lot09"),
+        (r"第?十次(?:下达)?(?:计划)?", "lot10"),
+    ]
+    for pattern, code in sequence_patterns:
+        if re.search(pattern, text):
+            return code
+    return value or None
+
+
 def extract_single_record(payload: Any) -> Dict[str, Any]:
     if isinstance(payload, list):
         for item in payload:
@@ -665,27 +755,30 @@ def parse_remarks(
 ) -> List[Dict[str, Any]]:
     parsed = []
     for remark in remarks:
-        plan = remark.get("plan", "")
-        quantity_match = re.search(r"(\d+(?:\.\d+)?)吨", plan)
-        remaining_match = re.search(r"剩余(\d+(?:\.\d+)?)吨", plan)
-        destination_match = re.search(r"[（(]\s*(?:铁路|公路)?\s*([^\s）)]+)?", plan)
+        raw_line = str(remark.get("raw_line") or remark.get("plan") or "")
+        quantity_match = re.search(r"(\d+(?:\.\d+)?)吨", raw_line)
+        remaining_match = re.search(r"剩余(\d+(?:\.\d+)?)吨", raw_line)
+        destination_match = re.search(r"[（(]\s*(?:铁路|公路)?\s*([^\s）)]+)?", raw_line)
 
-        if "铁路" in plan:
+        if "铁路" in raw_line:
             transport_mode = "铁路"
-        elif "公路" in plan:
+        elif "公路" in raw_line:
             transport_mode = "公路"
         else:
-            transport_mode = None
+            transport_mode = remark.get("transport_mode") or None
+
+        destination = remark.get("destination") or (destination_match.group(1) if destination_match else None)
+        destination = canonicalize_station_text(destination)
 
         parsed.append(
             {
                 "date": normalize_partial_date(remark.get("date"), notice_date),
-                "sequence": remark.get("sequence"),
+                "sequence": normalize_sequence_label(remark.get("sequence"), raw_line),
                 "quantity": float(quantity_match.group(1)) if quantity_match else None,
                 "transport_mode": transport_mode,
-                "destination": destination_match.group(1) if destination_match else None,
+                "destination": destination,
                 "remaining_qty": float(remaining_match.group(1)) if remaining_match else None,
-                "raw_line": remark.get("raw_line"),
+                "raw_line": raw_line,
             }
         )
     return parsed
@@ -715,8 +808,14 @@ def normalize_partial_date(
 
 
 def parse_destination_station(text: str) -> Optional[str]:
-    match = re.search(r"到站[:：]\s*([^，。；]+)", str(text))
-    return match.group(1).strip() if match else None
+    text = str(text)
+    match = re.search(r"到站[:：]\s*([^，。；\n]+)", text)
+    if match:
+        return canonicalize_station_text(match.group(1).strip())
+    match = re.search(r"[（(]\s*(?:铁路|公路)?\s*([^\s）)]+)", text)
+    if match:
+        return canonicalize_station_text(match.group(1).strip())
+    return None
 
 
 def parse_yard_location(text: str) -> Optional[str]:

@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from ops_hub.data_agent.db import open_db
 from ops_hub.data_agent.json_utils import read_json, to_searchable_text, write_json
 
-WORKSPACE_DOCS_DIR = Path.home() / ".openclaw" / "workspace" / "ops-data-hub" / "Docs"
+WORKSPACE_DOCS_DIR = Path(__file__).resolve().parents[3] / "doc"
 
 
 @dataclass
@@ -314,7 +314,13 @@ class BusinessDataAgent:
                   tail_cargo_remark = excluded.tail_cargo_remark,
                   source_file_name = excluded.source_file_name,
                   source_json = excluded.source_json,
+                  source_json = excluded.source_json,
                   searchable_text = excluded.searchable_text,
+                  tail_cargo_remark = CASE 
+                      WHEN release_batches.batch_quantity != excluded.batch_quantity OR release_batches.batch_date != excluded.batch_date 
+                      THEN ifnull(release_batches.tail_cargo_remark, '') || ' | 识别异常/更新: 原日期' || ifnull(release_batches.batch_date, '空') || ' 原重量' || ifnull(release_batches.batch_quantity, '空')
+                      ELSE release_batches.tail_cargo_remark 
+                  END,
                   updated_at = CURRENT_TIMESTAMP
                 """,
                 normalized,
@@ -462,13 +468,13 @@ class BusinessDataAgent:
         rows = []
 
         for remark in remarks:
-            batch_key = "|".join(
-                [
-                    base_key,
-                    str(remark.get("date") or ""),
-                    str(remark.get("sequence") or ""),
-                ]
-            )
+            seq = str(remark.get("sequence") or "")
+            dt = str(remark.get("date") or "")
+            
+            # 使用 sequence 作为 batch_key 核心；如果没有 sequence，退化为使用 date
+            unique_identifier = seq if seq else dt
+            batch_key = "|".join([base_key, unique_identifier])
+
             
             # Generate ID Label: 汐子铁矿粉/沈阳盛京颐昇代/鞍子河
             agent_label = f"{agent_name}代" if agent_name else "未知代理代"
@@ -558,104 +564,6 @@ def hydrate_row(row) -> ReleaseBatchRecord:
         updated_at=row["updated_at"],
     )
 
-
-def extract_single_record(payload: Any) -> Dict[str, Any]:
-    if isinstance(payload, list):
-        for item in payload:
-            if item.get("is_target"):
-                return item
-        if payload:
-            return payload[0]
-        raise ValueError("No valid record found in payload.")
-    return payload
-
-
-def parse_remarks(
-    remarks: List[Dict[str, Any]], notice_date: Optional[str]
-) -> List[Dict[str, Any]]:
-    parsed = []
-    for remark in remarks:
-        plan = remark.get("plan", "")
-        quantity_match = re.search(r"(\d+(?:\.\d+)?)吨", plan)
-        remaining_match = re.search(r"剩余(\d+(?:\.\d+)?)吨", plan)
-        destination_match = re.search(r"[（(]\s*(?:铁路|公路)?\s*([^\s）)]+)?", plan)
-
-        if "铁路" in plan:
-            transport_mode = "铁路"
-        elif "公路" in plan:
-            transport_mode = "公路"
-        else:
-            transport_mode = None
-
-        parsed.append(
-            {
-                "date": normalize_partial_date(remark.get("date"), notice_date),
-                "sequence": remark.get("sequence"),
-                "quantity": float(quantity_match.group(1)) if quantity_match else None,
-                "transport_mode": transport_mode,
-                "destination": destination_match.group(1) if destination_match else None,
-                "remaining_qty": float(remaining_match.group(1)) if remaining_match else None,
-                "raw_line": remark.get("raw_line"),
-            }
-        )
-    return parsed
-
-
-def normalize_chinese_date(value: Optional[str]) -> Optional[str]:
-    if not value:
-        return None
-    match = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", str(value))
-    if not match:
-        return str(value)
-    year, month, day = match.groups()
-    return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-
-
-def normalize_partial_date(
-    value: Optional[str], fallback_date: Optional[str]
-) -> Optional[str]:
-    if not value:
-        return fallback_date
-    match = re.search(r"(\d{1,2})月(\d{1,2})日", str(value))
-    if not match:
-        return value
-    year = fallback_date[:4] if fallback_date else "1970"
-    month, day = match.groups()
-    return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-
-
-def parse_destination_station(text: str) -> Optional[str]:
-    text = str(text)
-    match = re.search(r"到站[:：]\s*([^，。；\n]+)", text)
-    if match:
-        return canonicalize_station_text(match.group(1).strip())
-    match = re.search(r"[（(]\s*(?:铁路|公路)?\s*([^\s）)]+)", text)
-    if match:
-        return canonicalize_station_text(match.group(1).strip())
-    return None
-
-
-def parse_yard_location(text: str) -> Optional[str]:
-    match = re.search(r"货物在([^，。；]+)场地", str(text))
-    return f"{match.group(1).strip()}场地" if match else None
-
-
-def parse_customs_release_qty(text: str) -> Optional[float]:
-    match = re.search(r"海关放行单[:：]\s*(\d+(?:\.\d+)?)吨", str(text))
-    return float(match.group(1)) if match else None
-
-
-def parse_number(value: Any) -> Optional[float]:
-    if value in (None, ""):
-        return None
-    numeric = re.sub(r"[^\d.]", "", str(value))
-    if not numeric:
-        return None
-    return float(numeric)
-
-
-def hash_text(value: str) -> str:
-    return sha1(value.encode("utf-8")).hexdigest()
 
 
 def _split_aliases(text: str) -> list[str]:

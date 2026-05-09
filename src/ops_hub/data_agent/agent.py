@@ -675,7 +675,9 @@ def parse_remarks(
         else:
             transport_mode = remark.get("transport_mode") or None
 
-        destination = remark.get("destination") or (destination_match.group(1) if destination_match else None)
+        destination = remark.get("destination") or parse_destination_station(raw_line)
+        if not destination and destination_match:
+            destination = destination_match.group(1)
         destination = canonicalize_station_text(destination)
 
         parsed.append(

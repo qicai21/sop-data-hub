@@ -59,11 +59,39 @@ def test_chaoyang_baseline_has_no_text_release_chain():
     inspection_route = next(r for r in cy_task.routing if r.target_node == "process_inspection_slip")
 
     assert release_route.trigger_condition == "category_in:[出港计划通知单]"
-    assert inspection_route.report_targets["dev"]["name"] == "待确认"
+    assert inspection_route.report_targets["dev"]["type"] == "contact"
+    assert inspection_route.report_targets["dev"]["name"] == "郭东北"
+    assert inspection_route.report_targets["production"]["type"] == "group"
     assert inspection_route.report_targets["production"]["group_id"] == "[待确认]"
-    assert inspection_route.report_targets["production"]["group_name"] == "朝阳项目专属发运群（待确认）"
-    assert inspection_route.report_targets["dev"]["name"] != "郭东北"
+    assert inspection_route.report_targets["production"]["group_name"] == "朝钢铁矿发运群"
     assert inspection_route.report_targets["production"]["group_id"] != "[GROUP003]"
+
+
+def test_chaogang_report_group_is_not_a_listening_source():
+    """测试 3.1: 朝钢铁矿发运群只作生产报送对象，不进入监听任务"""
+    tasks = load_all_tracking_tasks(FIXTURES_DIR)
+
+    cy_tasks = [t for t in tasks if t.project_id == "chaoyang_steel_baseline"]
+    assert cy_tasks, "朝阳 SOP fixture 必须可加载"
+
+    assert all(t.group_name != "朝钢铁矿发运群" for t in cy_tasks)
+    assert all(t.group_id != "[待确认]" for t in cy_tasks)
+    assert all(t.group_lookup_id != "[待确认]" for t in cy_tasks)
+
+
+def test_chaoyang_text_with_business_keywords_has_no_sop_route():
+    """测试 3.2: 文字里出现船名/计划号/合同号也不能绕过 SOP 配置入库"""
+    tasks = load_all_tracking_tasks(FIXTURES_DIR)
+    cy_task = _find_task(tasks, project_id="chaoyang_steel_baseline", group_id="GROUP001")
+
+    sample_text = "船名：测试轮\n计划号：CY-001\n合同号：HT-001"
+    assert "船名" in sample_text and "计划号" in sample_text and "合同号" in sample_text
+
+    matched_text_routes = [
+        r for r in cy_task.routing
+        if r.message_type == "text" and r.target_node == "create_release_batch"
+    ]
+    assert matched_text_routes == []
 
 
 def test_new_group_integration_via_config():

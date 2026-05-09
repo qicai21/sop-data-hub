@@ -51,6 +51,20 @@ class TestParseRemarks:
         parsed = parse_remarks(remarks, "2026-04-20")
         assert parsed[0]["remaining_qty"] == 50.0
 
+    def test_destination_from_to_station_phrase(self):
+        remarks = [
+            {
+                "date": "4月20日",
+                "sequence": "",
+                "plan": "货主通知：汽运返库计划有14500吨改为铁路返库，火运敞车出港，到站：朝阳西",
+                "raw_line": "",
+            }
+        ]
+        parsed = parse_remarks(remarks, "2026-04-12")
+        assert parsed[0]["transport_mode"] == "铁路"
+        assert parsed[0]["destination"] == "朝阳西"
+        assert parsed[0]["quantity"] == 14500.0
+
 
 class TestBusinessDataAgent:
     def test_ingest_and_list(self, tmp_db):

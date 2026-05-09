@@ -91,12 +91,13 @@ def build_monitored_groups(tasks: list[Any]) -> list[dict[str, Any]]:
     """
     group_map = {}
     for t in tasks:
+        pull_image_target = getattr(t, "group_lookup_id", None) or f"[{t.group_id}]"
         if t.group_id not in group_map:
             group_map[t.group_id] = {
                 "id": t.group_id,
                 "name": t.group_name,
                 "wxid": t.wxid,
-                "pull_image_target": f"[{t.group_id}]",
+                "pull_image_target": pull_image_target,
                 "auto_pull_image": t.pull_image,
                 "listen_options": {
                     "image": t.listen_options.get("image", False),

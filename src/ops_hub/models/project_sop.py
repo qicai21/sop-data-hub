@@ -11,6 +11,7 @@ class RoutingRule:
     target_node: str
     save_db: bool = False
     send_report_to: Optional[str] = None
+    report_targets: Optional[Dict[str, Any]] = None
 
 @dataclass
 class ListeningTask:
@@ -19,6 +20,7 @@ class ListeningTask:
     wxid: str
     listen_options: Dict[str, bool]
     pull_image: bool
+    group_lookup_id: Optional[str] = None
     routing: List[RoutingRule] = field(default_factory=list)
 
 @dataclass
@@ -36,6 +38,7 @@ class TrackingTask:
     wxid: str
     listen_options: Dict[str, bool]
     pull_image: bool
+    group_lookup_id: Optional[str]
     routing: List[RoutingRule]
 
 def load_project_sop(file_path: str | Path) -> ProjectSOP:
@@ -51,7 +54,8 @@ def load_project_sop(file_path: str | Path) -> ProjectSOP:
                 trigger_condition=r_data.get("trigger_condition", "always"),
                 target_node=r_data.get("target_node", ""),
                 save_db=r_data.get("save_db", False),
-                send_report_to=r_data.get("send_report_to", None)
+                send_report_to=r_data.get("send_report_to", None),
+                report_targets=r_data.get("report_targets", None)
             ))
         tasks.append(ListeningTask(
             group_id=t_data.get("group_id", ""),
@@ -59,6 +63,7 @@ def load_project_sop(file_path: str | Path) -> ProjectSOP:
             wxid=t_data.get("wxid", ""),
             listen_options=t_data.get("listen_options", {}),
             pull_image=t_data.get("pull_image", False),
+            group_lookup_id=t_data.get("group_lookup_id", None),
             routing=routing
         ))
 
@@ -82,6 +87,7 @@ def build_tracking_tasks_from_sops(sops: List[ProjectSOP]) -> List[TrackingTask]
                 wxid=lt.wxid,
                 listen_options=lt.listen_options,
                 pull_image=lt.pull_image,
+                group_lookup_id=lt.group_lookup_id,
                 routing=lt.routing
             ))
     return tasks
@@ -90,6 +96,6 @@ def load_all_tracking_tasks(sops_dir: str | Path) -> List[TrackingTask]:
     sops_path = Path(sops_dir)
     sops = []
     if sops_path.exists() and sops_path.is_dir():
-        for file in sops_path.glob("*.yaml"):
+        for file in sorted(sops_path.glob("*.yaml")):
             sops.append(load_project_sop(file))
     return build_tracking_tasks_from_sops(sops)

@@ -32,6 +32,14 @@ class TestExtractJsonFragment:
         with pytest.raises(ValueError):
             _extract_json_fragment("This is just plain text with no JSON.")
 
+    def test_salvages_truncated_object_with_core_fields(self):
+        text = '{"category":"检装车通知单","confidence":0.95,"detected_title":"锦州港杂码公司火运货物疏港检、装车通知单","evidence":"标题明确包含检装车通知单；表格包含道线、节数、车皮号等字段'
+        result = _extract_json_fragment(text)
+        assert result["category"] == "检装车通知单"
+        assert result["confidence"] == 0.95
+        assert result["detected_title"] == "锦州港杂码公司火运货物疏港检、装车通知单"
+        assert "标题明确" in result["evidence"]
+
 
 class TestClassifierCategoryRouting:
     def test_unknown_category_falls_back_to_other(self):

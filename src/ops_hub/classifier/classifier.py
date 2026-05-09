@@ -53,6 +53,16 @@ def _extract_json_fragment(text: str) -> Any:
             return obj
         except json.JSONDecodeError:
             continue
+    salvaged: dict[str, Any] = {}
+    for key in ("category", "detected_title", "evidence"):
+        match = re.search(rf'"{key}"\s*:\s*"([^"}}]*)', text, flags=re.S)
+        if match:
+            salvaged[key] = match.group(1).strip()
+    confidence_match = re.search(r'"confidence"\s*:\s*([0-9]+(?:\.[0-9]+)?)', text)
+    if confidence_match:
+        salvaged["confidence"] = float(confidence_match.group(1))
+    if "category" in salvaged:
+        return salvaged
     raise ValueError(f"Could not parse JSON from model output: {text[:500]}")
 
 

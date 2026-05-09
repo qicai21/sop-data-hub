@@ -2,7 +2,8 @@ from pathlib import Path
 
 from ops_hub.models.project_sop import TrackingTask, load_all_tracking_tasks
 
-FIXTURES_DIR = Path("/Users/qicai21/projects/repos/business-system-docs/test-plan/fixtures/project_sops")
+WORKSPACE_ROOT = Path(__file__).resolve().parents[2].parent
+FIXTURES_DIR = WORKSPACE_ROOT / "business-system-docs" / "test-plan" / "fixtures" / "project_sops"
 
 
 def _find_task(tasks, *, project_id: str, group_id: str) -> TrackingTask:

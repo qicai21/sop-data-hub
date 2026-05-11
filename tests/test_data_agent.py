@@ -37,6 +37,9 @@ class TestParseDestinationStation:
     def test_no_match(self):
         assert parse_destination_station("没有到站信息") is None
 
+    def test_live_ocr_confusion_zhongtang_station(self):
+        assert parse_destination_station("10000吨（铁路 沱子）") == "汐子"
+
 
 class TestParseRemarks:
     def test_basic_remark(self):
@@ -50,6 +53,12 @@ class TestParseRemarks:
         remarks = [{"date": "", "sequence": "", "plan": "200吨，剩余50吨", "raw_line": ""}]
         parsed = parse_remarks(remarks, "2026-04-20")
         assert parsed[0]["remaining_qty"] == 50.0
+
+    def test_live_ocr_confusion_in_remark_destination(self):
+        remarks = [{"date": "5月10日", "sequence": "第一次下达计划", "plan": "10000吨（铁路 沱子）", "raw_line": ""}]
+        parsed = parse_remarks(remarks, "2026-05-10")
+        assert parsed[0]["destination"] == "汐子"
+        assert parsed[0]["sequence"] == "lot01"
 
     def test_destination_from_to_station_phrase(self):
         remarks = [

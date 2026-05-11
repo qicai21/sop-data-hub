@@ -14,6 +14,13 @@ from ops_hub.data_agent.json_utils import read_json, to_searchable_text, write_j
 
 WORKSPACE_DOCS_DIR = Path(__file__).resolve().parents[3] / "doc"
 
+# Common OCR confusions discovered in live release-batch documents.  These are
+# station names, not project hard-coding: the final value still passes through
+# the normal station canonicalization path below.
+STATION_OCR_CORRECTIONS = {
+    "沱子": "汐子",
+}
+
 
 @dataclass
 class ContractRecord:
@@ -698,7 +705,8 @@ def load_station_alias_map() -> Dict[str, str]:
         left, right = cells[0], cells[1]
         if "单位简称" in left or ":---" in left:
             continue
-        standard_station = right.split("(", 1)[0].strip()
+        right_for_standard = right.replace("（", "(").replace("）", ")")
+        standard_station = right_for_standard.split("(", 1)[0].strip()
         if not standard_station:
             continue
         for alias in _split_aliases(left):
@@ -715,6 +723,7 @@ def canonicalize_station_text(text: Optional[str]) -> Optional[str]:
     raw = str(text).strip()
     if not raw:
         return None
+    raw = STATION_OCR_CORRECTIONS.get(raw, raw)
     alias_map = load_station_alias_map()
     if raw in alias_map:
         return alias_map[raw]

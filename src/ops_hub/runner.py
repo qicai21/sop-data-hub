@@ -14,6 +14,80 @@ from typing import Any
 from ops_hub.config import Settings
 
 
+def _sanitize_component(value: str) -> str:
+    cleaned = "".join(ch for ch in str(value) if ch.isalnum() or ch in " _-()（）").strip()
+    return cleaned or "unknown"
+
+
+def _normalize_month_compact(value: str) -> str:
+    text = str(value or "").strip().replace("/", "-")
+    if not text:
+        return ""
+    if len(text) >= 7 and text[4] == "-":
+        return text[:7].replace("-", "")
+    if len(text) >= 6 and text[:6].isdigit():
+        return text[:6]
+    return _sanitize_component(text)
+
+
+def _artifact_base_dir(root: str | Path, *, month_str: str = "", group_name: str = "") -> Path:
+    base = Path(root)
+    month = _normalize_month_compact(month_str)
+    group = _sanitize_component(group_name) if group_name else ""
+    if month and group:
+        return base / month / group
+    if group:
+        return base / group
+    if month:
+        return base / month
+    return base
+
+
+def _write_status_file(
+    settings: Settings,
+    img: Path,
+    result: "ProcessingResult",
+    *,
+    month_str: str = "",
+    group_name: str = "",
+) -> None:
+    """Write a deterministic per-image state file so _raw is only an inbox, not the source of truth."""
+    status_base = _artifact_base_dir(
+        settings.classified_output_dir,
+        month_str=month_str,
+        group_name=group_name,
+    )
+    status_dir = status_base / "_status"
+    status_dir.mkdir(parents=True, exist_ok=True)
+    state = "failed" if result.error else ("extracted" if result.extraction_saved_path else "classified")
+    payload = {
+        "source_image_path": str(img),
+        "source_file_name": img.name,
+        "state": state,
+        "category": result.category,
+        "confidence": result.confidence,
+        "classified_image_path": result.saved_path,
+        "extraction_json_path": result.extraction_saved_path,
+        "error": result.error,
+        "elapsed_classify": result.elapsed_classify,
+        "elapsed_extract": result.elapsed_extract,
+    }
+    if isinstance(result.extracted, dict):
+        # Surface DB/business landing signals without duplicating the full OCR payload.
+        for key in ("_agent_ingested", "_agent_ingest_error", "_agent_updated_ids", "_agent_update_error"):
+            if key in result.extracted:
+                payload[key] = result.extracted[key]
+        for key in ("rows_count", "last_car_no"):
+            if key in result.extracted:
+                payload[key] = result.extracted[key]
+        footer = result.extracted.get("footer")
+        if isinstance(footer, dict):
+            payload["footer"] = footer
+    status_path = status_dir / f"{img.stem}.json"
+    status_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    result.status_path = str(status_path)
+
+
 @dataclass
 class ProcessingResult:
     """单张图片的处理结果"""
@@ -23,6 +97,7 @@ class ProcessingResult:
     saved_path: str = ""
     extracted: dict[str, Any] = field(default_factory=dict)
     extraction_saved_path: str = ""
+    status_path: str = ""
     error: str = ""
     elapsed_classify: float = 0.0
     elapsed_extract: float = 0.0
@@ -41,6 +116,8 @@ def process_new_image(
     settings: Settings,
     *,
     force_extract: bool = False,
+    month_str: str = "",
+    group_name: str = "",
 ) -> ProcessingResult:
     """处理单张新图片：分类 → 归档 → 按需识别
 
@@ -79,11 +156,19 @@ def process_new_image(
     except Exception as e:
         result.error = f"分类失败: {e}"
         result.category = "error"
+        try:
+            _write_status_file(settings, img, result, month_str=month_str, group_name=group_name)
+        except Exception:
+            pass
         return result
 
     # ── Step 2: 归档图片到分类目录 ──────────────────
     try:
-        output_dir = Path(settings.classified_output_dir) / result.category
+        output_dir = _artifact_base_dir(
+            settings.classified_output_dir,
+            month_str=month_str,
+            group_name=group_name,
+        ) / result.category
         output_dir.mkdir(parents=True, exist_ok=True)
         dest = output_dir / img.name
         if not dest.exists():
@@ -91,6 +176,10 @@ def process_new_image(
         result.saved_path = str(dest)
     except Exception as e:
         result.error = f"归档失败: {e}"
+        try:
+            _write_status_file(settings, img, result, month_str=month_str, group_name=group_name)
+        except Exception:
+            pass
         return result
 
     # ── Step 3: 按需触发深度识别 ────────────────────
@@ -104,7 +193,14 @@ def process_new_image(
 
             # 保存识别结果
             if extracted:
-                ext_dir = Path(settings.extraction_output_dir) / result.category
+                if month_str or group_name:
+                    ext_dir = _artifact_base_dir(
+                        settings.classified_output_dir,
+                        month_str=month_str,
+                        group_name=group_name,
+                    ) / "extractions" / result.category
+                else:
+                    ext_dir = Path(settings.extraction_output_dir) / result.category
                 ext_dir.mkdir(parents=True, exist_ok=True)
                 json_name = f"{img.stem}_result.json"
                 json_path = ext_dir / json_name
@@ -115,6 +211,11 @@ def process_new_image(
                 result.extraction_saved_path = str(json_path)
         except Exception as e:
             result.error = f"识别失败: {e}"
+
+    try:
+        _write_status_file(settings, img, result, month_str=month_str, group_name=group_name)
+    except Exception:
+        pass
 
     return result
 

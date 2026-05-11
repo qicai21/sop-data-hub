@@ -125,6 +125,31 @@ class TestBusinessDataAgent:
         records = agent.list_release_batches()
         assert len(records) == 1  # upsert, not duplicate
 
+    def test_ingest_business_text_maps_sop_fields(self, tmp_db):
+        agent = BusinessDataAgent()
+        text = """供方: 福建漳龙集团有限公司（天津茂远）
+船名：丰收散运 
+货名：纽曼粉
+港口：锦州港
+数量：10000
+计划号：90260500008
+合同号：ZLZT-2026050801"""
+
+        records = agent.ingest_business_text(text)
+
+        assert len(records) == 1
+        record = records[0]
+        assert record.consignor == "福建漳龙集团有限公司（天津茂远）"
+        assert record.ship_name == "丰收散运"
+        assert record.cargo_name == "纽曼粉"
+        assert record.origin_station == "锦州港"
+        assert record.batch_quantity == 10000.0
+        assert record.contract_no == "ZLZT-2026050801"
+        assert record.plan_id == "90260500008"
+        assert record.source_json["business_info"]["进口船名"] == "丰收散运"
+        assert record.source_json["cargo_info"]["货物名称"] == "纽曼粉"
+        assert record.source_json["header_info"]["入场计划号"] == "90260500008"
+
 
 class TestHashText:
     def test_deterministic(self):

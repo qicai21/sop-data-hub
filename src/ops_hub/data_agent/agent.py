@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from functools import lru_cache
 from hashlib import sha1
 import json
@@ -80,6 +81,11 @@ class ReleaseBatchRecord:
     source_file_name: Optional[str]
     source_json: Dict[str, Any]
     updated_at: str
+    project: Optional[str] = None
+    commissioner_identifier: Optional[str] = None
+    commissioner_note: Optional[str] = None
+    plan_id: Optional[str] = None
+    order_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -117,6 +123,11 @@ class ReleaseBatchRecord:
             "sourceFileName": self.source_file_name,
             "sourceJson": self.source_json,
             "updatedAt": self.updated_at,
+            "project": self.project,
+            "commissionerIdentifier": self.commissioner_identifier,
+            "commissionerNote": self.commissioner_note,
+            "planId": self.plan_id,
+            "orderId": self.order_id,
         }
 
 
@@ -212,12 +223,15 @@ class BusinessDataAgent:
                 INSERT INTO release_batches (
                   id,
                   batch_key,
+                  project,
                   contract_id,
                   contract_no,
                   ship_name,
                   cargo_name,
                   consignor,
                   consignee,
+                  commissioner_identifier,
+                  commissioner_note,
                   trade_type,
                   transport_mode,
                   destination_station,
@@ -244,16 +258,21 @@ class BusinessDataAgent:
                   source_file_name,
                   source_json,
                   searchable_text,
+                  plan_id,
+                  order_id,
                   updated_at
                 ) VALUES (
                   :id,
                   :batch_key,
+                  :project,
                   :contract_id,
                   :contract_no,
                   :ship_name,
                   :cargo_name,
                   :consignor,
                   :consignee,
+                  :commissioner_identifier,
+                  :commissioner_note,
                   :trade_type,
                   :transport_mode,
                   :destination_station,
@@ -280,15 +299,20 @@ class BusinessDataAgent:
                   :source_file_name,
                   :source_json,
                   :searchable_text,
+                  :plan_id,
+                  :order_id,
                   CURRENT_TIMESTAMP
                 )
                 ON CONFLICT(batch_key) DO UPDATE SET
                   contract_id = excluded.contract_id,
+                  project = excluded.project,
                   contract_no = excluded.contract_no,
                   ship_name = excluded.ship_name,
                   cargo_name = excluded.cargo_name,
                   consignor = excluded.consignor,
                   consignee = excluded.consignee,
+                  commissioner_identifier = excluded.commissioner_identifier,
+                  commissioner_note = excluded.commissioner_note,
                   trade_type = excluded.trade_type,
                   transport_mode = excluded.transport_mode,
                   destination_station = excluded.destination_station,
@@ -316,6 +340,8 @@ class BusinessDataAgent:
                   source_json = excluded.source_json,
                   source_json = excluded.source_json,
                   searchable_text = excluded.searchable_text,
+                  plan_id = excluded.plan_id,
+                  order_id = excluded.order_id,
                   tail_cargo_remark = CASE 
                       WHEN release_batches.batch_quantity != excluded.batch_quantity OR release_batches.batch_date != excluded.batch_date 
                       THEN ifnull(release_batches.tail_cargo_remark, '') || ' | 识别异常/更新: 原日期' || ifnull(release_batches.batch_date, '空') || ' 原重量' || ifnull(release_batches.batch_quantity, '空')
@@ -331,6 +357,63 @@ class BusinessDataAgent:
             for normalized in normalized_rows
             if self.get_by_batch_key(normalized["batch_key"]) is not None
         ]
+
+    def ingest_business_text(self, text: str) -> List[ReleaseBatchRecord]:
+        """Parse a ProjectSOP-authorized text release instruction and create/update release_batches.
+
+        Required text format:
+        供方: ...
+        船名：...
+        货名：...
+        港口：...
+        数量：...
+        计划号：...
+        合同号：...
+        """
+        fields = parse_business_text_fields(text)
+        required = ["供方", "船名", "货名", "港口", "数量", "计划号", "合同号"]
+        if any(not fields.get(key) for key in required):
+            return []
+
+        today = date.today().isoformat()
+        quantity = parse_number(fields.get("数量"))
+        quantity_text = f"{quantity:g}吨" if quantity is not None else str(fields.get("数量") or "")
+        payload = {
+            "is_target": True,
+            "title": "文字放货指令",
+            "header_info": {
+                "通知日期": today,
+                "合同号": fields["合同号"],
+                "入场计划号": fields["计划号"],
+            },
+            "business_info": {
+                "发货单位": fields["供方"],
+                "进口船名": fields["船名"],
+                "船名": fields["船名"],
+                "到达港": fields["港口"],
+            },
+            "cargo_info": {
+                "货物名称": fields["货名"],
+                "总重里": fields["数量"],
+                "发货站(地)": fields["港口"],
+            },
+            "special_matter": f"港口：{fields['港口']}",
+            "remarks": [
+                {
+                    "date": today,
+                    "sequence": fields["计划号"],
+                    "plan": f"文字放货指令 {quantity_text}",
+                    "raw_line": f"文字放货指令 {quantity_text}",
+                    "quantity": quantity,
+                }
+            ],
+            "source_text": text,
+        }
+        return self.ingest_release_batch(
+            payload=payload,
+            source_file_name="wechat_text_release_instruction",
+            contract_no=fields["合同号"],
+        )
 
     def ingest_release_batch_file(
         self,
@@ -435,7 +518,15 @@ class BusinessDataAgent:
         business_info = normalized_payload.get("business_info", {})
         cargo_info = normalized_payload.get("cargo_info", {})
 
-        ship_name = business_info.get("船名", "")
+        header_info = normalized_payload.get("header_info", {})
+        project = normalized_payload.get("project") or normalized_payload.get("项目")
+        commissioner_identifier = normalized_payload.get("commissioner_identifier") or normalized_payload.get("委托人标识")
+        commissioner_note = normalized_payload.get("commissioner_note") or normalized_payload.get("委托备注")
+        contract_no = contract_no or header_info.get("合同号")
+        plan_id = header_info.get("入场计划号") or header_info.get("计划号")
+        order_id = header_info.get("订单标识号") or header_info.get("订单号")
+
+        ship_name = business_info.get("进口船名") or business_info.get("船名", "")
         cargo_name = cargo_info.get("货物名称", "")
         consignor = business_info.get("发货单位", "")
         consignee = business_info.get("收货单位", "")
@@ -455,7 +546,7 @@ class BusinessDataAgent:
             if contract:
                 contract_id = contract.id
 
-        origin_station = contract.origin_station if contract else None
+        origin_station = contract.origin_station if contract else (cargo_info.get("发货站(地)") or business_info.get("到达港") or None)
         customer_name = contract.party_b if contract else consignee
         # For agent, we might need a better way, but for now let's use a heuristic or party_a
         agent_name = contract.party_a if contract else None 
@@ -484,12 +575,15 @@ class BusinessDataAgent:
                 {
                     "id": hash_text(batch_key),
                     "batch_key": batch_key,
+                    "project": project,
                     "contract_id": contract_id,
                     "contract_no": contract_no,
                     "ship_name": ship_name,
                     "cargo_name": cargo_name,
                     "consignor": consignor,
                     "consignee": consignee,
+                    "commissioner_identifier": commissioner_identifier,
+                    "commissioner_note": commissioner_note,
                     "trade_type": normalized_payload.get("header_info", {}).get("内、外贸"),
                     "transport_mode": remark.get("transport_mode")
                     or cargo_info.get("运输方式"),
@@ -518,6 +612,8 @@ class BusinessDataAgent:
                     "source_file_name": source_file_name,
                     "source_json": write_json(normalized_payload, pretty=False),
                     "searchable_text": to_searchable_text(normalized_payload),
+                    "plan_id": plan_id,
+                    "order_id": order_id,
                 }
             )
 
@@ -562,6 +658,11 @@ def hydrate_row(row) -> ReleaseBatchRecord:
         source_file_name=row["source_file_name"],
         source_json=json.loads(row["source_json"]),
         updated_at=row["updated_at"],
+        project=row["project"] if "project" in keys else None,
+        commissioner_identifier=row["commissioner_identifier"] if "commissioner_identifier" in keys else None,
+        commissioner_note=row["commissioner_note"] if "commissioner_note" in keys else None,
+        plan_id=row["plan_id"] if "plan_id" in keys else None,
+        order_id=row["order_id"] if "order_id" in keys else None,
     )
 
 
@@ -656,6 +757,36 @@ def extract_single_record(payload: Any) -> Dict[str, Any]:
             return payload[0]
         raise ValueError("No valid record found in payload.")
     return payload
+
+
+def parse_business_text_fields(text: str) -> Dict[str, str]:
+    """Parse the fixed WeChat text release format into SOP field labels."""
+    fields: Dict[str, str] = {}
+    label_aliases = {
+        "供方": "供方",
+        "供应方": "供方",
+        "船名": "船名",
+        "货名": "货名",
+        "货物名称": "货名",
+        "港口": "港口",
+        "数量": "数量",
+        "货量": "数量",
+        "计划号": "计划号",
+        "入场计划号": "计划号",
+        "合同号": "合同号",
+    }
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = re.match(r"^([^:：]{1,12})\s*[:：]\s*(.+?)\s*$", line)
+        if not match:
+            continue
+        raw_key, value = match.groups()
+        key = label_aliases.get(raw_key.strip())
+        if key and value.strip():
+            fields[key] = value.strip()
+    return fields
 
 
 def parse_remarks(

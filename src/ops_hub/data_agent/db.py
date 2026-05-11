@@ -44,12 +44,15 @@ def open_db() -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS release_batches (
           id TEXT PRIMARY KEY,
           batch_key TEXT NOT NULL UNIQUE,
+          project TEXT,
           contract_id TEXT,
           contract_no TEXT,
           ship_name TEXT NOT NULL,
           cargo_name TEXT NOT NULL,
           consignor TEXT,
           consignee TEXT,
+          commissioner_identifier TEXT,
+          commissioner_note TEXT,
           trade_type TEXT,
           transport_mode TEXT,
           destination_station TEXT,
@@ -70,6 +73,8 @@ def open_db() -> sqlite3.Connection:
           source_file_name TEXT,
           source_json TEXT NOT NULL,
           searchable_text TEXT NOT NULL,
+          plan_id TEXT,
+          order_id TEXT,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -115,6 +120,9 @@ def migrate_release_batches_schema(connection: sqlite3.Connection) -> None:
     # Add new business fields if they don't exist
     new_fields = {
         "origin_station": "TEXT",
+        "project": "TEXT",
+        "commissioner_identifier": "TEXT",
+        "commissioner_note": "TEXT",
         "agent_name": "TEXT",
         "customer_name": "TEXT",
         "id_label": "TEXT",
@@ -124,7 +132,9 @@ def migrate_release_batches_schema(connection: sqlite3.Connection) -> None:
         "return_weight": "REAL",
         "tail_cargo_weight": "REAL",
         "tail_cargo_status": "TEXT",
-        "tail_cargo_remark": "TEXT"
+        "tail_cargo_remark": "TEXT",
+        "plan_id": "TEXT",
+        "order_id": "TEXT",
     }
     
     for field, type_def in new_fields.items():

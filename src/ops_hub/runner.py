@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import time
 from dataclasses import dataclass, field
@@ -86,8 +87,75 @@ def _write_status_file(
         if isinstance(footer, dict):
             payload["footer"] = footer
     status_path = status_dir / f"{img.stem}.json"
+    db_summary = _db_landing_summary(result)
+    payload.update(db_summary)
     status_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     result.status_path = str(status_path)
+
+
+def _db_landing_summary(result: "ProcessingResult") -> dict[str, Any]:
+    extracted = result.extracted if isinstance(result.extracted, dict) else {}
+    if extracted.get("_agent_ingested"):
+        return {
+            "db_action": "release_batch_upsert",
+            "db_tables": ["release_batches"],
+            "db_record_ids": extracted.get("_agent_updated_ids") or [],
+            "status": "ingested",
+            "reason": "departure_plan_ingested",
+        }
+    if extracted.get("_agent_candidate_ids"):
+        return {
+            "db_action": "candidate_pending",
+            "db_tables": ["inspection_ingestion_candidates"],
+            "db_record_ids": extracted.get("_agent_candidate_ids") or [],
+            "status": "pending",
+            "reason": extracted.get("_agent_pending_reason") or "candidate_pending",
+        }
+    if extracted.get("_agent_ingest_error"):
+        return {
+            "db_action": "ingest_error",
+            "db_tables": [],
+            "db_record_ids": [],
+            "status": "failed",
+            "reason": extracted.get("_agent_ingest_error"),
+        }
+    return {
+        "db_action": "none",
+        "db_tables": [],
+        "db_record_ids": [],
+        "status": "failed" if result.error else ("extracted" if result.extraction_saved_path else "classified"),
+        "reason": result.error or "no_db_landing_required",
+    }
+
+
+def _write_audit_record(
+    settings: Settings,
+    img: Path,
+    result: "ProcessingResult",
+    *,
+    group_name: str = "",
+) -> None:
+    try:
+        from ops_hub.data_agent.agent import BusinessDataAgent
+        summary = _db_landing_summary(result)
+        extracted = result.extracted if isinstance(result.extracted, dict) else {}
+        agent = BusinessDataAgent()
+        agent.write_image_ingestion_audit(
+            {
+                "group_name": group_name,
+                "raw_image_path": str(img),
+                "classified_category": result.category,
+                "classification_confidence": result.confidence,
+                "classified_image_path": result.saved_path,
+                "extraction_json_path": result.extraction_saved_path,
+                "project_id": extracted.get("project") or extracted.get("项目"),
+                "adopted_fields": extracted.get("_adopted_fields") or [],
+                "ignored_fields": extracted.get("_ignored_fields") or [],
+                **summary,
+            }
+        )
+    except Exception:
+        pass
 
 
 @dataclass
@@ -137,6 +205,8 @@ def process_new_image(
     from ops_hub.utils.image_utils import extract_json_fragment
 
     img = Path(image_path)
+    if getattr(settings, "agent_db_path", ""):
+        os.environ["BUSINESS_DATA_AGENT_DB_PATH"] = str(settings.agent_db_path)
     if not img.exists():
         return ProcessingResult(
             image_path=str(img),
@@ -216,6 +286,7 @@ def process_new_image(
 
     try:
         _write_status_file(settings, img, result, month_str=month_str, group_name=group_name)
+        _write_audit_record(settings, img, result, group_name=group_name)
     except Exception:
         pass
 
@@ -327,7 +398,22 @@ def _run_extraction(category: str, image_path: str, settings: Settings) -> dict[
     if category == "检装车通知单":
         from ops_hub.engines.inspection_slip import InspectionSlipEngine
         engine = InspectionSlipEngine(service_url=service_url)
-        return engine.process_image(image_path)
+        result = engine.process_image(image_path)
+        if result and result.get("is_inspection"):
+            try:
+                from ops_hub.data_agent.agent import BusinessDataAgent
+                agent = BusinessDataAgent()
+                landing = agent.ingest_inspection_payload(
+                    result,
+                    source_file_name=Path(image_path).name,
+                )
+                result["_agent_candidate_ids"] = landing.get("candidate_ids", [])
+                result["_agent_updated_ids"] = landing.get("release_batch_ids", [])
+                result["_agent_pending_reason"] = landing.get("reason")
+                result["_agent_status"] = landing.get("status")
+            except Exception as e:
+                result["_agent_ingest_error"] = str(e)
+        return result
 
     elif category == "出港计划通知单":
         from ops_hub.engines.departure_plan import DeparturePlanEngine
@@ -341,6 +427,7 @@ def _run_extraction(category: str, image_path: str, settings: Settings) -> dict[
                 agent = BusinessDataAgent()
                 records = agent.ingest_release_batch(result, source_file_name=Path(image_path).name)
                 result["_agent_ingested"] = len(records)
+                result["_agent_updated_ids"] = [record.id for record in records]
             except Exception as e:
                 result["_agent_ingest_error"] = str(e)
 

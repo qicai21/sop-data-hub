@@ -461,6 +461,127 @@ class BusinessDataAgent:
         self.db.execute("DELETE FROM release_batches")
         self.db.commit()
 
+    def ingest_inspection_payload(
+        self,
+        payload: Dict[str, Any],
+        source_file_name: Optional[str] = None,
+        group_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        rows = payload.get("rows") if isinstance(payload, dict) else []
+        rows = rows if isinstance(rows, list) else []
+        car_numbers = [str(row.get("car_no") or "").strip() for row in rows if isinstance(row, dict) and str(row.get("car_no") or "").strip()]
+        searchable = to_searchable_text(payload)
+        release_rows = self.db.execute(
+            """
+            SELECT id FROM release_batches
+            WHERE (? = '' OR searchable_text LIKE ? OR destination_station LIKE ? OR cargo_name LIKE ? OR ship_name LIKE ?)
+            ORDER BY updated_at DESC LIMIT 1
+            """,
+            (
+                searchable,
+                f"%{searchable[:80]}%",
+                "%朝阳%" if "朝阳" in searchable else "%汐子%" if "汐子" in searchable else "%__no_match__%",
+                "%铁%" if "铁" in searchable else "%__no_match__%",
+                "%合远9%" if "合远9" in searchable else "%__no_match__%",
+            ),
+        ).fetchall()
+        release_batch_id = release_rows[0]["id"] if release_rows else None
+        status = "candidate" if release_batch_id else "pending"
+        reason = "matched_release_batch_waiting_95306_validation" if release_batch_id else "no_release_batch_candidate"
+        candidate_id = hash_text(f"inspection|{source_file_name}|{','.join(car_numbers)}|{reason}")
+        self.db.execute(
+            """
+            INSERT INTO inspection_ingestion_candidates (
+              id, source_file_name, status, reason, group_name, release_batch_id,
+              wagon_count, car_numbers_json, payload_json, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(id) DO UPDATE SET
+              status=excluded.status,
+              reason=excluded.reason,
+              group_name=excluded.group_name,
+              release_batch_id=excluded.release_batch_id,
+              wagon_count=excluded.wagon_count,
+              car_numbers_json=excluded.car_numbers_json,
+              payload_json=excluded.payload_json,
+              updated_at=CURRENT_TIMESTAMP
+            """,
+            (
+                candidate_id,
+                source_file_name or "",
+                status,
+                reason,
+                group_name,
+                release_batch_id,
+                len(car_numbers),
+                json.dumps(car_numbers, ensure_ascii=False),
+                write_json(payload, pretty=False),
+            ),
+        )
+        self.db.commit()
+        return {
+            "status": status,
+            "reason": reason,
+            "candidate_ids": [candidate_id],
+            "release_batch_ids": [release_batch_id] if release_batch_id else [],
+            "wagon_count": len(car_numbers),
+        }
+
+    def write_image_ingestion_audit(self, data: Dict[str, Any]) -> str:
+        record_id = data.get("id") or hash_text("|".join(str(data.get(key) or "") for key in ("group_name", "raw_image_path", "classified_image_path", "extraction_json_path")))
+        self.db.execute(
+            """
+            INSERT INTO image_ingestion_audit (
+              id, group_name, group_id, message_time, sender, message_id, local_id,
+              message_type, raw_image_path, classified_category, classification_confidence,
+              classified_image_path, extraction_json_path, project_id, target_node,
+              adopted_fields, ignored_fields, db_action, db_tables, db_record_ids,
+              status, reason
+            ) VALUES (
+              :id, :group_name, :group_id, :message_time, :sender, :message_id, :local_id,
+              :message_type, :raw_image_path, :classified_category, :classification_confidence,
+              :classified_image_path, :extraction_json_path, :project_id, :target_node,
+              :adopted_fields, :ignored_fields, :db_action, :db_tables, :db_record_ids,
+              :status, :reason
+            )
+            ON CONFLICT(id) DO UPDATE SET
+              classified_category=excluded.classified_category,
+              classification_confidence=excluded.classification_confidence,
+              classified_image_path=excluded.classified_image_path,
+              extraction_json_path=excluded.extraction_json_path,
+              db_action=excluded.db_action,
+              db_tables=excluded.db_tables,
+              db_record_ids=excluded.db_record_ids,
+              status=excluded.status,
+              reason=excluded.reason
+            """,
+            {
+                "id": record_id,
+                "group_name": data.get("group_name"),
+                "group_id": data.get("group_id"),
+                "message_time": data.get("message_time"),
+                "sender": data.get("sender"),
+                "message_id": data.get("message_id"),
+                "local_id": data.get("local_id"),
+                "message_type": data.get("message_type") or "image",
+                "raw_image_path": data.get("raw_image_path"),
+                "classified_category": data.get("classified_category"),
+                "classification_confidence": data.get("classification_confidence"),
+                "classified_image_path": data.get("classified_image_path"),
+                "extraction_json_path": data.get("extraction_json_path"),
+                "project_id": data.get("project_id"),
+                "target_node": data.get("target_node"),
+                "adopted_fields": write_json(data.get("adopted_fields") or [], pretty=False),
+                "ignored_fields": write_json(data.get("ignored_fields") or [], pretty=False),
+                "db_action": data.get("db_action"),
+                "db_tables": write_json(data.get("db_tables") or [], pretty=False),
+                "db_record_ids": write_json(data.get("db_record_ids") or [], pretty=False),
+                "status": data.get("status"),
+                "reason": data.get("reason"),
+            },
+        )
+        self.db.commit()
+        return record_id
+
     def set_weighing_info(
         self,
         batch_id: str,

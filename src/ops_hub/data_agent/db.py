@@ -92,6 +92,55 @@ def open_db() -> sqlite3.Connection:
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_contracts_party_b ON contracts(party_b)"
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS inspection_ingestion_candidates (
+          id TEXT PRIMARY KEY,
+          source_file_name TEXT NOT NULL,
+          status TEXT NOT NULL,
+          reason TEXT,
+          group_name TEXT,
+          release_batch_id TEXT,
+          wagon_count INTEGER DEFAULT 0,
+          car_numbers_json TEXT NOT NULL DEFAULT '[]',
+          payload_json TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS image_ingestion_audit (
+          id TEXT PRIMARY KEY,
+          group_name TEXT,
+          group_id TEXT,
+          message_time TEXT,
+          sender TEXT,
+          message_id TEXT,
+          local_id TEXT,
+          message_type TEXT NOT NULL DEFAULT 'image',
+          raw_image_path TEXT,
+          classified_category TEXT,
+          classification_confidence REAL,
+          classified_image_path TEXT,
+          extraction_json_path TEXT,
+          project_id TEXT,
+          target_node TEXT,
+          adopted_fields TEXT,
+          ignored_fields TEXT,
+          db_action TEXT,
+          db_tables TEXT,
+          db_record_ids TEXT,
+          status TEXT,
+          reason TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_image_ingestion_audit_group ON image_ingestion_audit(group_name, created_at)"
+    )
     connection.commit()
 
     return connection

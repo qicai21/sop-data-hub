@@ -473,7 +473,7 @@ class BusinessDataAgent:
         searchable = to_searchable_text(payload)
         release_rows = self.db.execute(
             """
-            SELECT id FROM release_batches
+            SELECT id, ship_name, destination_station FROM release_batches
             WHERE (? = '' OR searchable_text LIKE ? OR destination_station LIKE ? OR cargo_name LIKE ? OR ship_name LIKE ?)
             ORDER BY updated_at DESC LIMIT 1
             """,
@@ -486,6 +486,15 @@ class BusinessDataAgent:
             ),
         ).fetchall()
         release_batch_id = release_rows[0]["id"] if release_rows else None
+        if release_rows and "汐子" in searchable:
+            # 汐子 is shared by multiple non-identical ships in live traffic
+            # (e.g. 鞍子河、贝拉、马兰探险).  A station/cargo-only hit against
+            # release_batches is too broad and can falsely attach a 贝拉/马兰
+            # inspection slip to 鞍子河.  Keep it pending unless the OCR payload
+            # contains the matched release ship anchor.
+            matched_ship = str(release_rows[0]["ship_name"] or "").strip()
+            if matched_ship and matched_ship not in searchable:
+                release_batch_id = None
         status = "candidate" if release_batch_id else "pending"
         reason = "matched_release_batch_waiting_95306_validation" if release_batch_id else "no_release_batch_candidate"
         candidate_id = hash_text(f"inspection|{source_file_name}|{','.join(car_numbers)}|{reason}")

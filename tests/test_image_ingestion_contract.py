@@ -233,3 +233,194 @@ def test_non_sop_inspection_slip_extracts_json_without_candidate(tmp_path: Path,
     assert _count(test_db, "select count(*) from inspection_ingestion_candidates") == 0
     assert _count(test_db, "select count(*) from image_ingestion_audit where db_action='none' and reason='non_sop_project_json_only'") == 1
 
+
+def test_lobster_sandbox_infers_zt_departure_from_business_content_and_dedupes(tmp_path: Path, monkeypatch) -> None:
+    test_db = tmp_path / "agent_test.db"
+    img = _make_image(tmp_path / "anzihe.jpg")
+    settings = Settings(
+        classified_output_dir=str(tmp_path / "wechat_images"),
+        extraction_output_dir=str(tmp_path / "legacy_extractions"),
+        agent_db_path=str(test_db),
+        test_agent_db_path=str(test_db),
+        auto_extract_categories=["出港计划通知单"],
+    )
+    monkeypatch.setenv("BUSINESS_DATA_AGENT_DB_PATH", str(test_db))
+
+    classifier = MagicMock()
+    classifier.classify.return_value = MagicMock(category="出港计划通知单", confidence=0.95)
+    departure_payload = {
+        "is_target": True,
+        "title": "出港计划通知单",
+        "header_info": {"通知日期": "2026年6月17日"},
+        "business_info": {"船名": "鞍子河", "发货单位": "锦州港", "收货单位": "锦州新德物流有限公司"},
+        "cargo_info": {"货物名称": "铁矿", "总重里": "41410"},
+        "special_matter": "",
+        "remarks": [
+            {"date": "6月17日", "sequence": "第一次下达计划", "raw_line": "6月17日第一次下达计划: 10000吨（铁路 汐子）"},
+            {"date": "6月18日", "sequence": "第二次下达计划", "raw_line": "6月18日第二次下达计划: 10000吨（铁路 汐子）"},
+            {"date": "6月29日", "sequence": "第三次下达计划", "raw_line": "6月29日第三次下达计划: 10000吨（公路 赤峰中唐）"},
+            {"date": "6月30日", "sequence": "第四次下达计划", "raw_line": "6月30日第四次下达计划: 11410吨（铁路 汐子 剩余20065吨）"},
+        ],
+    }
+
+    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
+        "ops_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
+    ):
+        first = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
+        second = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
+
+    extracted = json.loads(Path(second.extraction_saved_path).read_text(encoding="utf-8"))
+    assert first.category == "出港计划通知单"
+    assert extracted["project"] == "中唐特钢铁矿发运项目"
+    assert extracted["_agent_project_inferred_from"] == "出港计划通知单"
+    assert extracted["_agent_ingested"] == 4
+    assert _count(test_db, "select count(*) from release_batches where source_file_name=?", ("anzihe.jpg",)) == 4
+    assert _count(test_db, "select count(*) from release_batches where project='中唐特钢铁矿发运项目'") == 4
+
+
+def test_lobster_sandbox_infers_chaoyang_departure_without_project_field(tmp_path: Path, monkeypatch) -> None:
+    test_db = tmp_path / "agent_test.db"
+    img = _make_image(tmp_path / "heyuan9.jpg")
+    settings = Settings(
+        classified_output_dir=str(tmp_path / "wechat_images"),
+        extraction_output_dir=str(tmp_path / "legacy_extractions"),
+        agent_db_path=str(test_db),
+        test_agent_db_path=str(test_db),
+        auto_extract_categories=["出港计划通知单"],
+    )
+    monkeypatch.setenv("BUSINESS_DATA_AGENT_DB_PATH", str(test_db))
+    classifier = MagicMock()
+    classifier.classify.return_value = MagicMock(category="出港计划通知单", confidence=0.95)
+    departure_payload = {
+        "is_target": True,
+        "title": "出港计划通知单",
+        "header_info": {"通知日期": "2026年4月29日"},
+        "business_info": {"船名": "合远9", "发货单位": "锦州港", "收货单位": "鞍钢汽车运输有限责任公司"},
+        "cargo_info": {"货物名称": "铁矿", "总重里": "16345"},
+        "special_matter": "火运敞车出港，到站：朝阳西",
+        "remarks": [{"date": "4月29日", "sequence": "", "raw_line": "4月29日货主通知：火运敞车出港，到站：朝阳西，16345吨"}],
+    }
+
+    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
+        "ops_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
+    ):
+        result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
+
+    extracted = json.loads(Path(result.extraction_saved_path).read_text(encoding="utf-8"))
+    assert extracted["project"] == "朝阳钢铁铁矿发运项目"
+    assert extracted["_agent_ingested"] == 1
+    assert _count(test_db, "select count(*) from release_batches where project='朝阳钢铁铁矿发运项目' and ship_name='合远9'") == 1
+
+
+def test_lobster_sandbox_inspection_without_project_routes_known_sop_destinations(tmp_path: Path, monkeypatch) -> None:
+    test_db = tmp_path / "agent_test.db"
+    settings = Settings(
+        classified_output_dir=str(tmp_path / "wechat_images"),
+        extraction_output_dir=str(tmp_path / "legacy_extractions"),
+        agent_db_path=str(test_db),
+        test_agent_db_path=str(test_db),
+        auto_extract_categories=["检装车通知单"],
+    )
+    monkeypatch.setenv("BUSINESS_DATA_AGENT_DB_PATH", str(test_db))
+    classifier = MagicMock()
+    classifier.classify.return_value = MagicMock(category="检装车通知单", confidence=0.96)
+
+    def run_case(name: str, rows: list[dict], expected_project: str) -> dict:
+        img = _make_image(tmp_path / name)
+        payload = {"is_inspection": True, "rows_count": len(rows), "rows": rows, "footer": {"zhuangche_jieshu": len(rows), "paiche_jieshu": 0}}
+        with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
+            "ops_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=payload
+        ):
+            result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
+        extracted = json.loads(Path(result.extraction_saved_path).read_text(encoding="utf-8"))
+        assert extracted["project"] == expected_project
+        assert extracted["_agent_candidate_ids"]
+        return extracted
+
+    chaoyang = run_case(
+        "chaoyang_inspection.jpg",
+        [{"seq": 1, "car_no": "4202018", "cargo_info_effective": "朝阳西铁矿粉 合远9", "defect": False}],
+        "朝阳钢铁铁矿发运项目",
+    )
+    zt_pending = run_case(
+        "xizi_pending.jpg",
+        [{"seq": 1, "car_no": "1562661", "cargo_info_effective": "汐子铁矿粉", "defect": False}],
+        "中唐特钢铁矿发运项目",
+    )
+    assert chaoyang["_agent_pending_reason"] == "no_release_batch_candidate"
+    assert zt_pending["_agent_pending_reason"] == "no_release_batch_candidate"
+    assert _count(test_db, "select count(*) from inspection_ingestion_candidates") == 2
+
+
+def test_lobster_sandbox_non_sop_lingdong_kadi_stays_json_only(tmp_path: Path, monkeypatch) -> None:
+    test_db = tmp_path / "agent_test.db"
+    img = _make_image(tmp_path / "lingdong_kadi.jpg")
+    settings = Settings(
+        classified_output_dir=str(tmp_path / "wechat_images"),
+        extraction_output_dir=str(tmp_path / "legacy_extractions"),
+        agent_db_path=str(test_db),
+        test_agent_db_path=str(test_db),
+        auto_extract_categories=["检装车通知单"],
+    )
+    monkeypatch.setenv("BUSINESS_DATA_AGENT_DB_PATH", str(test_db))
+    classifier = MagicMock()
+    classifier.classify.return_value = MagicMock(category="检装车通知单", confidence=0.96)
+    inspection_payload = {
+        "is_inspection": True,
+        "rows_count": 1,
+        "rows": [{"seq": 1, "car_no": "1705404", "cargo_info_effective": "凌源东铁矿粉 卡迪", "defect": False}],
+        "footer": {"zhuangche_jieshu": 64, "paiche_jieshu": 0},
+    }
+    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
+        "ops_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
+    ):
+        result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
+
+    extracted = json.loads(Path(result.extraction_saved_path).read_text(encoding="utf-8"))
+    assert extracted["_agent_sop_authorized"] is False
+    assert extracted["_agent_sop_skip_reason"] == "non_sop_project_json_only"
+    assert _count(test_db, "select count(*) from inspection_ingestion_candidates") == 0
+
+
+def test_xizi_inspection_without_ship_anchor_does_not_false_match_anzihe_release(tmp_path: Path, monkeypatch) -> None:
+    test_db = tmp_path / "agent_test.db"
+    settings = Settings(
+        classified_output_dir=str(tmp_path / "wechat_images"),
+        extraction_output_dir=str(tmp_path / "legacy_extractions"),
+        agent_db_path=str(test_db),
+        test_agent_db_path=str(test_db),
+        auto_extract_categories=["检装车通知单"],
+    )
+    monkeypatch.setenv("BUSINESS_DATA_AGENT_DB_PATH", str(test_db))
+    BusinessDataAgent().ingest_release_batch(
+        {
+            "is_target": True,
+            "project": "中唐特钢铁矿发运项目",
+            "header_info": {"通知日期": "2026年6月17日"},
+            "business_info": {"船名": "鞍子河", "发货单位": "锦州港", "收货单位": "锦州新德物流有限公司"},
+            "cargo_info": {"货物名称": "铁矿", "总重里": "10000"},
+            "special_matter": "",
+            "remarks": [{"date": "6月17日", "sequence": "第一次下达计划", "raw_line": "6月17日第一次下达计划: 10000吨（铁路 汐子）"}],
+        },
+        source_file_name="anzihe_departure.jpg",
+    )
+
+    img = _make_image(tmp_path / "xizi_bella_without_ship.jpg")
+    classifier = MagicMock()
+    classifier.classify.return_value = MagicMock(category="检装车通知单", confidence=0.96)
+    inspection_payload = {
+        "is_inspection": True,
+        "rows_count": 1,
+        "rows": [{"seq": 1, "car_no": "1562661", "cargo_info_effective": "汐子铁矿粉", "defect": False}],
+        "footer": {"zhuangche_jieshu": 59, "paiche_jieshu": 0},
+    }
+    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
+        "ops_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
+    ):
+        result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
+
+    extracted = json.loads(Path(result.extraction_saved_path).read_text(encoding="utf-8"))
+    assert extracted["project"] == "中唐特钢铁矿发运项目"
+    assert extracted["_agent_pending_reason"] == "no_release_batch_candidate"
+    assert _count(test_db, "select count(*) from inspection_ingestion_candidates where status='pending' and release_batch_id is null") == 1
+

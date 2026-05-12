@@ -434,11 +434,49 @@ def _payload_project_token(payload: dict[str, Any]) -> str:
     ).strip()
 
 
-def _is_existing_sop_project(payload: dict[str, Any]) -> bool:
+def _payload_search_text(payload: dict[str, Any]) -> str:
+    try:
+        return json.dumps(payload, ensure_ascii=False)
+    except Exception:
+        return str(payload)
+
+
+def _infer_sop_project_token(payload: dict[str, Any], *, category: str) -> str:
+    """Infer an active SOP project from business content when OCR omitted project.
+
+    龙虾测试群 is a sandbox transport, so database authorization must be based on
+    the document's business content rather than the physical WeChat group.  Keep
+    the rules narrow: departure plans need a ship/customer/project anchor;
+    inspection slips may use destination anchors because they often have no
+    header fields at all.
+    """
+    text = _payload_search_text(payload)
+    if category == "出港计划通知单":
+        if any(token in text for token in ("合远9", "朝阳钢铁", "朝钢", "朝阳西", "朝阳铁")):
+            return "朝阳钢铁铁矿发运项目"
+        if any(token in text for token in ("鞍子河", "中唐", "赤峰中唐")):
+            return "中唐特钢铁矿发运项目"
+        return ""
+    if category == "检装车通知单":
+        if any(token in text for token in ("合远9", "朝阳西", "朝阳铁", "朝阳钢铁", "朝钢")):
+            return "朝阳钢铁铁矿发运项目"
+        if any(token in text for token in ("汐子", "鞍子河", "中唐", "赤峰中唐")):
+            return "中唐特钢铁矿发运项目"
+        return ""
+    return ""
+
+
+def _ensure_sop_project(payload: dict[str, Any], *, category: str) -> bool:
     project = _payload_project_token(payload)
-    if not project:
-        return False
-    return project in _active_project_sop_tokens()
+    tokens = _active_project_sop_tokens()
+    if project and project in tokens:
+        return True
+    inferred = _infer_sop_project_token(payload, category=category)
+    if inferred and inferred in tokens:
+        payload["project"] = inferred
+        payload["_agent_project_inferred_from"] = category
+        return True
+    return False
 
 
 def _mark_sop_skip(payload: dict[str, Any], reason: str) -> dict[str, Any]:
@@ -456,7 +494,7 @@ def _run_extraction(category: str, image_path: str, settings: Settings, *, group
         engine = InspectionSlipEngine(service_url=service_url)
         result = engine.process_image(image_path)
         if result and result.get("is_inspection"):
-            if not _is_existing_sop_project(result):
+            if not _ensure_sop_project(result, category=category):
                 return _mark_sop_skip(result, "non_sop_project_json_only")
             result["_agent_sop_authorized"] = True
             try:
@@ -482,7 +520,7 @@ def _run_extraction(category: str, image_path: str, settings: Settings, *, group
 
         # 自动导入放货批次数据：仅 ProjectSOP 已登记项目允许写库。
         if result and result.get("is_target"):
-            if not _is_existing_sop_project(result):
+            if not _ensure_sop_project(result, category=category):
                 return _mark_sop_skip(result, "non_sop_project_json_only")
             result["_agent_sop_authorized"] = True
             try:

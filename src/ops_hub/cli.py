@@ -152,6 +152,26 @@ def cmd_list_batches(args: argparse.Namespace) -> None:
               f"| {r.batch_quantity}吨 | 过磅{weighed} | {r.notice_date}")
 
 
+def cmd_refresh_match_rules(args: argparse.Namespace) -> None:
+    from ops_hub.data_agent.agent import BusinessDataAgent
+
+    agent = BusinessDataAgent()
+    count = agent.refresh_release_dispatch_match_rules()
+    print(f"已刷新 release_dispatch_match_rules: {count} 条 release_batches 已维护")
+
+
+def cmd_complete_match_rule(args: argparse.Namespace) -> None:
+    from ops_hub.data_agent.agent import BusinessDataAgent
+
+    agent = BusinessDataAgent()
+    ok = agent.complete_release_dispatch_match_rule(args.release_batch_id, manual_note=args.note)
+    if ok:
+        print(f"已下表 release_batch_id={args.release_batch_id}")
+    else:
+        print(f"未找到匹配规则 release_batch_id={args.release_batch_id}")
+        sys.exit(1)
+
+
 def _output_result(result: dict, output_path: str | None) -> None:
     text = json.dumps(result, indent=2, ensure_ascii=False)
     if output_path:
@@ -222,6 +242,16 @@ def main() -> None:
     # list-batches
     p_list = subparsers.add_parser("list-batches", help="列出放货批次")
     p_list.set_defaults(func=cmd_list_batches)
+
+    # refresh-match-rules
+    p_refresh_rules = subparsers.add_parser("refresh-match-rules", help="从 release_batches 刷新 active 放货发运匹配规则")
+    p_refresh_rules.set_defaults(func=cmd_refresh_match_rules)
+
+    # complete-match-rule
+    p_complete_rule = subparsers.add_parser("complete-match-rule", help="将指定 release_batch_id 的匹配规则标记为 completed/下表")
+    p_complete_rule.add_argument("release_batch_id", help="release_batches.id")
+    p_complete_rule.add_argument("--note", default=None, help="手动备注")
+    p_complete_rule.set_defaults(func=cmd_complete_match_rule)
 
     args = parser.parse_args()
     if not args.command:

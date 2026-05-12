@@ -7,7 +7,12 @@ def get_db_path() -> Path:
     configured = os.environ.get("BUSINESS_DATA_AGENT_DB_PATH")
     if configured:
         return Path(configured)
-    return Path.cwd() / "data" / "agent.db"
+    try:
+        from ops_hub.config import load_settings
+
+        return Path(load_settings().agent_db_path)
+    except Exception:
+        return Path.cwd() / "data" / "agent.db"
 
 
 def open_db() -> sqlite3.Connection:
@@ -91,6 +96,32 @@ def open_db() -> sqlite3.Connection:
     )
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_contracts_party_b ON contracts(party_b)"
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS release_dispatch_match_rules (
+          id TEXT PRIMARY KEY,
+          release_batch_id TEXT NOT NULL UNIQUE,
+          project TEXT,
+          ship_name TEXT NOT NULL,
+          destination_station TEXT,
+          cargo_name TEXT NOT NULL,
+          matching_str TEXT NOT NULL,
+          matching_tokens_json TEXT NOT NULL DEFAULT '{}',
+          status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'completed', 'suspended')),
+          priority INTEGER NOT NULL DEFAULT 100,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          completed_at TEXT,
+          manual_note TEXT
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_release_dispatch_match_rules_status ON release_dispatch_match_rules(status, priority, updated_at)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_release_dispatch_match_rules_ship ON release_dispatch_match_rules(ship_name, destination_station, cargo_name)"
     )
     connection.execute(
         """

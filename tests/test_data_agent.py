@@ -76,6 +76,123 @@ class TestParseRemarks:
 
 
 class TestBusinessDataAgent:
+    def test_inspection_with_ship_anchor_matches_active_release_dispatch_rule(self, tmp_db):
+        agent = BusinessDataAgent()
+        bella_id = "844d4859bf906decebd6440fb9dead0c200a39c3"
+        agent.db.execute(
+            """
+            INSERT INTO release_batches (
+              id, batch_key, ship_name, cargo_name, destination_station,
+              notice_date, batch_date, batch_sequence, batch_quantity,
+              batch_count, source_json, searchable_text
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, '{}', ?)
+            """,
+            (bella_id, "bella|xizi|lot03", "贝拉", "铁矿", "汐子", "2026-04-30", "2026-04-30", "lot03", 10000, "贝拉 汐子 铁矿"),
+        )
+        for ship in ["合远9", "卡迪", "康瑞", "丰收散运", "鞍子河"]:
+            agent.db.execute(
+                """
+                INSERT INTO release_batches (
+                  id, batch_key, ship_name, cargo_name, destination_station,
+                  notice_date, batch_count, source_json, searchable_text, updated_at
+                ) VALUES (?, ?, ?, '铁矿', '汐子', '2026-05-12', 1, '{}', ?, CURRENT_TIMESTAMP)
+                """,
+                (hash_text(ship), f"{ship}|xizi", ship, f"{ship} 汐子 铁矿"),
+            )
+        agent.db.commit()
+        agent.refresh_release_dispatch_match_rules()
+
+        result = agent.ingest_inspection_payload(
+            {
+                "project": "中唐特钢铁矿发运项目",
+                "rows": [
+                    {"seq": 1, "car_no": "4975136", "cargo_info_effective": "汐子铁矿粉"},
+                    {"seq": 2, "car_no": "1682323", "cargo_info_effective": "汐子铁矿粉/贝拉"},
+                ],
+                "cargo_summary": {"汐子铁矿粉/贝拉": ["1682323"]},
+                "meta": {"date": "2026年5月2日"},
+            },
+            source_file_name="bella_inspection.jpg",
+        )
+
+        assert result["status"] == "candidate"
+        assert result["release_batch_ids"] == [bella_id]
+
+    def test_inspection_without_ship_anchor_stays_pending_when_same_station_cargo_rules_exist(self, tmp_db):
+        agent = BusinessDataAgent()
+        for ship in ["贝拉", "丰收散运"]:
+            agent.db.execute(
+                """
+                INSERT INTO release_batches (
+                  id, batch_key, ship_name, cargo_name, destination_station,
+                  notice_date, batch_count, source_json, searchable_text
+                ) VALUES (?, ?, ?, '铁矿', '汐子', '2026-05-01', 1, '{}', ?)
+                """,
+                (hash_text(ship), f"{ship}|xizi", ship, f"{ship} 汐子 铁矿"),
+            )
+        agent.db.commit()
+        agent.refresh_release_dispatch_match_rules()
+
+        result = agent.ingest_inspection_payload(
+            {
+                "rows": [{"seq": 1, "car_no": "4975136", "cargo_info_effective": "汐子铁矿粉"}],
+                "cargo_summary": {"汐子铁矿粉": ["4975136"]},
+            },
+            source_file_name="no_ship.jpg",
+        )
+
+        assert result["status"] == "pending"
+        assert result["release_batch_ids"] == []
+
+    def test_completed_release_dispatch_rule_no_longer_auto_matches(self, tmp_db):
+        agent = BusinessDataAgent()
+        bella_id = "844d4859bf906decebd6440fb9dead0c200a39c3"
+        agent.db.execute(
+            """
+            INSERT INTO release_batches (
+              id, batch_key, ship_name, cargo_name, destination_station,
+              notice_date, batch_count, source_json, searchable_text
+            ) VALUES (?, 'bella|xizi|lot03', '贝拉', '铁矿', '汐子', '2026-04-30', 1, '{}', '贝拉 汐子 铁矿')
+            """,
+            (bella_id,),
+        )
+        agent.db.commit()
+        agent.refresh_release_dispatch_match_rules()
+        agent.complete_release_dispatch_match_rule(bella_id, manual_note="本批已下表")
+
+        result = agent.ingest_inspection_payload(
+            {
+                "rows": [{"seq": 1, "car_no": "1682323", "cargo_info_effective": "汐子铁矿粉/贝拉"}],
+                "cargo_summary": {"汐子铁矿粉/贝拉": ["1682323"]},
+            },
+            source_file_name="bella_after_completed.jpg",
+        )
+
+        assert result["status"] == "pending"
+        assert result["release_batch_ids"] == []
+
+    def test_ingest_release_batch_auto_generates_active_dispatch_match_rule(self, tmp_db):
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "header_info": {"通知日期": "2026年4月30日"},
+            "business_info": {"船名": "贝拉", "发货单位": "", "收货单位": ""},
+            "cargo_info": {"货物名称": "铁矿", "总重里": "10000", "运输方式": "铁路"},
+            "special_matter": "到站：汐子",
+            "remarks": [{"date": "4月30日", "sequence": "第三次下达计划", "plan": "10000吨（铁路 汐子）", "raw_line": ""}],
+        }
+
+        records = agent.ingest_release_batch(payload, source_file_name="bella_plan.json")
+        rule = agent.db.execute(
+            "SELECT * FROM release_dispatch_match_rules WHERE release_batch_id=?",
+            (records[0].id,),
+        ).fetchone()
+
+        assert rule is not None
+        assert rule["status"] == "active"
+        assert rule["ship_name"] == "贝拉"
+        assert "贝拉" in rule["matching_str"]
+
     def test_ingest_and_list(self, tmp_db):
         """Test basic ingest -> list cycle"""
         agent = BusinessDataAgent()

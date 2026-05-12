@@ -359,11 +359,15 @@ class BusinessDataAgent:
                 normalized,
             )
         self.db.commit()
-        return [
+        records = [
             self.get_by_batch_key(normalized["batch_key"])
             for normalized in normalized_rows
             if self.get_by_batch_key(normalized["batch_key"]) is not None
         ]
+        for record in records:
+            self.upsert_release_dispatch_match_rule(record)
+        self.db.commit()
+        return records
 
     def ingest_business_text(self, text: str) -> List[ReleaseBatchRecord]:
         """Parse a ProjectSOP-authorized text release instruction and create/update release_batches.
@@ -459,7 +463,115 @@ class BusinessDataAgent:
 
     def reset_release_batches(self) -> None:
         self.db.execute("DELETE FROM release_batches")
+        self.db.execute("DELETE FROM release_dispatch_match_rules")
         self.db.commit()
+
+    def refresh_release_dispatch_match_rules(self) -> int:
+        """Create/update active runtime dispatch matching rules from release_batches.
+
+        Manual completed/suspended rules are preserved and not reactivated.
+        """
+        rows = self.db.execute("SELECT * FROM release_batches").fetchall()
+        count = 0
+        for row in rows:
+            record = hydrate_row(row)
+            self.upsert_release_dispatch_match_rule(record)
+            count += 1
+        self.db.commit()
+        return count
+
+    def upsert_release_dispatch_match_rule(self, record: ReleaseBatchRecord) -> None:
+        tokens = self._release_dispatch_rule_tokens(record)
+        matching_str = " ".join(token for token in tokens["all"] if token)
+        rule_id = hash_text(f"release_dispatch_match_rule|{record.id}")
+        self.db.execute(
+            """
+            INSERT INTO release_dispatch_match_rules (
+              id, release_batch_id, project, ship_name, destination_station,
+              cargo_name, matching_str, matching_tokens_json, status, priority, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(release_batch_id) DO UPDATE SET
+              project=excluded.project,
+              ship_name=excluded.ship_name,
+              destination_station=excluded.destination_station,
+              cargo_name=excluded.cargo_name,
+              matching_str=excluded.matching_str,
+              matching_tokens_json=excluded.matching_tokens_json,
+              priority=excluded.priority,
+              status=CASE
+                WHEN release_dispatch_match_rules.status IN ('completed', 'suspended') THEN release_dispatch_match_rules.status
+                ELSE 'active'
+              END,
+              updated_at=CURRENT_TIMESTAMP
+            """,
+            (
+                rule_id,
+                record.id,
+                record.project,
+                record.ship_name,
+                record.destination_station,
+                record.cargo_name,
+                matching_str,
+                json.dumps(tokens, ensure_ascii=False),
+                100,
+            ),
+        )
+
+    def complete_release_dispatch_match_rule(self, release_batch_id: str, manual_note: str | None = None) -> bool:
+        cursor = self.db.execute(
+            """
+            UPDATE release_dispatch_match_rules
+            SET status='completed', completed_at=CURRENT_TIMESTAMP, manual_note=?, updated_at=CURRENT_TIMESTAMP
+            WHERE release_batch_id=?
+            """,
+            (manual_note, release_batch_id),
+        )
+        changed = cursor.rowcount > 0
+        self.db.commit()
+        return changed
+
+    def _release_dispatch_rule_tokens(self, record: ReleaseBatchRecord) -> Dict[str, List[str]]:
+        ship_tokens = [record.ship_name] if record.ship_name else []
+        destination_tokens = [record.destination_station] if record.destination_station else []
+        cargo_tokens = [record.cargo_name] if record.cargo_name else []
+        if record.cargo_name == "铁矿":
+            cargo_tokens.append("铁矿粉")
+        all_tokens = []
+        for token in [record.project, record.ship_name, record.destination_station, record.cargo_name, record.batch_sequence]:
+            if token:
+                all_tokens.append(str(token))
+        return {
+            "ship": ship_tokens,
+            "destination": destination_tokens,
+            "cargo": cargo_tokens,
+            "all": all_tokens,
+        }
+
+    def match_release_dispatch_rule_for_inspection(self, payload: Dict[str, Any]) -> Optional[str]:
+        searchable = to_searchable_text(payload)
+        rows = self.db.execute(
+            """
+            SELECT * FROM release_dispatch_match_rules
+            WHERE status='active'
+            ORDER BY priority ASC, updated_at DESC
+            """
+        ).fetchall()
+        ship_anchor_matches = []
+        station_cargo_matches = []
+        for row in rows:
+            tokens = json.loads(row["matching_tokens_json"] or "{}")
+            has_ship = any(token and token in searchable for token in tokens.get("ship", []))
+            has_destination = any(token and token in searchable for token in tokens.get("destination", []))
+            has_cargo = any(token and token in searchable for token in tokens.get("cargo", []))
+            if has_ship and has_destination and has_cargo:
+                ship_anchor_matches.append(row)
+            elif has_destination and has_cargo:
+                station_cargo_matches.append(row)
+
+        if len(ship_anchor_matches) == 1:
+            return ship_anchor_matches[0]["release_batch_id"]
+        # Ambiguous ship anchors, or only station+cargo rules, must stay pending.
+        return None
 
     def ingest_inspection_payload(
         self,
@@ -470,31 +582,7 @@ class BusinessDataAgent:
         rows = payload.get("rows") if isinstance(payload, dict) else []
         rows = rows if isinstance(rows, list) else []
         car_numbers = [str(row.get("car_no") or "").strip() for row in rows if isinstance(row, dict) and str(row.get("car_no") or "").strip()]
-        searchable = to_searchable_text(payload)
-        release_rows = self.db.execute(
-            """
-            SELECT id, ship_name, destination_station FROM release_batches
-            WHERE (? = '' OR searchable_text LIKE ? OR destination_station LIKE ? OR cargo_name LIKE ? OR ship_name LIKE ?)
-            ORDER BY updated_at DESC LIMIT 1
-            """,
-            (
-                searchable,
-                f"%{searchable[:80]}%",
-                "%朝阳%" if "朝阳" in searchable else "%汐子%" if "汐子" in searchable else "%__no_match__%",
-                "%铁%" if "铁" in searchable else "%__no_match__%",
-                "%合远9%" if "合远9" in searchable else "%__no_match__%",
-            ),
-        ).fetchall()
-        release_batch_id = release_rows[0]["id"] if release_rows else None
-        if release_rows and "汐子" in searchable:
-            # 汐子 is shared by multiple non-identical ships in live traffic
-            # (e.g. 鞍子河、贝拉、马兰探险).  A station/cargo-only hit against
-            # release_batches is too broad and can falsely attach a 贝拉/马兰
-            # inspection slip to 鞍子河.  Keep it pending unless the OCR payload
-            # contains the matched release ship anchor.
-            matched_ship = str(release_rows[0]["ship_name"] or "").strip()
-            if matched_ship and matched_ship not in searchable:
-                release_batch_id = None
+        release_batch_id = self.match_release_dispatch_rule_for_inspection(payload)
         status = "candidate" if release_batch_id else "pending"
         reason = "matched_release_batch_waiting_95306_validation" if release_batch_id else "no_release_batch_candidate"
         candidate_id = hash_text(f"inspection|{source_file_name}|{','.join(car_numbers)}|{reason}")

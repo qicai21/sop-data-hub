@@ -31,15 +31,17 @@ def _normalize_month_compact(value: str) -> str:
 
 
 def _artifact_base_dir(root: str | Path, *, month_str: str = "", group_name: str = "") -> Path:
+    """Return canonical artifact base.
+
+    `month_str` is accepted for compatibility with wx-ops-agent callers, but the
+    month must not create an extra top-level YYYYMM directory. Month separation
+    belongs either in the raw chat-record path or metadata/status, not in the
+    classified/extraction artifact hierarchy.
+    """
     base = Path(root)
-    month = _normalize_month_compact(month_str)
     group = _sanitize_component(group_name) if group_name else ""
-    if month and group:
-        return base / month / group
     if group:
         return base / group
-    if month:
-        return base / month
     return base
 
 

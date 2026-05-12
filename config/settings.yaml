@@ -5,13 +5,13 @@
 
 # 微信图片来源目录（wx-ops-agent 落盘的原图目录）
 # 服务器上通常是: /path/to/wx-ops-agent/data/images/铁晟业务工作群
-wechat_images_dir: "/Users/qicai21/Documents/bussiness-artifacts/wechat_images/202604"
+wechat_images_dir: "/Users/qicai21/Documents/bussiness-artifacts/wechat_images"
 
 # 分类处理后的图片保存目录
-classified_output_dir: /Users/qicai21/Documents/bussiness-artifacts/wechat_images/202604
+classified_output_dir: /Users/qicai21/Documents/bussiness-artifacts/wechat_images
 
 # 结构化识别结果保存目录
-extraction_output_dir: /Users/qicai21/Documents/bussiness-artifacts/wechat_images/202604/extractions
+extraction_output_dir: /Users/qicai21/Documents/bussiness-artifacts/wechat_images/extractions
 
 # 95306 铁路发运数据库路径
 # 服务器上通常是: /path/to/95306-agent/data/freight.db

@@ -38,7 +38,7 @@ def test_contextual_artifacts_and_status_file(tmp_path):
             group_name="铁晟业务工作群",
         )
 
-    base = tmp_path / "wechat_images" / "202605" / "铁晟业务工作群"
+    base = tmp_path / "wechat_images" / "铁晟业务工作群"
     assert Path(result.saved_path) == base / "检装车通知单" / "123_abc.jpg"
     assert Path(result.extraction_saved_path) == base / "extractions" / "检装车通知单" / "123_abc_result.json"
     assert Path(result.status_path) == base / "_status" / "123_abc.json"

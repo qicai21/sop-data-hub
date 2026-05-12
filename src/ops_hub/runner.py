@@ -9,6 +9,7 @@ import os
 import shutil
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -102,6 +103,14 @@ def _db_landing_summary(result: "ProcessingResult") -> dict[str, Any]:
             "db_record_ids": extracted.get("_agent_updated_ids") or [],
             "status": "ingested",
             "reason": "departure_plan_ingested",
+        }
+    if extracted.get("_agent_sop_skip_reason"):
+        return {
+            "db_action": "none",
+            "db_tables": [],
+            "db_record_ids": [],
+            "status": "extracted",
+            "reason": extracted.get("_agent_sop_skip_reason"),
         }
     if extracted.get("_agent_candidate_ids"):
         return {
@@ -259,7 +268,7 @@ def process_new_image(
     if should_extract:
         try:
             t0 = time.perf_counter()
-            extracted = _run_extraction(result.category, str(img), settings)
+            extracted = _run_extraction(result.category, str(img), settings, group_name=group_name)
             result.elapsed_extract = time.perf_counter() - t0
             result.extracted = extracted
 
@@ -391,7 +400,54 @@ def _get_classifier(service_url: str):
     return _classifier_cache[service_url]
 
 
-def _run_extraction(category: str, image_path: str, settings: Settings) -> dict[str, Any]:
+@lru_cache(maxsize=1)
+def _active_project_sop_tokens() -> set[str]:
+    """Return active ProjectSOP ids/names used as the DB-ingestion gate.
+
+    Classification/OCR is always allowed; database writes are allowed only when
+    the extracted payload can be attributed to one of these active SOP projects.
+    """
+    tokens: set[str] = set()
+    try:
+        from ops_hub.models.project_sop import load_project_sop
+
+        sops_dir = Path(__file__).resolve().parents[3] / "business-system-docs" / "test-plan" / "fixtures" / "project_sops"
+        for sop_file in sorted(sops_dir.glob("*.yaml")):
+            sop = load_project_sop(sop_file)
+            if sop.status == "active":
+                for value in (sop.project_id, sop.project_name):
+                    text = str(value or "").strip()
+                    if text:
+                        tokens.add(text)
+    except Exception:
+        pass
+    return tokens
+
+
+def _payload_project_token(payload: dict[str, Any]) -> str:
+    return str(
+        payload.get("project")
+        or payload.get("项目")
+        or payload.get("project_name")
+        or payload.get("项目名称")
+        or ""
+    ).strip()
+
+
+def _is_existing_sop_project(payload: dict[str, Any]) -> bool:
+    project = _payload_project_token(payload)
+    if not project:
+        return False
+    return project in _active_project_sop_tokens()
+
+
+def _mark_sop_skip(payload: dict[str, Any], reason: str) -> dict[str, Any]:
+    payload["_agent_sop_authorized"] = False
+    payload["_agent_sop_skip_reason"] = reason
+    return payload
+
+
+def _run_extraction(category: str, image_path: str, settings: Settings, *, group_name: str = "") -> dict[str, Any]:
     """根据分类结果调用对应识别引擎"""
     service_url = settings.vlm_service_url
 
@@ -400,12 +456,16 @@ def _run_extraction(category: str, image_path: str, settings: Settings) -> dict[
         engine = InspectionSlipEngine(service_url=service_url)
         result = engine.process_image(image_path)
         if result and result.get("is_inspection"):
+            if not _is_existing_sop_project(result):
+                return _mark_sop_skip(result, "non_sop_project_json_only")
+            result["_agent_sop_authorized"] = True
             try:
                 from ops_hub.data_agent.agent import BusinessDataAgent
                 agent = BusinessDataAgent()
                 landing = agent.ingest_inspection_payload(
                     result,
                     source_file_name=Path(image_path).name,
+                    group_name=group_name or None,
                 )
                 result["_agent_candidate_ids"] = landing.get("candidate_ids", [])
                 result["_agent_updated_ids"] = landing.get("release_batch_ids", [])
@@ -420,8 +480,11 @@ def _run_extraction(category: str, image_path: str, settings: Settings) -> dict[
         engine = DeparturePlanEngine(service_url=service_url)
         result = engine.process_image(image_path)
 
-        # 自动导入放货批次数据
+        # 自动导入放货批次数据：仅 ProjectSOP 已登记项目允许写库。
         if result and result.get("is_target"):
+            if not _is_existing_sop_project(result):
+                return _mark_sop_skip(result, "non_sop_project_json_only")
+            result["_agent_sop_authorized"] = True
             try:
                 from ops_hub.data_agent.agent import BusinessDataAgent
                 agent = BusinessDataAgent()

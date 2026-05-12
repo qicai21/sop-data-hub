@@ -18,6 +18,7 @@ def test_loader_reads_all_project_sops():
     assert "zt_steel_baseline" in project_ids
     assert "chaoyang_steel_baseline" in project_ids
     assert "simple_data_archive" in project_ids
+    assert "longxia_test_sandbox" in project_ids
 
     zt_task = _find_task(tasks, project_id="zt_steel_baseline", group_id="GROUP003")
     assert zt_task.listen_options["image"] is True
@@ -103,6 +104,18 @@ def test_new_group_integration_via_config():
     assert archive_task.project_id == "simple_data_archive"
     assert archive_task.routing[0].target_node == "archive_raw_data"
     assert archive_task.routing[0].save_db is True
+
+
+def test_longxia_test_group_integration_via_project_sop():
+    """测试 4.1: 龙虾测试群通过 ProjectSOP 权威配置进入监听任务。"""
+    tasks = load_all_tracking_tasks(FIXTURES_DIR)
+
+    longxia_task = _find_task(tasks, project_id="longxia_test_sandbox", group_id="GROUP102")
+    assert longxia_task.group_lookup_id == "[GROUP102]"
+    assert longxia_task.group_name == "龙虾测试群"
+    assert longxia_task.listen_options["image"] is True
+    assert longxia_task.pull_image is True
+    assert longxia_task.routing[0].target_node == "process_business_image_test_sandbox"
 
 
 def test_zt_report_targets_are_environment_specific():

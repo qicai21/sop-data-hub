@@ -91,6 +91,10 @@ def _station_aliases(destination: str, project: str = "") -> list[str]:
         aliases.extend(["朝阳西", "朝阳铁"])
     if destination == "汐子":
         aliases.append("汐子")
+    # 中唐特钢铁路放货单里常以“沙子”作为放货目的地口径，95306 与检装车单
+    # 发运校验口径使用“汐子”。这是项目级 SOP 站名映射，不绑定具体船名/批次。
+    if destination == "沙子" and "中唐特钢" in project:
+        aliases.append("汐子")
     return aliases
 
 

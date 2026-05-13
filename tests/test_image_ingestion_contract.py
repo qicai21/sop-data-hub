@@ -278,6 +278,43 @@ def test_lobster_sandbox_infers_zt_departure_from_business_content_and_dedupes(t
     assert _count(test_db, "select count(*) from release_batches where project='中唐特钢铁矿发运项目'") == 4
 
 
+def test_lobster_sandbox_infers_zt_departure_from_fengshou_tuozi_ocr(tmp_path: Path, monkeypatch) -> None:
+    test_db = tmp_path / "agent_test.db"
+    img = _make_image(tmp_path / "fengshou_tuozi.jpg")
+    settings = Settings(
+        classified_output_dir=str(tmp_path / "wechat_images"),
+        extraction_output_dir=str(tmp_path / "legacy_extractions"),
+        agent_db_path=str(test_db),
+        test_agent_db_path=str(test_db),
+        auto_extract_categories=["出港计划通知单"],
+    )
+    monkeypatch.setenv("BUSINESS_DATA_AGENT_DB_PATH", str(test_db))
+
+    classifier = MagicMock()
+    classifier.classify.return_value = MagicMock(category="出港计划通知单", confidence=0.95)
+    departure_payload = {
+        "is_target": True,
+        "title": "锦州港货物出港计划通知单",
+        "header_info": {"通知日期": "2026年05月10日", "内、外贸": "外贸"},
+        "business_info": {"船名": "丰收散运", "发货单位": "锦州新德物流有限公司", "收货单位": "锦州新德物流有限公司"},
+        "cargo_info": {"货物名称": "铁矿", "总重里": "10000", "运输方式": "铁路"},
+        "special_matter": "",
+        "remarks": [{"date": "5月10日", "sequence": "第一次下达计划", "plan": "10000吨（铁路 沱子）", "raw_line": "5月10日第一次下达计划：10000吨（铁路 沱子）"}],
+    }
+
+    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
+        "ops_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
+    ):
+        result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
+
+    extracted = json.loads(Path(result.extraction_saved_path).read_text(encoding="utf-8"))
+    assert extracted["project"] == "中唐特钢铁矿发运项目"
+    assert extracted["_agent_project_inferred_from"] == "出港计划通知单"
+    assert extracted["_agent_ingested"] == 1
+    assert _count(test_db, "select count(*) from release_batches where project='中唐特钢铁矿发运项目' and ship_name='丰收散运' and destination_station='汐子'") == 1
+    assert _count(test_db, "select count(*) from release_dispatch_match_rules where project='中唐特钢铁矿发运项目' and ship_name='丰收散运' and destination_station='汐子' and status='active'") == 1
+
+
 def test_lobster_sandbox_infers_chaoyang_departure_without_project_field(tmp_path: Path, monkeypatch) -> None:
     test_db = tmp_path / "agent_test.db"
     img = _make_image(tmp_path / "heyuan9.jpg")

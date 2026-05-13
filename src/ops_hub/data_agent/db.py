@@ -54,6 +54,7 @@ def open_db() -> sqlite3.Connection:
           contract_no TEXT,
           ship_name TEXT NOT NULL,
           cargo_name TEXT NOT NULL,
+          cargo_product_name TEXT,
           consignor TEXT,
           consignee TEXT,
           commissioner_identifier TEXT,
@@ -221,6 +222,7 @@ def migrate_release_batches_schema(connection: sqlite3.Connection) -> None:
         "tail_cargo_remark": "TEXT",
         "plan_id": "TEXT",
         "order_id": "TEXT",
+        "cargo_product_name": "TEXT",
     }
     
     for field, type_def in new_fields.items():

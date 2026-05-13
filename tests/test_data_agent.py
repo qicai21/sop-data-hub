@@ -306,13 +306,15 @@ class TestBusinessDataAgent:
         record = records[0]
         assert record.consignor == "福建漳龙集团有限公司（天津茂远）"
         assert record.ship_name == "丰收散运"
-        assert record.cargo_name == "纽曼粉"
+        assert record.cargo_name == "铁矿粉"
+        assert record.cargo_product_name == "纽曼粉"
         assert record.origin_station == "锦州港"
         assert record.batch_quantity == 10000.0
         assert record.contract_no == "ZLZT-2026050801"
         assert record.plan_id == "90260500008"
         assert record.source_json["business_info"]["进口船名"] == "丰收散运"
-        assert record.source_json["cargo_info"]["货物名称"] == "纽曼粉"
+        assert record.source_json["cargo_info"]["货物名称"] == "铁矿粉"
+        assert record.source_json["cargo_info"]["货物品名"] == "纽曼粉"
         assert record.source_json["header_info"]["入场计划号"] == "90260500008"
 
 

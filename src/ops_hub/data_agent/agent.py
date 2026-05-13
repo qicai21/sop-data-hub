@@ -141,6 +141,7 @@ class ReleaseBatchRecord:
     contract_no: Optional[str]
     ship_name: str
     cargo_name: str
+    cargo_product_name: Optional[str]
     consignor: Optional[str]
     consignee: Optional[str]
     trade_type: Optional[str]
@@ -186,6 +187,7 @@ class ReleaseBatchRecord:
             "contractNo": self.contract_no,
             "shipName": self.ship_name,
             "cargoName": self.cargo_name,
+            "cargoProductName": self.cargo_product_name,
             "consignor": self.consignor,
             "consignee": self.consignee,
             "tradeType": self.trade_type,
@@ -322,6 +324,7 @@ class BusinessDataAgent:
                   contract_no,
                   ship_name,
                   cargo_name,
+                  cargo_product_name,
                   consignor,
                   consignee,
                   commissioner_identifier,
@@ -366,6 +369,7 @@ class BusinessDataAgent:
                   :contract_no,
                   :ship_name,
                   :cargo_name,
+                  :cargo_product_name,
                   :consignor,
                   :consignee,
                   :commissioner_identifier,
@@ -409,6 +413,7 @@ class BusinessDataAgent:
                   contract_no = excluded.contract_no,
                   ship_name = excluded.ship_name,
                   cargo_name = excluded.cargo_name,
+                  cargo_product_name = COALESCE(excluded.cargo_product_name, release_batches.cargo_product_name),
                   consignor = excluded.consignor,
                   consignee = excluded.consignee,
                   commissioner_identifier = excluded.commissioner_identifier,
@@ -500,7 +505,8 @@ class BusinessDataAgent:
                 "到达港": fields["港口"],
             },
             "cargo_info": {
-                "货物名称": fields["货名"],
+                "货物名称": infer_cargo_category(fields["货名"]),
+                "货物品名": fields["货名"],
                 "总重里": fields["数量"],
                 "发货站(地)": fields["港口"],
             },
@@ -904,7 +910,8 @@ class BusinessDataAgent:
         order_id = header_info.get("订单标识号") or header_info.get("订单号")
 
         ship_name = business_info.get("进口船名") or business_info.get("船名", "")
-        cargo_name = cargo_info.get("货物名称", "")
+        cargo_name = cargo_info.get("货物品类") or cargo_info.get("货物名称", "")
+        cargo_product_name = cargo_info.get("货物品名") or normalized_payload.get("货物品名")
         consignor = business_info.get("发货单位", "")
         consignee = business_info.get("收货单位", "")
         destination_station = parse_destination_station(special_matter) or (
@@ -957,6 +964,7 @@ class BusinessDataAgent:
                     "contract_no": contract_no,
                     "ship_name": ship_name,
                     "cargo_name": cargo_name,
+                    "cargo_product_name": cargo_product_name,
                     "consignor": consignor,
                     "consignee": consignee,
                     "commissioner_identifier": commissioner_identifier,
@@ -1010,6 +1018,7 @@ def hydrate_row(row) -> ReleaseBatchRecord:
         contract_no=row["contract_no"],
         ship_name=row["ship_name"],
         cargo_name=row["cargo_name"],
+        cargo_product_name=row["cargo_product_name"] if "cargo_product_name" in keys else None,
         consignor=row["consignor"],
         consignee=row["consignee"],
         trade_type=row["trade_type"],
@@ -1144,6 +1153,39 @@ def extract_single_record(payload: Any) -> Dict[str, Any]:
     return payload
 
 
+def infer_cargo_category(product_name: Optional[str]) -> str:
+    """Infer the coarse cargo category from a business-side cargo product name.
+
+    中唐 SOP distinguishes the port-side 货物品类 (铁矿/铁矿粉/铁矿石)
+    from the text-release 货物品名 (印度粉/混合粉/麦克粉/MB粉/etc.).
+    Text releases only carry 品名, so keep the product in cargo_product_name and
+    store a coarse category for matching instead of overwriting the category with
+    the product name.
+    """
+    text = str(product_name or "").strip()
+    if not text:
+        return ""
+    normalized = re.sub(r"\s+", "", text).lower()
+    iron_product_tokens = [
+        "粉",
+        "矿",
+        "pb",
+        "mb",
+        "纽曼",
+        "麦克",
+        "印粉",
+        "印度",
+        "混合",
+        "巴粗",
+        "巴混",
+        "澳粉",
+        "奥粉",
+    ]
+    if any(token in normalized for token in iron_product_tokens):
+        return "铁矿粉"
+    return text
+
+
 def parse_business_text_fields(text: str) -> Dict[str, str]:
     """Parse the fixed WeChat text release format into SOP field labels."""
     fields: Dict[str, str] = {}
@@ -1166,6 +1208,8 @@ def parse_business_text_fields(text: str) -> Dict[str, str]:
             continue
         match = re.match(r"^([^:：]{1,12})\s*[:：]\s*(.+?)\s*$", line)
         if not match:
+            if "供方" not in fields:
+                fields["供方"] = line
             continue
         raw_key, value = match.groups()
         key = label_aliases.get(raw_key.strip())

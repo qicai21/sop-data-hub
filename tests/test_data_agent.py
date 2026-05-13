@@ -193,6 +193,26 @@ class TestBusinessDataAgent:
         assert rule["ship_name"] == "贝拉"
         assert "贝拉" in rule["matching_str"]
 
+    def test_non_sop_release_batch_does_not_enter_dispatch_index(self, tmp_db):
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "header_info": {"通知日期": "2026年5月12日"},
+            "business_info": {"船名": "卡迪", "发货单位": "", "收货单位": "五矿物流（营口）有限公司"},
+            "cargo_info": {"货物名称": "铁矿", "总重里": "20000", "运输方式": "铁路"},
+            "special_matter": "到站：凌源东（凌东）",
+            "remarks": [{"date": "5月12日", "sequence": "第二次下达计划", "plan": "20000吨（铁路 凌源东）", "raw_line": ""}],
+        }
+
+        records = agent.ingest_release_batch(payload, source_file_name="kadi_non_sop.json")
+        rule_count = agent.db.execute(
+            "SELECT count(*) FROM release_dispatch_match_rules WHERE release_batch_id=?",
+            (records[0].id,),
+        ).fetchone()[0]
+
+        assert records
+        assert rule_count == 0
+
     def test_ingest_and_list(self, tmp_db):
         """Test basic ingest -> list cycle"""
         agent = BusinessDataAgent()

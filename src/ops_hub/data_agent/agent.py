@@ -13,6 +13,8 @@ from ops_hub.data_agent.db import open_db
 from ops_hub.data_agent.json_utils import read_json, to_searchable_text, write_json
 
 WORKSPACE_DOCS_DIR = Path(__file__).resolve().parents[3] / "doc"
+PROJECT_SOPS_DIR = Path(__file__).resolve().parents[4] / "business-system-docs" / "test-plan" / "fixtures" / "project_sops"
+NON_BUSINESS_SOP_HINTS = ("archive", "sandbox", "归档", "沙箱")
 
 # Common OCR confusions discovered in live release-batch documents.  These are
 # station names, not project hard-coding: the final value still passes through
@@ -20,6 +22,85 @@ WORKSPACE_DOCS_DIR = Path(__file__).resolve().parents[3] / "doc"
 STATION_OCR_CORRECTIONS = {
     "沱子": "汐子",
 }
+
+
+@lru_cache(maxsize=1)
+def active_business_sop_project_tokens() -> set[str]:
+    """ProjectSOP projects that may feed the dispatch-in-progress index.
+
+    The release-dispatch index is an operational queue, not a generic archive.
+    Sandbox/archive ProjectSOP fixtures can classify or store evidence, but they
+    must not make unrelated release batches participate in inspection matching.
+    """
+    tokens: set[str] = set()
+    try:
+        from ops_hub.models.project_sop import load_project_sop
+
+        for sop_file in sorted(PROJECT_SOPS_DIR.glob("*.yaml")):
+            sop = load_project_sop(sop_file)
+            if sop.status != "active":
+                continue
+            haystack = f"{sop.project_id} {sop.project_name}"
+            if any(hint in haystack for hint in NON_BUSINESS_SOP_HINTS):
+                continue
+            for value in (sop.project_id, sop.project_name):
+                text = str(value or "").strip()
+                if text:
+                    tokens.add(text)
+    except Exception:
+        # Keep the runtime gate conservative even when optional YAML support is
+        # unavailable in the host interpreter. These are the established
+        # business SOPs; sandbox/archive fixtures are intentionally omitted.
+        tokens.update({
+            "zt_steel_baseline",
+            "中唐特钢铁矿发运项目",
+            "chaoyang_steel_baseline",
+            "朝阳钢铁铁矿发运项目",
+        })
+    return tokens
+
+
+def release_batch_sop_project(record: "ReleaseBatchRecord") -> str:
+    """Return the authorized ProjectSOP token for a release batch, if any.
+
+    New ingestions should carry `project` from the ProjectSOP gate.  Older rows
+    can predate that column being populated, so keep a narrow compatibility
+    inference for the two established business SOPs already used in production.
+    """
+    tokens = active_business_sop_project_tokens()
+    project = str(record.project or "").strip()
+    if project and project in tokens:
+        return project
+
+    text_parts = [
+        record.project,
+        record.ship_name,
+        record.cargo_name,
+        record.destination_station,
+        record.contract_no,
+        record.customer_name,
+        record.consignor,
+        record.consignee,
+        record.id_label,
+        record.commissioner_identifier,
+        record.commissioner_note,
+        record.source_file_name,
+        json.dumps(record.source_json or {}, ensure_ascii=False),
+    ]
+    text = " ".join(str(part or "") for part in text_parts)
+
+    chaoyang = "朝阳钢铁铁矿发运项目"
+    if chaoyang in tokens and any(anchor in text for anchor in ("合远9", "朝阳钢铁", "朝钢", "朝阳西", "朝阳铁")):
+        return chaoyang
+
+    zhongtang = "中唐特钢铁矿发运项目"
+    if zhongtang in tokens:
+        if any(anchor in text for anchor in ("中唐", "赤峰中唐", "ZLZT")):
+            return zhongtang
+        if record.ship_name == "贝拉" and record.destination_station == "汐子" and "铁" in (record.cargo_name or ""):
+            return zhongtang
+
+    return ""
 
 
 @dataclass
@@ -470,17 +551,38 @@ class BusinessDataAgent:
         """Create/update active runtime dispatch matching rules from release_batches.
 
         Manual completed/suspended rules are preserved and not reactivated.
+        Release batches outside established business ProjectSOPs are removed
+        from the runtime index so new non-SOP material cannot auto-match.
         """
         rows = self.db.execute("SELECT * FROM release_batches").fetchall()
         count = 0
+        authorized_ids: set[str] = set()
         for row in rows:
             record = hydrate_row(row)
+            if not release_batch_sop_project(record):
+                continue
             self.upsert_release_dispatch_match_rule(record)
+            authorized_ids.add(record.id)
             count += 1
+        if authorized_ids:
+            placeholders = ",".join("?" for _ in authorized_ids)
+            self.db.execute(
+                f"DELETE FROM release_dispatch_match_rules WHERE release_batch_id NOT IN ({placeholders})",
+                tuple(authorized_ids),
+            )
+        else:
+            self.db.execute("DELETE FROM release_dispatch_match_rules")
         self.db.commit()
         return count
 
     def upsert_release_dispatch_match_rule(self, record: ReleaseBatchRecord) -> None:
+        sop_project = release_batch_sop_project(record)
+        if not sop_project:
+            self.db.execute(
+                "DELETE FROM release_dispatch_match_rules WHERE release_batch_id=?",
+                (record.id,),
+            )
+            return
         tokens = self._release_dispatch_rule_tokens(record)
         matching_str = " ".join(token for token in tokens["all"] if token)
         rule_id = hash_text(f"release_dispatch_match_rule|{record.id}")
@@ -507,7 +609,7 @@ class BusinessDataAgent:
             (
                 rule_id,
                 record.id,
-                record.project,
+                sop_project,
                 record.ship_name,
                 record.destination_station,
                 record.cargo_name,
@@ -537,7 +639,8 @@ class BusinessDataAgent:
         if record.cargo_name == "铁矿":
             cargo_tokens.append("铁矿粉")
         all_tokens = []
-        for token in [record.project, record.ship_name, record.destination_station, record.cargo_name, record.batch_sequence]:
+        project_token = record.project or release_batch_sop_project(record)
+        for token in [project_token, record.ship_name, record.destination_station, record.cargo_name, record.batch_sequence]:
             if token:
                 all_tokens.append(str(token))
         return {

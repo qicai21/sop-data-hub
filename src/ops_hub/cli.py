@@ -149,7 +149,7 @@ def cmd_list_batches(args: argparse.Namespace) -> None:
     for r in records:
         weighed = "✅" if r.is_weighed else "❌"
         print(f"  [{r.id[:8]}] {r.ship_name} / {r.cargo_name} → {r.destination_station} "
-              f"| {r.batch_quantity}吨 | 过磅{weighed} | {r.notice_date}")
+              f"| {r.batch_quantity}吨 | 发运状态:{r.dispatch_status} | 过磅{weighed} | {r.notice_date}")
 
 
 def cmd_refresh_match_rules(args: argparse.Namespace) -> None:
@@ -169,6 +169,18 @@ def cmd_complete_match_rule(args: argparse.Namespace) -> None:
         print(f"已下表 release_batch_id={args.release_batch_id}")
     else:
         print(f"未找到匹配规则 release_batch_id={args.release_batch_id}")
+        sys.exit(1)
+
+
+def cmd_reopen_match_rule(args: argparse.Namespace) -> None:
+    from ops_hub.data_agent.agent import BusinessDataAgent
+
+    agent = BusinessDataAgent()
+    ok = agent.force_reopen_release_dispatch_match_rule(args.release_batch_id, manual_note=args.note)
+    if ok:
+        print(f"已重新打开 release_batch_id={args.release_batch_id}，可按用户指令补充匹配")
+    else:
+        print(f"未找到放货记录 release_batch_id={args.release_batch_id}")
         sys.exit(1)
 
 
@@ -248,10 +260,16 @@ def main() -> None:
     p_refresh_rules.set_defaults(func=cmd_refresh_match_rules)
 
     # complete-match-rule
-    p_complete_rule = subparsers.add_parser("complete-match-rule", help="将指定 release_batch_id 的匹配规则标记为 completed/下表")
+    p_complete_rule = subparsers.add_parser("complete-match-rule", help="将指定 release_batch_id 的发运状态标记为 completed/完结")
     p_complete_rule.add_argument("release_batch_id", help="release_batches.id")
     p_complete_rule.add_argument("--note", default=None, help="手动备注")
     p_complete_rule.set_defaults(func=cmd_complete_match_rule)
+
+    # reopen-match-rule
+    p_reopen_rule = subparsers.add_parser("reopen-match-rule", help="按用户指令重新打开已完结批次，允许补充发车匹配")
+    p_reopen_rule.add_argument("release_batch_id", help="release_batches.id")
+    p_reopen_rule.add_argument("--note", default=None, help="手动备注")
+    p_reopen_rule.set_defaults(func=cmd_reopen_match_rule)
 
     args = parser.parse_args()
     if not args.command:

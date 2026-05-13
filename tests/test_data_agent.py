@@ -170,6 +170,25 @@ class TestBusinessDataAgent:
 
         assert result["status"] == "pending"
         assert result["release_batch_ids"] == []
+        release = agent.get(bella_id)
+        rule = agent.db.execute(
+            "SELECT status FROM release_dispatch_match_rules WHERE release_batch_id=?",
+            (bella_id,),
+        ).fetchone()
+        assert release is not None
+        assert release.dispatch_status == "completed"
+        assert rule["status"] == "completed"
+
+        forced = agent.ingest_inspection_payload(
+            {
+                "rows": [{"seq": 1, "car_no": "1682323", "cargo_info_effective": "汐子铁矿粉/贝拉"}],
+                "cargo_summary": {"汐子铁矿粉/贝拉": ["1682323"]},
+            },
+            source_file_name="bella_after_completed_force_supplement.jpg",
+            include_completed_release_batches=True,
+        )
+        assert forced["status"] == "candidate"
+        assert forced["release_batch_ids"] == [bella_id]
 
     def test_ingest_release_batch_auto_generates_active_dispatch_match_rule(self, tmp_db):
         agent = BusinessDataAgent()

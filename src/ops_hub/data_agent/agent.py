@@ -160,6 +160,9 @@ class ReleaseBatchRecord:
     customer_name: Optional[str]
     id_label: Optional[str]
     actual_wagon_count: int
+    dispatch_status: str
+    dispatch_status_note: Optional[str]
+    dispatch_status_updated_at: Optional[str]
     is_weighed: bool
     loading_weight: Optional[float]
     return_weight: Optional[float]
@@ -202,6 +205,9 @@ class ReleaseBatchRecord:
             "customerName": self.customer_name,
             "idLabel": self.id_label,
             "actualWagonCount": self.actual_wagon_count,
+            "dispatchStatus": self.dispatch_status,
+            "dispatchStatusNote": self.dispatch_status_note,
+            "dispatchStatusUpdatedAt": self.dispatch_status_updated_at,
             "isWeighed": self.is_weighed,
             "loadingWeight": self.loading_weight,
             "returnWeight": self.return_weight,
@@ -337,6 +343,9 @@ class BusinessDataAgent:
                   customer_name,
                   id_label,
                   actual_wagon_count,
+                  dispatch_status,
+                  dispatch_status_note,
+                  dispatch_status_updated_at,
                   is_weighed,
                   loading_weight,
                   return_weight,
@@ -378,6 +387,9 @@ class BusinessDataAgent:
                   :customer_name,
                   :id_label,
                   :actual_wagon_count,
+                  :dispatch_status,
+                  :dispatch_status_note,
+                  :dispatch_status_updated_at,
                   :is_weighed,
                   :loading_weight,
                   :return_weight,
@@ -418,6 +430,9 @@ class BusinessDataAgent:
                   customer_name = excluded.customer_name,
                   id_label = excluded.id_label,
                   actual_wagon_count = excluded.actual_wagon_count,
+                  dispatch_status = release_batches.dispatch_status,
+                  dispatch_status_note = release_batches.dispatch_status_note,
+                  dispatch_status_updated_at = release_batches.dispatch_status_updated_at,
                   is_weighed = excluded.is_weighed,
                   loading_weight = excluded.loading_weight,
                   return_weight = excluded.return_weight,
@@ -590,8 +605,10 @@ class BusinessDataAgent:
             """
             INSERT INTO release_dispatch_match_rules (
               id, release_batch_id, project, ship_name, destination_station,
-              cargo_name, matching_str, matching_tokens_json, status, priority, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, CURRENT_TIMESTAMP)
+              cargo_name, matching_str, matching_tokens_json, status, priority, updated_at,
+              completed_at, manual_note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP,
+              CASE WHEN ?='completed' THEN CURRENT_TIMESTAMP ELSE NULL END, ?)
             ON CONFLICT(release_batch_id) DO UPDATE SET
               project=excluded.project,
               ship_name=excluded.ship_name,
@@ -600,9 +617,14 @@ class BusinessDataAgent:
               matching_str=excluded.matching_str,
               matching_tokens_json=excluded.matching_tokens_json,
               priority=excluded.priority,
-              status=CASE
-                WHEN release_dispatch_match_rules.status IN ('completed', 'suspended') THEN release_dispatch_match_rules.status
-                ELSE 'active'
+              status=excluded.status,
+              completed_at=CASE
+                WHEN excluded.status='completed' THEN COALESCE(release_dispatch_match_rules.completed_at, excluded.completed_at)
+                ELSE NULL
+              END,
+              manual_note=CASE
+                WHEN excluded.manual_note IS NOT NULL THEN excluded.manual_note
+                ELSE release_dispatch_match_rules.manual_note
               END,
               updated_at=CURRENT_TIMESTAMP
             """,
@@ -615,22 +637,39 @@ class BusinessDataAgent:
                 record.cargo_name,
                 matching_str,
                 json.dumps(tokens, ensure_ascii=False),
+                "active" if record.dispatch_status == "in_progress" else record.dispatch_status,
                 100,
+                "active" if record.dispatch_status == "in_progress" else record.dispatch_status,
+                record.dispatch_status_note,
             ),
         )
 
-    def complete_release_dispatch_match_rule(self, release_batch_id: str, manual_note: str | None = None) -> bool:
+    def update_release_dispatch_status(self, release_batch_id: str, status: str, manual_note: str | None = None) -> bool:
+        if status not in {"in_progress", "completed", "suspended"}:
+            raise ValueError("status must be one of: in_progress, completed, suspended")
         cursor = self.db.execute(
             """
-            UPDATE release_dispatch_match_rules
-            SET status='completed', completed_at=CURRENT_TIMESTAMP, manual_note=?, updated_at=CURRENT_TIMESTAMP
-            WHERE release_batch_id=?
+            UPDATE release_batches
+            SET dispatch_status=?, dispatch_status_note=?, dispatch_status_updated_at=CURRENT_TIMESTAMP,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
             """,
-            (manual_note, release_batch_id),
+            (status, manual_note, release_batch_id),
         )
         changed = cursor.rowcount > 0
+        if changed:
+            record = self.get(release_batch_id)
+            if record:
+                self.upsert_release_dispatch_match_rule(record)
         self.db.commit()
         return changed
+
+    def complete_release_dispatch_match_rule(self, release_batch_id: str, manual_note: str | None = None) -> bool:
+        return self.update_release_dispatch_status(release_batch_id, "completed", manual_note=manual_note)
+
+    def force_reopen_release_dispatch_match_rule(self, release_batch_id: str, manual_note: str | None = None) -> bool:
+        """Re-open a completed batch so a user-directed supplement can be matched."""
+        return self.update_release_dispatch_status(release_batch_id, "in_progress", manual_note=manual_note)
 
     def _release_dispatch_rule_tokens(self, record: ReleaseBatchRecord) -> Dict[str, List[str]]:
         ship_tokens = [record.ship_name] if record.ship_name else []
@@ -650,12 +689,18 @@ class BusinessDataAgent:
             "all": all_tokens,
         }
 
-    def match_release_dispatch_rule_for_inspection(self, payload: Dict[str, Any]) -> Optional[str]:
+    def match_release_dispatch_rule_for_inspection(
+        self,
+        payload: Dict[str, Any],
+        *,
+        include_completed: bool = False,
+    ) -> Optional[str]:
         searchable = to_searchable_text(payload)
+        status_filter = "status IN ('active', 'completed')" if include_completed else "status='active'"
         rows = self.db.execute(
-            """
+            f"""
             SELECT * FROM release_dispatch_match_rules
-            WHERE status='active'
+            WHERE {status_filter}
             ORDER BY priority ASC, updated_at DESC
             """
         ).fetchall()
@@ -681,11 +726,15 @@ class BusinessDataAgent:
         payload: Dict[str, Any],
         source_file_name: Optional[str] = None,
         group_name: Optional[str] = None,
+        include_completed_release_batches: bool = False,
     ) -> Dict[str, Any]:
         rows = payload.get("rows") if isinstance(payload, dict) else []
         rows = rows if isinstance(rows, list) else []
         car_numbers = [str(row.get("car_no") or "").strip() for row in rows if isinstance(row, dict) and str(row.get("car_no") or "").strip()]
-        release_batch_id = self.match_release_dispatch_rule_for_inspection(payload)
+        release_batch_id = self.match_release_dispatch_rule_for_inspection(
+            payload,
+            include_completed=include_completed_release_batches,
+        )
         status = "candidate" if release_batch_id else "pending"
         reason = "matched_release_batch_waiting_95306_validation" if release_batch_id else "no_release_batch_candidate"
         candidate_id = hash_text(f"inspection|{source_file_name}|{','.join(car_numbers)}|{reason}")
@@ -931,6 +980,9 @@ class BusinessDataAgent:
                     "customer_name": customer_name,
                     "id_label": id_label,
                     "actual_wagon_count": 0,
+                    "dispatch_status": "in_progress",
+                    "dispatch_status_note": None,
+                    "dispatch_status_updated_at": None,
                     "is_weighed": is_weighed,
                     "loading_weight": None,
                     "return_weight": None,
@@ -977,6 +1029,9 @@ def hydrate_row(row) -> ReleaseBatchRecord:
         customer_name=row["customer_name"] if "customer_name" in keys else None,
         id_label=row["id_label"] if "id_label" in keys else None,
         actual_wagon_count=row["actual_wagon_count"] if "actual_wagon_count" in keys else 0,
+        dispatch_status=row["dispatch_status"] if "dispatch_status" in keys else "in_progress",
+        dispatch_status_note=row["dispatch_status_note"] if "dispatch_status_note" in keys else None,
+        dispatch_status_updated_at=row["dispatch_status_updated_at"] if "dispatch_status_updated_at" in keys else None,
         is_weighed=bool(row["is_weighed"]) if "is_weighed" in keys else False,
         loading_weight=row["loading_weight"] if "loading_weight" in keys else None,
         return_weight=row["return_weight"] if "return_weight" in keys else None,

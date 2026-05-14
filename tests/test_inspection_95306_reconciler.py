@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ops_hub.matching.inspection_finalizer import finalize_inspection_candidates
+from ops_hub.matching.inspection_95306_reconciler import reconcile_inspection_shipments
 from ops_hub.matching.shipment_linkage import _ensure_match_table
 
 
@@ -14,18 +14,25 @@ def test_candidate_status_does_not_write_formal_table_until_commit(tmp_path: Pat
     biz_db, rail_db = _build_fixture(tmp_path, authorized=True)
 
     before = _match_count(rail_db, "batch-1")
-    result = finalize_inspection_candidates(
+    result = reconcile_inspection_shipments(
         business_db_path=biz_db,
         rail_db_path=rail_db,
         project_id="中唐特钢铁矿发运项目",
         release_batch_id="batch-1",
         candidate_ids=["cand-1"],
-        run_mode="dry_run",
-        operator_note="pytest dry-run",
+        run_mode="plan",
+        operator_note="pytest plan",
     )
 
     assert before == 0
-    assert result.satisfied is True
+    assert result.safe_to_commit is True
+    report = result.to_report_dict()
+    assert report["run_mode"] == "plan"
+    assert "reconcile_plan" in report
+    assert report["planned_write_count"] == 2
+    assert report["matched_95306_count"] == 2
+    assert report["safe_to_commit"] is True
+    assert report["requires_manual_review"] is False
     assert result.planned_write_count == 2
     assert _match_count(rail_db, "batch-1") == 0
 
@@ -33,7 +40,7 @@ def test_candidate_status_does_not_write_formal_table_until_commit(tmp_path: Pat
 def test_commit_writes_matches_and_repeated_commit_is_idempotent(tmp_path: Path) -> None:
     biz_db, rail_db = _build_fixture(tmp_path, authorized=True)
 
-    first = finalize_inspection_candidates(
+    first = reconcile_inspection_shipments(
         business_db_path=biz_db,
         rail_db_path=rail_db,
         project_id="中唐特钢铁矿发运项目",
@@ -42,7 +49,7 @@ def test_commit_writes_matches_and_repeated_commit_is_idempotent(tmp_path: Path)
         run_mode="commit",
         operator_note="pytest commit",
     )
-    second = finalize_inspection_candidates(
+    second = reconcile_inspection_shipments(
         business_db_path=biz_db,
         rail_db_path=rail_db,
         project_id="中唐特钢铁矿发运项目",
@@ -61,7 +68,7 @@ def test_commit_writes_matches_and_repeated_commit_is_idempotent(tmp_path: Path)
 def test_mixed_ship_candidate_only_writes_target_release_segment(tmp_path: Path) -> None:
     biz_db, rail_db = _build_fixture(tmp_path, authorized=True, include_other_ship_segment=True)
 
-    result = finalize_inspection_candidates(
+    result = reconcile_inspection_shipments(
         business_db_path=biz_db,
         rail_db_path=rail_db,
         project_id="中唐特钢铁矿发运项目",
@@ -81,7 +88,7 @@ def test_mixed_ship_candidate_only_writes_target_release_segment(tmp_path: Path)
 def test_unauthorized_project_or_route_cannot_commit(tmp_path: Path) -> None:
     biz_db, rail_db = _build_fixture(tmp_path, authorized=False)
 
-    result = finalize_inspection_candidates(
+    result = reconcile_inspection_shipments(
         business_db_path=biz_db,
         rail_db_path=rail_db,
         project_id="中唐特钢铁矿发运项目",
@@ -91,8 +98,8 @@ def test_unauthorized_project_or_route_cannot_commit(tmp_path: Path) -> None:
         operator_note="pytest unauthorized",
     )
 
-    assert result.satisfied is False
-    assert result.reason == "candidate-sop-not-authorized"
+    assert result.safe_to_commit is False
+    assert "candidate-sop-not-authorized" in result.review_reasons
     assert _match_count(rail_db, "batch-1") == 0
 
 
@@ -102,18 +109,64 @@ def test_anzihe_lot04_scope_is_fixed_when_live_databases_exist() -> None:
     if not biz_db.exists() or not rail_db.exists():
         pytest.skip("machine-local Anzihe lot04 databases are not present")
 
-    result = finalize_inspection_candidates(
+    result = reconcile_inspection_shipments(
         business_db_path=biz_db,
         rail_db_path=rail_db,
         project_id="中唐特钢铁矿发运项目",
         release_batch_id="88ceb9b2086fed6e81cd4eadb8b2b0a0002c8c01",
-        run_mode="dry_run",
-        operator_note="pytest anzihe lot04 dry-run",
+        run_mode="plan",
+        operator_note="pytest anzihe lot04 plan",
     )
 
-    assert result.satisfied is True
+    assert result.safe_to_commit is True
     assert result.planned_write_count == 164
     assert result.matched_95306_count == 164
+
+
+def test_plan_requires_manual_review_when_95306_window_has_unmatched_extra_row(tmp_path: Path) -> None:
+    biz_db, rail_db = _build_fixture(tmp_path, authorized=True)
+    _insert_shipments(
+        rail_db,
+        [("yd-extra", "999999", "C70", "铁矿粉", "汐子", "2026-05-01 08:00:30")],
+    )
+
+    result = reconcile_inspection_shipments(
+        business_db_path=biz_db,
+        rail_db_path=rail_db,
+        project_id="中唐特钢铁矿发运项目",
+        release_batch_id="batch-1",
+        candidate_ids=["cand-1"],
+        run_mode="plan",
+        operator_note="pytest unsafe plan",
+    )
+
+    assert result.safe_to_commit is False
+    assert result.requires_manual_review is True
+    assert "95306-window-count-mismatch" in result.review_reasons
+    assert _match_count(rail_db, "batch-1") == 0
+
+
+def test_commit_refuses_unsafe_plan_without_manual_override(tmp_path: Path) -> None:
+    biz_db, rail_db = _build_fixture(tmp_path, authorized=True)
+    _insert_shipments(
+        rail_db,
+        [("yd-extra", "999999", "C70", "铁矿粉", "汐子", "2026-05-01 08:00:30")],
+    )
+
+    result = reconcile_inspection_shipments(
+        business_db_path=biz_db,
+        rail_db_path=rail_db,
+        project_id="中唐特钢铁矿发运项目",
+        release_batch_id="batch-1",
+        candidate_ids=["cand-1"],
+        run_mode="commit",
+        operator_note="pytest unsafe commit",
+    )
+
+    assert result.safe_to_commit is False
+    assert result.committed_count == 0
+    assert _match_count(rail_db, "batch-1") == 0
+
 
 
 def _build_fixture(tmp_path: Path, *, authorized: bool, include_other_ship_segment: bool = False) -> tuple[Path, Path]:
@@ -160,14 +213,13 @@ def _build_fixture(tmp_path: Path, *, authorized: bool, include_other_ship_segme
     conn.commit()
     conn.close()
 
-    _insert_shipments(
-        rail_db,
-        [
-            ("yd1", "100001", "C70", "铁矿粉", "汐子", "2026-05-01 08:00:00"),
-            ("yd2", "100002", "C70", "铁矿粉", "汐子", "2026-05-01 08:00:10"),
-            ("yd3", "200001", "C70", "铁矿粉", "汐子", "2026-05-01 08:00:20"),
-        ],
-    )
+    shipment_rows = [
+        ("yd1", "100001", "C70", "铁矿粉", "汐子", "2026-05-01 08:00:00"),
+        ("yd2", "100002", "C70", "铁矿粉", "汐子", "2026-05-01 08:00:10"),
+    ]
+    if include_other_ship_segment:
+        shipment_rows.append(("yd3", "200001", "C70", "铁矿粉", "汐子", "2026-05-01 08:00:20"))
+    _insert_shipments(rail_db, shipment_rows)
     return biz_db, rail_db
 
 

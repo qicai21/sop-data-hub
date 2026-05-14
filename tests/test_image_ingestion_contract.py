@@ -61,7 +61,7 @@ def test_lobster_group_departure_plan_lands_files_audit_and_test_db(tmp_path: Pa
     assert Path(result.saved_path).exists()
     assert Path(result.extraction_saved_path).exists()
     assert Path(result.status_path).exists()
-    assert Path(result.saved_path).parts[-3:] == ("龙虾测试群", "出港计划通知单", "departure.jpg")
+    assert Path(result.saved_path).parts[-7:] == ("朝阳钢铁铁矿发运项目", "朝阳西", "合远9", "lot01", "images", "2026-05-12", "departure.jpg")
     assert json.loads(Path(result.extraction_saved_path).read_text(encoding="utf-8"))["_agent_ingested"] == 1
     assert _count(test_db, "select count(*) from release_batches where source_file_name=?", ("departure.jpg",)) == 1
     assert not prod_db.exists() or _count(prod_db, "select count(*) from sqlite_master where type='table' and name='release_batches'") == 0

@@ -790,13 +790,15 @@ class BusinessDataAgent:
               message_type, raw_image_path, classified_category, classification_confidence,
               classified_image_path, extraction_json_path, project_id, target_node,
               adopted_fields, ignored_fields, db_action, db_tables, db_record_ids,
-              status, reason
+              status, reason, reconcile_plan, safe_to_commit, requires_manual_review,
+              review_reasons, planned_write_count, excluded_count, project_archive_paths
             ) VALUES (
               :id, :group_name, :group_id, :message_time, :sender, :message_id, :local_id,
               :message_type, :raw_image_path, :classified_category, :classification_confidence,
               :classified_image_path, :extraction_json_path, :project_id, :target_node,
               :adopted_fields, :ignored_fields, :db_action, :db_tables, :db_record_ids,
-              :status, :reason
+              :status, :reason, :reconcile_plan, :safe_to_commit, :requires_manual_review,
+              :review_reasons, :planned_write_count, :excluded_count, :project_archive_paths
             )
             ON CONFLICT(id) DO UPDATE SET
               classified_category=excluded.classified_category,
@@ -807,7 +809,14 @@ class BusinessDataAgent:
               db_tables=excluded.db_tables,
               db_record_ids=excluded.db_record_ids,
               status=excluded.status,
-              reason=excluded.reason
+              reason=excluded.reason,
+              reconcile_plan=excluded.reconcile_plan,
+              safe_to_commit=excluded.safe_to_commit,
+              requires_manual_review=excluded.requires_manual_review,
+              review_reasons=excluded.review_reasons,
+              planned_write_count=excluded.planned_write_count,
+              excluded_count=excluded.excluded_count,
+              project_archive_paths=excluded.project_archive_paths
             """,
             {
                 "id": record_id,
@@ -832,6 +841,13 @@ class BusinessDataAgent:
                 "db_record_ids": write_json(data.get("db_record_ids") or [], pretty=False),
                 "status": data.get("status"),
                 "reason": data.get("reason"),
+                "reconcile_plan": write_json(data.get("reconcile_plan") or {}, pretty=False) if data.get("reconcile_plan") else None,
+                "safe_to_commit": int(bool((data.get("reconcile_plan") or {}).get("safe_to_commit"))) if data.get("reconcile_plan") else None,
+                "requires_manual_review": int(bool((data.get("reconcile_plan") or {}).get("requires_manual_review"))) if data.get("reconcile_plan") else None,
+                "review_reasons": write_json((data.get("reconcile_plan") or {}).get("review_reasons") or [], pretty=False) if data.get("reconcile_plan") else None,
+                "planned_write_count": (data.get("reconcile_plan") or {}).get("planned_write_count") if data.get("reconcile_plan") else None,
+                "excluded_count": len((data.get("reconcile_plan") or {}).get("excluded") or []) if data.get("reconcile_plan") else None,
+                "project_archive_paths": write_json(data.get("project_archive_paths") or {}, pretty=False) if data.get("project_archive_paths") else None,
             },
         )
         self.db.commit()

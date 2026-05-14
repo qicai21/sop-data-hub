@@ -169,6 +169,13 @@ def open_db() -> sqlite3.Connection:
           db_record_ids TEXT,
           status TEXT,
           reason TEXT,
+          reconcile_plan TEXT,
+          safe_to_commit INTEGER,
+          requires_manual_review INTEGER,
+          review_reasons TEXT,
+          planned_write_count INTEGER,
+          excluded_count INTEGER,
+          project_archive_paths TEXT,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
@@ -176,9 +183,26 @@ def open_db() -> sqlite3.Connection:
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_image_ingestion_audit_group ON image_ingestion_audit(group_name, created_at)"
     )
+    migrate_image_ingestion_audit_schema(connection)
     connection.commit()
 
     return connection
+
+
+def migrate_image_ingestion_audit_schema(connection: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(image_ingestion_audit)").fetchall()}
+    new_fields = {
+        "reconcile_plan": "TEXT",
+        "safe_to_commit": "INTEGER",
+        "requires_manual_review": "INTEGER",
+        "review_reasons": "TEXT",
+        "planned_write_count": "INTEGER",
+        "excluded_count": "INTEGER",
+        "project_archive_paths": "TEXT",
+    }
+    for field, type_def in new_fields.items():
+        if field not in columns:
+            connection.execute(f"ALTER TABLE image_ingestion_audit ADD COLUMN {field} {type_def}")
 
 
 def migrate_release_batches_schema(connection: sqlite3.Connection) -> None:

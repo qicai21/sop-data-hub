@@ -6,9 +6,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -76,6 +78,8 @@ def _write_status_file(
         "elapsed_classify": result.elapsed_classify,
         "elapsed_extract": result.elapsed_extract,
     }
+    if result.project_archive_paths:
+        payload["project_archive_paths"] = result.project_archive_paths
     if isinstance(result.extracted, dict):
         # Surface DB/business landing signals without duplicating the full OCR payload.
         for key in ("_agent_ingested", "_agent_ingest_error", "_agent_updated_ids", "_agent_update_error"):
@@ -84,6 +88,14 @@ def _write_status_file(
         for key in ("rows_count", "last_car_no"):
             if key in result.extracted:
                 payload[key] = result.extracted[key]
+        plan = result.extracted.get("_agent_reconcile_plan")
+        if isinstance(plan, dict):
+            payload["reconcile_plan"] = plan.get("reconcile_plan") or plan
+            payload["safe_to_commit"] = bool(plan.get("safe_to_commit"))
+            payload["requires_manual_review"] = bool(plan.get("requires_manual_review"))
+            payload["review_reasons"] = plan.get("review_reasons") or []
+            payload["planned_write_count"] = int(plan.get("planned_write_count") or 0)
+            payload["excluded_count"] = len(plan.get("excluded") or [])
         footer = result.extracted.get("footer")
         if isinstance(footer, dict):
             payload["footer"] = footer
@@ -160,11 +172,149 @@ def _write_audit_record(
                 "project_id": extracted.get("project") or extracted.get("项目"),
                 "adopted_fields": extracted.get("_adopted_fields") or [],
                 "ignored_fields": extracted.get("_ignored_fields") or [],
+                "reconcile_plan": extracted.get("_agent_reconcile_plan"),
+                "project_archive_paths": result.project_archive_paths,
                 **summary,
             }
         )
     except Exception:
         pass
+
+
+# ── 项目归档与自动发运入库计划 ─────────────────────────
+def _archive_date_from_payload(payload: dict[str, Any], *, month_str: str = "") -> str:
+    candidates = [
+        payload.get("notice_date"),
+        (payload.get("meta") or {}).get("date") if isinstance(payload.get("meta"), dict) else None,
+        (payload.get("header_info") or {}).get("通知日期") if isinstance(payload.get("header_info"), dict) else None,
+    ]
+    for remark in payload.get("remarks") or []:
+        if isinstance(remark, dict):
+            candidates.append(remark.get("date"))
+    for raw in candidates:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        text = text.replace("年", "-").replace("月", "-").replace("日", "")
+        parts = [part for part in text.split("-") if part]
+        if len(parts) >= 3 and all(part.isdigit() for part in parts[:3]):
+            y, m, d = parts[:3]
+            if len(y) == 4:
+                return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+    if month_str:
+        month = _normalize_month_compact(month_str)
+        if len(month) == 6 and month.isdigit():
+            return f"{month[:4]}-{month[4:6]}-01"
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def _archive_month_from_date(date_text: str, *, month_str: str = "") -> str:
+    if date_text and len(date_text) >= 7:
+        return date_text[:7]
+    month = _normalize_month_compact(month_str)
+    if len(month) == 6 and month.isdigit():
+        return f"{month[:4]}-{month[4:6]}"
+    return datetime.now().strftime("%Y-%m")
+
+
+def _lot_component(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "lotunknown"
+    lowered = text.lower()
+    if lowered.startswith("lot"):
+        suffix = lowered[3:]
+        return f"lot{int(suffix):02d}" if suffix.isdigit() else _sanitize_component(lowered)
+    match = re.search(r"(\d{1,2})", lowered)
+    if match:
+        return f"lot{int(match.group(1)):02d}"
+    chinese = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+    for token, number in chinese.items():
+        if token in text:
+            return f"lot{number:02d}"
+    return _sanitize_component(text)
+
+
+def _release_row_for_archive(settings: Settings, release_batch_id: str | None) -> dict[str, Any]:
+    if not release_batch_id:
+        return {}
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(settings.agent_db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute("SELECT * FROM release_batches WHERE id=?", (release_batch_id,)).fetchone()
+            return dict(row) if row else {}
+        finally:
+            conn.close()
+    except Exception:
+        return {}
+
+
+def _archive_components(payload: dict[str, Any], settings: Settings) -> dict[str, str]:
+    release_ids = payload.get("_agent_updated_ids") or []
+    release_row = _release_row_for_archive(settings, str(release_ids[0]) if release_ids else None)
+    business_info = payload.get("business_info") if isinstance(payload.get("business_info"), dict) else {}
+    cargo_info = payload.get("cargo_info") if isinstance(payload.get("cargo_info"), dict) else {}
+    remarks = [item for item in (payload.get("remarks") or []) if isinstance(item, dict)]
+    first_remark = remarks[0] if remarks else {}
+    return {
+        "project": str(payload.get("project") or release_row.get("project") or "unknown"),
+        "destination": str(release_row.get("destination_station") or first_remark.get("destination") or cargo_info.get("到站") or payload.get("destination_station") or "unknown"),
+        "ship": str(release_row.get("ship_name") or business_info.get("进口船名") or business_info.get("船名") or payload.get("ship_name") or "unknown"),
+        "lot": _lot_component(release_row.get("batch_sequence") or first_remark.get("sequence") or payload.get("batch_sequence")),
+    }
+
+
+def _move_processed_artifacts(settings: Settings, img: Path, result: "ProcessingResult", *, month_str: str = "") -> None:
+    if not isinstance(result.extracted, dict) or not result.extraction_saved_path:
+        return
+    payload = result.extracted
+    date_text = _archive_date_from_payload(payload, month_str=month_str)
+    root = Path(settings.classified_output_dir)
+    if payload.get("_agent_sop_authorized") is True:
+        parts = _archive_components(payload, settings)
+        base = root / "projects" / _sanitize_component(parts["project"]) / _sanitize_component(parts["destination"]) / _sanitize_component(parts["ship"]) / parts["lot"]
+        image_dir = base / "images" / date_text
+        json_dir = base / "json" / date_text
+    else:
+        month = _archive_month_from_date(date_text, month_str=month_str)
+        image_dir = root / "unmatched" / month / "images"
+        json_dir = root / "unmatched" / month / "json"
+    image_dir.mkdir(parents=True, exist_ok=True)
+    json_dir.mkdir(parents=True, exist_ok=True)
+    image_dest = image_dir / img.name
+    json_dest = json_dir / f"{img.stem}_result.json"
+    if Path(result.saved_path) != image_dest:
+        shutil.copy2(img, image_dest)
+    Path(result.extraction_saved_path).replace(json_dest)
+    result.saved_path = str(image_dest)
+    result.extraction_saved_path = str(json_dest)
+    result.project_archive_paths = {"image": result.saved_path, "json": result.extraction_saved_path}
+
+
+def _attach_reconcile_plan_if_possible(settings: Settings, payload: dict[str, Any]) -> None:
+    candidate_ids = [str(item) for item in (payload.get("_agent_candidate_ids") or []) if str(item).strip()]
+    release_ids = [str(item) for item in (payload.get("_agent_updated_ids") or []) if str(item).strip()]
+    if not candidate_ids or not release_ids or not settings.db_95306_path:
+        return
+    rail_path = Path(settings.db_95306_path)
+    if not rail_path.exists():
+        return
+    try:
+        from ops_hub.matching.inspection_95306_reconciler import reconcile_inspection_shipments
+
+        payload["_agent_reconcile_plan"] = reconcile_inspection_shipments(
+            business_db_path=settings.agent_db_path,
+            rail_db_path=rail_path,
+            project_id=str(payload.get("project") or ""),
+            release_batch_id=release_ids[0],
+            run_mode="plan",
+            operator_note="auto plan from runner after inspection candidate ingestion",
+            candidate_ids=candidate_ids,
+        ).to_report_dict()
+    except Exception as exc:
+        payload["_agent_reconcile_plan_error"] = str(exc)
 
 
 @dataclass
@@ -177,6 +327,7 @@ class ProcessingResult:
     extracted: dict[str, Any] = field(default_factory=dict)
     extraction_saved_path: str = ""
     status_path: str = ""
+    project_archive_paths: dict[str, str] = field(default_factory=dict)
     error: str = ""
     elapsed_classify: float = 0.0
     elapsed_extract: float = 0.0
@@ -274,6 +425,7 @@ def process_new_image(
 
             # 保存识别结果
             if extracted:
+                _attach_reconcile_plan_if_possible(settings, extracted)
                 if month_str or group_name:
                     ext_dir = _artifact_base_dir(
                         settings.classified_output_dir,
@@ -290,6 +442,7 @@ def process_new_image(
                     encoding="utf-8",
                 )
                 result.extraction_saved_path = str(json_path)
+                _move_processed_artifacts(settings, img, result, month_str=month_str)
         except Exception as e:
             result.error = f"识别失败: {e}"
 

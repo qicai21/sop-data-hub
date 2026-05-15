@@ -4,9 +4,13 @@ from collections import defaultdict
 from datetime import datetime
 from html import escape
 import json
+from functools import lru_cache
 from pathlib import Path
 import sqlite3
 from typing import Any
+from urllib.parse import quote
+
+from ops_hub.data_agent.agent import active_business_sop_project_tokens
 
 
 STATUS_LABELS = {
@@ -52,14 +56,15 @@ def render_dispatch_board(
         audit_paths=audit_paths,
     )
     output_path.write_text(html, encoding="utf-8")
+    visible_release_ids = {str(row.get("id") or "") for row in release_rows}
     return {
         "output_path": str(output_path),
         "release_batch_count": len(release_rows),
         "active_release_batch_count": sum(1 for row in release_rows if row.get("dispatch_status") == "in_progress"),
         "candidate_count": sum(item.get("matched_candidate_count", 0) for item in candidate_summary.values()),
         "manual_pending_candidate_count": _manual_pending_count(candidate_summary),
-        "formal_match_count": sum(item.get("formal_match_count", 0) for item in formal_summary.values()),
-        "formal_weight": sum(float(item.get("formal_weight") or 0) for item in formal_summary.values()),
+        "formal_match_count": sum(item.get("formal_match_count", 0) for key, item in formal_summary.items() if key in visible_release_ids),
+        "formal_weight": sum(float(item.get("formal_weight") or 0) for key, item in formal_summary.items() if key in visible_release_ids),
     }
 
 
@@ -86,7 +91,8 @@ def _fetch_release_batches(db: sqlite3.Connection) -> list[dict[str, Any]]:
           batch_sequence ASC
         """
     ).fetchall()
-    return [dict(row) for row in rows]
+    tokens = active_business_sop_project_tokens()
+    return [dict(row) for row in rows if str(row["project"] or "").strip() in tokens]
 
 
 def _fetch_candidate_summary(db: sqlite3.Connection) -> dict[str, dict[str, Any]]:
@@ -189,17 +195,52 @@ def _fetch_formal_summary_read_only(rail_db_path: Path) -> dict[str, dict[str, A
             GROUP BY release_batch_id
             """
         ).fetchall()
-    return {
+        available_columns = {row["name"] for row in db.execute("PRAGMA table_info(shipment_release_batch_matches)").fetchall()}
+        select_columns = [
+            "release_batch_id",
+            _optional_column(available_columns, "shipment_car_no"),
+            _optional_column(available_columns, "inspection_car_no"),
+            _optional_column(available_columns, "latest_event_time"),
+            _optional_column(available_columns, "loaded_at"),
+            _optional_column(available_columns, "inspection_file"),
+        ]
+        detail_rows = db.execute(
+            f"""
+            SELECT {', '.join(select_columns)}
+            FROM shipment_release_batch_matches
+            WHERE release_batch_id IS NOT NULL AND release_batch_id <> ''
+            ORDER BY release_batch_id, COALESCE(latest_event_time, loaded_at, ''), COALESCE(shipment_car_no, inspection_car_no, '')
+            """
+        ).fetchall()
+    summary = {
         row["release_batch_id"]: {
             "formal_match_count": int(row["formal_match_count"] or 0),
             "formal_weight": float(row["formal_weight"] or 0),
+            "car_details": [],
         }
         for row in rows
     }
+    for row in detail_rows:
+        item = summary.setdefault(
+            row["release_batch_id"],
+            {"formal_match_count": 0, "formal_weight": 0.0, "car_details": []},
+        )
+        item["car_details"].append(
+            {
+                "car_no": row["shipment_car_no"] or row["inspection_car_no"] or "",
+                "time": row["latest_event_time"] or row["loaded_at"] or "",
+                "inspection_file": row["inspection_file"] or "",
+            }
+        )
+    return summary
 
 
 def _table_exists(db: sqlite3.Connection, table: str) -> bool:
     return db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
+
+
+def _optional_column(available_columns: set[str], column_name: str) -> str:
+    return column_name if column_name in available_columns else f"NULL AS {column_name}"
 
 
 def _json_object(raw: Any) -> dict[str, Any]:
@@ -260,11 +301,12 @@ def _build_html(
     formal_summary: dict[str, dict[str, Any]],
     audit_paths: dict[str, dict[str, str]],
 ) -> str:
+    visible_release_ids = {str(row.get("id") or "") for row in release_rows}
     active_count = sum(1 for row in release_rows if row.get("dispatch_status") == "in_progress")
     matched_candidate_count = sum(item.get("matched_candidate_count", 0) for item in candidate_summary.values())
     manual_pending_count = _manual_pending_count(candidate_summary)
-    formal_count = sum(item.get("formal_match_count", 0) for item in formal_summary.values())
-    formal_weight = sum(float(item.get("formal_weight") or 0) for item in formal_summary.values())
+    formal_count = sum(item.get("formal_match_count", 0) for key, item in formal_summary.items() if key in visible_release_ids)
+    formal_weight = sum(float(item.get("formal_weight") or 0) for key, item in formal_summary.items() if key in visible_release_ids)
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     rows_html = []
@@ -278,9 +320,9 @@ def _build_html(
         status_label = STATUS_LABELS.get(status, status or "待人工确认")
         remaining = _remaining_text(row.get("batch_quantity"), formal.get("formal_weight"))
         candidate_lots = _candidate_lot_text(candidates.get("candidate_release_batch_ids") or [], release_by_id)
+        car_details_html = _car_details_html(formal.get("car_details") or [])
         rows_html.append(
             "<tr>"
-            f"<td class='mono'>{_h(release_id)}</td>"
             f"<td>{_h(row.get('project'))}</td>"
             f"<td>{_h(row.get('ship_name'))}</td>"
             f"<td>{_h(row.get('destination_station'))}</td>"
@@ -294,10 +336,11 @@ def _build_html(
             f"<td>{_h(candidate_lots)}</td>"
             f"<td>{formal.get('formal_match_count', 0)}</td>"
             f"<td>{_fmt_num(formal.get('formal_weight'))}</td>"
+            f"<td>{car_details_html}</td>"
             f"<td>{_h(remaining)}</td>"
-            f"<td class='path'>{_h(paths['image_path'])}</td>"
-            f"<td class='path'>{_h(paths['json_path'])}</td>"
-            f"<td class='path'>{_h(paths['status_path'])}</td>"
+            f"<td class='path'>{_file_link(paths['image_path'], '打开图片')}</td>"
+            f"<td class='path'>{_file_link(paths['json_path'], '打开JSON')}</td>"
+            f"<td class='path'>{_file_link(paths['status_path'], '打开状态')}</td>"
             "</tr>"
         )
     if not rows_html:
@@ -341,7 +384,7 @@ th {{ background: #e0f2fe; position: sticky; top: 0; }}
 <h2 class="section-title">正式匹配汇总 / release_batch 明细</h2>
 <table>
 <thead><tr>
-<th>release_batch_id</th><th>项目</th><th>船名</th><th>到站</th><th>lot</th><th>计划吨数</th><th>批次日期</th><th>货物品名</th><th>当前状态</th><th>已匹配候选数</th><th>待人工候选数</th><th>候选 lot 列表</th><th>已正式入库车数</th><th>已正式入库重量</th><th>理论剩余货量/车数</th><th>原始图片路径</th><th>JSON 路径</th><th>状态文件路径</th>
+<th>项目</th><th>船名</th><th>到站</th><th>lot</th><th>计划吨数</th><th>批次日期</th><th>货物品名</th><th>当前状态</th><th>已匹配候选数</th><th>待人工候选数</th><th>候选 lot 列表</th><th>已正式入库车数</th><th>已正式入库重量</th><th>已发运车辆明细</th><th>理论剩余货量/车数</th><th>原始图片</th><th>JSON</th><th>状态文件</th>
 </tr></thead>
 <tbody>
 {''.join(rows_html)}
@@ -357,8 +400,55 @@ def _candidate_lot_text(candidate_ids: list[str], release_by_id: dict[str, dict[
     for candidate_id in candidate_ids:
         row = release_by_id.get(str(candidate_id), {})
         lot = str(row.get("batch_sequence") or "").strip()
-        labels.append(f"{lot} ({candidate_id})" if lot else str(candidate_id))
+        labels.append(lot or str(candidate_id))
     return "、".join(labels) if labels else ""
+
+
+def _file_link(path: str, label: str) -> str:
+    text = str(path or "").strip()
+    if not text or text == "待补充":
+        return "待补充"
+    text = _resolve_existing_artifact_path(text)
+    href = "file://" + quote(text)
+    basename = Path(text).name or text
+    return f"<a href='{_h(href)}' title='{_h(text)}'>{_h(label)}：{_h(basename)}</a>"
+
+
+@lru_cache(maxsize=512)
+def _resolve_existing_artifact_path(path_text: str) -> str:
+    path = Path(path_text)
+    if path.is_absolute() or "/" in path_text:
+        return path_text
+    artifact_root = Path.home() / "Documents" / "bussiness-artifacts" / "wechat_images"
+    if not artifact_root.exists():
+        return path_text
+    try:
+        match = next(artifact_root.rglob(path.name), None)
+    except OSError:
+        match = None
+    return str(match) if match else path_text
+
+
+def _car_details_html(details: list[dict[str, Any]]) -> str:
+    if not details:
+        return ""
+    rows = []
+    for item in details:
+        car_no = item.get("car_no") or ""
+        event_time = item.get("time") or ""
+        inspection_file = item.get("inspection_file") or ""
+        rows.append(
+            "<tr>"
+            f"<td>{_h(car_no)}</td>"
+            f"<td>{_h(event_time)}</td>"
+            f"<td>{_file_link(inspection_file, '检装车单') if inspection_file else ''}</td>"
+            "</tr>"
+        )
+    return (
+        f"<details><summary>查看 {len(details)} 车</summary>"
+        "<table class='car-table'><thead><tr><th>车号</th><th>时间</th><th>检装车通知单</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></details>"
+    )
 
 
 def _remaining_text(batch_quantity: Any, formal_weight: Any) -> str:

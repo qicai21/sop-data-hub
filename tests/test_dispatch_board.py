@@ -105,6 +105,91 @@ def test_render_dispatch_board_generates_html_with_release_candidate_and_formal_
     assert "候选 lot 列表" in html
     assert "lot01" in html
     assert "lot04" in html
+    assert "release_batch_id" not in html
+    assert "batch-1" not in html
+    assert "打开图片" in html
+    assert "file:///tmp/malan.jpg" in html
+    assert "打开JSON" in html
+    assert "file:///tmp/malan_result.json" in html
+
+
+def test_render_dispatch_board_filters_out_non_sop_release_batches(tmp_db, tmp_path):
+    agent = BusinessDataAgent()
+    agent.db.execute(
+        """
+        INSERT INTO release_batches (
+          id, batch_key, project, ship_name, cargo_name, destination_station,
+          notice_date, batch_date, batch_sequence, batch_quantity, source_json, searchable_text, dispatch_status
+        ) VALUES ('sop-batch', 'sop|ship|lot01', '中唐特钢铁矿发运项目', '马兰探险', '铁矿', '汐子',
+          '2026-05-10', '2026-05-10', 'lot01', 10000, '{}', '马兰探险 汐子 铁矿', 'in_progress')
+        """
+    )
+    agent.db.execute(
+        """
+        INSERT INTO release_batches (
+          id, batch_key, project, ship_name, cargo_name, destination_station,
+          notice_date, batch_date, batch_sequence, batch_quantity, source_json, searchable_text, dispatch_status
+        ) VALUES ('non-sop-batch', 'non|ship|lot02', NULL, '卡迪', '铁矿', '凌源东（凌东）',
+          '2026-05-12', '2026-05-12', 'lot02', 20000, '{}', '卡迪 凌源东 铁矿', 'in_progress')
+        """
+    )
+    agent.db.commit()
+
+    result = render_dispatch_board(business_db_path=tmp_db, rail_db_path=None, output_path=tmp_path / "board.html")
+
+    html = (tmp_path / "board.html").read_text(encoding="utf-8")
+    assert result["release_batch_count"] == 1
+    assert "马兰探险" in html
+    assert "卡迪" not in html
+    assert "凌源东" not in html
+
+
+def test_render_dispatch_board_shows_clickable_car_detail_columns(tmp_db, tmp_path):
+    agent = BusinessDataAgent()
+    agent.db.execute(
+        """
+        INSERT INTO release_batches (
+          id, batch_key, project, ship_name, cargo_name, destination_station,
+          notice_date, batch_date, batch_sequence, batch_quantity, source_json, searchable_text, dispatch_status
+        ) VALUES ('batch-cars', 'sop|ship|lot01', '中唐特钢铁矿发运项目', '马兰探险', '铁矿', '汐子',
+          '2026-05-10', '2026-05-10', 'lot01', 10000, '{}', '马兰探险 汐子 铁矿', 'in_progress')
+        """
+    )
+    agent.db.commit()
+    rail_db = tmp_path / "rail_detail.sqlite3"
+    conn = sqlite3.connect(rail_db)
+    conn.execute(
+        """
+        CREATE TABLE shipment_release_batch_matches (
+          id TEXT PRIMARY KEY,
+          release_batch_id TEXT,
+          planned_weight REAL,
+          marked_weight REAL,
+          shipment_car_no TEXT,
+          inspection_car_no TEXT,
+          latest_event_time TEXT,
+          loaded_at TEXT,
+          inspection_file TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO shipment_release_batch_matches
+          (id, release_batch_id, planned_weight, marked_weight, shipment_car_no, inspection_car_no, latest_event_time, loaded_at, inspection_file)
+        VALUES ('m1', 'batch-cars', 70.0, 70.0, '300001', '300001', '2026-05-10 08:00:00', '2026-05-10 07:50:00', '/tmp/inspection.jpg')
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    render_dispatch_board(business_db_path=tmp_db, rail_db_path=rail_db, output_path=tmp_path / "board.html")
+
+    html = (tmp_path / "board.html").read_text(encoding="utf-8")
+    assert "已发运车辆明细" in html
+    assert "300001" in html
+    assert "2026-05-10 08:00:00" in html
+    assert "file:///tmp/inspection.jpg" in html
 
 
 def test_render_dispatch_board_handles_empty_database(tmp_db, tmp_path):

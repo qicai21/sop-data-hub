@@ -15,6 +15,16 @@ from ops_hub.data_agent.json_utils import read_json, to_searchable_text, write_j
 WORKSPACE_DOCS_DIR = Path(__file__).resolve().parents[3] / "doc"
 PROJECT_SOPS_DIR = Path(__file__).resolve().parents[4] / "business-system-docs" / "test-plan" / "fixtures" / "project_sops"
 NON_BUSINESS_SOP_HINTS = ("archive", "sandbox", "归档", "沙箱")
+ZHONGTANG_PROJECT = "中唐特钢铁矿发运项目"
+WUGANG_PROJECT = "乌兰浩特钢铁铁矿发运项目"
+FALLBACK_BUSINESS_SOP_TOKENS = {
+    "zt_steel_baseline",
+    ZHONGTANG_PROJECT,
+    "chaoyang_steel_baseline",
+    "朝阳钢铁铁矿发运项目",
+    "wugang_steel_baseline",
+    WUGANG_PROJECT,
+}
 
 # Common OCR confusions discovered in live release-batch documents.  These are
 # station names, not project hard-coding: the final value still passes through
@@ -43,6 +53,13 @@ def active_business_sop_project_tokens() -> set[str]:
             haystack = f"{sop.project_id} {sop.project_name}"
             if any(hint in haystack for hint in NON_BUSINESS_SOP_HINTS):
                 continue
+            has_release_flow = any(
+                route.target_node in {"create_release_batch", "process_inspection_slip", "process_business_image"}
+                for task in sop.listening_tasks
+                for route in task.routing
+            )
+            if not has_release_flow:
+                continue
             for value in (sop.project_id, sop.project_name):
                 text = str(value or "").strip()
                 if text:
@@ -51,12 +68,8 @@ def active_business_sop_project_tokens() -> set[str]:
         # Keep the runtime gate conservative even when optional YAML support is
         # unavailable in the host interpreter. These are the established
         # business SOPs; sandbox/archive fixtures are intentionally omitted.
-        tokens.update({
-            "zt_steel_baseline",
-            "中唐特钢铁矿发运项目",
-            "chaoyang_steel_baseline",
-            "朝阳钢铁铁矿发运项目",
-        })
+        tokens.update(FALLBACK_BUSINESS_SOP_TOKENS)
+    tokens.update(FALLBACK_BUSINESS_SOP_TOKENS)
     return tokens
 
 
@@ -93,7 +106,7 @@ def release_batch_sop_project(record: "ReleaseBatchRecord") -> str:
     if chaoyang in tokens and any(anchor in text for anchor in ("合远9", "朝阳钢铁", "朝钢", "朝阳西", "朝阳铁")):
         return chaoyang
 
-    zhongtang = "中唐特钢铁矿发运项目"
+    zhongtang = ZHONGTANG_PROJECT
     if zhongtang in tokens:
         if any(anchor in text for anchor in ("中唐", "赤峰中唐", "ZLZT")):
             return zhongtang
@@ -1102,6 +1115,11 @@ class BusinessDataAgent:
             normalized_payload.get("header_info", {}).get("通知日期")
         )
         remarks = parse_remarks(normalized_payload.get("remarks", []), notice_date)
+        remarks = synthesize_missing_clean_bottom_remarks(
+            remarks,
+            normalized_payload.get("cargo_info", {}),
+            notice_date,
+        )
         latest_remark = remarks[-1] if remarks else None
         special_matter = normalized_payload.get("special_matter", "")
         business_info = normalized_payload.get("business_info", {})
@@ -1152,6 +1170,7 @@ class BusinessDataAgent:
             seq = str(remark.get("sequence") or "")
             dt = str(remark.get("date") or "")
             destination_station = remark.get("destination") or default_destination_station
+            row_project = release_batch_project_for_destination(project, destination_station)
             
             # 使用 sequence 作为 batch_key 核心；如果没有 sequence，退化为使用 date
             unique_identifier = seq if seq else dt
@@ -1166,7 +1185,7 @@ class BusinessDataAgent:
                 {
                     "id": hash_text(batch_key),
                     "batch_key": batch_key,
-                    "project": project,
+                    "project": row_project,
                     "contract_id": contract_id,
                     "contract_no": contract_no,
                     "ship_name": ship_name,
@@ -1471,6 +1490,63 @@ def parse_remarks(
             }
         )
     return parsed
+
+
+def release_batch_project_for_destination(base_project: Optional[str], destination_station: Optional[str]) -> Optional[str]:
+    """Split mixed-project departure-plan rows by explicit row destination."""
+    destination = canonicalize_station_text(destination_station)
+    if str(base_project or "").strip() == ZHONGTANG_PROJECT and destination == "乌兰浩特":
+        return WUGANG_PROJECT
+    return base_project
+
+
+def synthesize_missing_clean_bottom_remarks(
+    remarks: List[Dict[str, Any]],
+    cargo_info: Dict[str, Any],
+    notice_date: Optional[str],
+) -> List[Dict[str, Any]]:
+    """Recover an OCR loss where the final 清底 lot is omitted.
+
+    If a remark says `剩余X吨`, later parsed quantities sum to Y, and the
+    document's cargo total is exactly X-Y, the omitted final clean-bottom lot is
+    reconstructed instead of silently losing a batch.
+    """
+    if not remarks:
+        return remarks
+    cargo_total = parse_number(cargo_info.get("总重里") or cargo_info.get("总重量"))
+    if not cargo_total:
+        return remarks
+    for index, remark in enumerate(remarks):
+        remaining = remark.get("remaining_qty")
+        if remaining is None:
+            continue
+        later_quantity = sum(float(item.get("quantity") or 0) for item in remarks[index + 1 :])
+        missing = float(remaining) - later_quantity
+        if abs(missing - cargo_total) >= 0.001 or missing <= 0:
+            continue
+        if any(abs(float(item.get("quantity") or 0) - missing) < 0.001 for item in remarks[index + 1 :]):
+            return remarks
+        previous = remarks[-1]
+        return [
+            *remarks,
+            {
+                "date": notice_date or previous.get("date"),
+                "sequence": next_lot_sequence(previous.get("sequence")),
+                "quantity": missing,
+                "transport_mode": previous.get("transport_mode") or remark.get("transport_mode"),
+                "destination": previous.get("destination") or remark.get("destination"),
+                "remaining_qty": None,
+                "raw_line": "OCR补齐清底",
+            },
+        ]
+    return remarks
+
+
+def next_lot_sequence(sequence: Optional[str]) -> Optional[str]:
+    match = re.match(r"lot(\d+)$", str(sequence or ""))
+    if not match:
+        return None
+    return f"lot{int(match.group(1)) + 1:02d}"
 
 
 def normalize_chinese_date(value: Optional[str]) -> Optional[str]:

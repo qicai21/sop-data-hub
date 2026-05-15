@@ -359,9 +359,9 @@ def test_data_single_group_malan_departure_enters_zt_sop_and_project_archive(tmp
     assert "_agent_sop_skip_reason" not in extracted
     assert Path(result.saved_path).parts[-7:] == ("中唐特钢铁矿发运项目", "汐子", "马兰探险", "lot01", "images", "2026-04-04", "malan_explorer.jpg")
     assert Path(result.extraction_saved_path).parts[-7:] == ("中唐特钢铁矿发运项目", "汐子", "马兰探险", "lot01", "json", "2026-04-04", "malan_explorer_result.json")
-    assert _count(test_db, "select count(*) from release_batches where project='中唐特钢铁矿发运项目' and ship_name='马兰探险'") == 6
+    assert _count(test_db, "select count(*) from release_batches where ship_name='马兰探险'") == 6
     assert _count(test_db, "select count(*) from release_batches where project='中唐特钢铁矿发运项目' and ship_name='马兰探险' and destination_station='汐子'") == 5
-    assert _count(test_db, "select count(*) from release_batches where project='中唐特钢铁矿发运项目' and ship_name='马兰探险' and destination_station='乌兰浩特'") == 1
+    assert _count(test_db, "select count(*) from release_batches where project='乌兰浩特钢铁铁矿发运项目' and ship_name='马兰探险' and destination_station='乌兰浩特'") == 1
     assert _count(test_db, "select count(*) from image_ingestion_audit where group_name='数据单发群-GROUP013' and classified_category='出港计划通知单' and db_action='release_batch_upsert'") == 1
 
 

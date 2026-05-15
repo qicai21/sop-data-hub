@@ -474,6 +474,37 @@ class TestBusinessDataAgent:
         assert audit["status"] == "ingested"
         assert audit["db_action"] == "release_batch_update"
 
+    def test_malan_departure_plan_synthesizes_missing_clean_bottom_lot_and_splits_wugang_project(self, tmp_db):
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "project": "中唐特钢铁矿发运项目",
+            "header_info": {"通知日期": "2026年04月28日"},
+            "business_info": {"船名": "马兰探险", "发货单位": "中国外运东北有限公司锦州分公司", "收货单位": "中国外运东北有限公司锦州分公司"},
+            "cargo_info": {"货物名称": "铁矿", "货物品名": "铁矿", "总重里": "8092", "运输方式": "铁路"},
+            "special_matter": "发运“马兰探险”轮所卸货物，火运敞车出港，到站:汐子。海关放行单:78892吨",
+            "remarks": [
+                {"date": "4月4日", "sequence": "第一次下达计划", "plan": "10000吨(铁路 汐子)", "raw_line": "4月4日第一次下达计划:10000吨(铁路 汐子)"},
+                {"date": "4月8日", "sequence": "第二次下达计划", "plan": "10000吨(铁路 汐子)", "raw_line": "4月8日第二次下达计划:10000吨(铁路 汐子)"},
+                {"date": "4月11日", "sequence": "第三次下达计划", "plan": "20000吨(铁路 汐子)", "raw_line": "4月11日第三次下达计划:20000吨(铁路 汐子)"},
+                {"date": "4月17日", "sequence": "第四次下达计划", "plan": "10000吨(铁路 汐子)", "raw_line": "4月17日第四次下达计划:10000吨(铁路 汐子)"},
+                {"date": "4月23日", "sequence": "第五次下达计划", "plan": "10800吨(铁路 乌兰浩特 剩余18092吨)", "raw_line": "4月23日第五次下达计划:10800吨(铁路 乌兰浩特 剩余18092吨)"},
+                {"date": "4月28日", "sequence": "第六次下达计划", "plan": "10000吨(铁路 汐子 酒底)", "raw_line": "4月28日第六次下达计划:10000吨(铁路 汐子 酒底)"},
+            ],
+        }
+
+        records = agent.ingest_release_batch(payload, source_file_name="malan_ocr_loss.json")
+
+        assert len(records) == 7
+        by_seq = {record.batch_sequence: record for record in records}
+        assert [record.batch_sequence for record in records] == ["lot01", "lot02", "lot03", "lot04", "lot05", "lot06", "lot07"]
+        assert sum(1 for record in records if record.destination_station == "汐子") == 6
+        assert by_seq["lot05"].destination_station == "乌兰浩特"
+        assert by_seq["lot05"].project == "乌兰浩特钢铁铁矿发运项目"
+        assert by_seq["lot07"].batch_quantity == 8092.0
+        assert by_seq["lot07"].destination_station == "汐子"
+        assert by_seq["lot07"].project == "中唐特钢铁矿发运项目"
+
 
 class TestHashText:
     def test_deterministic(self):

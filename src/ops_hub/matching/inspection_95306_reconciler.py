@@ -128,7 +128,8 @@ def reconcile_inspection_shipments(
         summaries: list[CandidateReconcileSummary] = []
 
         for candidate in candidates:
-            if str(candidate["status"] or "") != "candidate":
+            candidate_status = str(candidate["status"] or "")
+            if candidate_status not in {"candidate", "committed"}:
                 excluded.append(_excluded(candidate["id"], candidate["source_file_name"], "", "candidate-status-not-candidate"))
                 continue
             payload = json.loads(candidate["payload_json"])
@@ -183,6 +184,7 @@ def reconcile_inspection_shipments(
             formal = _formal_summary(rail, release_batch_id)
             committed_count = formal["count"]
             actual_wagon_count = _sync_release_batch_actuals(biz, release_batch_id, formal["count"])
+            _mark_candidates_committed(biz, [str(candidate["id"]) for candidate in candidates], operator_note)
 
         return InspectionReconcileResult(
             run_mode=run_mode,
@@ -391,7 +393,17 @@ def _build_formal_rows_for_candidate(
     target_car_to_row = {str(row.get("car_no") or "").strip(): row for row in active_rows if row.get("car_no")}
     window_shipments = _query_all_shipments_in_window(rail, spec, start, end)
     active_row_count = len(active_rows)
-    if len(window_shipments) != active_row_count:
+    target_row_count = len(inspection_rows)
+    use_db_authoritative_window = False
+    if len(window_shipments) == active_row_count:
+        use_db_authoritative_window = True
+    elif target_row_count > active_row_count and len(window_shipments) == target_row_count:
+        # Some live inspection slips carry OCR defect/no-match flags inside the
+        # footer-confirmed loaded segment.  When the 95306 bucket cardinality
+        # equals the selected target segment exactly, trust the DB window and
+        # keep row-order traceability instead of dropping a true loaded wagon.
+        use_db_authoritative_window = True
+    else:
         excluded.append(
             {
                 "candidate_id": candidate_id,
@@ -407,13 +419,14 @@ def _build_formal_rows_for_candidate(
         )
 
     formal_rows: list[dict[str, Any]] = []
-    # Defect / 排车 rows are removed before any lot-level statistics or formal
+    # Defect / 排车 rows are normally removed before any lot-level statistics or formal
     # linkage. If the 95306 time-window cardinality exactly matches the active
     # (non-defect) inspection section count, trust the DB car list for that
-    # section. This covers OCR/DB car-number conflicts while still preventing
-    # mixed-ship windows from leaking into the target lot.
-    if len(window_shipments) == active_row_count:
-        fallback_rows = list(active_rows)
+    # section. If the DB cardinality instead matches the full selected target
+    # segment, the footer-confirmed segment is authoritative and DB row order is
+    # used to correct OCR defect/car-number noise inside that segment.
+    if use_db_authoritative_window:
+        fallback_rows = list(active_rows if len(window_shipments) == active_row_count else inspection_rows)
         for index, shipment in enumerate(window_shipments, start=1):
             car = str(shipment["car_no"] or "")
             ocr_row = target_car_to_row.get(car)
@@ -595,6 +608,46 @@ def _sync_release_batch_actuals(conn: sqlite3.Connection, release_batch_id: str,
         conn.execute("UPDATE release_batches SET actual_wagon_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (actual_wagon_count, release_batch_id))
         conn.commit()
     return actual_wagon_count
+
+
+def _mark_candidates_committed(conn: sqlite3.Connection, candidate_ids: list[str], operator_note: str) -> None:
+    ids = [candidate_id for candidate_id in candidate_ids if candidate_id]
+    if not ids:
+        return
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(inspection_ingestion_candidates)").fetchall()}
+    if {"status", "reason", "updated_at"}.issubset(columns):
+        placeholders = ",".join("?" for _ in ids)
+        conn.execute(
+            f"""
+            UPDATE inspection_ingestion_candidates
+            SET status = 'committed',
+                reason = 'formal_95306_linkage_committed',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id IN ({placeholders})
+            """,
+            ids,
+        )
+    if _table_exists(conn, "image_ingestion_audit"):
+        audit_columns = {row["name"] for row in conn.execute("PRAGMA table_info(image_ingestion_audit)").fetchall()}
+        if {"status", "reason", "db_action", "requires_manual_review"}.issubset(audit_columns):
+            for candidate_id in ids:
+                conn.execute(
+                    """
+                    UPDATE image_ingestion_audit
+                    SET status = 'ingested',
+                        reason = 'formal_95306_linkage_committed',
+                        db_action = 'formal_linkage_committed',
+                        requires_manual_review = 0
+                    WHERE db_record_ids LIKE ?
+                      AND classified_category = '检装车通知单'
+                    """,
+                    (f"%{candidate_id}%",),
+                )
+    conn.commit()
+
+
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table_name,)).fetchone() is not None
 
 
 def _excluded(candidate_id: str, source_file_name: str, wagon_no: str, reason: str, row: Mapping[str, Any] | None = None) -> dict[str, Any]:

@@ -209,6 +209,43 @@ def test_footer_boundary_defect_on_manual_split_row_end_is_kept(tmp_path: Path) 
     assert _matched_cars(rail_db, "batch-1") == ["100001", "100002"]
 
 
+def test_footer_confirmed_loaded_segment_trusts_db_window_when_ocr_marks_inner_row_defect(tmp_path: Path) -> None:
+    biz_db, rail_db = _build_fixture(tmp_path, authorized=True)
+    payload = {
+        "rows_count": 3,
+        "rows": [
+            {"seq": 1, "car_no": "100001", "car_type": "70", "cargo_info_raw": "汐子铁矿粉", "cargo_info_effective": "汐子铁矿粉", "defect": False},
+            {"seq": 2, "car_no": "100099", "car_type": "70", "cargo_info_raw": "鞍子河 3节 临修", "cargo_info_effective": "汐子铁矿粉/鞍子河 3节 临修", "defect": True},
+            {"seq": 3, "car_no": "100003", "car_type": "70", "cargo_info_raw": "双划不入槽", "cargo_info_effective": "汐子铁矿粉/双划不入槽", "defect": False},
+        ],
+        "footer": {"zhuangche_jieshu": 3, "paiche_jieshu": 0},
+        "project": "中唐特钢铁矿发运项目",
+        "_agent_sop_authorized": True,
+    }
+    with sqlite3.connect(biz_db) as conn:
+        conn.execute(
+            "UPDATE inspection_ingestion_candidates SET wagon_count=3, car_numbers_json=?, payload_json=? WHERE id='cand-1'",
+            (json.dumps(["100001", "100099", "100003"]), json.dumps(payload, ensure_ascii=False)),
+        )
+    _insert_shipments(rail_db, [("yd3", "100003", "C70", "铁矿粉", "汐子", "2026-05-01 08:00:20")])
+
+    result = reconcile_inspection_shipments(
+        business_db_path=biz_db,
+        rail_db_path=rail_db,
+        project_id="中唐特钢铁矿发运项目",
+        release_batch_id="batch-1",
+        candidate_ids=["cand-1"],
+        run_mode="commit",
+        operator_note="pytest footer confirmed loaded segment",
+    )
+
+    assert result.safe_to_commit is True
+    assert result.planned_write_count == 3
+    assert _match_count(rail_db, "batch-1") == 3
+    assert _business_actual_wagon_count(biz_db, "batch-1") == 3
+    assert not result.review_reasons
+
+
 def test_anzihe_lot04_scope_is_fixed_when_live_databases_exist() -> None:
     biz_db = Path("/Users/qicai21/projects/repos/wx-ops-agent/data/agent.db")
     rail_db = Path("/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3")

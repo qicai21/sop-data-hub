@@ -256,17 +256,21 @@ def _release_row_for_archive(settings: Settings, release_batch_id: str | None) -
 
 
 def _archive_components(payload: dict[str, Any], settings: Settings) -> dict[str, str]:
+    agent_status = str(payload.get("_agent_status") or "")
     release_ids = payload.get("_agent_updated_ids") or []
-    release_row = _release_row_for_archive(settings, str(release_ids[0]) if release_ids else None)
+    candidate_release_ids = payload.get("_agent_candidate_release_batch_ids") or payload.get("_candidate_release_batch_ids") or []
+    archive_release_id = release_ids[0] if release_ids else (candidate_release_ids[0] if agent_status == "ambiguous" and candidate_release_ids else None)
+    release_row = _release_row_for_archive(settings, str(archive_release_id) if archive_release_id else None)
     business_info = payload.get("business_info") if isinstance(payload.get("business_info"), dict) else {}
     cargo_info = payload.get("cargo_info") if isinstance(payload.get("cargo_info"), dict) else {}
     remarks = [item for item in (payload.get("remarks") or []) if isinstance(item, dict)]
     first_remark = remarks[0] if remarks else {}
+    lot_value = "pending_lot" if agent_status == "ambiguous" else _lot_component(release_row.get("batch_sequence") or first_remark.get("sequence") or payload.get("batch_sequence"))
     return {
         "project": str(payload.get("project") or release_row.get("project") or "unknown"),
         "destination": str(release_row.get("destination_station") or first_remark.get("destination") or cargo_info.get("到站") or payload.get("destination_station") or "unknown"),
         "ship": str(release_row.get("ship_name") or business_info.get("进口船名") or business_info.get("船名") or payload.get("ship_name") or "unknown"),
-        "lot": _lot_component(release_row.get("batch_sequence") or first_remark.get("sequence") or payload.get("batch_sequence")),
+        "lot": lot_value,
     }
 
 
@@ -663,7 +667,12 @@ def _run_extraction(category: str, image_path: str, settings: Settings, *, group
                     group_name=group_name or None,
                 )
                 result["_agent_candidate_ids"] = landing.get("candidate_ids", [])
-                result["_agent_updated_ids"] = landing.get("release_batch_ids", [])
+                result["_agent_candidate_release_batch_ids"] = landing.get("release_batch_ids", [])
+                result["_candidate_release_batch_ids"] = landing.get("release_batch_ids", [])
+                if landing.get("status") == "candidate":
+                    result["_agent_updated_ids"] = landing.get("release_batch_ids", [])
+                else:
+                    result["_agent_updated_ids"] = []
                 result["_agent_pending_reason"] = landing.get("reason")
                 result["_agent_status"] = landing.get("status")
             except Exception as e:

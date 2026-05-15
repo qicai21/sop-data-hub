@@ -173,3 +173,76 @@ def test_non_sop_artifacts_go_to_unmatched_without_second_extraction(tmp_path):
     status = json.loads(Path(result.status_path).read_text(encoding="utf-8"))
     assert status["project_archive_paths"]["image"] == result.saved_path
     assert status["project_archive_paths"]["json"] == result.extraction_saved_path
+
+
+def test_ambiguous_inspection_artifacts_move_to_pending_lot_not_candidate_lot(tmp_path):
+    import json
+    import os
+    import sqlite3
+
+    from ops_hub.data_agent.agent import BusinessDataAgent
+
+    img = Image.new("RGB", (32, 32), color="white")
+    image_path = tmp_path / "malan_inspection.jpg"
+    img.save(image_path)
+    agent_db = tmp_path / "agent.db"
+    settings = Settings(
+        classified_output_dir=str(tmp_path / "artifacts"),
+        extraction_output_dir=str(tmp_path / "legacy_extractions"),
+        agent_db_path=str(agent_db),
+        auto_extract_categories=["检装车通知单"],
+    )
+    os.environ["BUSINESS_DATA_AGENT_DB_PATH"] = str(agent_db)
+    try:
+        agent = BusinessDataAgent()
+        for seq in ["lot01", "lot04"]:
+            batch_id = f"malan-{seq}"
+            agent.db.execute(
+                """
+                INSERT INTO release_batches (
+                  id, batch_key, project, ship_name, cargo_name, destination_station,
+                  notice_date, batch_date, batch_sequence, batch_quantity,
+                  batch_count, source_json, searchable_text
+                ) VALUES (?, ?, '中唐特钢铁矿发运项目', '马兰探险', '铁矿', '汐子',
+                          '2026-05-13', '2026-05-13', ?, 10000, 1, '{}', ?)
+                """,
+                (batch_id, f"malan|xizi|{seq}", seq, f"马兰探险 汐子 铁矿 {seq}"),
+            )
+        agent.db.commit()
+        agent.refresh_release_dispatch_match_rules()
+
+        classifier = MagicMock()
+        classifier.classify.return_value = MagicMock(category="检装车通知单", confidence=0.96)
+        inspection_payload = {
+            "is_inspection": True,
+            "project": "中唐特钢铁矿发运项目",
+            "ship_name": "马兰探险",
+            "destination_station": "汐子",
+            "meta": {"date": "2026-05-13"},
+            "rows_count": 1,
+            "rows": [{"seq": 1, "car_no": "300001", "cargo_info_effective": "汐子铁矿粉/马兰探险"}],
+            "cargo_summary": {"汐子铁矿粉/马兰探险": ["300001"]},
+            "footer": {"zhuangche_jieshu": 1, "paiche_jieshu": 0},
+        }
+        with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
+            "ops_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
+        ):
+            result = process_new_image(image_path, settings, month_str="202605", group_name="数据单发群-GROUP013")
+
+        assert Path(result.saved_path) == tmp_path / "artifacts" / "projects" / "中唐特钢铁矿发运项目" / "汐子" / "马兰探险" / "pending_lot" / "images" / "2026-05-13" / "malan_inspection.jpg"
+        assert Path(result.extraction_saved_path) == tmp_path / "artifacts" / "projects" / "中唐特钢铁矿发运项目" / "汐子" / "马兰探险" / "pending_lot" / "json" / "2026-05-13" / "malan_inspection_result.json"
+        assert "lot01" not in str(result.saved_path)
+        assert "lot04" not in str(result.saved_path)
+        extracted = json.loads(Path(result.extraction_saved_path).read_text(encoding="utf-8"))
+        assert extracted["_agent_status"] == "ambiguous"
+        assert extracted["_agent_updated_ids"] == []
+        assert sorted(extracted["_agent_candidate_release_batch_ids"]) == ["malan-lot01", "malan-lot04"]
+        conn = sqlite3.connect(agent_db)
+        try:
+            row = conn.execute("SELECT payload_json FROM inspection_ingestion_candidates WHERE source_file_name='malan_inspection.jpg'").fetchone()
+            candidate_payload = json.loads(row[0])
+            assert sorted(candidate_payload["_candidate_release_batch_ids"]) == ["malan-lot01", "malan-lot04"]
+        finally:
+            conn.close()
+    finally:
+        os.environ.pop("BUSINESS_DATA_AGENT_DB_PATH", None)

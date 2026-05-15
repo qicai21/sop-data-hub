@@ -870,6 +870,9 @@ class BusinessDataAgent:
         reason = str(match.get("reason") or "no_release_batch_candidate")
         release_batch_ids = [str(item) for item in (match.get("release_batch_ids") or []) if item]
         release_batch_id = release_batch_ids[0] if status == "candidate" and len(release_batch_ids) == 1 else None
+        candidate_payload = dict(payload)
+        if release_batch_ids:
+            candidate_payload["_candidate_release_batch_ids"] = release_batch_ids
         candidate_id = hash_text(f"inspection|{source_file_name}|{','.join(car_numbers)}|{reason}")
         self.db.execute(
             """
@@ -896,7 +899,7 @@ class BusinessDataAgent:
                 release_batch_id,
                 len(car_numbers),
                 json.dumps(car_numbers, ensure_ascii=False),
-                write_json(payload, pretty=False),
+                write_json(candidate_payload, pretty=False),
             ),
         )
         self.db.commit()

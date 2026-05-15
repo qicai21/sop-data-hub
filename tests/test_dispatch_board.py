@@ -58,7 +58,21 @@ def test_render_dispatch_board_generates_html_with_release_candidate_and_formal_
         """
         INSERT INTO inspection_ingestion_candidates (
           id, source_file_name, status, reason, release_batch_id, wagon_count, car_numbers_json, payload_json
-        ) VALUES ('cand-2', '/tmp/manual.json', 'ambiguous', 'ambiguous_release_batch_candidate', NULL, 1, '["3"]', '{}')
+        ) VALUES ('cand-2', '/tmp/manual.json', 'ambiguous', 'ambiguous_release_batch_candidate', NULL, 1, '["3"]', ?)
+        """,
+        ('{"_candidate_release_batch_ids":["batch-1","batch-2"]}',),
+    )
+    agent.db.execute(
+        """
+        INSERT INTO release_batches (
+          id, batch_key, project, ship_name, cargo_name, cargo_product_name,
+          destination_station, notice_date, batch_date, batch_sequence, batch_quantity,
+          source_file_name, source_json, searchable_text, dispatch_status
+        ) VALUES (
+          'batch-2', 'project|ship|lot04', '中唐特钢铁矿发运项目', '马兰探险', '铁矿', '铁矿粉',
+          '汐子', '2026-05-10', '2026-05-10', 'lot04', 8248,
+          '/tmp/malan2.jpg', '{}', '马兰探险 汐子 铁矿', 'in_progress'
+        )
         """
     )
     agent.db.execute(
@@ -88,6 +102,9 @@ def test_render_dispatch_board_generates_html_with_release_candidate_and_formal_
     assert "/tmp/malan.jpg" in html
     assert "/tmp/malan_result.json" in html
     assert "/tmp/malan_status.json" in html
+    assert "候选 lot 列表" in html
+    assert "lot01" in html
+    assert "lot04" in html
 
 
 def test_render_dispatch_board_handles_empty_database(tmp_db, tmp_path):

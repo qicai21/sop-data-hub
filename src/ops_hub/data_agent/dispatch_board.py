@@ -93,24 +93,39 @@ def _fetch_candidate_summary(db: sqlite3.Connection) -> dict[str, dict[str, Any]
     summary: dict[str, dict[str, Any]] = defaultdict(_empty_candidate_summary)
     if not _table_exists(db, "inspection_ingestion_candidates"):
         return {}
-    grouped = db.execute(
+    rows = db.execute(
         """
-        SELECT release_batch_id, status, COUNT(*) AS count, COALESCE(SUM(wagon_count), 0) AS wagon_count
+        SELECT release_batch_id, status, wagon_count, payload_json
         FROM inspection_ingestion_candidates
-        GROUP BY release_batch_id, status
         """
     ).fetchall()
-    for row in grouped:
-        key = row["release_batch_id"] or "__unassigned__"
-        item = summary[key]
+    for row in rows:
         status = row["status"] or ""
-        count = int(row["count"] or 0)
-        item["by_status"][status] = item["by_status"].get(status, 0) + count
-        item["wagon_count"] += int(row["wagon_count"] or 0)
-        if status == "candidate":
-            item["matched_candidate_count"] += count
-        if status in MANUAL_CANDIDATE_STATUSES:
-            item["manual_pending_candidate_count"] += count
+        wagon_count = int(row["wagon_count"] or 0)
+        release_batch_id = str(row["release_batch_id"] or "")
+        candidate_ids = [str(item) for item in (_json_object(row["payload_json"]).get("_candidate_release_batch_ids") or []) if str(item).strip()]
+        keys = [release_batch_id] if release_batch_id else []
+        if not keys:
+            keys = ["__unassigned__"]
+        for key in keys:
+            item = summary[key]
+            item["by_status"][status] = item["by_status"].get(status, 0) + 1
+            item["wagon_count"] += wagon_count
+            if status == "candidate":
+                item["matched_candidate_count"] += 1
+            if status in MANUAL_CANDIDATE_STATUSES:
+                item["manual_pending_candidate_count"] += 1
+            for candidate_id in candidate_ids:
+                if candidate_id not in item["candidate_release_batch_ids"]:
+                    item["candidate_release_batch_ids"].append(candidate_id)
+        if status in MANUAL_CANDIDATE_STATUSES and candidate_ids:
+            for candidate_id in candidate_ids:
+                item = summary[candidate_id]
+                item["manual_pending_candidate_count"] += 1
+                item["by_status"][status] = item["by_status"].get(status, 0) + 1
+                for nested_id in candidate_ids:
+                    if nested_id not in item["candidate_release_batch_ids"]:
+                        item["candidate_release_batch_ids"].append(nested_id)
     return dict(summary)
 
 
@@ -120,6 +135,7 @@ def _empty_candidate_summary() -> dict[str, Any]:
         "manual_pending_candidate_count": 0,
         "wagon_count": 0,
         "by_status": {},
+        "candidate_release_batch_ids": [],
     }
 
 
@@ -252,6 +268,7 @@ def _build_html(
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     rows_html = []
+    release_by_id = {str(row.get("id") or ""): row for row in release_rows}
     for row in release_rows:
         release_id = str(row.get("id") or "")
         candidates = candidate_summary.get(release_id, _empty_candidate_summary())
@@ -260,6 +277,7 @@ def _build_html(
         status = str(row.get("dispatch_status") or "")
         status_label = STATUS_LABELS.get(status, status or "待人工确认")
         remaining = _remaining_text(row.get("batch_quantity"), formal.get("formal_weight"))
+        candidate_lots = _candidate_lot_text(candidates.get("candidate_release_batch_ids") or [], release_by_id)
         rows_html.append(
             "<tr>"
             f"<td class='mono'>{_h(release_id)}</td>"
@@ -273,6 +291,7 @@ def _build_html(
             f"<td>{_h(status_label)}</td>"
             f"<td>{candidates.get('matched_candidate_count', 0)}</td>"
             f"<td>{candidates.get('manual_pending_candidate_count', 0)}</td>"
+            f"<td>{_h(candidate_lots)}</td>"
             f"<td>{formal.get('formal_match_count', 0)}</td>"
             f"<td>{_fmt_num(formal.get('formal_weight'))}</td>"
             f"<td>{_h(remaining)}</td>"
@@ -282,7 +301,7 @@ def _build_html(
             "</tr>"
         )
     if not rows_html:
-        rows_html.append("<tr><td colspan='17' class='empty'>暂无 release_batch 数据</td></tr>")
+        rows_html.append("<tr><td colspan='18' class='empty'>暂无 release_batch 数据</td></tr>")
 
     unassigned = candidate_summary.get("__unassigned__", _empty_candidate_summary())
     return f"""<!doctype html>
@@ -322,7 +341,7 @@ th {{ background: #e0f2fe; position: sticky; top: 0; }}
 <h2 class="section-title">正式匹配汇总 / release_batch 明细</h2>
 <table>
 <thead><tr>
-<th>release_batch_id</th><th>项目</th><th>船名</th><th>到站</th><th>lot</th><th>计划吨数</th><th>批次日期</th><th>货物品名</th><th>当前状态</th><th>已匹配候选数</th><th>待人工候选数</th><th>已正式入库车数</th><th>已正式入库重量</th><th>理论剩余货量/车数</th><th>原始图片路径</th><th>JSON 路径</th><th>状态文件路径</th>
+<th>release_batch_id</th><th>项目</th><th>船名</th><th>到站</th><th>lot</th><th>计划吨数</th><th>批次日期</th><th>货物品名</th><th>当前状态</th><th>已匹配候选数</th><th>待人工候选数</th><th>候选 lot 列表</th><th>已正式入库车数</th><th>已正式入库重量</th><th>理论剩余货量/车数</th><th>原始图片路径</th><th>JSON 路径</th><th>状态文件路径</th>
 </tr></thead>
 <tbody>
 {''.join(rows_html)}
@@ -331,6 +350,15 @@ th {{ background: #e0f2fe; position: sticky; top: 0; }}
 </body>
 </html>
 """
+
+
+def _candidate_lot_text(candidate_ids: list[str], release_by_id: dict[str, dict[str, Any]]) -> str:
+    labels = []
+    for candidate_id in candidate_ids:
+        row = release_by_id.get(str(candidate_id), {})
+        lot = str(row.get("batch_sequence") or "").strip()
+        labels.append(f"{lot} ({candidate_id})" if lot else str(candidate_id))
+    return "、".join(labels) if labels else ""
 
 
 def _remaining_text(batch_quantity: Any, formal_weight: Any) -> str:

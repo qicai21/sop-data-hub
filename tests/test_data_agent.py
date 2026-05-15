@@ -254,6 +254,13 @@ class TestBusinessDataAgent:
         assert result["status"] == "ambiguous"
         assert result["reason"] == "ambiguous_release_batch_candidate"
         assert sorted(result["release_batch_ids"]) == ["malan-lot01", "malan-lot04"]
+        candidate = agent.db.execute(
+            "SELECT release_batch_id, payload_json FROM inspection_ingestion_candidates WHERE source_file_name=?",
+            ("malan_ambiguous.jpg",),
+        ).fetchone()
+        assert candidate["release_batch_id"] is None
+        payload = json.loads(candidate["payload_json"])
+        assert sorted(payload["_candidate_release_batch_ids"]) == ["malan-lot01", "malan-lot04"]
 
     def test_manual_assign_inspection_candidate_sets_audited_candidate_without_formal_write(self, tmp_db):
         agent = BusinessDataAgent()

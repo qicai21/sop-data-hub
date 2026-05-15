@@ -38,12 +38,12 @@ def test_render_dispatch_board_generates_html_with_release_candidate_and_formal_
         INSERT INTO release_batches (
           id, batch_key, project, ship_name, cargo_name, cargo_product_name,
           destination_station, notice_date, batch_date, batch_sequence, batch_quantity,
-          source_file_name, source_json, searchable_text, dispatch_status
+          source_file_name, source_json, searchable_text, dispatch_status, plan_id, contract_no
         ) VALUES (
-          'batch-1', 'project|ship|lot01', '中唐特钢铁矿发运项目', '马兰探险', '铁矿', '铁矿粉',
+          'batch-1', 'project|ship|lot01', '中唐特钢铁矿发运项目', '马兰探险', '铁矿', '麦克粉',
           '汐子', '2026-05-10', '2026-05-10', 'lot01', 8248,
           '/tmp/malan.jpg', '{"image_path":"/tmp/malan.jpg","json_path":"/tmp/malan_result.json","status_path":"/tmp/malan_status.json"}',
-          '马兰探险 汐子 铁矿', 'in_progress'
+          '马兰探险 汐子 铁矿', 'in_progress', '90260400079', 'ZLZT-2026042401'
         )
         """
     )
@@ -105,12 +105,46 @@ def test_render_dispatch_board_generates_html_with_release_candidate_and_formal_
     assert "候选 lot 列表" in html
     assert "lot01" in html
     assert "lot04" in html
+    assert "麦克粉" in html
+    assert "90260400079" in html
+    assert "ZLZT-2026042401" in html
+    assert "计划号/订单号" in html
+    assert "合同号" in html
     assert "release_batch_id" not in html
     assert "batch-1" not in html
     assert "打开图片" in html
     assert "file:///tmp/malan.jpg" in html
     assert "打开JSON" in html
     assert "file:///tmp/malan_result.json" in html
+
+
+def test_render_dispatch_board_groups_rows_by_project(tmp_db, tmp_path):
+    agent = BusinessDataAgent()
+    rows = [
+        ("zt-old", "中唐特钢铁矿发运项目", "中唐旧船", "lot01", "2026-05-10"),
+        ("wg-mid", "乌兰浩特钢铁铁矿发运项目", "乌钢中间船", "lot05", "2026-05-11"),
+        ("zt-new", "中唐特钢铁矿发运项目", "鞍子河", "lot02", "2026-05-12"),
+    ]
+    for row_id, project, ship_name, lot, batch_date in rows:
+        agent.db.execute(
+            """
+            INSERT INTO release_batches (
+              id, batch_key, project, ship_name, cargo_name, destination_station,
+              notice_date, batch_date, batch_sequence, batch_quantity, source_json, searchable_text, dispatch_status
+            ) VALUES (?, ?, ?, ?, '铁矿', '汐子', ?, ?, ?, 10000, '{}', ?, 'in_progress')
+            """,
+            (row_id, f"{project}|{ship_name}|{lot}", project, ship_name, batch_date, batch_date, lot, f"{project} {ship_name} {lot}"),
+        )
+    agent.db.commit()
+
+    render_dispatch_board(business_db_path=tmp_db, rail_db_path=None, output_path=tmp_path / "board.html")
+
+    html = (tmp_path / "board.html").read_text(encoding="utf-8")
+    zt_old = html.index("中唐旧船")
+    wg_mid = html.index("乌钢中间船")
+    zt_new = html.index("鞍子河")
+    assert min(zt_old, zt_new) < wg_mid
+    assert max(zt_old, zt_new) < wg_mid
 
 
 def test_render_dispatch_board_filters_out_non_sop_release_batches(tmp_db, tmp_path):

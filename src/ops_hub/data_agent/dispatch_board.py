@@ -79,6 +79,7 @@ def _fetch_release_batches(db: sqlite3.Connection) -> list[dict[str, Any]]:
                source_json, updated_at, plan_id, order_id, contract_no
         FROM release_batches
         ORDER BY
+          project ASC,
           CASE dispatch_status
             WHEN 'in_progress' THEN 1
             WHEN 'suspended' THEN 2
@@ -330,6 +331,8 @@ def _build_html(
             f"<td>{_fmt_num(row.get('batch_quantity'))}</td>"
             f"<td>{_h(row.get('batch_date'))}</td>"
             f"<td>{_h(row.get('cargo_product_name') or row.get('cargo_name'))}</td>"
+            f"<td>{_h(row.get('plan_id') or row.get('order_id'))}</td>"
+            f"<td>{_h(row.get('contract_no'))}</td>"
             f"<td>{_h(status_label)}</td>"
             f"<td>{candidates.get('matched_candidate_count', 0)}</td>"
             f"<td>{candidates.get('manual_pending_candidate_count', 0)}</td>"
@@ -344,7 +347,7 @@ def _build_html(
             "</tr>"
         )
     if not rows_html:
-        rows_html.append("<tr><td colspan='18' class='empty'>暂无 release_batch 数据</td></tr>")
+        rows_html.append("<tr><td colspan='20' class='empty'>暂无 release_batch 数据</td></tr>")
 
     unassigned = candidate_summary.get("__unassigned__", _empty_candidate_summary())
     return f"""<!doctype html>
@@ -384,7 +387,7 @@ th {{ background: #e0f2fe; position: sticky; top: 0; }}
 <h2 class="section-title">正式匹配汇总 / release_batch 明细</h2>
 <table>
 <thead><tr>
-<th>项目</th><th>船名</th><th>到站</th><th>lot</th><th>计划吨数</th><th>批次日期</th><th>货物品名</th><th>当前状态</th><th>已匹配候选数</th><th>待人工候选数</th><th>候选 lot 列表</th><th>已正式入库车数</th><th>已正式入库重量</th><th>已发运车辆明细</th><th>理论剩余货量/车数</th><th>原始图片</th><th>JSON</th><th>状态文件</th>
+<th>项目</th><th>船名</th><th>到站</th><th>lot</th><th>计划吨数</th><th>批次日期</th><th>货物品名</th><th>计划号/订单号</th><th>合同号</th><th>当前状态</th><th>已匹配候选数</th><th>待人工候选数</th><th>候选 lot 列表</th><th>已正式入库车数</th><th>已正式入库重量</th><th>已发运车辆明细</th><th>理论剩余货量/车数</th><th>原始图片</th><th>JSON</th><th>状态文件</th>
 </tr></thead>
 <tbody>
 {''.join(rows_html)}

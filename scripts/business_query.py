@@ -14,6 +14,7 @@ if str(SRC) not in sys.path:
 
 from ops_hub.config import load_settings  # noqa: E402
 from ops_hub.data_agent.agent import BusinessDataAgent  # noqa: E402
+from ops_hub.data_agent.dispatch_board import render_dispatch_board  # noqa: E402
 from ops_hub.matching.inspection_95306_reconciler import reconcile_inspection_shipments  # noqa: E402
 
 
@@ -90,6 +91,17 @@ def cmd_assign_inspection_candidate(args: argparse.Namespace) -> None:
     print(json.dumps({"assigned": assigned, "candidate_id": args.candidate_id, "release_batch_id": args.release_batch_id}, ensure_ascii=False, indent=2))
 
 
+def cmd_render_dispatch_board(args: argparse.Namespace) -> None:
+    settings = load_settings(args.config)
+    output_path = args.output or "/Users/qicai21/projects/repos/business-system-docs/dashboard/dispatch_board.html"
+    result = render_dispatch_board(
+        business_db_path=args.business_db or settings.agent_db_path,
+        rail_db_path=args.rail_db or settings.db_95306_path,
+        output_path=output_path,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def _add_reconcile_args(p: argparse.ArgumentParser, *, legacy_dry_run: bool = False) -> None:
     p.add_argument("--release-batch-id", required=True)
     p.add_argument("--project-id", default="中唐特钢铁矿发运项目")
@@ -135,6 +147,12 @@ def main() -> None:
     p.add_argument("--operator-note", default="")
     p.add_argument("--business-db", default=None)
     p.set_defaults(func=cmd_assign_inspection_candidate)
+
+    p = sub.add_parser("render-dispatch-board", help="生成本地静态放货/发运/识别/匹配入库看板 HTML")
+    p.add_argument("--business-db", default=None)
+    p.add_argument("--rail-db", default=None, help="95306_collection.sqlite3；只读查询 shipment_release_batch_matches")
+    p.add_argument("--output", default=None, help="输出 HTML 路径，默认写入 business-system-docs/dashboard/dispatch_board.html")
+    p.set_defaults(func=cmd_render_dispatch_board)
 
     legacy = sub.add_parser("finalize-inspection", help="DEPRECATED: use reconcile-inspection --plan/--commit")
     _add_reconcile_args(legacy, legacy_dry_run=True)

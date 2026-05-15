@@ -43,6 +43,7 @@ def render_dispatch_board(
         candidate_summary = _fetch_candidate_summary(business_db)
         audit_paths = _fetch_audit_paths(business_db)
         text_pending_rows = _fetch_text_pending_audits(business_db)
+        unresolved_work_items = _fetch_unresolved_work_items(business_db)
 
     formal_summary: dict[str, dict[str, Any]] = {}
     if rail_db_path:
@@ -56,6 +57,7 @@ def render_dispatch_board(
         formal_summary=formal_summary,
         audit_paths=audit_paths,
         text_pending_rows=text_pending_rows,
+        unresolved_work_items=unresolved_work_items,
     )
     output_path.write_text(html, encoding="utf-8")
     visible_release_ids = {str(row.get("id") or "") for row in release_rows}
@@ -65,6 +67,11 @@ def render_dispatch_board(
         "active_release_batch_count": sum(1 for row in release_rows if row.get("dispatch_status") == "in_progress"),
         "candidate_count": sum(item.get("matched_candidate_count", 0) for item in candidate_summary.values()),
         "manual_pending_candidate_count": _manual_pending_count(candidate_summary),
+        "unresolved_total_count": _unresolved_total_count(unresolved_work_items),
+        "pending_text_release_count": len(unresolved_work_items.get("text_release", [])),
+        "pending_departure_plan_count": len(unresolved_work_items.get("departure_plan", [])),
+        "pending_inspection_assignment_count": len(unresolved_work_items.get("inspection_assignment", [])),
+        "pending_inspection_validation_count": len(unresolved_work_items.get("inspection_validation", [])),
         "formal_match_count": sum(item.get("formal_match_count", 0) for key, item in formal_summary.items() if key in visible_release_ids),
         "formal_weight": sum(float(item.get("formal_weight") or 0) for key, item in formal_summary.items() if key in visible_release_ids),
     }
@@ -196,6 +203,171 @@ def _fetch_text_pending_audits(db: sqlite3.Connection) -> list[dict[str, Any]]:
             }
         )
     return result
+
+
+def _fetch_unresolved_work_items(db: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
+    """Fetch operator-facing unresolved work items for the top of the dispatch board."""
+    items: dict[str, list[dict[str, Any]]] = {
+        "text_release": [],
+        "departure_plan": [],
+        "inspection_assignment": [],
+        "inspection_validation": [],
+    }
+    if _table_exists(db, "image_ingestion_audit"):
+        text_rows = db.execute(
+            """
+            SELECT raw_image_path, db_record_ids, status, reason, created_at
+            FROM image_ingestion_audit
+            WHERE message_type = 'text'
+              AND classified_category = '文字放货指令'
+              AND requires_manual_review = 1
+            ORDER BY created_at DESC
+            """
+        ).fetchall()
+        for row in text_rows:
+            fields = parse_business_text_fields(str(row["raw_image_path"] or ""))
+            items["text_release"].append(
+                {
+                    "kind": "待匹配文字放货消息",
+                    "ship_name": fields.get("船名") or "",
+                    "cargo_name": fields.get("货名") or "",
+                    "quantity": fields.get("数量") or "",
+                    "plan_id": fields.get("计划号") or "",
+                    "contract_no": fields.get("合同号") or "",
+                    "status": row["status"] or "pending",
+                    "reason": row["reason"] or "",
+                    "candidate_ids": [str(item) for item in _json_array(row["db_record_ids"]) if str(item).strip()],
+                    "source_file": "文字消息",
+                    "json_path": "",
+                    "created_at": row["created_at"] or "",
+                }
+            )
+
+        plan_rows = db.execute(
+            """
+            SELECT raw_image_path, extraction_json_path, status, reason, db_action, created_at
+            FROM image_ingestion_audit
+            WHERE message_type = 'image'
+              AND classified_category = '出港计划通知单'
+              AND NOT (status = 'ingested' AND COALESCE(db_action, '') LIKE 'release_batch%')
+              AND (
+                requires_manual_review = 1
+                OR status IN ('pending', 'extracted', 'failed')
+                OR COALESCE(db_action, '') IN ('', 'none')
+                OR COALESCE(reason, '') LIKE '%non_sop%'
+              )
+            ORDER BY created_at DESC
+            """
+        ).fetchall()
+        for row in plan_rows:
+            summary = _document_summary_from_json(row["extraction_json_path"])
+            items["departure_plan"].append(
+                {
+                    "kind": "待匹配出港计划/放货图片",
+                    "ship_name": summary.get("ship_name") or summary.get("船名") or "",
+                    "cargo_name": summary.get("cargo_name") or summary.get("cargo") or summary.get("货名") or "",
+                    "quantity": summary.get("batch_quantity") or summary.get("quantity") or summary.get("计划量") or "",
+                    "plan_id": summary.get("plan_id") or summary.get("计划号") or "",
+                    "contract_no": summary.get("contract_no") or summary.get("合同号") or "",
+                    "status": row["status"] or "",
+                    "reason": row["reason"] or "",
+                    "candidate_ids": [],
+                    "source_file": row["raw_image_path"] or "",
+                    "json_path": row["extraction_json_path"] or "",
+                    "created_at": row["created_at"] or "",
+                }
+            )
+
+        validation_rows = db.execute(
+            """
+            SELECT raw_image_path, extraction_json_path, db_record_ids, status, reason, created_at
+            FROM image_ingestion_audit
+            WHERE message_type = 'image'
+              AND classified_category = '检装车通知单'
+              AND db_action = 'candidate_pending'
+              AND reason = 'matched_release_batch_waiting_95306_validation'
+            ORDER BY created_at DESC
+            """
+        ).fetchall()
+        for row in validation_rows:
+            summary = _document_summary_from_json(row["extraction_json_path"])
+            items["inspection_validation"].append(
+                {
+                    "kind": "待95306校验装车候选",
+                    "ship_name": summary.get("ship_name") or summary.get("ship") or summary.get("船名") or "",
+                    "cargo_name": summary.get("cargo_name") or summary.get("cargo") or summary.get("货名") or "",
+                    "quantity": summary.get("wagon_count") or summary.get("actual_wagon_count") or summary.get("节数") or "",
+                    "plan_id": "",
+                    "contract_no": "",
+                    "status": row["status"] or "pending",
+                    "reason": row["reason"] or "",
+                    "candidate_ids": [str(item) for item in _json_array(row["db_record_ids"]) if str(item).strip()],
+                    "source_file": row["raw_image_path"] or "",
+                    "json_path": row["extraction_json_path"] or "",
+                    "created_at": row["created_at"] or "",
+                }
+            )
+
+    if _table_exists(db, "inspection_ingestion_candidates"):
+        candidate_rows = db.execute(
+            """
+            SELECT source_file_name, status, reason, release_batch_id, wagon_count, payload_json, created_at
+            FROM inspection_ingestion_candidates
+            WHERE status IN ('pending', 'ambiguous')
+              AND (
+                COALESCE(release_batch_id, '') = ''
+                OR reason = 'no_release_batch_candidate'
+                OR reason LIKE '%ambiguous%'
+              )
+            ORDER BY created_at DESC
+            """
+        ).fetchall()
+        for row in candidate_rows:
+            payload = _json_object(row["payload_json"])
+            items["inspection_assignment"].append(
+                {
+                    "kind": "待指认检装车通知单",
+                    "ship_name": payload.get("ship_name") or payload.get("ship") or payload.get("船名") or "",
+                    "cargo_name": payload.get("cargo_name") or payload.get("cargo") or payload.get("货名") or "",
+                    "quantity": row["wagon_count"] or payload.get("wagon_count") or payload.get("rows_count") or "",
+                    "plan_id": "",
+                    "contract_no": "",
+                    "status": row["status"] or "pending",
+                    "reason": row["reason"] or "",
+                    "candidate_ids": [str(item) for item in (payload.get("_candidate_release_batch_ids") or []) if str(item).strip()],
+                    "source_file": row["source_file_name"] or "",
+                    "json_path": "",
+                    "created_at": row["created_at"] or "",
+                }
+            )
+    return items
+
+
+def _unresolved_total_count(items: dict[str, list[dict[str, Any]]]) -> int:
+    return sum(len(rows) for rows in items.values())
+
+
+def _document_summary_from_json(path_text: Any) -> dict[str, Any]:
+    path = Path(str(path_text or ""))
+    if not path.exists() or not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    summary: dict[str, Any] = {}
+    for key, value in data.items():
+        if isinstance(value, (str, int, float)) or value is None:
+            summary[key] = value
+    for nested_key in ("extracted", "structured", "data", "fields", "payload"):
+        nested = data.get(nested_key)
+        if isinstance(nested, dict):
+            for key, value in nested.items():
+                if key not in summary and (isinstance(value, (str, int, float)) or value is None):
+                    summary[key] = value
+    return summary
 
 
 def _empty_candidate_summary() -> dict[str, Any]:
@@ -376,6 +548,7 @@ def _build_html(
     formal_summary: dict[str, dict[str, Any]],
     audit_paths: dict[str, dict[str, str]],
     text_pending_rows: list[dict[str, Any]],
+    unresolved_work_items: dict[str, list[dict[str, Any]]],
 ) -> str:
     visible_release_ids = {str(row.get("id") or "") for row in release_rows}
     active_count = sum(1 for row in release_rows if row.get("dispatch_status") == "in_progress")
@@ -403,6 +576,12 @@ def _build_html(
         audit_paths=audit_paths,
     )
     text_pending_html = _text_pending_table_html(text_pending_rows, release_by_id)
+    unresolved_summary_html = _unresolved_summary_table_html(unresolved_work_items, release_by_id)
+    unresolved_total_count = _unresolved_total_count(unresolved_work_items)
+    pending_text_release_count = len(unresolved_work_items.get("text_release", []))
+    pending_departure_plan_count = len(unresolved_work_items.get("departure_plan", []))
+    pending_inspection_assignment_count = len(unresolved_work_items.get("inspection_assignment", []))
+    pending_inspection_validation_count = len(unresolved_work_items.get("inspection_validation", []))
 
     unassigned = candidate_summary.get("__unassigned__", _empty_candidate_summary())
     return f"""<!doctype html>
@@ -431,6 +610,11 @@ th {{ background: #e0f2fe; position: sticky; top: 0; }}
 <h1>放货记录 / 发运记录 / 图片下载识别 / 匹配入库看板</h1>
 <div class="meta">生成时间：{_h(generated_at)}；业务库：{_h(str(business_db_path))}；95306正式匹配库（只读）：{_h(str(rail_db_path) if rail_db_path else '未配置')}</div>
 <div class="cards">
+  <div class="card"><div class="label">待落实总数（文字/出港计划/检装车）</div><div class="value">{unresolved_total_count}</div></div>
+  <div class="card"><div class="label">待匹配文字放货消息</div><div class="value">{pending_text_release_count}</div></div>
+  <div class="card"><div class="label">待匹配出港计划/放货图片</div><div class="value">{pending_departure_plan_count}</div></div>
+  <div class="card"><div class="label">待指认检装车通知单</div><div class="value">{pending_inspection_assignment_count}</div></div>
+  <div class="card"><div class="label">待95306校验装车候选</div><div class="value">{pending_inspection_validation_count}</div></div>
   <div class="card"><div class="label">当前发运中批次数</div><div class="value">{active_count}</div></div>
   <div class="card"><div class="label">release_batch 总数</div><div class="value">{len(release_rows)}</div></div>
   <div class="card"><div class="label">已匹配检装车候选数 candidate</div><div class="value">{matched_candidate_count}</div></div>
@@ -439,6 +623,8 @@ th {{ background: #e0f2fe; position: sticky; top: 0; }}
   <div class="card"><div class="label">已正式入库车数</div><div class="value">{formal_count}</div></div>
   <div class="card"><div class="label">已正式入库重量</div><div class="value">{_fmt_num(formal_weight)}</div></div>
 </div>
+<h2 class="section-title">待落实消息汇总（优先处理）</h2>
+{unresolved_summary_html}
 <h2 class="section-title">正式匹配汇总 / 发运中 release_batch 明细</h2>
 {_release_table_html(in_progress_rows_html)}
 <h2 class="section-title">已发完 release_batch 明细</h2>
@@ -507,6 +693,40 @@ def _release_table_rows_html(
     if not row_html:
         row_html.append("<tr><td colspan='20' class='empty'>暂无 release_batch 数据</td></tr>")
     return "".join(row_html)
+
+
+def _unresolved_summary_table_html(items: dict[str, list[dict[str, Any]]], release_by_id: dict[str, dict[str, Any]]) -> str:
+    rows = []
+    order = ["text_release", "departure_plan", "inspection_assignment", "inspection_validation"]
+    for key in order:
+        for item in items.get(key, []):
+            candidate_lots = _candidate_lot_text(item.get("candidate_ids") or [], release_by_id)
+            rows.append(
+                "<tr>"
+                f"<td>{_h(item.get('kind'))}</td>"
+                f"<td>{_h(item.get('ship_name'))}</td>"
+                f"<td>{_h(item.get('cargo_name'))}</td>"
+                f"<td>{_h(item.get('quantity'))}</td>"
+                f"<td>{_h(item.get('plan_id'))}</td>"
+                f"<td>{_h(item.get('contract_no'))}</td>"
+                f"<td>{_h(item.get('status'))}</td>"
+                f"<td>{_h(item.get('reason'))}</td>"
+                f"<td>{_h(candidate_lots)}</td>"
+                f"<td class='path'>{_file_link(str(item.get('source_file') or ''), '来源')}</td>"
+                f"<td class='path'>{_file_link(str(item.get('json_path') or ''), 'JSON')}</td>"
+                f"<td>{_h(item.get('created_at'))}</td>"
+                "</tr>"
+            )
+    if not rows:
+        rows.append("<tr><td colspan='12' class='empty'>暂无未匹配待落实消息</td></tr>")
+    return (
+        "<table><thead><tr>"
+        "<th>类型</th><th>船名</th><th>货名</th><th>数量/车数</th><th>计划号</th><th>合同号</th>"
+        "<th>状态</th><th>原因</th><th>候选 lot</th><th>来源</th><th>JSON</th><th>记录时间</th>"
+        "</tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table>"
+    )
 
 
 def _text_pending_table_html(rows: list[dict[str, Any]], release_by_id: dict[str, dict[str, Any]]) -> str:

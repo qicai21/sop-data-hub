@@ -183,14 +183,75 @@ def test_render_dispatch_board_separates_in_progress_and_completed_tables(tmp_db
     html = (tmp_path / "board.html").read_text(encoding="utf-8")
     running_title = html.index("发运中 release_batch 明细")
     completed_title = html.index("已发完 release_batch 明细")
-    malan = html.index("马兰探险")
-    bella = html.index("贝拉")
+    malan = html.index("马兰探险", running_title)
+    bella = html.index("贝拉", completed_title)
     assert running_title < malan < completed_title < bella
     assert result["manual_pending_candidate_count"] == 2
     assert "待人工候选数" in html
     assert "待人工匹配文字放货消息" in html
+    assert "待落实消息汇总（优先处理）" in html
+    assert "待匹配文字放货消息" in html
+    assert result["unresolved_total_count"] == 1
+    assert result["pending_text_release_count"] == 1
     assert "8248" in html
     assert "lot07" in html
+
+
+def test_render_dispatch_board_shows_top_unresolved_departure_and_inspection_counts(tmp_db, tmp_path):
+    agent = BusinessDataAgent()
+    agent.db.execute(
+        """
+        INSERT INTO release_batches (
+          id, batch_key, project, ship_name, cargo_name, destination_station,
+          notice_date, batch_date, batch_sequence, batch_quantity, source_json, searchable_text, dispatch_status
+        ) VALUES ('batch-fs', 'zt|丰收散运|lot01', '中唐特钢铁矿发运项目', '丰收散运', '铁矿', '汐子',
+          '2026-05-10', '2026-05-10', 'lot01', 10000, '{}', '丰收散运 汐子 铁矿', 'in_progress')
+        """
+    )
+    agent.db.execute(
+        """
+        INSERT INTO image_ingestion_audit (
+          id, message_type, raw_image_path, classified_category, db_action, status, reason, requires_manual_review,
+          extraction_json_path
+        ) VALUES (
+          'plan-pending', 'image', '/tmp/fengshou_plan.jpg', '出港计划通知单', 'none', 'extracted',
+          'non_sop_project_json_only', 0, '/tmp/fengshou_plan_result.json'
+        )
+        """
+    )
+    agent.db.execute(
+        """
+        INSERT INTO image_ingestion_audit (
+          id, message_type, raw_image_path, classified_category, db_action, db_record_ids, status, reason,
+          extraction_json_path
+        ) VALUES (
+          'inspect-validation', 'image', '/tmp/fengshou_inspect.jpg', '检装车通知单', 'candidate_pending', '["batch-fs"]',
+          'pending', 'matched_release_batch_waiting_95306_validation', '/tmp/fengshou_inspect_result.json'
+        )
+        """
+    )
+    agent.db.execute(
+        """
+        INSERT INTO inspection_ingestion_candidates (
+          id, source_file_name, status, reason, release_batch_id, wagon_count, car_numbers_json, payload_json
+        ) VALUES ('inspect-unassigned', '/tmp/no_batch_inspect.jpg', 'pending', 'no_release_batch_candidate', NULL, 56, '[]', '{"ship_name":"丰收散运"}')
+        """
+    )
+    agent.db.commit()
+
+    result = render_dispatch_board(business_db_path=tmp_db, rail_db_path=None, output_path=tmp_path / "board.html")
+
+    html = (tmp_path / "board.html").read_text(encoding="utf-8")
+    assert result["pending_departure_plan_count"] == 1
+    assert result["pending_inspection_assignment_count"] == 1
+    assert result["pending_inspection_validation_count"] == 1
+    assert result["unresolved_total_count"] == 3
+    assert "待匹配出港计划/放货图片" in html
+    assert "待指认检装车通知单" in html
+    assert "待95306校验装车候选" in html
+    assert "non_sop_project_json_only" in html
+    assert "no_release_batch_candidate" in html
+    assert "matched_release_batch_waiting_95306_validation" in html
 
 
 def test_render_dispatch_board_filters_out_non_sop_release_batches(tmp_db, tmp_path):

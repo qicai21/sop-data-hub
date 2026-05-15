@@ -140,6 +140,75 @@ def test_defect_rows_are_excluded_before_window_count_and_linkage(tmp_path: Path
     assert not any(item["reason"] == "95306-window-count-mismatch" for item in result.excluded)
 
 
+def test_footer_boundary_defect_on_loading_limit_is_kept_when_trailing_paiche_exists(tmp_path: Path) -> None:
+    biz_db, rail_db = _build_fixture(tmp_path, authorized=True)
+    payload = {
+        "rows_count": 46,
+        "rows": [
+            {"seq": 44, "car_no": "100001", "car_type": "70", "cargo_info_raw": "汐子铁矿粉", "cargo_info_effective": "汐子铁矿粉/鞍子河", "defect": False},
+            {"seq": 45, "car_no": "100002", "car_type": "70", "cargo_info_raw": "鞍子河", "cargo_info_effective": "汐子铁矿粉/鞍子河", "remark": "双划不入槽", "defect": True},
+            {"seq": 46, "car_no": "100003", "car_type": "70", "cargo_info_raw": "", "cargo_info_effective": "汐子铁矿粉/鞍子河", "remark": "双划不入槽", "defect": True},
+        ],
+        "footer": {"zhuangche_jieshu": 45, "paiche_jieshu": 1},
+        "project": "中唐特钢铁矿发运项目",
+        "_agent_sop_authorized": True,
+    }
+    with sqlite3.connect(biz_db) as conn:
+        conn.execute(
+            "UPDATE inspection_ingestion_candidates SET wagon_count=3, car_numbers_json=?, payload_json=? WHERE id='cand-1'",
+            (json.dumps(["100001", "100002", "100003"]), json.dumps(payload, ensure_ascii=False)),
+        )
+
+    result = reconcile_inspection_shipments(
+        business_db_path=biz_db,
+        rail_db_path=rail_db,
+        project_id="中唐特钢铁矿发运项目",
+        release_batch_id="batch-1",
+        candidate_ids=["cand-1"],
+        run_mode="commit",
+        operator_note="pytest footer boundary defect correction",
+    )
+
+    assert result.safe_to_commit is True
+    assert result.planned_write_count == 2
+    assert _matched_cars(rail_db, "batch-1") == ["100001", "100002"]
+    assert any(item["wagon_no"] == "100003" and item["reason"] == "ocr-defect" for item in result.excluded)
+
+
+def test_footer_boundary_defect_on_manual_split_row_end_is_kept(tmp_path: Path) -> None:
+    biz_db, rail_db = _build_fixture(tmp_path, authorized=True)
+    payload = {
+        "rows_count": 2,
+        "rows": [
+            {"seq": 44, "car_no": "100001", "car_type": "70", "cargo_info_raw": "汐子铁矿粉", "cargo_info_effective": "汐子铁矿粉/鞍子河", "defect": False},
+            {"seq": 45, "car_no": "100002", "car_type": "70", "cargo_info_raw": "鞍子河", "cargo_info_effective": "汐子铁矿粉/鞍子河", "remark": "双划不入槽", "defect": True},
+        ],
+        "footer": {"zhuangche_jieshu": 45, "paiche_jieshu": 1},
+        "_manual_assignment": {"row_start": 44, "row_end": 45, "lot": "lot04"},
+        "project": "中唐特钢铁矿发运项目",
+        "_agent_sop_authorized": True,
+    }
+    with sqlite3.connect(biz_db) as conn:
+        conn.execute(
+            "UPDATE inspection_ingestion_candidates SET wagon_count=2, car_numbers_json=?, payload_json=? WHERE id='cand-1'",
+            (json.dumps(["100001", "100002"]), json.dumps(payload, ensure_ascii=False)),
+        )
+
+    result = reconcile_inspection_shipments(
+        business_db_path=biz_db,
+        rail_db_path=rail_db,
+        project_id="中唐特钢铁矿发运项目",
+        release_batch_id="batch-1",
+        candidate_ids=["cand-1"],
+        run_mode="commit",
+        operator_note="pytest split footer boundary defect correction",
+    )
+
+    assert result.safe_to_commit is True
+    assert result.planned_write_count == 2
+    assert _matched_cars(rail_db, "batch-1") == ["100001", "100002"]
+
+
 def test_anzihe_lot04_scope_is_fixed_when_live_databases_exist() -> None:
     biz_db = Path("/Users/qicai21/projects/repos/wx-ops-agent/data/agent.db")
     rail_db = Path("/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3")

@@ -266,8 +266,14 @@ def _archive_components(payload: dict[str, Any], settings: Settings) -> dict[str
     remarks = [item for item in (payload.get("remarks") or []) if isinstance(item, dict)]
     first_remark = remarks[0] if remarks else {}
     lot_value = "pending_lot" if agent_status == "ambiguous" else _lot_component(release_row.get("batch_sequence") or first_remark.get("sequence") or payload.get("batch_sequence"))
+    # If an archive release row was selected, keep all path components from that
+    # same business row.  Mixed-project inspection slips may carry a document-level
+    # payload.project from one segment while the candidate release row belongs to
+    # another project; combining those sources creates invalid paths such as
+    # 朝阳钢铁/.../汐子/马兰探险.  The release row is the authoritative archive
+    # anchor whenever present.
     return {
-        "project": str(payload.get("project") or release_row.get("project") or "unknown"),
+        "project": str(release_row.get("project") or payload.get("project") or "unknown"),
         "destination": str(release_row.get("destination_station") or first_remark.get("destination") or cargo_info.get("到站") or payload.get("destination_station") or "unknown"),
         "ship": str(release_row.get("ship_name") or business_info.get("进口船名") or business_info.get("船名") or payload.get("ship_name") or "unknown"),
         "lot": lot_value,

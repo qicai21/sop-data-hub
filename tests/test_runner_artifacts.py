@@ -215,7 +215,7 @@ def test_ambiguous_inspection_artifacts_move_to_pending_lot_not_candidate_lot(tm
         classifier.classify.return_value = MagicMock(category="检装车通知单", confidence=0.96)
         inspection_payload = {
             "is_inspection": True,
-            "project": "中唐特钢铁矿发运项目",
+            "project": "朝阳钢铁铁矿发运项目",
             "ship_name": "马兰探险",
             "destination_station": "汐子",
             "meta": {"date": "2026-05-13"},

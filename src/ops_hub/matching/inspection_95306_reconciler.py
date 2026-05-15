@@ -249,6 +249,7 @@ def _target_rows_for_release(payload: Mapping[str, Any], spec: Any) -> tuple[lis
     source_rows.sort(key=lambda r: int(r.get("seq") or r.get("global_index") or 0))
     if not source_rows:
         return [], []
+    source_rows = [_normalize_footer_boundary_defect(row, payload) for row in source_rows]
 
     segment = _ship_segment_rows(source_rows, spec)
     if segment is None:
@@ -257,18 +258,51 @@ def _target_rows_for_release(payload: Mapping[str, Any], spec: Any) -> tuple[lis
 
     selected_ids = {_row_identity(row) for row in segment}
     excluded: list[dict[str, Any]] = []
-    for row in source_rows:
-        if _row_identity(row) not in selected_ids:
+    for row_for_reason in source_rows:
+        if _row_identity(row_for_reason) not in selected_ids:
             excluded.append(
                 {
                     "candidate_id": "",
                     "source_file_name": "",
-                    "wagon_no": str(row.get("car_no") or ""),
-                    "inspection_row": row.get("seq") or row.get("global_index"),
-                    "reason": _row_exclusion_reason(row),
+                    "wagon_no": str(row_for_reason.get("car_no") or ""),
+                    "inspection_row": row_for_reason.get("seq") or row_for_reason.get("global_index"),
+                    "reason": _row_exclusion_reason(row_for_reason),
                 }
             )
     return segment, excluded
+
+
+def _normalize_footer_boundary_defect(row: Mapping[str, Any], payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Do not let a shifted OCR defect flag shrink the loaded footer range.
+
+    If the footer says 装车N/排车M, a defect mark on row N is suspicious when
+    there are trailing 排车 rows.  Keep row N active; the trailing rows after N
+    remain defect/excluded.  This matches mixed manually split sheets where the
+    loaded segment ends exactly at the footer loading count.
+    """
+    out = dict(row)
+    footer = payload.get("footer") if isinstance(payload.get("footer"), Mapping) else {}
+    try:
+        loading_limit = int(footer.get("zhuangche_jieshu") or footer.get("装车结束") or 0)
+        paiche_count = int(footer.get("paiche_jieshu") or footer.get("排车结束") or 0)
+        seq = int(out.get("seq") or out.get("global_index") or 0)
+    except Exception:
+        return out
+    if loading_limit > 0 and paiche_count > 0 and seq == loading_limit and out.get("defect"):
+        manual = payload.get("_manual_assignment") if isinstance(payload.get("_manual_assignment"), Mapping) else {}
+        max_seq = max(
+            [int(r.get("seq") or r.get("global_index") or 0) for r in (payload.get("rows") or []) if isinstance(r, Mapping)]
+            or [0]
+        )
+        try:
+            row_count = int(payload.get("rows_count") or 0)
+        except Exception:
+            row_count = 0
+        has_trailing_paiche_row = max_seq > loading_limit or row_count > loading_limit or int(manual.get("row_end") or 0) == loading_limit
+        if has_trailing_paiche_row:
+            out["defect"] = False
+            out["defect_corrected_by_footer"] = True
+    return out
 
 
 def _row_exclusion_reason(row: Mapping[str, Any]) -> str:

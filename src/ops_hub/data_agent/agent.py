@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
 from functools import lru_cache
 from hashlib import sha1
 import json
@@ -487,46 +486,144 @@ class BusinessDataAgent:
         if any(not fields.get(key) for key in required):
             return []
 
-        today = date.today().isoformat()
         quantity = parse_number(fields.get("数量"))
-        quantity_text = f"{quantity:g}吨" if quantity is not None else str(fields.get("数量") or "")
-        payload = {
-            "is_target": True,
-            "title": "文字放货指令",
-            "header_info": {
-                "通知日期": today,
-                "合同号": fields["合同号"],
-                "入场计划号": fields["计划号"],
-            },
-            "business_info": {
-                "发货单位": fields["供方"],
-                "进口船名": fields["船名"],
-                "船名": fields["船名"],
-                "到达港": fields["港口"],
-            },
-            "cargo_info": {
-                "货物名称": infer_cargo_category(fields["货名"]),
-                "货物品名": fields["货名"],
-                "总重里": fields["数量"],
-                "发货站(地)": fields["港口"],
-            },
-            "special_matter": f"港口：{fields['港口']}",
-            "remarks": [
+        matches = self.find_text_release_batch_candidates(fields, quantity)
+        audit_base = {
+            "message_type": "text",
+            "raw_image_path": text,
+            "classified_category": "文字放货指令",
+            "project_id": "中唐特钢铁矿发运项目" if "ZLZT" in fields.get("合同号", "") or "马兰探险" in fields.get("船名", "") else None,
+            "target_node": "create_release_batch",
+        }
+        if len(matches) != 1:
+            reason = "no_release_batch_candidate" if not matches else "ambiguous_release_batch_match"
+            self.write_image_ingestion_audit(
                 {
-                    "date": today,
-                    "sequence": fields["计划号"],
-                    "plan": f"文字放货指令 {quantity_text}",
-                    "raw_line": f"文字放货指令 {quantity_text}",
-                    "quantity": quantity,
+                    **audit_base,
+                    "db_action": "manual_match_pending",
+                    "db_tables": ["release_batches"],
+                    "db_record_ids": [record.id for record in matches],
+                    "status": "pending",
+                    "reason": reason,
+                    "requires_manual_review": True,
+                    "review_reasons": [reason],
+                    "planned_write_count": 0,
+                    "excluded_count": len(matches),
                 }
-            ],
+            )
+            return []
+
+        record = matches[0]
+        cargo_name = record.cargo_name or infer_cargo_category(fields["货名"])
+        source_json = dict(record.source_json or {})
+        source_json["text_release_instruction"] = {
+            "fields": fields,
             "source_text": text,
         }
-        return self.ingest_release_batch(
-            payload=payload,
-            source_file_name="wechat_text_release_instruction",
-            contract_no=fields["合同号"],
+        self.db.execute(
+            """
+            UPDATE release_batches SET
+              contract_no = ?,
+              plan_id = ?,
+              cargo_name = ?,
+              cargo_product_name = ?,
+              source_json = ?,
+              searchable_text = ?,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                fields["合同号"],
+                fields["计划号"],
+                cargo_name,
+                fields["货名"],
+                write_json(source_json, pretty=False),
+                to_searchable_text(source_json),
+                record.id,
+            ),
         )
+        self.db.commit()
+        updated = self.get(record.id)
+        if updated:
+            self.upsert_release_dispatch_match_rule(updated)
+            self.write_image_ingestion_audit(
+                {
+                    **audit_base,
+                    "db_action": "release_batch_update",
+                    "db_tables": ["release_batches"],
+                    "db_record_ids": [updated.id],
+                    "status": "ingested",
+                    "reason": "unique_release_batch_match",
+                    "requires_manual_review": False,
+                    "planned_write_count": 1,
+                    "excluded_count": 0,
+                }
+            )
+            self.db.commit()
+            return [updated]
+        return []
+
+    def find_text_release_batch_candidates(
+        self,
+        fields: Dict[str, str],
+        quantity: Optional[float],
+    ) -> List[ReleaseBatchRecord]:
+        """Find existing release_batches for a text release instruction.
+
+        Text messages are supplemental release instructions. They must not
+        create a new lot; they may only update exactly one existing lot.
+        """
+        ship_name = str(fields.get("船名") or "").strip()
+        if not ship_name:
+            return []
+        rows = self.db.execute(
+            """
+            SELECT * FROM release_batches
+            WHERE ship_name = ?
+            ORDER BY batch_date ASC, batch_sequence ASC, updated_at ASC
+            """,
+            (ship_name,),
+        ).fetchall()
+        candidates = [hydrate_row(row) for row in rows]
+
+        destination = canonicalize_station_text(fields.get("到站") or fields.get("目的地") or "")
+        if destination:
+            candidates = [
+                record
+                for record in candidates
+                if canonicalize_station_text(record.destination_station) == destination
+            ]
+
+        cargo_category = infer_cargo_category(fields.get("货名"))
+        if cargo_category:
+            cargo_filtered = [
+                record for record in candidates if text_cargo_compatible(cargo_category, record.cargo_name)
+            ]
+            if cargo_filtered:
+                candidates = cargo_filtered
+
+        contract_no = str(fields.get("合同号") or "").strip()
+        if contract_no:
+            exact_contract = [record for record in candidates if str(record.contract_no or "").strip() == contract_no]
+            if exact_contract:
+                candidates = exact_contract
+
+        plan_id = str(fields.get("计划号") or "").strip()
+        if plan_id:
+            exact_plan = [record for record in candidates if str(record.plan_id or "").strip() == plan_id]
+            if exact_plan:
+                candidates = exact_plan
+
+        if quantity is not None:
+            quantity_matches = [
+                record
+                for record in candidates
+                if record.batch_quantity is not None and abs(float(record.batch_quantity) - quantity) < 0.001
+            ]
+            if quantity_matches:
+                candidates = quantity_matches
+
+        return candidates
 
     def ingest_release_batch_file(
         self,
@@ -842,11 +939,11 @@ class BusinessDataAgent:
                 "status": data.get("status"),
                 "reason": data.get("reason"),
                 "reconcile_plan": write_json(data.get("reconcile_plan") or {}, pretty=False) if data.get("reconcile_plan") else None,
-                "safe_to_commit": int(bool((data.get("reconcile_plan") or {}).get("safe_to_commit"))) if data.get("reconcile_plan") else None,
-                "requires_manual_review": int(bool((data.get("reconcile_plan") or {}).get("requires_manual_review"))) if data.get("reconcile_plan") else None,
-                "review_reasons": write_json((data.get("reconcile_plan") or {}).get("review_reasons") or [], pretty=False) if data.get("reconcile_plan") else None,
-                "planned_write_count": (data.get("reconcile_plan") or {}).get("planned_write_count") if data.get("reconcile_plan") else None,
-                "excluded_count": len((data.get("reconcile_plan") or {}).get("excluded") or []) if data.get("reconcile_plan") else None,
+                "safe_to_commit": int(bool(data.get("safe_to_commit"))) if data.get("safe_to_commit") is not None else (int(bool((data.get("reconcile_plan") or {}).get("safe_to_commit"))) if data.get("reconcile_plan") else None),
+                "requires_manual_review": int(bool(data.get("requires_manual_review"))) if data.get("requires_manual_review") is not None else (int(bool((data.get("reconcile_plan") or {}).get("requires_manual_review"))) if data.get("reconcile_plan") else None),
+                "review_reasons": write_json(data.get("review_reasons") or [], pretty=False) if data.get("review_reasons") is not None else (write_json((data.get("reconcile_plan") or {}).get("review_reasons") or [], pretty=False) if data.get("reconcile_plan") else None),
+                "planned_write_count": data.get("planned_write_count") if data.get("planned_write_count") is not None else ((data.get("reconcile_plan") or {}).get("planned_write_count") if data.get("reconcile_plan") else None),
+                "excluded_count": data.get("excluded_count") if data.get("excluded_count") is not None else (len((data.get("reconcile_plan") or {}).get("excluded") or []) if data.get("reconcile_plan") else None),
                 "project_archive_paths": write_json(data.get("project_archive_paths") or {}, pretty=False) if data.get("project_archive_paths") else None,
             },
         )
@@ -930,7 +1027,7 @@ class BusinessDataAgent:
         cargo_product_name = cargo_info.get("货物品名") or normalized_payload.get("货物品名")
         consignor = business_info.get("发货单位", "")
         consignee = business_info.get("收货单位", "")
-        destination_station = parse_destination_station(special_matter) or (
+        default_destination_station = parse_destination_station(special_matter) or (
             latest_remark.get("destination") if latest_remark else ""
         )
 
@@ -942,7 +1039,7 @@ class BusinessDataAgent:
         if contract_id:
             contract = self.get_contract(contract_id)
         else:
-            contract = self.find_matching_contract(cargo_name, destination_station)
+            contract = self.find_matching_contract(cargo_name, default_destination_station)
             if contract:
                 contract_id = contract.id
 
@@ -953,7 +1050,7 @@ class BusinessDataAgent:
 
         base_key = "|".join(
             str(item).strip()
-            for item in [ship_name, cargo_name, consignor, consignee, destination_station]
+            for item in [ship_name, cargo_name, consignor, consignee]
         )
         total_planned_quantity = sum(item.get("quantity") or 0 for item in remarks)
         rows = []
@@ -961,10 +1058,11 @@ class BusinessDataAgent:
         for remark in remarks:
             seq = str(remark.get("sequence") or "")
             dt = str(remark.get("date") or "")
+            destination_station = remark.get("destination") or default_destination_station
             
             # 使用 sequence 作为 batch_key 核心；如果没有 sequence，退化为使用 date
             unique_identifier = seq if seq else dt
-            batch_key = "|".join([base_key, unique_identifier])
+            batch_key = "|".join([base_key, str(destination_station or ""), unique_identifier])
 
             
             # Generate ID Label: 汐子铁矿粉/沈阳盛京颐昇代/鞍子河
@@ -1202,6 +1300,16 @@ def infer_cargo_category(product_name: Optional[str]) -> str:
     return text
 
 
+def text_cargo_compatible(left: Optional[str], right: Optional[str]) -> bool:
+    left_text = re.sub(r"\s+", "", str(left or ""))
+    right_text = re.sub(r"\s+", "", str(right or ""))
+    if not left_text or not right_text:
+        return True
+    if left_text == right_text or left_text in right_text or right_text in left_text:
+        return True
+    return "铁" in left_text and "铁" in right_text and "矿" in left_text and "矿" in right_text
+
+
 def parse_business_text_fields(text: str) -> Dict[str, str]:
     """Parse the fixed WeChat text release format into SOP field labels."""
     fields: Dict[str, str] = {}
@@ -1212,6 +1320,8 @@ def parse_business_text_fields(text: str) -> Dict[str, str]:
         "货名": "货名",
         "货物名称": "货名",
         "港口": "港口",
+        "到站": "到站",
+        "目的地": "到站",
         "数量": "数量",
         "货量": "数量",
         "计划号": "计划号",

@@ -290,11 +290,24 @@ class TestBusinessDataAgent:
         records = agent.list_release_batches()
         assert len(records) == 1  # upsert, not duplicate
 
-    def test_ingest_business_text_maps_sop_fields(self, tmp_db):
+    def test_ingest_business_text_does_not_create_when_lot_is_ambiguous(self, tmp_db):
         agent = BusinessDataAgent()
-        text = """供方: 福建漳龙集团有限公司（天津茂远）
-船名：丰收散运 
-货名：纽曼粉
+        payload = {
+            "is_target": True,
+            "project": "中唐特钢铁矿发运项目",
+            "header_info": {"通知日期": "2026年04月28日"},
+            "business_info": {"船名": "马兰探险", "发货单位": "中国外运东北有限公司锦州分公司", "收货单位": "中国外运东北有限公司锦州分公司"},
+            "cargo_info": {"货物名称": "铁矿", "货物品名": "铁矿", "运输方式": "铁路"},
+            "special_matter": "到站:汐子",
+            "remarks": [
+                {"date": "2026-04-04", "sequence": "第一次下达计划", "quantity": 10000, "destination": "汐子", "raw_line": "lot01 10000吨 汐子"},
+                {"date": "2026-04-17", "sequence": "第四次下达计划", "quantity": 10000, "destination": "汐子", "raw_line": "lot04 10000吨 汐子"},
+            ],
+        }
+        agent.ingest_release_batch(payload, source_file_name="malan_departure.json")
+        text = """供方: 中国外运东北有限公司锦州分公司
+船名：马兰探险
+货名：铁矿粉
 港口：锦州港
 数量：10000
 计划号：90260500008
@@ -302,20 +315,53 @@ class TestBusinessDataAgent:
 
         records = agent.ingest_business_text(text)
 
+        assert records == []
+        rows = agent.list_release_batches()
+        assert len(rows) == 2
+        assert all(row.plan_id is None for row in rows)
+        audit = agent.db.execute("select * from image_ingestion_audit where message_type='text'").fetchone()
+        assert audit["status"] == "pending"
+        assert audit["reason"] == "ambiguous_release_batch_match"
+        assert audit["requires_manual_review"] == 1
+
+    def test_ingest_business_text_updates_unique_existing_lot(self, tmp_db):
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "project": "中唐特钢铁矿发运项目",
+            "header_info": {"通知日期": "2026年04月28日"},
+            "business_info": {"船名": "马兰探险", "发货单位": "中国外运东北有限公司锦州分公司", "收货单位": "中国外运东北有限公司锦州分公司"},
+            "cargo_info": {"货物名称": "铁矿", "货物品名": "铁矿", "运输方式": "铁路"},
+            "special_matter": "到站:汐子",
+            "remarks": [
+                {"date": "2026-04-23", "sequence": "第五次下达计划", "quantity": 8248, "destination": "乌兰浩特", "raw_line": "lot05 8248吨 乌兰浩特"},
+                {"date": "2026-04-28", "sequence": "第六次下达计划", "quantity": 10000, "destination": "汐子", "raw_line": "lot06 10000吨 汐子"},
+            ],
+        }
+        agent.ingest_release_batch(payload, source_file_name="malan_departure.json")
+        text = """供方: 中国外运东北有限公司锦州分公司
+船名：马兰探险
+货名：纽曼粉
+港口：锦州港
+到站：乌兰浩特
+数量：8248
+计划号：90260500008
+合同号：ZLZT-2026050801"""
+
+        records = agent.ingest_business_text(text)
+
         assert len(records) == 1
         record = records[0]
-        assert record.consignor == "福建漳龙集团有限公司（天津茂远）"
-        assert record.ship_name == "丰收散运"
-        assert record.cargo_name == "铁矿粉"
-        assert record.cargo_product_name == "纽曼粉"
-        assert record.origin_station == "锦州港"
-        assert record.batch_quantity == 10000.0
-        assert record.contract_no == "ZLZT-2026050801"
+        assert record.batch_sequence == "lot05"
+        assert record.destination_station == "乌兰浩特"
+        assert record.batch_quantity == 8248.0
         assert record.plan_id == "90260500008"
-        assert record.source_json["business_info"]["进口船名"] == "丰收散运"
-        assert record.source_json["cargo_info"]["货物名称"] == "铁矿粉"
-        assert record.source_json["cargo_info"]["货物品名"] == "纽曼粉"
-        assert record.source_json["header_info"]["入场计划号"] == "90260500008"
+        assert record.contract_no == "ZLZT-2026050801"
+        assert record.cargo_product_name == "纽曼粉"
+        assert len(agent.list_release_batches()) == 2
+        audit = agent.db.execute("select * from image_ingestion_audit where message_type='text'").fetchone()
+        assert audit["status"] == "ingested"
+        assert audit["db_action"] == "release_batch_update"
 
 
 class TestHashText:

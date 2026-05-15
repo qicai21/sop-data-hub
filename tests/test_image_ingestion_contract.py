@@ -315,6 +315,56 @@ def test_lobster_sandbox_infers_zt_departure_from_fengshou_tuozi_ocr(tmp_path: P
     assert _count(test_db, "select count(*) from release_dispatch_match_rules where project='中唐特钢铁矿发运项目' and ship_name='丰收散运' and destination_station='汐子' and status='active'") == 1
 
 
+def test_data_single_group_malan_departure_enters_zt_sop_and_project_archive(tmp_path: Path, monkeypatch) -> None:
+    test_db = tmp_path / "agent_test.db"
+    img = _make_image(tmp_path / "malan_explorer.jpg")
+    settings = Settings(
+        classified_output_dir=str(tmp_path / "wechat_images"),
+        extraction_output_dir=str(tmp_path / "legacy_extractions"),
+        agent_db_path=str(test_db),
+        test_agent_db_path=str(test_db),
+        auto_extract_categories=["出港计划通知单"],
+    )
+    monkeypatch.setenv("BUSINESS_DATA_AGENT_DB_PATH", str(test_db))
+
+    classifier = MagicMock()
+    classifier.classify.return_value = MagicMock(category="出港计划通知单", confidence=0.95)
+    departure_payload = {
+        "is_target": True,
+        "title": "锦州港货物出港计划通知单",
+        "header_info": {"通知日期": "2026年04月28日"},
+        "business_info": {"船名": "马兰探险", "发货单位": "中国外运东北有限公司锦州分公司", "收货单位": "中国外运东北有限公司锦州分公司"},
+        "cargo_info": {"货物名称": "铁矿", "总重里": "78892", "运输方式": "铁路"},
+        "special_matter": "发运“马兰探险”轮所卸货物，港方负责装火车，火运敞车出港，到站:汐子。海关放行单:78892吨",
+        "remarks": [
+            {"date": "2026-04-04", "sequence": "第一次下达计划", "quantity": 10000, "transport_mode": "铁路", "destination": "汐子", "raw_line": "4月4日第一次下达计划：10000吨，铁路，汐子"},
+            {"date": "2026-04-08", "sequence": "第二次下达计划", "quantity": 10000, "transport_mode": "铁路", "destination": "汐子", "raw_line": "4月8日第二次下达计划：10000吨，铁路，汐子"},
+            {"date": "2026-04-11", "sequence": "第三次下达计划", "quantity": 20000, "transport_mode": "铁路", "destination": "汐子", "raw_line": "4月11日第三次下达计划：20000吨，铁路，汐子"},
+            {"date": "2026-04-17", "sequence": "第四次下达计划", "quantity": 10000, "transport_mode": "铁路", "destination": "汐子", "raw_line": "4月17日第四次下达计划：10000吨，铁路，汐子"},
+            {"date": "2026-04-23", "sequence": "第五次下达计划", "quantity": 10800, "transport_mode": "铁路", "destination": "乌兰浩特", "raw_line": "4月23日第五次下达计划：10800吨，铁路，乌兰浩特，剩余18092吨"},
+            {"date": "2026-04-28", "sequence": "第六次下达计划", "quantity": 10000, "transport_mode": "铁路", "destination": "汐子", "raw_line": "4月28日第六次下达计划：10000吨，铁路，汐子，酒底"},
+        ],
+    }
+
+    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
+        "ops_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
+    ):
+        result = process_new_image(img, settings, month_str="202605", group_name="数据单发群-GROUP013")
+
+    extracted = json.loads(Path(result.extraction_saved_path).read_text(encoding="utf-8"))
+    assert extracted["project"] == "中唐特钢铁矿发运项目"
+    assert extracted["_agent_project_inferred_from"] == "出港计划通知单"
+    assert extracted["_agent_sop_authorized"] is True
+    assert extracted["_agent_ingested"] == 6
+    assert "_agent_sop_skip_reason" not in extracted
+    assert Path(result.saved_path).parts[-7:] == ("中唐特钢铁矿发运项目", "汐子", "马兰探险", "lot01", "images", "2026-04-04", "malan_explorer.jpg")
+    assert Path(result.extraction_saved_path).parts[-7:] == ("中唐特钢铁矿发运项目", "汐子", "马兰探险", "lot01", "json", "2026-04-04", "malan_explorer_result.json")
+    assert _count(test_db, "select count(*) from release_batches where project='中唐特钢铁矿发运项目' and ship_name='马兰探险'") == 6
+    assert _count(test_db, "select count(*) from release_batches where project='中唐特钢铁矿发运项目' and ship_name='马兰探险' and destination_station='汐子'") == 5
+    assert _count(test_db, "select count(*) from release_batches where project='中唐特钢铁矿发运项目' and ship_name='马兰探险' and destination_station='乌兰浩特'") == 1
+    assert _count(test_db, "select count(*) from image_ingestion_audit where group_name='数据单发群-GROUP013' and classified_category='出港计划通知单' and db_action='release_batch_upsert'") == 1
+
+
 def test_lobster_sandbox_infers_chaoyang_departure_without_project_field(tmp_path: Path, monkeypatch) -> None:
     test_db = tmp_path / "agent_test.db"
     img = _make_image(tmp_path / "heyuan9.jpg")
@@ -460,4 +510,3 @@ def test_xizi_inspection_without_ship_anchor_does_not_false_match_anzihe_release
     assert extracted["project"] == "中唐特钢铁矿发运项目"
     assert extracted["_agent_pending_reason"] == "no_release_batch_candidate"
     assert _count(test_db, "select count(*) from inspection_ingestion_candidates where status='pending' and release_batch_id is null") == 1
-

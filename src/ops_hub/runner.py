@@ -183,14 +183,18 @@ def _write_audit_record(
 
 # ── 项目归档与自动发运入库计划 ─────────────────────────
 def _archive_date_from_payload(payload: dict[str, Any], *, month_str: str = "") -> str:
-    candidates = [
-        payload.get("notice_date"),
-        (payload.get("meta") or {}).get("date") if isinstance(payload.get("meta"), dict) else None,
-        (payload.get("header_info") or {}).get("通知日期") if isinstance(payload.get("header_info"), dict) else None,
-    ]
+    # Project archives should line up with the business batch date when a
+    # departure plan contains explicit per-lot remarks.  The document notice
+    # date is only a fallback.
+    candidates = []
     for remark in payload.get("remarks") or []:
         if isinstance(remark, dict):
             candidates.append(remark.get("date"))
+    candidates.extend([
+        payload.get("notice_date"),
+        (payload.get("meta") or {}).get("date") if isinstance(payload.get("meta"), dict) else None,
+        (payload.get("header_info") or {}).get("通知日期") if isinstance(payload.get("header_info"), dict) else None,
+    ])
     for raw in candidates:
         text = str(raw or "").strip()
         if not text:
@@ -607,7 +611,7 @@ def _infer_sop_project_token(payload: dict[str, Any], *, category: str) -> str:
     if category == "出港计划通知单":
         if any(token in text for token in ("合远9", "朝阳钢铁", "朝钢", "朝阳西", "朝阳铁")):
             return "朝阳钢铁铁矿发运项目"
-        if any(token in text for token in ("鞍子河", "丰收散运", "丰收", "沱子", "中唐", "赤峰中唐")):
+        if any(token in text for token in ("汐子", "鞍子河", "丰收散运", "丰收", "沱子", "中唐", "赤峰中唐", "ZLZT")):
             return "中唐特钢铁矿发运项目"
         return ""
     if category == "检装车通知单":

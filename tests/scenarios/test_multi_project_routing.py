@@ -96,12 +96,34 @@ def test_chaoyang_text_with_business_keywords_has_no_sop_route():
 
 
 def test_new_group_integration_via_config():
-    """测试 4: 新增群 数据单发群-[GROUP013] 的场景可以通过项目 SOP 配置接入"""
+    """测试 4: 数据单发群-[GROUP013] 是中唐补充来源，通用归档只能兜底"""
     tasks = load_all_tracking_tasks(FIXTURES_DIR)
 
-    archive_task = next((t for t in tasks if t.group_id == "GROUP013"), None)
+    group013_tasks = [t for t in tasks if t.group_id == "GROUP013"]
+    project_ids = {t.project_id for t in group013_tasks}
+
+    assert {"zt_steel_baseline", "simple_data_archive"}.issubset(project_ids)
+
+    zt_task = _find_task(tasks, project_id="zt_steel_baseline", group_id="GROUP013")
+    assert zt_task.group_lookup_id == "[GROUP013]"
+    assert zt_task.group_name == "数据单发群-[GROUP013]"
+    assert zt_task.listen_options["image"] is True
+    assert zt_task.listen_options["text"] is True
+    assert zt_task.listen_options["file"] is True
+    assert zt_task.pull_image is True
+
+    routes = {(r.message_type, r.trigger_condition, r.target_node) for r in zt_task.routing}
+    assert ("text", "match_text_template", "create_release_batch") in routes
+    assert ("image", "category_in:[出港计划通知单]", "create_release_batch") in routes
+    assert ("image", "category_in:[检装车通知单]", "process_inspection_slip") in routes
+
+    inspection_route = next(r for r in zt_task.routing if r.target_node == "process_inspection_slip")
+    assert inspection_route.report_targets["dev"]["type"] == "contact"
+    assert inspection_route.report_targets["dev"]["name"] == "郭东北"
+    assert inspection_route.report_targets["production"]["group_id"] == "[GROUP003]"
+
+    archive_task = _find_task(tasks, project_id="simple_data_archive", group_id="GROUP013")
     assert archive_task is not None
-    assert archive_task.project_id == "simple_data_archive"
     assert archive_task.routing[0].target_node == "archive_raw_data"
     assert archive_task.routing[0].save_db is True
 
@@ -140,9 +162,11 @@ def test_zt_group_lookup_ids_keep_brackets():
 
     group001_task = _find_task(tasks, project_id="zt_steel_baseline", group_id="GROUP001")
     group003_task = _find_task(tasks, project_id="zt_steel_baseline", group_id="GROUP003")
+    group013_task = _find_task(tasks, project_id="zt_steel_baseline", group_id="GROUP013")
 
     assert group001_task.group_lookup_id == "[GROUP001]"
     assert group003_task.group_lookup_id == "[GROUP003]"
+    assert group013_task.group_lookup_id == "[GROUP013]"
 
 
 def test_agent_consumes_tasks_without_business_rules():

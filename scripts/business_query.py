@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -12,7 +13,19 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from ops_hub.config import load_settings  # noqa: E402
+from ops_hub.data_agent.agent import BusinessDataAgent  # noqa: E402
 from ops_hub.matching.inspection_95306_reconciler import reconcile_inspection_shipments  # noqa: E402
+
+
+def _agent_for_business_db(db_path: str | Path | None) -> BusinessDataAgent:
+    if db_path:
+        os.environ["BUSINESS_DATA_AGENT_DB_PATH"] = str(db_path)
+    return BusinessDataAgent()
+
+
+def _business_db_from_args(args: argparse.Namespace) -> str | Path | None:
+    settings = load_settings(args.config)
+    return args.business_db or settings.agent_db_path
 
 
 def _run_reconcile(args: argparse.Namespace, *, deprecated_finalize_cli: bool = False) -> None:
@@ -45,6 +58,38 @@ def cmd_finalize_inspection(args: argparse.Namespace) -> None:
     _run_reconcile(args, deprecated_finalize_cli=True)
 
 
+def cmd_list_dispatch(args: argparse.Namespace) -> None:
+    agent = _agent_for_business_db(_business_db_from_args(args))
+    status = args.status
+    if status == "all":
+        status = None
+    rows = agent.list_dispatch_rules(status=status)
+    print(json.dumps({"count": len(rows), "rows": rows}, ensure_ascii=False, indent=2))
+
+
+def cmd_set_dispatch_status(args: argparse.Namespace) -> None:
+    agent = _agent_for_business_db(_business_db_from_args(args))
+    changed = agent.update_release_dispatch_status(
+        args.release_batch_id,
+        args.status,
+        manual_note=args.note or args.operator_note or "",
+    )
+    if not changed:
+        raise SystemExit(f"release_batch_id not found: {args.release_batch_id}")
+    row = agent.get(args.release_batch_id)
+    print(json.dumps({"updated": True, "release_batch": row.to_dict() if row else None}, ensure_ascii=False, indent=2))
+
+
+def cmd_assign_inspection_candidate(args: argparse.Namespace) -> None:
+    agent = _agent_for_business_db(_business_db_from_args(args))
+    assigned = agent.assign_inspection_candidate(
+        args.candidate_id,
+        args.release_batch_id,
+        operator_note=args.operator_note or args.note or "",
+    )
+    print(json.dumps({"assigned": assigned, "candidate_id": args.candidate_id, "release_batch_id": args.release_batch_id}, ensure_ascii=False, indent=2))
+
+
 def _add_reconcile_args(p: argparse.ArgumentParser, *, legacy_dry_run: bool = False) -> None:
     p.add_argument("--release-batch-id", required=True)
     p.add_argument("--project-id", default="中唐特钢铁矿发运项目")
@@ -69,6 +114,27 @@ def main() -> None:
     p = sub.add_parser("reconcile-inspection", help="检装车-95306 发运比对：生成发运入库计划或提交正式入库")
     _add_reconcile_args(p)
     p.set_defaults(func=cmd_reconcile_inspection)
+
+    p = sub.add_parser("list-dispatch", help="查看当前发运中/发运索引批次")
+    p.add_argument("--status", default="active", choices=["active", "in_progress", "completed", "suspended", "cancelled", "all"])
+    p.add_argument("--business-db", default=None)
+    p.set_defaults(func=cmd_list_dispatch)
+
+    p = sub.add_parser("set-dispatch-status", help="设置 release_batch 的发运状态并同步发运索引")
+    p.add_argument("--release-batch-id", required=True)
+    p.add_argument("--status", required=True, choices=["active", "in_progress", "completed", "suspended", "cancelled"])
+    p.add_argument("--note", default="")
+    p.add_argument("--operator-note", default="")
+    p.add_argument("--business-db", default=None)
+    p.set_defaults(func=cmd_set_dispatch_status)
+
+    p = sub.add_parser("assign-inspection-candidate", help="人工指认 inspection candidate 到 release_batch_id，不写正式 95306 表")
+    p.add_argument("--candidate-id", required=True)
+    p.add_argument("--release-batch-id", required=True)
+    p.add_argument("--note", default="")
+    p.add_argument("--operator-note", default="")
+    p.add_argument("--business-db", default=None)
+    p.set_defaults(func=cmd_assign_inspection_candidate)
 
     legacy = sub.add_parser("finalize-inspection", help="DEPRECATED: use reconcile-inspection --plan/--commit")
     _add_reconcile_args(legacy, legacy_dry_run=True)

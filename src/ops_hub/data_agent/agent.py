@@ -6,6 +6,7 @@ from hashlib import sha1
 import json
 from pathlib import Path
 import re
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from ops_hub.data_agent.db import open_db
@@ -748,8 +749,9 @@ class BusinessDataAgent:
         )
 
     def update_release_dispatch_status(self, release_batch_id: str, status: str, manual_note: str | None = None) -> bool:
-        if status not in {"in_progress", "completed", "suspended"}:
-            raise ValueError("status must be one of: in_progress, completed, suspended")
+        normalized_status = "in_progress" if status == "active" else status
+        if normalized_status not in {"in_progress", "completed", "suspended", "cancelled"}:
+            raise ValueError("status must be one of: active, in_progress, completed, suspended, cancelled")
         cursor = self.db.execute(
             """
             UPDATE release_batches
@@ -757,7 +759,7 @@ class BusinessDataAgent:
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=?
             """,
-            (status, manual_note, release_batch_id),
+            (normalized_status, manual_note, release_batch_id),
         )
         changed = cursor.rowcount > 0
         if changed:
@@ -792,12 +794,12 @@ class BusinessDataAgent:
             "all": all_tokens,
         }
 
-    def match_release_dispatch_rule_for_inspection(
+    def match_release_dispatch_rules_for_inspection(
         self,
         payload: Dict[str, Any],
         *,
         include_completed: bool = False,
-    ) -> Optional[str]:
+    ) -> Dict[str, Any]:
         searchable = to_searchable_text(payload)
         status_filter = "status IN ('active', 'completed')" if include_completed else "status='active'"
         rows = self.db.execute(
@@ -820,9 +822,35 @@ class BusinessDataAgent:
                 station_cargo_matches.append(row)
 
         if len(ship_anchor_matches) == 1:
-            return ship_anchor_matches[0]["release_batch_id"]
-        # Ambiguous ship anchors, or only station+cargo rules, must stay pending.
-        return None
+            return {
+                "status": "candidate",
+                "reason": "matched_release_batch_waiting_95306_validation",
+                "release_batch_ids": [ship_anchor_matches[0]["release_batch_id"]],
+            }
+        if len(ship_anchor_matches) > 1:
+            return {
+                "status": "ambiguous",
+                "reason": "ambiguous_release_batch_candidate",
+                "release_batch_ids": [row["release_batch_id"] for row in ship_anchor_matches],
+            }
+        # Station+cargo-only hits are useful evidence but not safe enough to auto-assign.
+        if station_cargo_matches:
+            return {
+                "status": "pending",
+                "reason": "no_release_batch_candidate",
+                "release_batch_ids": [],
+            }
+        return {"status": "pending", "reason": "no_release_batch_candidate", "release_batch_ids": []}
+
+    def match_release_dispatch_rule_for_inspection(
+        self,
+        payload: Dict[str, Any],
+        *,
+        include_completed: bool = False,
+    ) -> Optional[str]:
+        match = self.match_release_dispatch_rules_for_inspection(payload, include_completed=include_completed)
+        ids = match.get("release_batch_ids") or []
+        return ids[0] if match.get("status") == "candidate" and len(ids) == 1 else None
 
     def ingest_inspection_payload(
         self,
@@ -834,12 +862,14 @@ class BusinessDataAgent:
         rows = payload.get("rows") if isinstance(payload, dict) else []
         rows = rows if isinstance(rows, list) else []
         car_numbers = [str(row.get("car_no") or "").strip() for row in rows if isinstance(row, dict) and str(row.get("car_no") or "").strip()]
-        release_batch_id = self.match_release_dispatch_rule_for_inspection(
+        match = self.match_release_dispatch_rules_for_inspection(
             payload,
             include_completed=include_completed_release_batches,
         )
-        status = "candidate" if release_batch_id else "pending"
-        reason = "matched_release_batch_waiting_95306_validation" if release_batch_id else "no_release_batch_candidate"
+        status = str(match.get("status") or "pending")
+        reason = str(match.get("reason") or "no_release_batch_candidate")
+        release_batch_ids = [str(item) for item in (match.get("release_batch_ids") or []) if item]
+        release_batch_id = release_batch_ids[0] if status == "candidate" and len(release_batch_ids) == 1 else None
         candidate_id = hash_text(f"inspection|{source_file_name}|{','.join(car_numbers)}|{reason}")
         self.db.execute(
             """
@@ -874,9 +904,69 @@ class BusinessDataAgent:
             "status": status,
             "reason": reason,
             "candidate_ids": [candidate_id],
-            "release_batch_ids": [release_batch_id] if release_batch_id else [],
+            "release_batch_ids": release_batch_ids,
             "wagon_count": len(car_numbers),
         }
+
+    def assign_inspection_candidate(
+        self,
+        candidate_id: str,
+        release_batch_id: str,
+        *,
+        operator_note: str = "",
+    ) -> bool:
+        release = self.db.execute(
+            "SELECT id FROM release_batches WHERE id=?",
+            (release_batch_id,),
+        ).fetchone()
+        if release is None:
+            raise ValueError(f"release_batch_id not found: {release_batch_id}")
+        row = self.db.execute(
+            "SELECT * FROM inspection_ingestion_candidates WHERE id=?",
+            (candidate_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"inspection candidate not found: {candidate_id}")
+        payload = json.loads(row["payload_json"] or "{}")
+        payload["_manual_assignment"] = {
+            "release_batch_id": release_batch_id,
+            "operator_note": operator_note,
+            "assigned_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.db.execute(
+            """
+            UPDATE inspection_ingestion_candidates
+            SET status='candidate',
+                reason='manual_assigned_to_release_batch',
+                release_batch_id=?,
+                payload_json=?,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (release_batch_id, write_json(payload, pretty=False), candidate_id),
+        )
+        self.db.commit()
+        return True
+
+    def list_dispatch_rules(self, status: str | None = None) -> List[Dict[str, Any]]:
+        params: tuple[Any, ...] = ()
+        where = ""
+        if status:
+            rule_status = "active" if status in {"active", "in_progress"} else status
+            where = "WHERE r.status=?"
+            params = (rule_status,)
+        rows = self.db.execute(
+            f"""
+            SELECT r.*, b.dispatch_status, b.batch_sequence, b.batch_quantity, b.batch_date,
+                   b.plan_id, b.contract_no, b.cargo_product_name
+            FROM release_dispatch_match_rules r
+            LEFT JOIN release_batches b ON b.id = r.release_batch_id
+            {where}
+            ORDER BY r.status ASC, r.priority ASC, r.updated_at DESC
+            """,
+            params,
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def write_image_ingestion_audit(self, data: Dict[str, Any]) -> str:
         record_id = data.get("id") or hash_text("|".join(str(data.get(key) or "") for key in ("group_name", "raw_image_path", "classified_image_path", "extraction_json_path")))

@@ -190,6 +190,110 @@ class TestBusinessDataAgent:
         assert forced["status"] == "candidate"
         assert forced["release_batch_ids"] == [bella_id]
 
+    def test_suspended_release_dispatch_rule_no_longer_auto_matches_until_reopened(self, tmp_db):
+        agent = BusinessDataAgent()
+        bella_id = "batch-suspended-bella"
+        agent.db.execute(
+            """
+            INSERT INTO release_batches (
+              id, batch_key, ship_name, cargo_name, destination_station,
+              notice_date, batch_count, source_json, searchable_text
+            ) VALUES (?, 'bella|xizi|suspended', '贝拉', '铁矿', '汐子', '2026-04-30', 1, '{}', '贝拉 汐子 铁矿')
+            """,
+            (bella_id,),
+        )
+        agent.db.commit()
+        agent.refresh_release_dispatch_match_rules()
+        assert agent.update_release_dispatch_status(bella_id, "suspended", manual_note="等人工确认") is True
+
+        payload = {
+            "rows": [{"seq": 1, "car_no": "1682323", "cargo_info_effective": "汐子铁矿粉/贝拉"}],
+            "cargo_summary": {"汐子铁矿粉/贝拉": ["1682323"]},
+        }
+        suspended = agent.ingest_inspection_payload(payload, source_file_name="bella_suspended.jpg")
+        assert suspended["status"] == "pending"
+        assert suspended["release_batch_ids"] == []
+
+        assert agent.force_reopen_release_dispatch_match_rule(bella_id, manual_note="恢复发运") is True
+        reopened = agent.ingest_inspection_payload(payload, source_file_name="bella_reopened.jpg")
+        rule = agent.db.execute(
+            "SELECT status, manual_note FROM release_dispatch_match_rules WHERE release_batch_id=?",
+            (bella_id,),
+        ).fetchone()
+        assert reopened["status"] == "candidate"
+        assert reopened["release_batch_ids"] == [bella_id]
+        assert rule["status"] == "active"
+        assert rule["manual_note"] == "恢复发运"
+
+    def test_multiple_active_lots_for_same_ship_station_cargo_become_ambiguous(self, tmp_db):
+        agent = BusinessDataAgent()
+        for seq in ["lot01", "lot04"]:
+            batch_id = f"malan-{seq}"
+            agent.db.execute(
+                """
+                INSERT INTO release_batches (
+                  id, batch_key, project, ship_name, cargo_name, destination_station,
+                  notice_date, batch_date, batch_sequence, batch_quantity,
+                  batch_count, source_json, searchable_text
+                ) VALUES (?, ?, '中唐特钢铁矿发运项目', '马兰探险', '铁矿', '汐子',
+                          '2026-05-13', '2026-05-13', ?, 10000, 1, '{}', ?)
+                """,
+                (batch_id, f"malan|xizi|{seq}", seq, f"马兰探险 汐子 铁矿 {seq}"),
+            )
+        agent.db.commit()
+        agent.refresh_release_dispatch_match_rules()
+
+        result = agent.ingest_inspection_payload(
+            {
+                "rows": [{"seq": 1, "car_no": "300001", "cargo_info_effective": "汐子铁矿粉/马兰探险"}],
+                "cargo_summary": {"汐子铁矿粉/马兰探险": ["300001"]},
+            },
+            source_file_name="malan_ambiguous.jpg",
+        )
+
+        assert result["status"] == "ambiguous"
+        assert result["reason"] == "ambiguous_release_batch_candidate"
+        assert sorted(result["release_batch_ids"]) == ["malan-lot01", "malan-lot04"]
+
+    def test_manual_assign_inspection_candidate_sets_audited_candidate_without_formal_write(self, tmp_db):
+        agent = BusinessDataAgent()
+        release_batch_id = "manual-batch-1"
+        agent.db.execute(
+            """
+            INSERT INTO release_batches (
+              id, batch_key, project, ship_name, cargo_name, destination_station,
+              notice_date, batch_count, source_json, searchable_text
+            ) VALUES (?, 'manual|batch', '中唐特钢铁矿发运项目', '马兰探险', '铁矿', '汐子', '2026-05-13', 1, '{}', '马兰探险 汐子 铁矿')
+            """,
+            (release_batch_id,),
+        )
+        agent.db.execute(
+            """
+            INSERT INTO inspection_ingestion_candidates (
+              id, source_file_name, status, reason, group_name, release_batch_id,
+              wagon_count, car_numbers_json, payload_json
+            ) VALUES ('cand-manual-1', 'manual_inspection.jpg', 'ambiguous', 'ambiguous_release_batch_candidate',
+                      '数据单发群', NULL, 1, '["300001"]', ?)
+            """,
+            (json.dumps({"rows": [{"seq": 1, "car_no": "300001"}], "_agent_sop_authorized": True}, ensure_ascii=False),),
+        )
+        agent.db.commit()
+
+        assigned = agent.assign_inspection_candidate(
+            "cand-manual-1",
+            release_batch_id,
+            operator_note="人工指认马兰探险 lot01",
+        )
+        row = agent.db.execute("SELECT * FROM inspection_ingestion_candidates WHERE id='cand-manual-1'").fetchone()
+        payload = json.loads(row["payload_json"])
+
+        assert assigned is True
+        assert row["status"] == "candidate"
+        assert row["reason"] == "manual_assigned_to_release_batch"
+        assert row["release_batch_id"] == release_batch_id
+        assert payload["_manual_assignment"]["operator_note"] == "人工指认马兰探险 lot01"
+        assert payload["_manual_assignment"]["release_batch_id"] == release_batch_id
+
     def test_ingest_release_batch_auto_generates_active_dispatch_match_rule(self, tmp_db):
         agent = BusinessDataAgent()
         payload = {

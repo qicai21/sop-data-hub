@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 
 import pytest
 
+from ops_hub.data_agent.agent import BusinessDataAgent
 from ops_hub.matching.inspection_95306_reconciler import reconcile_inspection_shipments
 from ops_hub.matching.shipment_linkage import _ensure_match_table
 
@@ -165,6 +167,34 @@ def test_commit_refuses_unsafe_plan_without_manual_override(tmp_path: Path) -> N
 
     assert result.safe_to_commit is False
     assert result.committed_count == 0
+    assert _match_count(rail_db, "batch-1") == 0
+
+
+def test_manual_assigned_candidate_can_generate_reconciliation_plan(tmp_path: Path) -> None:
+    biz_db, rail_db = _build_fixture(tmp_path, authorized=True)
+    with sqlite3.connect(biz_db) as conn:
+        conn.execute(
+            "UPDATE inspection_ingestion_candidates SET status='ambiguous', reason='ambiguous_release_batch_candidate', release_batch_id=NULL WHERE id='cand-1'"
+        )
+    os.environ["BUSINESS_DATA_AGENT_DB_PATH"] = str(biz_db)
+    try:
+        agent = BusinessDataAgent()
+        assert agent.assign_inspection_candidate("cand-1", "batch-1", operator_note="pytest manual assign") is True
+    finally:
+        os.environ.pop("BUSINESS_DATA_AGENT_DB_PATH", None)
+
+    result = reconcile_inspection_shipments(
+        business_db_path=biz_db,
+        rail_db_path=rail_db,
+        project_id="中唐特钢铁矿发运项目",
+        release_batch_id="batch-1",
+        candidate_ids=["cand-1"],
+        run_mode="plan",
+        operator_note="pytest plan after manual assign",
+    )
+
+    assert result.safe_to_commit is True
+    assert result.planned_write_count == 2
     assert _match_count(rail_db, "batch-1") == 0
 
 

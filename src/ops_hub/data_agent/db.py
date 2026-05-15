@@ -76,7 +76,7 @@ def open_db() -> sqlite3.Connection:
           customer_name TEXT,
           id_label TEXT,
           actual_wagon_count INTEGER DEFAULT 0,
-          dispatch_status TEXT NOT NULL DEFAULT 'in_progress' CHECK(dispatch_status IN ('in_progress', 'completed', 'suspended')),
+          dispatch_status TEXT NOT NULL DEFAULT 'in_progress' CHECK(dispatch_status IN ('in_progress', 'completed', 'suspended', 'cancelled')),
           dispatch_status_note TEXT,
           dispatch_status_updated_at TEXT,
           source_file_name TEXT,
@@ -112,7 +112,7 @@ def open_db() -> sqlite3.Connection:
           cargo_name TEXT NOT NULL,
           matching_str TEXT NOT NULL,
           matching_tokens_json TEXT NOT NULL DEFAULT '{}',
-          status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'completed', 'suspended')),
+          status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'completed', 'suspended', 'cancelled')),
           priority INTEGER NOT NULL DEFAULT 100,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -121,6 +121,7 @@ def open_db() -> sqlite3.Connection:
         )
         """
     )
+    migrate_release_dispatch_match_rules_schema(connection)
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_release_dispatch_match_rules_status ON release_dispatch_match_rules(status, priority, updated_at)"
     )
@@ -187,6 +188,51 @@ def open_db() -> sqlite3.Connection:
     connection.commit()
 
     return connection
+
+
+def migrate_release_dispatch_match_rules_schema(connection: sqlite3.Connection) -> None:
+    row = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='release_dispatch_match_rules'"
+    ).fetchone()
+    sql = row["sql"] if row else ""
+    if "CHECK(status IN ('active', 'completed', 'suspended'))" not in (sql or ""):
+        return
+    connection.execute("ALTER TABLE release_dispatch_match_rules RENAME TO release_dispatch_match_rules_old")
+    connection.execute(
+        """
+        CREATE TABLE release_dispatch_match_rules (
+          id TEXT PRIMARY KEY,
+          release_batch_id TEXT NOT NULL UNIQUE,
+          project TEXT,
+          ship_name TEXT NOT NULL,
+          destination_station TEXT,
+          cargo_name TEXT NOT NULL,
+          matching_str TEXT NOT NULL,
+          matching_tokens_json TEXT NOT NULL DEFAULT '{}',
+          status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'completed', 'suspended', 'cancelled')),
+          priority INTEGER NOT NULL DEFAULT 100,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          completed_at TEXT,
+          manual_note TEXT
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO release_dispatch_match_rules (
+          id, release_batch_id, project, ship_name, destination_station, cargo_name,
+          matching_str, matching_tokens_json, status, priority, created_at, updated_at,
+          completed_at, manual_note
+        )
+        SELECT id, release_batch_id, project, ship_name, destination_station, cargo_name,
+               matching_str, matching_tokens_json, status, priority, created_at, updated_at,
+               completed_at, manual_note
+        FROM release_dispatch_match_rules_old
+        """
+    )
+    connection.execute("DROP TABLE release_dispatch_match_rules_old")
+    connection.commit()
 
 
 def migrate_image_ingestion_audit_schema(connection: sqlite3.Connection) -> None:

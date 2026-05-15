@@ -208,16 +208,24 @@ def test_render_dispatch_board_shows_top_unresolved_departure_and_inspection_cou
           '2026-05-10', '2026-05-10', 'lot01', 10000, '{}', '丰收散运 汐子 铁矿', 'in_progress')
         """
     )
+    raw_plan_path = tmp_path / "数据单发群-GROUP013" / "2026-05" / "fengshou_plan.jpg"
+    preview_plan_path = raw_plan_path.parent / "_previews" / raw_plan_path.name
+    preview_plan_path.parent.mkdir(parents=True, exist_ok=True)
+    preview_plan_path.write_bytes(b"preview")
+    classified_plan_path = tmp_path / "数据单发群-GROUP013" / "出港计划通知单" / raw_plan_path.name
+    classified_plan_path.parent.mkdir(parents=True, exist_ok=True)
+    classified_plan_path.write_bytes(b"classified")
     agent.db.execute(
         """
         INSERT INTO image_ingestion_audit (
-          id, message_type, raw_image_path, classified_category, db_action, status, reason, requires_manual_review,
+          id, message_type, raw_image_path, classified_image_path, classified_category, db_action, status, reason, requires_manual_review,
           extraction_json_path
         ) VALUES (
-          'plan-pending', 'image', '/tmp/fengshou_plan.jpg', '出港计划通知单', 'none', 'extracted',
+          'plan-pending', 'image', ?, ?, '出港计划通知单', 'none', 'extracted',
           'non_sop_project_json_only', 0, '/tmp/fengshou_plan_result.json'
         )
-        """
+        """,
+        (str(raw_plan_path), str(classified_plan_path)),
     )
     agent.db.execute(
         """
@@ -252,6 +260,9 @@ def test_render_dispatch_board_shows_top_unresolved_departure_and_inspection_cou
     assert "non_sop_project_json_only" in html
     assert "no_release_batch_candidate" in html
     assert "matched_release_batch_waiting_95306_validation" in html
+    assert str(preview_plan_path) in html
+    assert str(raw_plan_path) not in html
+    assert str(classified_plan_path) not in html
 
 
 def test_render_dispatch_board_filters_out_non_sop_release_batches(tmp_db, tmp_path):

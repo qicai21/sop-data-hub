@@ -245,7 +245,7 @@ def _fetch_unresolved_work_items(db: sqlite3.Connection) -> dict[str, list[dict[
 
         plan_rows = db.execute(
             """
-            SELECT raw_image_path, extraction_json_path, status, reason, db_action, created_at
+            SELECT raw_image_path, classified_image_path, extraction_json_path, status, reason, db_action, created_at
             FROM image_ingestion_audit
             WHERE message_type = 'image'
               AND classified_category = '出港计划通知单'
@@ -272,7 +272,7 @@ def _fetch_unresolved_work_items(db: sqlite3.Connection) -> dict[str, list[dict[
                     "status": row["status"] or "",
                     "reason": row["reason"] or "",
                     "candidate_ids": [],
-                    "source_file": row["raw_image_path"] or "",
+                    "source_file": _resolved_source_image_path(row["raw_image_path"], row["classified_image_path"]),
                     "json_path": row["extraction_json_path"] or "",
                     "created_at": row["created_at"] or "",
                 }
@@ -280,7 +280,7 @@ def _fetch_unresolved_work_items(db: sqlite3.Connection) -> dict[str, list[dict[
 
         validation_rows = db.execute(
             """
-            SELECT raw_image_path, extraction_json_path, db_record_ids, status, reason, created_at
+            SELECT raw_image_path, classified_image_path, extraction_json_path, db_record_ids, status, reason, created_at
             FROM image_ingestion_audit
             WHERE message_type = 'image'
               AND classified_category = '检装车通知单'
@@ -302,7 +302,7 @@ def _fetch_unresolved_work_items(db: sqlite3.Connection) -> dict[str, list[dict[
                     "status": row["status"] or "pending",
                     "reason": row["reason"] or "",
                     "candidate_ids": [str(item) for item in _json_array(row["db_record_ids"]) if str(item).strip()],
-                    "source_file": row["raw_image_path"] or "",
+                    "source_file": _resolved_source_image_path(row["raw_image_path"], row["classified_image_path"]),
                     "json_path": row["extraction_json_path"] or "",
                     "created_at": row["created_at"] or "",
                 }
@@ -474,6 +474,35 @@ def _table_exists(db: sqlite3.Connection, table: str) -> bool:
     return db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
 
 
+def _resolved_source_image_path(raw_image_path: Any, classified_image_path: Any = "") -> str:
+    """Return an existing operator-clickable image path for audit rows.
+
+    wx-ops-agent may store a logical raw path like ``.../2026-05/name.jpg`` while
+    the actual saved image lives under the sibling preview directory. The board
+    should link to the existing image instead of the non-existent logical path.
+    """
+    raw = str(raw_image_path or "").strip()
+    classified = str(classified_image_path or "").strip()
+    candidates: list[Path] = []
+    if raw:
+        raw_path = Path(raw)
+        candidates.append(raw_path)
+        candidates.append(raw_path.parent / "_previews" / raw_path.name)
+        candidates.append(raw_path.parent / "_preview" / raw_path.name)
+    if classified:
+        candidates.append(Path(classified))
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if candidate.exists():
+            return key
+    return classified or raw
+
+
 def _optional_column(available_columns: set[str], column_name: str) -> str:
     return column_name if column_name in available_columns else f"NULL AS {column_name}"
 
@@ -511,15 +540,19 @@ def _source_paths(row: dict[str, Any], audit_paths: dict[str, dict[str, str]]) -
         if key in audit_paths:
             audit_info = audit_paths[key]
             break
-    image_path = str(
+    raw_image_path = str(
         source_json.get("image_path")
         or source_json.get("raw_image_path")
-        or source_json.get("classified_image_path")
-        or audit_info.get("classified_image_path")
         or audit_info.get("raw_image_path")
         or source_file
         or ""
     )
+    classified_image_path = str(
+        source_json.get("classified_image_path")
+        or audit_info.get("classified_image_path")
+        or ""
+    )
+    image_path = _resolved_source_image_path(raw_image_path, classified_image_path)
     json_path = str(
         source_json.get("json_path")
         or source_json.get("extraction_json_path")

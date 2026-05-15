@@ -356,7 +356,8 @@ def _build_formal_rows_for_candidate(
     active_rows = [row for row in inspection_rows if not row.get("defect")]
     target_car_to_row = {str(row.get("car_no") or "").strip(): row for row in active_rows if row.get("car_no")}
     window_shipments = _query_all_shipments_in_window(rail, spec, start, end)
-    if len(window_shipments) != len(inspection_rows):
+    active_row_count = len(active_rows)
+    if len(window_shipments) != active_row_count:
         excluded.append(
             {
                 "candidate_id": candidate_id,
@@ -364,17 +365,20 @@ def _build_formal_rows_for_candidate(
                 "wagon_no": first_car,
                 "inspection_row": None,
                 "reason": "95306-window-count-mismatch",
-                "inspection_row_count": len(inspection_rows),
+                "inspection_row_count": active_row_count,
+                "raw_inspection_row_count": len(inspection_rows),
+                "defect_row_count": len(inspection_rows) - active_row_count,
                 "window_shipment_count": len(window_shipments),
             }
         )
 
     formal_rows: list[dict[str, Any]] = []
-    # If the 95306 time window cardinality exactly matches the inspection section
-    # count, trust the DB car list for that section. This covers OCR row defects
-    # and OCR/DB car-number conflicts while still preventing mixed-ship windows
-    # such as a 32-car target inside a 56-car combined notification from leaking.
-    if len(window_shipments) == len(inspection_rows):
+    # Defect / 排车 rows are removed before any lot-level statistics or formal
+    # linkage. If the 95306 time-window cardinality exactly matches the active
+    # (non-defect) inspection section count, trust the DB car list for that
+    # section. This covers OCR/DB car-number conflicts while still preventing
+    # mixed-ship windows from leaking into the target lot.
+    if len(window_shipments) == active_row_count:
         fallback_rows = list(active_rows)
         for index, shipment in enumerate(window_shipments, start=1):
             car = str(shipment["car_no"] or "")

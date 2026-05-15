@@ -147,6 +147,52 @@ def test_render_dispatch_board_groups_rows_by_project(tmp_db, tmp_path):
     assert max(zt_old, zt_new) < wg_mid
 
 
+def test_render_dispatch_board_separates_in_progress_and_completed_tables(tmp_db, tmp_path):
+    agent = BusinessDataAgent()
+    rows = [
+        ("running", "马兰探险", "lot07", "in_progress"),
+        ("done", "贝拉", "lot01", "completed"),
+    ]
+    for row_id, ship_name, lot, status in rows:
+        agent.db.execute(
+            """
+            INSERT INTO release_batches (
+              id, batch_key, project, ship_name, cargo_name, destination_station,
+              notice_date, batch_date, batch_sequence, batch_quantity, source_json, searchable_text, dispatch_status
+            ) VALUES (?, ?, '中唐特钢铁矿发运项目', ?, '铁矿', '汐子',
+              '2026-05-10', '2026-05-10', ?, 10000, '{}', ?, ?)
+            """,
+            (row_id, f"中唐特钢铁矿发运项目|{ship_name}|{lot}", ship_name, lot, f"{ship_name} {lot}", status),
+        )
+    agent.db.execute(
+        """
+        INSERT INTO image_ingestion_audit (
+          id, message_type, raw_image_path, classified_category, db_action, db_tables,
+          db_record_ids, status, reason, requires_manual_review
+        ) VALUES (
+          'text-pending', 'text', '船名：马兰探险\n数量：8248', '文字放货指令',
+          'manual_match_pending', '["release_batches"]', '["running", "done"]',
+          'pending', 'ambiguous_release_batch_match', 1
+        )
+        """
+    )
+    agent.db.commit()
+
+    result = render_dispatch_board(business_db_path=tmp_db, rail_db_path=None, output_path=tmp_path / "board.html")
+
+    html = (tmp_path / "board.html").read_text(encoding="utf-8")
+    running_title = html.index("发运中 release_batch 明细")
+    completed_title = html.index("已发完 release_batch 明细")
+    malan = html.index("马兰探险")
+    bella = html.index("贝拉")
+    assert running_title < malan < completed_title < bella
+    assert result["manual_pending_candidate_count"] == 2
+    assert "待人工候选数" in html
+    assert "待人工匹配文字放货消息" in html
+    assert "8248" in html
+    assert "lot07" in html
+
+
 def test_render_dispatch_board_filters_out_non_sop_release_batches(tmp_db, tmp_path):
     agent = BusinessDataAgent()
     agent.db.execute(

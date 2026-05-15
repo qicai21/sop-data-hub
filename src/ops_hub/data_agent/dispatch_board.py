@@ -10,7 +10,7 @@ import sqlite3
 from typing import Any
 from urllib.parse import quote
 
-from ops_hub.data_agent.agent import active_business_sop_project_tokens
+from ops_hub.data_agent.agent import active_business_sop_project_tokens, parse_business_text_fields
 
 
 STATUS_LABELS = {
@@ -42,6 +42,7 @@ def render_dispatch_board(
         release_rows = _fetch_release_batches(business_db)
         candidate_summary = _fetch_candidate_summary(business_db)
         audit_paths = _fetch_audit_paths(business_db)
+        text_pending_rows = _fetch_text_pending_audits(business_db)
 
     formal_summary: dict[str, dict[str, Any]] = {}
     if rail_db_path:
@@ -54,6 +55,7 @@ def render_dispatch_board(
         candidate_summary=candidate_summary,
         formal_summary=formal_summary,
         audit_paths=audit_paths,
+        text_pending_rows=text_pending_rows,
     )
     output_path.write_text(html, encoding="utf-8")
     visible_release_ids = {str(row.get("id") or "") for row in release_rows}
@@ -133,7 +135,67 @@ def _fetch_candidate_summary(db: sqlite3.Connection) -> dict[str, dict[str, Any]
                 for nested_id in candidate_ids:
                     if nested_id not in item["candidate_release_batch_ids"]:
                         item["candidate_release_batch_ids"].append(nested_id)
+    _merge_text_release_audit_summary(db, summary)
     return dict(summary)
+
+
+def _merge_text_release_audit_summary(db: sqlite3.Connection, summary: dict[str, dict[str, Any]]) -> None:
+    if not _table_exists(db, "image_ingestion_audit"):
+        return
+    rows = db.execute(
+        """
+        SELECT db_record_ids, status, reason, requires_manual_review
+        FROM image_ingestion_audit
+        WHERE message_type = 'text'
+          AND classified_category = '文字放货指令'
+          AND requires_manual_review = 1
+        """
+    ).fetchall()
+    for row in rows:
+        candidate_ids = [str(item) for item in _json_array(row["db_record_ids"]) if str(item).strip()]
+        if not candidate_ids:
+            key = "__unassigned__"
+            item = summary[key]
+            item["manual_pending_candidate_count"] += 1
+            status = str(row["status"] or "pending")
+            item["by_status"][status] = item["by_status"].get(status, 0) + 1
+            continue
+        status = str(row["status"] or "pending")
+        for candidate_id in candidate_ids:
+            item = summary[candidate_id]
+            item["manual_pending_candidate_count"] += 1
+            item["by_status"][status] = item["by_status"].get(status, 0) + 1
+            for nested_id in candidate_ids:
+                if nested_id not in item["candidate_release_batch_ids"]:
+                    item["candidate_release_batch_ids"].append(nested_id)
+
+
+def _fetch_text_pending_audits(db: sqlite3.Connection) -> list[dict[str, Any]]:
+    if not _table_exists(db, "image_ingestion_audit"):
+        return []
+    rows = db.execute(
+        """
+        SELECT raw_image_path, db_record_ids, status, reason, created_at
+        FROM image_ingestion_audit
+        WHERE message_type = 'text'
+          AND classified_category = '文字放货指令'
+          AND requires_manual_review = 1
+        ORDER BY created_at DESC
+        """
+    ).fetchall()
+    result = []
+    for row in rows:
+        fields = parse_business_text_fields(str(row["raw_image_path"] or ""))
+        result.append(
+            {
+                "fields": fields,
+                "candidate_ids": [str(item) for item in _json_array(row["db_record_ids"]) if str(item).strip()],
+                "status": row["status"] or "pending",
+                "reason": row["reason"] or "",
+                "created_at": row["created_at"] or "",
+            }
+        )
+    return result
 
 
 def _empty_candidate_summary() -> dict[str, Any]:
@@ -256,6 +318,18 @@ def _json_object(raw: Any) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _json_array(raw: Any) -> list[Any]:
+    if isinstance(raw, list):
+        return raw
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(str(raw))
+    except Exception:
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
 def _source_paths(row: dict[str, Any], audit_paths: dict[str, dict[str, str]]) -> dict[str, str]:
     source_json = _json_object(row.get("source_json"))
     source_file = str(row.get("source_file_name") or "")
@@ -301,6 +375,7 @@ def _build_html(
     candidate_summary: dict[str, dict[str, Any]],
     formal_summary: dict[str, dict[str, Any]],
     audit_paths: dict[str, dict[str, str]],
+    text_pending_rows: list[dict[str, Any]],
 ) -> str:
     visible_release_ids = {str(row.get("id") or "") for row in release_rows}
     active_count = sum(1 for row in release_rows if row.get("dispatch_status") == "in_progress")
@@ -310,44 +385,24 @@ def _build_html(
     formal_weight = sum(float(item.get("formal_weight") or 0) for key, item in formal_summary.items() if key in visible_release_ids)
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    rows_html = []
     release_by_id = {str(row.get("id") or ""): row for row in release_rows}
-    for row in release_rows:
-        release_id = str(row.get("id") or "")
-        candidates = candidate_summary.get(release_id, _empty_candidate_summary())
-        formal = formal_summary.get(release_id, {"formal_match_count": 0, "formal_weight": 0.0})
-        paths = _source_paths(row, audit_paths)
-        status = str(row.get("dispatch_status") or "")
-        status_label = STATUS_LABELS.get(status, status or "待人工确认")
-        remaining = _remaining_text(row.get("batch_quantity"), formal.get("formal_weight"))
-        candidate_lots = _candidate_lot_text(candidates.get("candidate_release_batch_ids") or [], release_by_id)
-        car_details_html = _car_details_html(formal.get("car_details") or [])
-        rows_html.append(
-            "<tr>"
-            f"<td>{_h(row.get('project'))}</td>"
-            f"<td>{_h(row.get('ship_name'))}</td>"
-            f"<td>{_h(row.get('destination_station'))}</td>"
-            f"<td>{_h(row.get('batch_sequence'))}</td>"
-            f"<td>{_fmt_num(row.get('batch_quantity'))}</td>"
-            f"<td>{_h(row.get('batch_date'))}</td>"
-            f"<td>{_h(row.get('cargo_product_name') or row.get('cargo_name'))}</td>"
-            f"<td>{_h(row.get('plan_id') or row.get('order_id'))}</td>"
-            f"<td>{_h(row.get('contract_no'))}</td>"
-            f"<td>{_h(status_label)}</td>"
-            f"<td>{candidates.get('matched_candidate_count', 0)}</td>"
-            f"<td>{candidates.get('manual_pending_candidate_count', 0)}</td>"
-            f"<td>{_h(candidate_lots)}</td>"
-            f"<td>{formal.get('formal_match_count', 0)}</td>"
-            f"<td>{_fmt_num(formal.get('formal_weight'))}</td>"
-            f"<td>{car_details_html}</td>"
-            f"<td>{_h(remaining)}</td>"
-            f"<td class='path'>{_file_link(paths['image_path'], '打开图片')}</td>"
-            f"<td class='path'>{_file_link(paths['json_path'], '打开JSON')}</td>"
-            f"<td class='path'>{_file_link(paths['status_path'], '打开状态')}</td>"
-            "</tr>"
-        )
-    if not rows_html:
-        rows_html.append("<tr><td colspan='20' class='empty'>暂无 release_batch 数据</td></tr>")
+    in_progress_rows = [row for row in release_rows if str(row.get("dispatch_status") or "") != "completed"]
+    completed_rows = [row for row in release_rows if str(row.get("dispatch_status") or "") == "completed"]
+    in_progress_rows_html = _release_table_rows_html(
+        in_progress_rows,
+        release_by_id=release_by_id,
+        candidate_summary=candidate_summary,
+        formal_summary=formal_summary,
+        audit_paths=audit_paths,
+    )
+    completed_rows_html = _release_table_rows_html(
+        completed_rows,
+        release_by_id=release_by_id,
+        candidate_summary=candidate_summary,
+        formal_summary=formal_summary,
+        audit_paths=audit_paths,
+    )
+    text_pending_html = _text_pending_table_html(text_pending_rows, release_by_id)
 
     unassigned = candidate_summary.get("__unassigned__", _empty_candidate_summary())
     return f"""<!doctype html>
@@ -384,18 +439,103 @@ th {{ background: #e0f2fe; position: sticky; top: 0; }}
   <div class="card"><div class="label">已正式入库车数</div><div class="value">{formal_count}</div></div>
   <div class="card"><div class="label">已正式入库重量</div><div class="value">{_fmt_num(formal_weight)}</div></div>
 </div>
-<h2 class="section-title">正式匹配汇总 / release_batch 明细</h2>
-<table>
+<h2 class="section-title">正式匹配汇总 / 发运中 release_batch 明细</h2>
+{_release_table_html(in_progress_rows_html)}
+<h2 class="section-title">已发完 release_batch 明细</h2>
+{_release_table_html(completed_rows_html)}
+<h2 class="section-title">待人工匹配文字放货消息</h2>
+{text_pending_html}
+</body>
+</html>
+"""
+
+
+def _release_table_html(rows_html: str) -> str:
+    return f"""<table>
 <thead><tr>
 <th>项目</th><th>船名</th><th>到站</th><th>lot</th><th>计划吨数</th><th>批次日期</th><th>货物品名</th><th>计划号/订单号</th><th>合同号</th><th>当前状态</th><th>已匹配候选数</th><th>待人工候选数</th><th>候选 lot 列表</th><th>已正式入库车数</th><th>已正式入库重量</th><th>已发运车辆明细</th><th>理论剩余货量/车数</th><th>原始图片</th><th>JSON</th><th>状态文件</th>
 </tr></thead>
 <tbody>
-{''.join(rows_html)}
+{rows_html}
 </tbody>
-</table>
-</body>
-</html>
-"""
+</table>"""
+
+
+def _release_table_rows_html(
+    rows: list[dict[str, Any]],
+    *,
+    release_by_id: dict[str, dict[str, Any]],
+    candidate_summary: dict[str, dict[str, Any]],
+    formal_summary: dict[str, dict[str, Any]],
+    audit_paths: dict[str, dict[str, str]],
+) -> str:
+    row_html = []
+    for row in rows:
+        release_id = str(row.get("id") or "")
+        candidates = candidate_summary.get(release_id, _empty_candidate_summary())
+        formal = formal_summary.get(release_id, {"formal_match_count": 0, "formal_weight": 0.0})
+        paths = _source_paths(row, audit_paths)
+        status = str(row.get("dispatch_status") or "")
+        status_label = STATUS_LABELS.get(status, status or "待人工确认")
+        remaining = _remaining_text(row.get("batch_quantity"), formal.get("formal_weight"))
+        candidate_lots = _candidate_lot_text(candidates.get("candidate_release_batch_ids") or [], release_by_id)
+        car_details_html = _car_details_html(formal.get("car_details") or [])
+        row_html.append(
+            "<tr>"
+            f"<td>{_h(row.get('project'))}</td>"
+            f"<td>{_h(row.get('ship_name'))}</td>"
+            f"<td>{_h(row.get('destination_station'))}</td>"
+            f"<td>{_h(row.get('batch_sequence'))}</td>"
+            f"<td>{_fmt_num(row.get('batch_quantity'))}</td>"
+            f"<td>{_h(row.get('batch_date'))}</td>"
+            f"<td>{_h(row.get('cargo_product_name') or row.get('cargo_name'))}</td>"
+            f"<td>{_h(row.get('plan_id') or row.get('order_id'))}</td>"
+            f"<td>{_h(row.get('contract_no'))}</td>"
+            f"<td>{_h(status_label)}</td>"
+            f"<td>{candidates.get('matched_candidate_count', 0)}</td>"
+            f"<td>{candidates.get('manual_pending_candidate_count', 0)}</td>"
+            f"<td>{_h(candidate_lots)}</td>"
+            f"<td>{formal.get('formal_match_count', 0)}</td>"
+            f"<td>{_fmt_num(formal.get('formal_weight'))}</td>"
+            f"<td>{car_details_html}</td>"
+            f"<td>{_h(remaining)}</td>"
+            f"<td class='path'>{_file_link(paths['image_path'], '打开图片')}</td>"
+            f"<td class='path'>{_file_link(paths['json_path'], '打开JSON')}</td>"
+            f"<td class='path'>{_file_link(paths['status_path'], '打开状态')}</td>"
+            "</tr>"
+        )
+    if not row_html:
+        row_html.append("<tr><td colspan='20' class='empty'>暂无 release_batch 数据</td></tr>")
+    return "".join(row_html)
+
+
+def _text_pending_table_html(rows: list[dict[str, Any]], release_by_id: dict[str, dict[str, Any]]) -> str:
+    body = []
+    for row in rows:
+        fields = row.get("fields") or {}
+        candidate_lots = _candidate_lot_text(row.get("candidate_ids") or [], release_by_id)
+        body.append(
+            "<tr>"
+            f"<td>{_h(fields.get('船名'))}</td>"
+            f"<td>{_h(fields.get('货名'))}</td>"
+            f"<td>{_h(fields.get('数量'))}</td>"
+            f"<td>{_h(fields.get('计划号'))}</td>"
+            f"<td>{_h(fields.get('合同号'))}</td>"
+            f"<td>{_h(row.get('status'))}</td>"
+            f"<td>{_h(row.get('reason'))}</td>"
+            f"<td>{_h(candidate_lots)}</td>"
+            f"<td>{_h(row.get('created_at'))}</td>"
+            "</tr>"
+        )
+    if not body:
+        body.append("<tr><td colspan='9' class='empty'>暂无待人工匹配文字放货消息</td></tr>")
+    return (
+        "<table><thead><tr>"
+        "<th>船名</th><th>货名</th><th>数量</th><th>计划号</th><th>合同号</th><th>状态</th><th>原因</th><th>候选 lot 列表</th><th>记录时间</th>"
+        "</tr></thead><tbody>"
+        + "".join(body)
+        + "</tbody></table>"
+    )
 
 
 def _candidate_lot_text(candidate_ids: list[str], release_by_id: dict[str, dict[str, Any]]) -> str:

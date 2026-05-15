@@ -24,6 +24,7 @@ STATUS_LABELS = {
 }
 
 MANUAL_CANDIDATE_STATUSES = {"pending", "ambiguous"}
+MATCHED_CANDIDATE_STATUSES = {"candidate", "committed"}
 
 
 def render_dispatch_board(
@@ -127,7 +128,7 @@ def _fetch_candidate_summary(db: sqlite3.Connection) -> dict[str, dict[str, Any]
             item = summary[key]
             item["by_status"][status] = item["by_status"].get(status, 0) + 1
             item["wagon_count"] += wagon_count
-            if status == "candidate":
+            if status in MATCHED_CANDIDATE_STATUSES:
                 item["matched_candidate_count"] += 1
             if status in MANUAL_CANDIDATE_STATUSES:
                 item["manual_pending_candidate_count"] += 1
@@ -401,6 +402,8 @@ def _fetch_audit_paths(db: sqlite3.Connection) -> dict[str, dict[str, str]]:
         keys.update({Path(str(item)).stem for item in source_candidates if item})
         archive_paths = _json_object(row["project_archive_paths"])
         status_path = str(archive_paths.get("status_path") or archive_paths.get("status") or "")
+        if not status_path:
+            status_path = _derive_status_path(row["raw_image_path"], row["classified_image_path"])
         path_info = {
             "raw_image_path": str(row["raw_image_path"] or ""),
             "classified_image_path": str(row["classified_image_path"] or ""),
@@ -410,6 +413,33 @@ def _fetch_audit_paths(db: sqlite3.Connection) -> dict[str, dict[str, str]]:
         for key in keys:
             paths.setdefault(key, path_info)
     return paths
+
+
+def _derive_status_path(raw_image_path: Any, classified_image_path: Any = "") -> str:
+    """Infer the per-image _status sidecar path when the audit row predates explicit storage.
+
+    The live runner writes ``<group>/_status/<stem>.json`` next to the group archive,
+    but older audit rows only recorded image and extraction paths.  The board should
+    still link to the sidecar when it can be derived from those paths.
+    """
+    candidates = [str(classified_image_path or "").strip(), str(raw_image_path or "").strip()]
+    for candidate_text in candidates:
+        if not candidate_text:
+            continue
+        candidate = Path(candidate_text)
+        if not candidate.suffix:
+            continue
+        parents: list[Path] = []
+        if candidate.parent.name in {"出港计划通知单", "检装车通知单", "出港放货", "放货记录"}:
+            parents.append(candidate.parent.parent)
+        if candidate.parent.name.startswith("20"):
+            parents.append(candidate.parent.parent)
+        parents.append(candidate.parent)
+        for parent in parents:
+            status_path = parent / "_status" / f"{candidate.stem}.json"
+            if status_path.exists():
+                return str(status_path)
+    return ""
 
 
 def _fetch_formal_summary_read_only(rail_db_path: Path) -> dict[str, dict[str, Any]]:
@@ -557,12 +587,14 @@ def _source_paths(row: dict[str, Any], audit_paths: dict[str, dict[str, str]]) -
         source_json.get("json_path")
         or source_json.get("extraction_json_path")
         or audit_info.get("json_path")
+        or _infer_source_artifact_path(source_file, "json")
         or ""
     )
     status_path = str(
         source_json.get("status_path")
         or source_json.get("ops_data_hub_status_path")
         or audit_info.get("status_path")
+        or _infer_source_artifact_path(source_file, "status")
         or ""
     )
     return {
@@ -570,6 +602,30 @@ def _source_paths(row: dict[str, Any], audit_paths: dict[str, dict[str, str]]) -
         "json_path": json_path or "待补充",
         "status_path": status_path or "待补充",
     }
+
+
+@lru_cache(maxsize=512)
+def _infer_source_artifact_path(source_file: str, artifact_kind: str) -> str:
+    source = str(source_file or "").strip()
+    if not source:
+        return ""
+    stem = Path(source).stem
+    if not stem:
+        return ""
+    artifact_root = Path.home() / "Documents" / "bussiness-artifacts" / "wechat_images"
+    if not artifact_root.exists():
+        return ""
+    if artifact_kind == "json":
+        pattern = f"**/extractions/**/*{stem}_result.json"
+    elif artifact_kind == "status":
+        pattern = f"**/_status/{stem}.json"
+    else:
+        return ""
+    try:
+        match = next(artifact_root.glob(pattern), None)
+    except OSError:
+        match = None
+    return str(match) if match else ""
 
 
 def _build_html(
@@ -650,7 +706,7 @@ th {{ background: #e0f2fe; position: sticky; top: 0; }}
   <div class="card"><div class="label">待95306校验装车候选</div><div class="value">{pending_inspection_validation_count}</div></div>
   <div class="card"><div class="label">当前发运中批次数</div><div class="value">{active_count}</div></div>
   <div class="card"><div class="label">release_batch 总数</div><div class="value">{len(release_rows)}</div></div>
-  <div class="card"><div class="label">已匹配检装车候选数 candidate</div><div class="value">{matched_candidate_count}</div></div>
+  <div class="card"><div class="label">已匹配检装车候选数（含已正式入库）</div><div class="value">{matched_candidate_count}</div></div>
   <div class="card"><div class="label">待人工匹配候选数</div><div class="value">{manual_pending_count}</div></div>
   <div class="card"><div class="label">未分配待人工候选数</div><div class="value">{unassigned.get('manual_pending_candidate_count', 0)}</div></div>
   <div class="card"><div class="label">已正式入库车数</div><div class="value">{formal_count}</div></div>

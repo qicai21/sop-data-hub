@@ -58,6 +58,13 @@ def test_render_dispatch_board_generates_html_with_release_candidate_and_formal_
         """
         INSERT INTO inspection_ingestion_candidates (
           id, source_file_name, status, reason, release_batch_id, wagon_count, car_numbers_json, payload_json
+        ) VALUES ('cand-committed', '/tmp/inspect-committed.json', 'committed', 'formal_95306_linkage_committed', 'batch-1', 2, '["4","5"]', '{}')
+        """
+    )
+    agent.db.execute(
+        """
+        INSERT INTO inspection_ingestion_candidates (
+          id, source_file_name, status, reason, release_batch_id, wagon_count, car_numbers_json, payload_json
         ) VALUES ('cand-2', '/tmp/manual.json', 'ambiguous', 'ambiguous_release_batch_candidate', NULL, 1, '["3"]', ?)
         """,
         ('{"_candidate_release_batch_ids":["batch-1","batch-2"]}',),
@@ -116,6 +123,47 @@ def test_render_dispatch_board_generates_html_with_release_candidate_and_formal_
     assert "file:///tmp/malan.jpg" in html
     assert "打开JSON" in html
     assert "file:///tmp/malan_result.json" in html
+    assert result["candidate_count"] == 2
+
+
+def test_render_dispatch_board_derives_status_path_from_audit_image_path(tmp_db, tmp_path):
+    agent = BusinessDataAgent()
+    group_dir = tmp_path / "数据单发群-GROUP013"
+    image_dir = group_dir / "出港计划通知单"
+    status_dir = group_dir / "_status"
+    image_dir.mkdir(parents=True)
+    status_dir.mkdir(parents=True)
+    image_path = image_dir / "22_abc.jpg"
+    status_path = status_dir / "22_abc.json"
+    image_path.write_text("image", encoding="utf-8")
+    status_path.write_text("{}", encoding="utf-8")
+    agent.db.execute(
+        """
+        INSERT INTO release_batches (
+          id, batch_key, project, ship_name, cargo_name, destination_station,
+          notice_date, batch_date, batch_sequence, batch_quantity,
+          source_file_name, source_json, searchable_text, dispatch_status
+        ) VALUES (
+          'batch-status', 'project|ship|lot01', '中唐特钢铁矿发运项目', '丰收散运', '铁矿', '汐子',
+          '2026-05-10', '2026-05-10', 'lot01', 10000,
+          '22_abc.jpg', '{}', '丰收散运 汐子 铁矿', 'in_progress'
+        )
+        """
+    )
+    agent.db.execute(
+        """
+        INSERT INTO image_ingestion_audit (
+          id, raw_image_path, classified_image_path, extraction_json_path, project_archive_paths, status
+        ) VALUES ('audit-status', NULL, ?, NULL, NULL, 'ok')
+        """,
+        (str(image_path),),
+    )
+    agent.db.commit()
+
+    render_dispatch_board(business_db_path=tmp_db, rail_db_path=None, output_path=tmp_path / "board.html")
+
+    html = (tmp_path / "board.html").read_text(encoding="utf-8")
+    assert str(status_path) in html
 
 
 def test_render_dispatch_board_groups_rows_by_project(tmp_db, tmp_path):

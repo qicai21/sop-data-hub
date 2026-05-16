@@ -146,6 +146,60 @@ def test_sop_artifacts_move_to_project_archive_and_reconcile_plan_is_recorded(tm
         conn.close()
 
 
+def test_single_lot_departure_plan_archive_uses_lot01(tmp_path):
+    import json
+    import os
+    import sqlite3
+
+    img = Image.new("RGB", (32, 32), color="white")
+    image_path = tmp_path / "baotenghai_plan.jpg"
+    img.save(image_path)
+    agent_db = tmp_path / "agent.db"
+    settings = Settings(
+        classified_output_dir=str(tmp_path / "artifacts"),
+        extraction_output_dir=str(tmp_path / "legacy_extractions"),
+        agent_db_path=str(agent_db),
+        auto_extract_categories=["出港计划通知单"],
+    )
+    os.environ["BUSINESS_DATA_AGENT_DB_PATH"] = str(agent_db)
+    try:
+        classifier = MagicMock()
+        classifier.classify.return_value = MagicMock(category="出港计划通知单", confidence=0.97)
+        departure_payload = {
+            "is_target": True,
+            "project": "朝阳钢铁铁矿发运项目",
+            "header_info": {"通知日期": "2026年05月11日"},
+            "business_info": {
+                "船名": "宝腾海",
+                "发货单位": "鞍钢汽车运输有限责任公司",
+                "收货单位": "鞍钢汽车运输有限责任公司",
+            },
+            "cargo_info": {"货物名称": "铁矿", "运输方式": "铁路"},
+            "special_matter": "发运“宝腾海”轮所卸货物，火运出港，到站：朝阳西。",
+            "remarks": [{"date": "", "sequence": "", "plan": "", "raw_line": ""}],
+        }
+        with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
+            "ops_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
+        ):
+            result = process_new_image(image_path, settings, month_str="202605", group_name="数据单发群-GROUP013")
+
+        expected_image = tmp_path / "artifacts" / "projects" / "朝阳钢铁铁矿发运项目" / "朝阳西" / "宝腾海" / "lot01" / "images" / "2026-05-11" / "baotenghai_plan.jpg"
+        expected_json = tmp_path / "artifacts" / "projects" / "朝阳钢铁铁矿发运项目" / "朝阳西" / "宝腾海" / "lot01" / "json" / "2026-05-11" / "baotenghai_plan_result.json"
+        assert Path(result.saved_path) == expected_image
+        assert Path(result.extraction_saved_path) == expected_json
+        assert "lotunknown" not in str(result.saved_path)
+        extracted = json.loads(Path(result.extraction_saved_path).read_text(encoding="utf-8"))
+        release_id = extracted["_agent_updated_ids"][0]
+        conn = sqlite3.connect(agent_db)
+        try:
+            row = conn.execute("select batch_sequence from release_batches where id=?", (release_id,)).fetchone()
+            assert row == ("lot01",)
+        finally:
+            conn.close()
+    finally:
+        os.environ.pop("BUSINESS_DATA_AGENT_DB_PATH", None)
+
+
 def test_non_sop_artifacts_go_to_unmatched_without_second_extraction(tmp_path):
     import json
 

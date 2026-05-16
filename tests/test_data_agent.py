@@ -380,6 +380,29 @@ class TestBusinessDataAgent:
         all_records = agent.list_release_batches()
         assert len(all_records) == 2
 
+    def test_single_release_plan_without_explicit_sequence_defaults_to_lot01(self, tmp_db):
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "project": "朝阳钢铁铁矿发运项目",
+            "header_info": {"通知日期": "2026年05月11日"},
+            "business_info": {
+                "船名": "宝腾海",
+                "发货单位": "鞍钢汽车运输有限责任公司",
+                "收货单位": "鞍钢汽车运输有限责任公司",
+            },
+            "cargo_info": {"货物名称": "铁矿", "运输方式": "铁路"},
+            "special_matter": "发运“宝腾海”轮所卸货物，火运出港，到站：朝阳西。",
+            "remarks": [{"date": "", "sequence": "", "plan": "", "raw_line": ""}],
+        }
+
+        records = agent.ingest_release_batch(payload, source_file_name="baotenghai_plan.jpg")
+
+        assert len(records) == 1
+        assert records[0].batch_sequence == "lot01"
+        assert records[0].batch_key.endswith("|朝阳西|lot01")
+        assert records[0].destination_station == "朝阳西"
+
     def test_upsert_dedup(self, tmp_db):
         """Same payload ingested twice should not create duplicates"""
         agent = BusinessDataAgent()

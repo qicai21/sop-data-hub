@@ -1120,6 +1120,12 @@ class BusinessDataAgent:
             normalized_payload.get("cargo_info", {}),
             notice_date,
         )
+        if len(remarks) == 1 and not remarks[0].get("sequence"):
+            # A formal departure plan that yields exactly one business batch is
+            # still a concrete release lot.  Use lot01 so downstream project
+            # archives and dispatch rules do not fall into lotunknown solely
+            # because the notice lacks “第一次/lot01” wording.
+            remarks[0]["sequence"] = "lot01"
         latest_remark = remarks[-1] if remarks else None
         special_matter = normalized_payload.get("special_matter", "")
         business_info = normalized_payload.get("business_info", {})

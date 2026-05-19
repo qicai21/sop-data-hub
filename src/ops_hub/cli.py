@@ -239,6 +239,36 @@ def cmd_dispatch_board_serve(args: argparse.Namespace) -> None:
         def __init__(self, *a, **kw):
             super().__init__(*a, directory=serve_dir, **kw)
 
+        def end_headers(self):
+            # No-cache for JSON and HTML to prevent stale data
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+            super().end_headers()
+
+        def do_GET(self):
+            if self.path == "/api/refresh" or self.path.startswith("/api/refresh?"):
+                self._handle_refresh()
+                return
+            super().do_GET()
+
+        def _handle_refresh(self):
+            from ops_hub.data_agent.dispatch_board import refresh_dispatch_board
+            import json as _json
+            try:
+                result = refresh_dispatch_board(reason="http_refresh")
+                body = _json.dumps({"ok": True, "json_path": result["json_path"], "summary": result["summary"]}, ensure_ascii=False)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(body.encode("utf-8"))
+            except Exception as exc:
+                body = _json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(body.encode("utf-8"))
+
         def log_message(self, fmt, *a):
             # Quiet logging
             pass
@@ -268,6 +298,25 @@ def _dispatch_board_router(args: argparse.Namespace) -> None:
         cmd_dispatch_board_serve(args)
     else:
         cmd_dispatch_board(args)
+
+
+def cmd_pending_drop(args: argparse.Namespace) -> None:
+    """Mark a pending item as dropped and auto-refresh the dashboard."""
+    from ops_hub.data_agent.dispatch_board import mark_pending_item_dropped
+
+    try:
+        result = mark_pending_item_dropped(
+            audit_id=args.audit_id,
+            reason=args.reason or "user_dropped_from_dispatch_board",
+            do_refresh=True,
+        )
+        print(f"✅ Pending item dropped: audit_id={result['audit_id']}")
+        print(f"   previous: status={result['previous_status']} reason={result['previous_reason']}")
+        print(f"   new reason: {result['new_reason']}")
+        print(f"   dashboard JSON refreshed (reason=pending_item_dropped)")
+    except ValueError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 def main() -> None:
@@ -347,6 +396,14 @@ def main() -> None:
     p_reopen_rule.add_argument("release_batch_id", help="release_batches.id")
     p_reopen_rule.add_argument("--note", default=None, help="手动备注")
     p_reopen_rule.set_defaults(func=cmd_reopen_match_rule)
+
+    # pending
+    p_pending = subparsers.add_parser("pending", help="处理 dashboard 待落实事项")
+    p_pending_sub = p_pending.add_subparsers(dest="pending_action", help="pending 操作")
+    p_pending_drop = p_pending_sub.add_parser("drop", help="删除 dashboard 待落实项 (标记为 discarded_by_operator)")
+    p_pending_drop.add_argument("audit_id", help="image_ingestion_audit.id")
+    p_pending_drop.add_argument("--reason", default="user_dropped_from_dispatch_board", help="drop 原因")
+    p_pending_drop.set_defaults(func=cmd_pending_drop)
 
     # dispatch-board
     p_dboard = subparsers.add_parser("dispatch-board", help="刷新或启动 dispatch board 服务")

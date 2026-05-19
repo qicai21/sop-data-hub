@@ -218,7 +218,7 @@ def _fetch_unresolved_work_items(db: sqlite3.Connection) -> dict[str, list[dict[
     if _table_exists(db, "image_ingestion_audit"):
         text_rows = db.execute(
             """
-            SELECT raw_image_path, db_record_ids, status, reason, created_at
+            SELECT id, raw_image_path, db_record_ids, status, reason, created_at
             FROM image_ingestion_audit
             WHERE message_type = 'text'
               AND classified_category = '文字放货指令'
@@ -231,6 +231,7 @@ def _fetch_unresolved_work_items(db: sqlite3.Connection) -> dict[str, list[dict[
             items["text_release"].append(
                 {
                     "kind": "待匹配文字放货消息",
+                    "audit_id": str(row["id"] or ""),
                     "ship_name": fields.get("船名") or "",
                     "cargo_name": fields.get("货名") or "",
                     "quantity": fields.get("数量") or "",
@@ -247,11 +248,12 @@ def _fetch_unresolved_work_items(db: sqlite3.Connection) -> dict[str, list[dict[
 
         plan_rows = db.execute(
             """
-            SELECT raw_image_path, classified_image_path, extraction_json_path, status, reason, db_action, created_at
+            SELECT id, raw_image_path, classified_image_path, extraction_json_path, status, reason, db_action, created_at
             FROM image_ingestion_audit
             WHERE message_type = 'image'
               AND classified_category = '出港计划通知单'
               AND NOT (status = 'ingested' AND COALESCE(db_action, '') LIKE 'release_batch%')
+              AND COALESCE(db_action, '') NOT IN ('discarded_by_operator')
               AND (
                 requires_manual_review = 1
                 OR status IN ('pending', 'extracted', 'failed')
@@ -266,6 +268,7 @@ def _fetch_unresolved_work_items(db: sqlite3.Connection) -> dict[str, list[dict[
             items["departure_plan"].append(
                 {
                     "kind": "待匹配出港计划/放货图片",
+                    "audit_id": str(row["id"] or ""),
                     "ship_name": summary.get("ship_name") or summary.get("船名") or "",
                     "cargo_name": summary.get("cargo_name") or summary.get("cargo") or summary.get("货名") or "",
                     "quantity": summary.get("batch_quantity") or summary.get("quantity") or summary.get("计划量") or "",
@@ -282,7 +285,7 @@ def _fetch_unresolved_work_items(db: sqlite3.Connection) -> dict[str, list[dict[
 
         validation_rows = db.execute(
             """
-            SELECT raw_image_path, classified_image_path, extraction_json_path, db_record_ids, status, reason, created_at
+            SELECT id, raw_image_path, classified_image_path, extraction_json_path, db_record_ids, status, reason, created_at
             FROM image_ingestion_audit
             WHERE message_type = 'image'
               AND classified_category = '检装车通知单'
@@ -296,6 +299,7 @@ def _fetch_unresolved_work_items(db: sqlite3.Connection) -> dict[str, list[dict[
             items["inspection_validation"].append(
                 {
                     "kind": "待95306校验装车候选",
+                    "audit_id": str(row["id"] or ""),
                     "ship_name": summary.get("ship_name") or summary.get("ship") or summary.get("船名") or "",
                     "cargo_name": summary.get("cargo_name") or summary.get("cargo") or summary.get("货名") or "",
                     "quantity": summary.get("wagon_count") or summary.get("actual_wagon_count") or summary.get("节数") or "",
@@ -769,6 +773,52 @@ def _write_error_json(json_path: Path, error_message: str) -> None:
     tmp.replace(json_path)
 
 
+def mark_pending_item_dropped(
+    audit_id: str,
+    *,
+    reason: str = "user_dropped_from_dispatch_board",
+    do_refresh: bool = True,
+) -> dict[str, Any]:
+    """Mark an ``image_ingestion_audit`` record as dropped (discarded_by_operator).
+
+    The record is NOT deleted — only its ``db_action`` is set to
+    ``discarded_by_operator`` and ``reason`` is updated.  After the update,
+    the dashboard JSON is refreshed so the pending item disappears from the
+    board on the next page load.
+    """
+    from ops_hub.data_agent.db import get_db_path
+
+    db_path = get_db_path()
+    with sqlite3.connect(db_path) as db:
+        db.row_factory = sqlite3.Row
+        existing = db.execute(
+            "SELECT id, raw_image_path, status, reason, db_action FROM image_ingestion_audit WHERE id = ?",
+            (audit_id,),
+        ).fetchone()
+
+    if not existing:
+        raise ValueError(f"image_ingestion_audit record not found: {audit_id}")
+
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            "UPDATE image_ingestion_audit SET db_action = 'discarded_by_operator', reason = ?, status = 'ingested' WHERE id = ?",
+            (reason, audit_id),
+        )
+        db.commit()
+
+    result: dict[str, Any] = {
+        "audit_id": audit_id,
+        "previous_status": existing["status"],
+        "previous_reason": existing["reason"],
+        "new_reason": reason,
+    }
+
+    if do_refresh:
+        refresh_dispatch_board(reason="pending_item_dropped")
+
+    return result
+
+
 # Minimal default template used as fallback when the committed template is missing.
 _DEFAULT_TEMPLATE = """<!doctype html>
 <html lang="zh-CN">
@@ -795,8 +845,12 @@ def _build_pending_items_json(
     for key, display_type in order:
         for item in items.get(key, []):
             candidate_lots = _candidate_lot_text(item.get("candidate_ids") or [], release_by_id)
+            audit_id = str(item.get("audit_id") or "")
             result.append({
                 "type": key,
+                "pending_id": f"audit:{audit_id}" if audit_id else "",
+                "source_table": "image_ingestion_audit",
+                "source_id": audit_id,
                 "display_type": display_type,
                 "ship_name": item.get("ship_name") or "",
                 "cargo_name": item.get("cargo_name") or "",

@@ -21,10 +21,13 @@ th { background: #e0f2fe; position: sticky; top: 0; }
 .section-title { margin-top: 24px; }
 .error-banner { background: #fee2e2; border: 1px solid #fecaca; padding: 16px; border-radius: 8px; margin-bottom: 16px; color: #991b1b; }
 .loading { text-align: center; padding: 48px; color: #64748b; font-size: 16px; }
+.refresh-btn { display: inline-block; margin-left: 12px; padding: 4px 12px; font-size: 13px; cursor: pointer; background: #e0f2fe; border: 1px solid #7dd3fc; border-radius: 6px; color: #0369a1; }
+.refresh-btn:hover { background: #bae6fd; }
+.refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
 </head>
 <body>
-<h1>放货记录 / 发运记录 / 图片下载识别 / 匹配入库看板</h1>
+<h1>放货记录 / 发运记录 / 图片下载识别 / 匹配入库看板 <button id="refresh-btn" class="refresh-btn" onclick="doRefresh()" title="通过 /api/refresh 刷新数据">🔄 刷新数据</button></h1>
 <div id="meta-bar" class="meta">加载中...</div>
 <div id="error-banner" class="error-banner" style="display:none"></div>
 <div id="loading" class="loading">正在加载 dispatch_board_data.json...</div>
@@ -232,7 +235,7 @@ function renderDashboard(data) {
 }
 
 function loadDashboardData() {
-  fetch('./dispatch_board_data.json')
+  fetch('./dispatch_board_data.json?ts=' + Date.now())
     .then(function(resp) {
       if (!resp.ok) throw new Error('HTTP ' + resp.status + ' ' + resp.statusText);
       return resp.json();
@@ -242,6 +245,30 @@ function loadDashboardData() {
     })
     .catch(function(err) {
       showError('加载失败: ' + err.message, false);
+    });
+}
+
+function doRefresh() {
+  var btn = document.getElementById('refresh-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 刷新中...';
+
+  fetch('/api/refresh')
+    .then(function(resp) {
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return resp.json();
+    })
+    .then(function(result) {
+      if (!result.ok) throw new Error(result.error || '刷新失败');
+      // Reload data with cache busting
+      loadDashboardData();
+    })
+    .catch(function(err) {
+      showError('刷新失败: ' + err.message, false);
+    })
+    .finally(function() {
+      btn.disabled = false;
+      btn.textContent = '🔄 刷新数据';
     });
 }
 

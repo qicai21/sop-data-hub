@@ -568,8 +568,9 @@ def test_write_dispatch_board_template_writes_template(tmp_path):
     assert out.exists()
 
     html = out.read_text(encoding="utf-8")
-    # Template MUST contain fetch for JSON data
-    assert "fetch('./dispatch_board_data.json')" in html or 'fetch("./dispatch_board_data.json")' in html
+    # Template MUST contain fetch for JSON data (with cache busting or not)
+    assert "dispatch_board_data.json" in html, "Template must reference JSON data"
+    assert "fetch(" in html, "Template must fetch data"
     # Template MUST contain JS rendering logic
     assert 'renderDashboard' in html
     assert 'renderSummary' in html
@@ -754,4 +755,120 @@ def test_dispatch_board_cli_help_shows_serve():
         capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[1]),
     )
     assert "serve" in (result.stdout + result.stderr)
+
+
+# ── pending drop / auto-refresh tests ──────────────────────────────────
+
+
+def test_pending_items_include_pending_id_and_source_id(tmp_db, tmp_path):
+    agent = BusinessDataAgent()
+    agent.db.execute(
+        """
+        INSERT INTO release_batches (
+          id, batch_key, project, ship_name, cargo_name, destination_station,
+          notice_date, batch_date, batch_sequence, batch_quantity,
+          source_json, searchable_text, dispatch_status
+        ) VALUES ('batch-pid', 'project|ship|lot01', '中唐特钢铁矿发运项目', '马兰探险', '铁矿', '汐子',
+          '2026-05-10', '2026-05-10', 'lot01', 8248, '{}', '马兰探险 汐子 铁矿', 'in_progress')
+        """
+    )
+    agent.db.commit()
+
+    from ops_hub.data_agent.dispatch_board import generate_dispatch_board_data
+
+    data = generate_dispatch_board_data(business_db_path=tmp_db, rail_db_path=None)
+    pending = data["pending_items"]
+    assert len(pending) == 0  # no pending in fixture-only DB
+
+    # Test the structure: add an audit record and verify pending_id appears
+    agent.db.execute(
+        """
+        INSERT INTO image_ingestion_audit (
+          id, message_type, raw_image_path, classified_category, db_action, status, reason, requires_manual_review
+        ) VALUES ('audit-test-pid', 'text', 'ship:测试船', '文字放货指令', 'manual_match_pending',
+          'pending', 'ambiguous_release_batch_match', 1)
+        """
+    )
+    agent.db.commit()
+
+    data2 = generate_dispatch_board_data(business_db_path=tmp_db, rail_db_path=None)
+    pending2 = data2["pending_items"]
+    assert len(pending2) == 1
+    item = pending2[0]
+    assert item["pending_id"] == "audit:audit-test-pid"
+    assert item["source_table"] == "image_ingestion_audit"
+    assert item["source_id"] == "audit-test-pid"
+
+
+def test_mark_pending_item_dropped_updates_db_and_refreshes(tmp_db, tmp_path):
+    agent = BusinessDataAgent()
+    # Create a pending item
+    agent.db.execute(
+        """
+        INSERT INTO image_ingestion_audit (
+          id, message_type, raw_image_path, classified_image_path, classified_category,
+          extraction_json_path, status, reason, db_action, requires_manual_review,
+          project_archive_paths, created_at
+        ) VALUES (
+          'audit-drop-test', 'image', '/tmp/drop1.jpg', '/tmp/drop1.jpg',
+          '出港计划通知单', '/tmp/drop1_result.json', 'extracted', 'non_sop_project_json_only',
+          'none', 0, '{}', '2026-01-01'
+        )
+        """
+    )
+    agent.db.execute(
+        """
+        INSERT INTO release_batches (
+          id, batch_key, project, ship_name, cargo_name, destination_station,
+          notice_date, batch_date, batch_sequence, batch_quantity,
+          source_json, searchable_text, dispatch_status
+        ) VALUES ('batch-drop', 'project|ship|drop', '中唐特钢铁矿发运项目', '马兰探险', '铁矿', '汐子',
+          '2026-05-10', '2026-05-10', 'lot01', 8248, '{}', '马兰探险 汐子 铁矿', 'in_progress')
+        """
+    )
+    agent.db.commit()
+
+    from ops_hub.data_agent.dispatch_board import generate_dispatch_board_data, mark_pending_item_dropped
+
+    # Before drop: should have 1 pending item
+    data_before = generate_dispatch_board_data(business_db_path=tmp_db, rail_db_path=None)
+    assert len(data_before["pending_items"]) == 1
+
+    # Drop it
+    result = mark_pending_item_dropped("audit-drop-test", reason="test_drop", do_refresh=True)
+    assert result["audit_id"] == "audit-drop-test"
+    assert result["new_reason"] == "test_drop"
+
+    # After drop: JSON should have 0 pending items
+    data_after = generate_dispatch_board_data(business_db_path=tmp_db, rail_db_path=None)
+    assert len(data_after["pending_items"]) == 0
+
+
+def test_dispatch_board_html_has_refresh_button():
+    """Verify template has refresh button and doRefresh function."""
+    template_path = Path(__file__).resolve().parents[1] / "dashboard" / "dispatch_board.html"
+    if not template_path.exists():
+        pytest.skip("Template not found")
+
+    html = template_path.read_text(encoding="utf-8")
+
+    assert "🔄 刷新数据" in html or "refresh-btn" in html, "Template should have refresh button"
+    assert "function doRefresh" in html, "Template should have doRefresh JS function"
+    assert "/api/refresh" in html, "Template should call /api/refresh"
+
+
+def test_dispatch_board_html_has_cache_busting():
+    """Verify template fetch uses cache-busting query string."""
+    template_path = Path(__file__).resolve().parents[1] / "dashboard" / "dispatch_board.html"
+    if not template_path.exists():
+        pytest.skip("Template not found")
+
+    html = template_path.read_text(encoding="utf-8")
+    assert "?ts=" in html, "Template fetch should include cache-busting ts parameter"
+
+
+def test_pending_drop_cli_is_callable():
+    """Verify the pending drop CLI function exists and is callable."""
+    from ops_hub.cli import cmd_pending_drop
+    assert callable(cmd_pending_drop)
 

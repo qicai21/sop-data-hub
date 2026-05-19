@@ -188,7 +188,7 @@ def cmd_reopen_match_rule(args: argparse.Namespace) -> None:
 
 
 def cmd_dispatch_board(args: argparse.Namespace) -> None:
-    from ops_hub.data_agent.dispatch_board import refresh_dispatch_board
+    from ops_hub.data_agent.dispatch_board import refresh_dispatch_board, _dashboard_dir
 
     result = refresh_dispatch_board(
         reason=args.reason or "manual_refresh",
@@ -198,7 +198,7 @@ def cmd_dispatch_board(args: argparse.Namespace) -> None:
     summary = result.get("summary", {})
     print(f"✅ Dispatch board refreshed (reason={result.get('refresh_reason', '')})")
     print(f"   JSON: {result['json_path']}")
-    print(f"   HTML: {result['html_path']}")
+    print(f"   HTML: {_dashboard_dir() / 'dispatch_board.html'}")
     print(f"   release_batches: {summary.get('release_batch_total', 0)}")
     print(f"   active: {summary.get('active_release_batches', 0)}")
     print(f"   pending_total: {summary.get('pending_total', 0)}")

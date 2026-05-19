@@ -1,0 +1,125 @@
+{
+  "meta": {
+    "generated_at": "2026-01-01 00:00:00",
+    "source_db": "/path/to/ops-data-hub/data/agent.db",
+    "rail95306_db": "/path/to/rail95306-sync/runtime/95306_collection.sqlite3",
+    "generator_version": "1.0.0",
+    "refresh_reason": "示例数据 - 非生产数据"
+  },
+  "summary": {
+    "pending_total": 5,
+    "pending_text_release": 1,
+    "pending_release_plan_images": 2,
+    "pending_inspection_assignment": 1,
+    "pending_95306_check": 1,
+    "active_release_batches": 3,
+    "release_batch_total": 8,
+    "matched_inspection_candidates": 6,
+    "manual_candidate_count": 1,
+    "unassigned_candidate_count": 0,
+    "formal_wagon_count": 120,
+    "formal_weight": 8400.5
+  },
+  "pending_items": [
+    {
+      "type": "text_release",
+      "display_type": "待匹配文字放货消息",
+      "ship_name": "示例船A",
+      "cargo_name": "示例货品",
+      "quantity": "5000",
+      "wagon_count": 0,
+      "plan_no": "PLAN-EXAMPLE-001",
+      "contract_no": "CONTRACT-EXAMPLE-001",
+      "status": "pending",
+      "reason": "ambiguous_release_batch_match",
+      "candidate_lots": "lot01, lot02",
+      "source_image_path": "/path/to/example_text_msg.txt",
+      "source_json_path": "",
+      "recorded_at": "2026-01-01 10:00:00"
+    },
+    {
+      "type": "departure_plan",
+      "display_type": "待匹配出港计划/放货图片",
+      "ship_name": "示例船B",
+      "cargo_name": "示例铁矿",
+      "quantity": "10000",
+      "wagon_count": 0,
+      "plan_no": "",
+      "contract_no": "",
+      "status": "extracted",
+      "reason": "non_sop_project_json_only",
+      "candidate_lots": "",
+      "source_image_path": "/path/to/example/departure_plan.jpg",
+      "source_json_path": "/path/to/example/departure_plan_result.json",
+      "recorded_at": "2026-01-01 09:30:00"
+    }
+  ],
+  "release_batches": [
+    {
+      "release_batch_id": "example-batch-001",
+      "project": "示例项目",
+      "ship_name": "示例船A",
+      "destination_station": "示例到站",
+      "batch_sequence": "lot01",
+      "planned_quantity": 10000.0,
+      "batch_date": "2026-01-01",
+      "cargo_name": "示例货品",
+      "plan_no": "PLAN-EXAMPLE-001",
+      "contract_no": "CONTRACT-EXAMPLE-001",
+      "status": "发运中",
+      "matched_candidate_count": 2,
+      "manual_candidate_count": 0,
+      "candidate_lots": "",
+      "formal_wagon_count": 50,
+      "formal_weight": 3500.0,
+      "remaining_quantity": 6500.0,
+      "source_image_path": "/path/to/example/source.jpg",
+      "source_json_path": "/path/to/example/source_result.json",
+      "state_file_path": "/path/to/example/source_status.json",
+      "formal_shipments": [
+        {
+          "car_no": "1000001",
+          "time": "2026-01-01 12:00:00",
+          "inspection_file": "/path/to/example/inspection_001.jpg"
+        },
+        {
+          "car_no": "1000002",
+          "time": "2026-01-01 13:00:00",
+          "inspection_file": "/path/to/example/inspection_002.jpg"
+        }
+      ]
+    }
+  ],
+  "inspection_candidates": [
+    {
+      "candidate_id": "example-cand-001",
+      "project": "示例项目",
+      "ship_name": "示例船A",
+      "destination_station": "示例到站",
+      "candidate_lot": "",
+      "release_batch_id": "example-batch-001",
+      "source_image_path": "/path/to/example/inspection_candidate.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 50,
+      "defect_car_count": 0,
+      "status": "committed",
+      "needs_review": false,
+      "review_reasons": "",
+      "created_at": "2026-01-01 11:00:00"
+    }
+  ],
+  "reconcile_plans": [
+    {
+      "plan_id": "example-plan-001",
+      "candidate_id": "example-cand-001",
+      "release_batch_id": "example-batch-001",
+      "safe_to_commit": true,
+      "planned_rows": 50,
+      "excluded_rows": 0,
+      "review_reasons": "",
+      "status": "committed",
+      "created_at": "2026-01-01 11:30:00",
+      "committed_at": "2026-01-01 11:35:00"
+    }
+  ]
+}

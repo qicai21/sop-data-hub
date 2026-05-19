@@ -3,6 +3,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from ops_hub.data_agent.agent import BusinessDataAgent
 from ops_hub.data_agent.dispatch_board import render_dispatch_board
 
@@ -515,7 +517,7 @@ def test_generate_dispatch_board_json_contains_chinese_not_escaped(tmp_db, tmp_p
     assert "汐子" in json_str
 
 
-def test_refresh_dispatch_board_generates_json_and_html_files(tmp_db, tmp_path):
+def test_refresh_dispatch_board_generates_json_file(tmp_db, tmp_path):
     agent = BusinessDataAgent()
     agent.db.execute(
         """
@@ -545,56 +547,83 @@ def test_refresh_dispatch_board_generates_json_and_html_files(tmp_db, tmp_path):
     )
 
     json_path = dashboard_dir / "dispatch_board_data.json"
-    html_path = dashboard_dir / "dispatch_board.html"
     assert json_path.exists(), f"JSON not found at {json_path}"
-    assert html_path.exists(), f"HTML not found at {html_path}"
     assert result["refresh_reason"] == "test_refresh"
     assert result["summary"]["release_batch_total"] == 1
+    assert "json_path" in result
+    assert "html_path" not in result  # refresh only writes JSON now
 
     # Verify JSON is valid and parseable
     import json as json_mod
     data = json_mod.loads(json_path.read_text(encoding="utf-8"))
     assert data["meta"]["refresh_reason"] == "test_refresh"
 
-    # Verify HTML contains data rendered from JSON (not hardcoded)
-    html = html_path.read_text(encoding="utf-8")
-    assert "马兰探险" in html
-    assert "放货记录" in html
-    assert "生成时间" in html
+
+def test_write_dispatch_board_template_writes_template(tmp_path):
+    from ops_hub.data_agent.dispatch_board import write_dispatch_board_template
+
+    out = tmp_path / "dispatch_board.html"
+    result = write_dispatch_board_template(output_path=out)
+    assert str(out) == result
+    assert out.exists()
+
+    html = out.read_text(encoding="utf-8")
+    # Template MUST contain fetch for JSON data
+    assert "fetch('./dispatch_board_data.json')" in html or 'fetch("./dispatch_board_data.json")' in html
+    # Template MUST contain JS rendering logic
+    assert 'renderDashboard' in html
+    assert 'renderSummary' in html
+    assert 'renderReleaseBatches' in html
+    assert 'renderPendingItems' in html
 
 
-def test_html_from_json_does_not_hardcode_old_business_data(tmp_db, tmp_path):
-    """Verify the new HTML rendered from JSON does not contain hardcoded business
-    rows from the old static dashboard."""
-    agent = BusinessDataAgent()
-    agent.db.execute(
-        """
-        INSERT INTO release_batches (
-          id, batch_key, project, ship_name, cargo_name, destination_station,
-          notice_date, batch_date, batch_sequence, batch_quantity,
-          source_json, searchable_text, dispatch_status
-        ) VALUES (
-          'batch-new', 'project|newship|lot01', '中唐特钢铁矿发运项目', '新船名测试', '铁矿', '汐子',
-          '2026-05-10', '2026-05-10', 'lot01', 5000,
-          '{}', '新船名测试 汐子 铁矿', 'in_progress'
-        )
-        """
-    )
-    agent.db.commit()
+def test_dispatch_board_html_template_contains_no_production_data():
+    """Verify the committed dispatch_board.html template has NO hardcoded business data."""
+    template_path = Path(__file__).resolve().parents[1] / "dashboard" / "dispatch_board.html"
+    if not template_path.exists():
+        pytest.skip("Template not found — skipping production data check")
 
-    from ops_hub.data_agent.dispatch_board import generate_dispatch_board_data, _render_html_from_json
+    html = template_path.read_text(encoding="utf-8")
 
-    data = generate_dispatch_board_data(business_db_path=tmp_db, rail_db_path=None)
-    html = _render_html_from_json(data)
+    # Must contain fetch for data
+    assert 'fetch(' in html, "Template must fetch JSON data"
 
-    # Old hardcoded data should NOT appear
-    assert "丰收散运" not in html
-    assert "鞍子河" not in html
-    # New fixture data SHOULD appear
-    assert "新船名测试" in html
+    # Must NOT contain any hardcoded business data from old static dashboard
+    forbidden = [
+        "569",          # old hardcoded formal_wagon_count
+        "38454",        # old hardcoded formal_weight
+        "丰收散运",     # old hardcoded ship name
+        "1413464",      # old hardcoded car number
+        "/Users/qicai21/Documents/bussiness-artifacts",  # old hardcoded absolute path
+        "鞍子河",       # old hardcoded ship name
+    ]
+    for item in forbidden:
+        assert item not in html, f"Template must not contain hardcoded business data: '{item}'"
 
-    # Should NOT contain raw DB IDs (only business-facing data)
-    assert "batch-new" not in html
+
+def test_dispatch_board_html_template_has_js_rendering():
+    """Verify the committed template has JS functions to render all sections."""
+    template_path = Path(__file__).resolve().parents[1] / "dashboard" / "dispatch_board.html"
+    if not template_path.exists():
+        pytest.skip("Template not found — skipping JS rendering check")
+
+    html = template_path.read_text(encoding="utf-8")
+
+    required_functions = [
+        "renderDashboard",
+        "renderMeta",
+        "renderSummary",
+        "renderPendingItems",
+        "renderReleaseBatches",
+        "renderCarDetails",
+        "showError",
+        "loadDashboardData",
+        "esc(",
+        "fmtNum",
+        "fileLink",
+    ]
+    for fn in required_functions:
+        assert fn in html, f"Template must contain '{fn}' JS function"
 
 
 def test_refresh_dispatch_board_is_importable_and_callable():

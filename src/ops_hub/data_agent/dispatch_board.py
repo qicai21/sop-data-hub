@@ -603,9 +603,14 @@ def refresh_dispatch_board(
     rail_db_path: str | Path | None = None,
     dashboard_dir: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Unified entry point: generate JSON + render HTML for the dispatch board.
+    """Unified entry point: generate dispatch_board_data.json from business & 95306 DBs.
 
     Call this from any business path that changes dashboard-relevant state.
+    The HTML template is a stable frontend file (committed to git) that renders the
+    JSON client-side via ``fetch('./dispatch_board_data.json')``.
+
+    This function does NOT write HTML — it only updates the JSON data file.
+    Use ``write_dispatch_board_template()`` to install/update the HTML template.
     """
     if business_db_path is None:
         from ops_hub.data_agent.db import get_db_path
@@ -620,7 +625,7 @@ def refresh_dispatch_board(
     dashboard_dir = Path(dashboard_dir)
     dashboard_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Generate JSON data
+    # Generate JSON data (HTML template renders this client-side)
     data = generate_dispatch_board_data(
         business_db_path=business_db_path,
         rail_db_path=rail_db_path if rail_db_path.exists() else None,
@@ -632,19 +637,52 @@ def refresh_dispatch_board(
     tmp_json.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     tmp_json.replace(json_path)  # atomic rename
 
-    # 2. Render HTML from JSON data
-    html = _render_html_from_json(data)
-    html_path = dashboard_dir / "dispatch_board.html"
-    tmp_html = html_path.with_suffix(".html.tmp")
-    tmp_html.write_text(html, encoding="utf-8")
-    tmp_html.replace(html_path)
-
     return {
         "json_path": str(json_path),
-        "html_path": str(html_path),
         "summary": data["summary"],
         "refresh_reason": reason,
     }
+
+
+def write_dispatch_board_template(
+    output_path: str | Path | None = None,
+) -> str:
+    """Write the stable dispatch board HTML template (JS + CSS only, no business data).
+
+    This function writes the canonical HTML/JS/CSS template skeleton.  The
+    template reads runtime data from ``dispatch_board_data.json`` via
+    ``fetch()`` at page load — it never contains hardcoded car numbers, ship
+    names, quantities, or absolute file paths.
+
+    Call this once to install the template, or whenever the template itself
+    needs updating.  It is intentionally NOT called during refresh.
+    """
+    if output_path is None:
+        output_path = _dashboard_dir() / "dispatch_board.html"
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Read the committed template from the dashboard directory
+    template_path = _dashboard_dir() / "dispatch_board.html"
+    if template_path.exists():
+        content = template_path.read_text(encoding="utf-8")
+    else:
+        content = _DEFAULT_TEMPLATE
+
+    output_path.write_text(content, encoding="utf-8")
+    return str(output_path)
+
+
+# Minimal default template used as fallback when the committed template is missing.
+_DEFAULT_TEMPLATE = """<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Dispatch Board</title></head>
+<body>
+<h1>Dispatch Board — 模板未安装</h1>
+<p>请运行 write_dispatch_board_template() 或从 git 仓库恢复 dispatch_board.html。</p>
+</body>
+</html>
+"""
 
 
 def _build_pending_items_json(

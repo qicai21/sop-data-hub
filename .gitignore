@@ -26,3 +26,6 @@ business-data-agent/
 
 # 预览缓存
 _previews/
+
+# Dashboard runtime JSON (contains local absolute paths, not portable)
+dashboard/dispatch_board_data.json

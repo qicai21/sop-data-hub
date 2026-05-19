@@ -191,17 +191,41 @@ function renderReleaseBatches(batches) {
     renderTable(BATCH_COLUMNS, completed, '暂无已发完 release_batch 数据');
 }
 
-function showError(msg) {
+function showError(msg, isBackendError) {
   var loading = document.getElementById('loading');
   if (loading) loading.style.display = 'none';
   var banner = document.getElementById('error-banner');
+  banner.innerHTML = '<strong style="display:block;margin-bottom:8px">⚠️ 无法加载 dispatch_board_data.json</strong>' +
+    '<div>' + esc(msg) + '</div>';
+
+  // Suggest solutions
+  var tips = [];
+  var proto = window.location.protocol;
+  if (proto === 'file:') {
+    tips.push('<strong>当前通过 file:// 打开，浏览器限制 fetch 请求。</strong>');
+    tips.push('推荐使用 HTTP 方式打开：<br><code style="background:#1e293b;color:#e2e8f0;padding:2px 6px;border-radius:3px">python -m ops_hub dispatch-board serve</code>');
+    tips.push('然后访问 <code style="background:#1e293b;color:#e2e8f0;padding:2px 6px;border-radius:3px">http://127.0.0.1:8765/dispatch_board.html</code>');
+  } else {
+    tips.push('请确认 dispatch_board_data.json 与 dispatch_board.html 在同一目录。');
+    if (!isBackendError) {
+      tips.push('请运行 <code style="background:#1e293b;color:#e2e8f0;padding:2px 6px;border-radius:3px">python -m ops_hub dispatch-board</code> 生成数据文件。');
+    }
+  }
+  banner.innerHTML += '<ul style="margin-top:10px;padding-left:18px"><li>' + tips.join('</li><li>') + '</li></ul>';
   banner.style.display = 'block';
-  banner.textContent = '⚠️ ' + msg;
 }
 
 function renderDashboard(data) {
   document.getElementById('loading').style.display = 'none';
-  renderMeta(data.meta || {});
+
+  // Detect backend error JSON
+  var meta = data.meta || {};
+  if (meta.error === true || meta.error === 'true') {
+    showError('后端错误：' + (meta.error_message || '未知错误'), true);
+    return;
+  }
+
+  renderMeta(meta);
   renderSummary(data.summary || {});
   renderPendingItems(data.pending_items || []);
   renderReleaseBatches(data.release_batches || []);
@@ -217,7 +241,7 @@ function loadDashboardData() {
       renderDashboard(data);
     })
     .catch(function(err) {
-      showError('无法加载 dispatch_board_data.json: ' + err.message + '。请运行 python -m ops_hub dispatch-board 生成数据文件。');
+      showError('加载失败: ' + err.message, false);
     });
 }
 

@@ -213,6 +213,47 @@ def _auto_refresh_dispatch_board(reason: str) -> None:
         pass  # never let dashboard refresh block business operations
 
 
+def cmd_dispatch_board_serve(args: argparse.Namespace) -> None:
+    """Start a local HTTP server that serves the dashboard directory.
+
+    On start, ensures dispatch_board_data.json exists.
+    The server serves the dashboard on the given host:port so the browser
+    can fetch JSON from the same origin — no file:// fetch restrictions.
+    """
+    from ops_hub.data_agent.dispatch_board import ensure_dispatch_board_data, _dashboard_dir
+
+    dashboard_dir = _dashboard_dir()
+    ensure_dispatch_board_data(reason="serve_start")
+
+    import http.server
+    import socketserver
+
+    host = args.host or "127.0.0.1"
+    port = args.port or 8765
+
+    # Change to the dashboard directory so static files are served from there
+    import os as _os
+    serve_dir = str(dashboard_dir)
+
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, directory=serve_dir, **kw)
+
+        def log_message(self, fmt, *a):
+            # Quiet logging
+            pass
+
+    with socketserver.TCPServer((host, port), Handler) as httpd:
+        url = f"http://{host}:{port}/dispatch_board.html"
+        print(f"🚀 Dispatch board served at: {url}")
+        print(f"   Dashboard dir: {serve_dir}")
+        print(f"   Press Ctrl+C to stop.")
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\n⏹  Server stopped.")
+
+
 def _output_result(result: dict, output_path: str | None) -> None:
     text = json.dumps(result, indent=2, ensure_ascii=False)
     if output_path:
@@ -220,6 +261,13 @@ def _output_result(result: dict, output_path: str | None) -> None:
         print(f"结果已保存到: {output_path}")
     else:
         print(text)
+
+
+def _dispatch_board_router(args: argparse.Namespace) -> None:
+    if args.action == "serve":
+        cmd_dispatch_board_serve(args)
+    else:
+        cmd_dispatch_board(args)
 
 
 def main() -> None:
@@ -301,11 +349,14 @@ def main() -> None:
     p_reopen_rule.set_defaults(func=cmd_reopen_match_rule)
 
     # dispatch-board
-    p_dboard = subparsers.add_parser("dispatch-board", help="刷新 dispatch board (JSON + HTML)")
+    p_dboard = subparsers.add_parser("dispatch-board", help="刷新或启动 dispatch board 服务")
+    p_dboard.add_argument("action", nargs="?", default="refresh", choices=["refresh", "serve"], help="refresh: 生成JSON数据; serve: 启动HTTP静态服务")
     p_dboard.add_argument("--reason", default=None, help="刷新原因 (e.g. manual_refresh, release_batch_updated)")
     p_dboard.add_argument("--db", default=None, help="业务库路径 (默认从配置读取)")
     p_dboard.add_argument("--rail-db", default=None, help="95306数据库路径")
-    p_dboard.set_defaults(func=cmd_dispatch_board)
+    p_dboard.add_argument("--host", default=None, help="HTTP服务监听地址 (默认 127.0.0.1，仅 serve)")
+    p_dboard.add_argument("--port", type=int, default=None, help="HTTP服务端口 (默认 8765，仅 serve)")
+    p_dboard.set_defaults(func=_dispatch_board_router)
 
     args = parser.parse_args()
     if not args.command:

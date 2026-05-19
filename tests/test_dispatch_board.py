@@ -636,3 +636,122 @@ def test_refresh_dispatch_board_is_importable_and_callable():
     params = list(sig.parameters.keys())
     assert "reason" in params
 
+
+# ── ensure / serve tests ─────────────────────────────────────────────
+
+
+def test_ensure_dispatch_board_data_generates_when_missing(tmp_db, tmp_path):
+    agent = BusinessDataAgent()
+    agent.db.execute(
+        """
+        INSERT INTO release_batches (
+          id, batch_key, project, ship_name, cargo_name, destination_station,
+          notice_date, batch_date, batch_sequence, batch_quantity,
+          source_json, searchable_text, dispatch_status
+        ) VALUES ('batch-ens', 'project|ship|lot01', '中唐特钢铁矿发运项目', '马兰探险', '铁矿', '汐子',
+          '2026-05-10', '2026-05-10', 'lot01', 8248, '{}', '马兰探险 汐子 铁矿', 'in_progress')
+        """
+    )
+    agent.db.commit()
+
+    dashboard_dir = tmp_path / "dashboard"
+    dashboard_dir.mkdir()
+
+    from ops_hub.data_agent.dispatch_board import ensure_dispatch_board_data
+
+    json_path = dashboard_dir / "dispatch_board_data.json"
+    assert not json_path.exists(), "JSON should not exist before ensure"
+
+    result = ensure_dispatch_board_data(
+        reason="test_ensure",
+        business_db_path=tmp_db,
+        rail_db_path=None,
+        dashboard_dir=dashboard_dir,
+    )
+
+    assert json_path.exists(), "ensure should generate JSON when missing"
+    assert result["refresh_reason"] == "test_ensure"
+    assert result["summary"]["release_batch_total"] == 1
+
+
+def test_ensure_dispatch_board_data_returns_existing_when_fresh(tmp_db, tmp_path):
+    agent = BusinessDataAgent()
+    agent.db.execute(
+        """
+        INSERT INTO release_batches (
+          id, batch_key, project, ship_name, cargo_name, destination_station,
+          notice_date, batch_date, batch_sequence, batch_quantity,
+          source_json, searchable_text, dispatch_status
+        ) VALUES ('batch-exist', 'project|ship|lot01', '中唐特钢铁矿发运项目', '马兰探险', '铁矿', '汐子',
+          '2026-05-10', '2026-05-10', 'lot01', 8248, '{}', '马兰探险 汐子 铁矿', 'in_progress')
+        """
+    )
+    agent.db.commit()
+
+    dashboard_dir = tmp_path / "dashboard"
+    dashboard_dir.mkdir()
+
+    from ops_hub.data_agent.dispatch_board import ensure_dispatch_board_data, refresh_dispatch_board
+
+    # First generate
+    refresh_dispatch_board(reason="first", business_db_path=tmp_db, rail_db_path=None, dashboard_dir=dashboard_dir)
+    json_path = dashboard_dir / "dispatch_board_data.json"
+    mtime_before = json_path.stat().st_mtime
+
+    # ensure should NOT regenerate when fresh and no max_age
+    result = ensure_dispatch_board_data(
+        reason="second", business_db_path=tmp_db, rail_db_path=None, dashboard_dir=dashboard_dir, max_age_seconds=None,
+    )
+    mtime_after = json_path.stat().st_mtime
+    assert mtime_after == mtime_before, "ensure should not regenerate fresh JSON"
+    assert result["refresh_reason"] == "first"  # kept from original
+
+
+def test_ensure_dispatch_board_data_writes_error_json_when_db_missing(tmp_path):
+    dashboard_dir = tmp_path / "dashboard"
+    dashboard_dir.mkdir()
+
+    from ops_hub.data_agent.dispatch_board import ensure_dispatch_board_data
+
+    missing_db = tmp_path / "nonexistent" / "agent.db"
+    result = ensure_dispatch_board_data(
+        reason="test_error",
+        business_db_path=missing_db,
+        rail_db_path=None,
+        dashboard_dir=dashboard_dir,
+    )
+
+    json_path = dashboard_dir / "dispatch_board_data.json"
+    assert json_path.exists(), "error JSON should be written even when DB missing"
+    assert result["refresh_reason"] == "error"
+    assert "error" in result
+
+    import json as json_mod
+    data = json_mod.loads(json_path.read_text(encoding="utf-8"))
+    assert data["meta"]["error"] is True
+    assert "业务库不存在" in data["meta"]["error_message"]
+
+
+def test_dispatch_board_html_has_improved_error_messages():
+    """Verify the template has file:// detection and serve suggestion."""
+    template_path = Path(__file__).resolve().parents[1] / "dashboard" / "dispatch_board.html"
+    if not template_path.exists():
+        pytest.skip("Template not found")
+
+    html = template_path.read_text(encoding="utf-8")
+
+    # Must detect file:// and suggest serve
+    assert "file:" in html or "file://" in html, "Template should detect file:// protocol"
+    assert "dispatch-board serve" in html, "Template should suggest dispatch-board serve"
+    assert "error_message" in html, "Template should check meta.error_message for backend errors"
+
+
+def test_dispatch_board_cli_help_shows_serve():
+    """Verify CLI help shows the serve action."""
+    import subprocess, sys
+    result = subprocess.run(
+        [sys.executable, "-m", "ops_hub", "dispatch-board", "--help"],
+        capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[1]),
+    )
+    assert "serve" in (result.stdout + result.stderr)
+

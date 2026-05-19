@@ -7,6 +7,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 import sqlite3
+import time
 from typing import Any
 from urllib.parse import quote
 
@@ -671,6 +672,101 @@ def write_dispatch_board_template(
 
     output_path.write_text(content, encoding="utf-8")
     return str(output_path)
+
+
+def ensure_dispatch_board_data(
+    reason: str = "ensure_on_open_or_start",
+    *,
+    business_db_path: str | Path | None = None,
+    rail_db_path: str | Path | None = None,
+    dashboard_dir: str | Path | None = None,
+    max_age_seconds: int | None = None,
+) -> dict[str, Any]:
+    """Ensure ``dispatch_board_data.json`` exists and is reasonably fresh.
+
+    - If JSON is missing → generate it.
+    - If JSON is older than *max_age_seconds* → regenerate.
+    - If business DB is unavailable → write an error JSON so the frontend
+      can show a clear message instead of a generic ``Failed to fetch``.
+
+    Returns the same dict as :func:`refresh_dispatch_board`.
+    """
+    if dashboard_dir is None:
+        dashboard_dir = _dashboard_dir()
+    dashboard_dir = Path(dashboard_dir)
+    json_path = dashboard_dir / "dispatch_board_data.json"
+
+    stale = False
+    if json_path.exists() and max_age_seconds is not None:
+        age = time.time() - json_path.stat().st_mtime
+        stale = age > max_age_seconds
+
+    if json_path.exists() and not stale:
+        try:
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+            return {
+                "json_path": str(json_path),
+                "summary": data.get("summary", {}),
+                "refresh_reason": data.get("meta", {}).get("refresh_reason", ""),
+            }
+        except Exception:
+            pass  # corrupt JSON → regenerate
+
+    # JSON missing, stale, or corrupt — regenerate
+    if business_db_path is None:
+        from ops_hub.data_agent.db import get_db_path
+        business_db_path = get_db_path()
+    business_db_path = Path(business_db_path)
+
+    if not business_db_path.exists():
+        _write_error_json(json_path, f"业务库不存在: {business_db_path}")
+        return {
+            "json_path": str(json_path),
+            "summary": {},
+            "refresh_reason": "error",
+            "error": f"业务库不存在: {business_db_path}",
+        }
+
+    try:
+        return refresh_dispatch_board(
+            reason=reason,
+            business_db_path=business_db_path,
+            rail_db_path=rail_db_path,
+            dashboard_dir=dashboard_dir,
+        )
+    except Exception as exc:
+        _write_error_json(json_path, str(exc))
+        return {
+            "json_path": str(json_path),
+            "summary": {},
+            "refresh_reason": "error",
+            "error": str(exc),
+        }
+
+
+def _write_error_json(json_path: Path, error_message: str) -> None:
+    """Write a structurally valid JSON that signals an error to the frontend."""
+    import time as _time
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "meta": {
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "source_db": "",
+            "rail95306_db": "",
+            "generator_version": "1.0.0",
+            "refresh_reason": "error",
+            "error": True,
+            "error_message": error_message,
+        },
+        "summary": {},
+        "pending_items": [],
+        "release_batches": [],
+        "inspection_candidates": [],
+        "reconcile_plans": [],
+    }
+    tmp = json_path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    tmp.replace(json_path)
 
 
 # Minimal default template used as fallback when the committed template is missing.

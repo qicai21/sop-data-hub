@@ -11,6 +11,7 @@
     python -m ops_hub health                    检查 VLM 服务状态
     python -m ops_hub ingest <json_file>        导入放货批次数据
     python -m ops_hub list-batches              列出放货批次
+    python -m ops_hub dispatch-board            刷新 dispatch board (JSON + HTML)
 """
 from __future__ import annotations
 
@@ -135,6 +136,7 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     print(f"导入完成: {len(records)} 条批次记录")
     for r in records:
         print(f"  - {r.ship_name} / {r.cargo_name} / {r.batch_date} / {r.batch_quantity}吨")
+    _auto_refresh_dispatch_board("release_batch_ingested")
 
 
 def cmd_list_batches(args: argparse.Namespace) -> None:
@@ -167,6 +169,7 @@ def cmd_complete_match_rule(args: argparse.Namespace) -> None:
     ok = agent.complete_release_dispatch_match_rule(args.release_batch_id, manual_note=args.note)
     if ok:
         print(f"已下表 release_batch_id={args.release_batch_id}")
+        _auto_refresh_dispatch_board("formal_commit")
     else:
         print(f"未找到匹配规则 release_batch_id={args.release_batch_id}")
         sys.exit(1)
@@ -182,6 +185,32 @@ def cmd_reopen_match_rule(args: argparse.Namespace) -> None:
     else:
         print(f"未找到放货记录 release_batch_id={args.release_batch_id}")
         sys.exit(1)
+
+
+def cmd_dispatch_board(args: argparse.Namespace) -> None:
+    from ops_hub.data_agent.dispatch_board import refresh_dispatch_board
+
+    result = refresh_dispatch_board(
+        reason=args.reason or "manual_refresh",
+        business_db_path=args.db or None,
+        rail_db_path=args.rail_db or None,
+    )
+    summary = result.get("summary", {})
+    print(f"✅ Dispatch board refreshed (reason={result.get('refresh_reason', '')})")
+    print(f"   JSON: {result['json_path']}")
+    print(f"   HTML: {result['html_path']}")
+    print(f"   release_batches: {summary.get('release_batch_total', 0)}")
+    print(f"   active: {summary.get('active_release_batches', 0)}")
+    print(f"   pending_total: {summary.get('pending_total', 0)}")
+
+
+def _auto_refresh_dispatch_board(reason: str) -> None:
+    """Best-effort auto-refresh after business state changes.  Silently ignores errors."""
+    try:
+        from ops_hub.data_agent.dispatch_board import refresh_dispatch_board
+        refresh_dispatch_board(reason=reason)
+    except Exception:
+        pass  # never let dashboard refresh block business operations
 
 
 def _output_result(result: dict, output_path: str | None) -> None:
@@ -270,6 +299,13 @@ def main() -> None:
     p_reopen_rule.add_argument("release_batch_id", help="release_batches.id")
     p_reopen_rule.add_argument("--note", default=None, help="手动备注")
     p_reopen_rule.set_defaults(func=cmd_reopen_match_rule)
+
+    # dispatch-board
+    p_dboard = subparsers.add_parser("dispatch-board", help="刷新 dispatch board (JSON + HTML)")
+    p_dboard.add_argument("--reason", default=None, help="刷新原因 (e.g. manual_refresh, release_batch_updated)")
+    p_dboard.add_argument("--db", default=None, help="业务库路径 (默认从配置读取)")
+    p_dboard.add_argument("--rail-db", default=None, help="95306数据库路径")
+    p_dboard.set_defaults(func=cmd_dispatch_board)
 
     args = parser.parse_args()
     if not args.command:

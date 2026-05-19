@@ -500,6 +500,501 @@ def _fetch_formal_summary_read_only(rail_db_path: Path) -> dict[str, dict[str, A
     return summary
 
 
+# ── JSON data generation (new: splits data from HTML rendering) ──────────
+
+DASHBOARD_DIR_DEFAULT: Path | None = None
+
+
+def _dashboard_dir() -> Path:
+    global DASHBOARD_DIR_DEFAULT
+    if DASHBOARD_DIR_DEFAULT is not None:
+        return DASHBOARD_DIR_DEFAULT
+    # Resolve relative to the project root (parent of src/)
+    candidate = Path(__file__).resolve().parents[3] / "dashboard"
+    if candidate.exists():
+        DASHBOARD_DIR_DEFAULT = candidate
+    else:
+        DASHBOARD_DIR_DEFAULT = candidate
+    return DASHBOARD_DIR_DEFAULT
+
+
+def generate_dispatch_board_data(
+    *,
+    business_db_path: str | Path,
+    rail_db_path: str | Path | None = None,
+    refresh_reason: str = "manual_refresh",
+) -> dict[str, Any]:
+    """Generate the dispatch board JSON payload from business & 95306 databases.
+
+    Returns a dict matching ``dispatch_board_schema.md``.  This is the
+    canonical data snapshot — the HTML template reads it at render time.
+    """
+    business_db_path = Path(business_db_path)
+    rail_db_path = Path(rail_db_path) if rail_db_path else None
+
+    with sqlite3.connect(business_db_path) as business_db:
+        business_db.row_factory = sqlite3.Row
+        release_rows = _fetch_release_batches(business_db)
+        candidate_summary = _fetch_candidate_summary(business_db)
+        audit_paths = _fetch_audit_paths(business_db)
+        text_pending_rows = _fetch_text_pending_audits(business_db)
+        unresolved_work_items = _fetch_unresolved_work_items(business_db)
+        candidates = _fetch_inspection_candidates_json(business_db)
+        reconcile_plans = _fetch_reconcile_plans_json(business_db)
+
+    formal_summary: dict[str, dict[str, Any]] = {}
+    if rail_db_path and rail_db_path.exists():
+        formal_summary = _fetch_formal_summary_read_only(rail_db_path)
+
+    visible_release_ids = {str(row.get("id") or "") for row in release_rows}
+    release_by_id = {str(row.get("id") or ""): row for row in release_rows}
+
+    # ── summary ──
+    active_count = sum(1 for row in release_rows if row.get("dispatch_status") == "in_progress")
+    matched_candidate_count = sum(item.get("matched_candidate_count", 0) for item in candidate_summary.values())
+    manual_pending_count = _manual_pending_count(candidate_summary)
+    unassigned = candidate_summary.get("__unassigned__", _empty_candidate_summary())
+    formal_count = sum(item.get("formal_match_count", 0) for key, item in formal_summary.items() if key in visible_release_ids)
+    formal_weight = sum(float(item.get("formal_weight") or 0) for key, item in formal_summary.items() if key in visible_release_ids)
+
+    summary = {
+        "pending_total": _unresolved_total_count(unresolved_work_items),
+        "pending_text_release": len(unresolved_work_items.get("text_release", [])),
+        "pending_release_plan_images": len(unresolved_work_items.get("departure_plan", [])),
+        "pending_inspection_assignment": len(unresolved_work_items.get("inspection_assignment", [])),
+        "pending_95306_check": len(unresolved_work_items.get("inspection_validation", [])),
+        "active_release_batches": active_count,
+        "release_batch_total": len(release_rows),
+        "matched_inspection_candidates": matched_candidate_count,
+        "manual_candidate_count": manual_pending_count,
+        "unassigned_candidate_count": unassigned.get("manual_pending_candidate_count", 0),
+        "formal_wagon_count": formal_count,
+        "formal_weight": formal_weight,
+    }
+
+    # ── pending_items ──
+    pending_items = _build_pending_items_json(unresolved_work_items, release_by_id)
+
+    # ── release_batches ──
+    release_batches_json = _build_release_batches_json(
+        release_rows, release_by_id, candidate_summary, formal_summary, audit_paths
+    )
+
+    return {
+        "meta": {
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "source_db": str(business_db_path.resolve()),
+            "rail95306_db": str(rail_db_path.resolve()) if rail_db_path else "",
+            "generator_version": "1.0.0",
+            "refresh_reason": refresh_reason,
+        },
+        "summary": summary,
+        "pending_items": pending_items,
+        "release_batches": release_batches_json,
+        "inspection_candidates": candidates,
+        "reconcile_plans": reconcile_plans,
+    }
+
+
+def refresh_dispatch_board(
+    reason: str = "manual_refresh",
+    *,
+    business_db_path: str | Path | None = None,
+    rail_db_path: str | Path | None = None,
+    dashboard_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Unified entry point: generate JSON + render HTML for the dispatch board.
+
+    Call this from any business path that changes dashboard-relevant state.
+    """
+    if business_db_path is None:
+        from ops_hub.data_agent.db import get_db_path
+        business_db_path = get_db_path()
+    if rail_db_path is None:
+        rail_db_path = Path.home() / "projects" / "repos" / "rail95306-sync" / "runtime" / "95306_collection.sqlite3"
+    if dashboard_dir is None:
+        dashboard_dir = _dashboard_dir()
+
+    business_db_path = Path(business_db_path)
+    rail_db_path = Path(rail_db_path)
+    dashboard_dir = Path(dashboard_dir)
+    dashboard_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Generate JSON data
+    data = generate_dispatch_board_data(
+        business_db_path=business_db_path,
+        rail_db_path=rail_db_path if rail_db_path.exists() else None,
+        refresh_reason=reason,
+    )
+
+    json_path = dashboard_dir / "dispatch_board_data.json"
+    tmp_json = json_path.with_suffix(".json.tmp")
+    tmp_json.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    tmp_json.replace(json_path)  # atomic rename
+
+    # 2. Render HTML from JSON data
+    html = _render_html_from_json(data)
+    html_path = dashboard_dir / "dispatch_board.html"
+    tmp_html = html_path.with_suffix(".html.tmp")
+    tmp_html.write_text(html, encoding="utf-8")
+    tmp_html.replace(html_path)
+
+    return {
+        "json_path": str(json_path),
+        "html_path": str(html_path),
+        "summary": data["summary"],
+        "refresh_reason": reason,
+    }
+
+
+def _build_pending_items_json(
+    items: dict[str, list[dict[str, Any]]],
+    release_by_id: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    order = [
+        ("text_release", "待匹配文字放货消息"),
+        ("departure_plan", "待匹配出港计划/放货图片"),
+        ("inspection_assignment", "待指认检装车通知单"),
+        ("inspection_validation", "待95306校验装车候选"),
+    ]
+    for key, display_type in order:
+        for item in items.get(key, []):
+            candidate_lots = _candidate_lot_text(item.get("candidate_ids") or [], release_by_id)
+            result.append({
+                "type": key,
+                "display_type": display_type,
+                "ship_name": item.get("ship_name") or "",
+                "cargo_name": item.get("cargo_name") or "",
+                "quantity": str(item.get("quantity") or ""),
+                "wagon_count": 0,
+                "plan_no": str(item.get("plan_id") or ""),
+                "contract_no": str(item.get("contract_no") or ""),
+                "status": str(item.get("status") or ""),
+                "reason": str(item.get("reason") or ""),
+                "candidate_lots": candidate_lots,
+                "source_image_path": str(item.get("source_file") or ""),
+                "source_json_path": str(item.get("json_path") or ""),
+                "recorded_at": str(item.get("created_at") or ""),
+            })
+    return result
+
+
+def _build_release_batches_json(
+    release_rows: list[dict[str, Any]],
+    release_by_id: dict[str, dict[str, Any]],
+    candidate_summary: dict[str, dict[str, Any]],
+    formal_summary: dict[str, dict[str, Any]],
+    audit_paths: dict[str, dict[str, str]],
+) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for row in release_rows:
+        release_id = str(row.get("id") or "")
+        candidates = candidate_summary.get(release_id, _empty_candidate_summary())
+        formal = formal_summary.get(release_id, {"formal_match_count": 0, "formal_weight": 0.0, "car_details": []})
+        paths = _source_paths(row, audit_paths)
+        status = str(row.get("dispatch_status") or "")
+        status_label = STATUS_LABELS.get(status, status or "待人工确认")
+        remaining = _remaining_text(row.get("batch_quantity"), formal.get("formal_weight"))
+        candidate_lots = _candidate_lot_text(candidates.get("candidate_release_batch_ids") or [], release_by_id)
+        car_details = formal.get("car_details") or []
+        formal_shipments = [
+            {
+                "car_no": item.get("car_no") or "",
+                "time": item.get("time") or "",
+                "inspection_file": item.get("inspection_file") or "",
+            }
+            for item in car_details
+        ]
+        result.append({
+            "release_batch_id": release_id,
+            "project": str(row.get("project") or ""),
+            "ship_name": str(row.get("ship_name") or ""),
+            "destination_station": str(row.get("destination_station") or ""),
+            "batch_sequence": str(row.get("batch_sequence") or ""),
+            "planned_quantity": _try_float(row.get("batch_quantity")),
+            "batch_date": str(row.get("batch_date") or ""),
+            "cargo_name": str(row.get("cargo_product_name") or row.get("cargo_name") or ""),
+            "plan_no": str(row.get("plan_id") or row.get("order_id") or ""),
+            "contract_no": str(row.get("contract_no") or ""),
+            "status": status_label,
+            "matched_candidate_count": candidates.get("matched_candidate_count", 0),
+            "manual_candidate_count": candidates.get("manual_pending_candidate_count", 0),
+            "candidate_lots": candidate_lots,
+            "formal_wagon_count": formal.get("formal_match_count", 0),
+            "formal_weight": formal.get("formal_weight", 0.0),
+            "remaining_quantity": remaining if remaining != "待计算" else None,
+            "source_image_path": paths.get("image_path", "待补充"),
+            "source_json_path": paths.get("json_path", "待补充"),
+            "state_file_path": paths.get("status_path", "待补充"),
+            "formal_shipments": formal_shipments,
+        })
+    return result
+
+
+def _fetch_inspection_candidates_json(db: sqlite3.Connection) -> list[dict[str, Any]]:
+    if not _table_exists(db, "inspection_ingestion_candidates"):
+        return []
+    rows = db.execute(
+        """
+        SELECT id, source_file_name, status, reason, release_batch_id, wagon_count,
+               car_numbers_json, payload_json, created_at
+        FROM inspection_ingestion_candidates
+        ORDER BY created_at DESC
+        """
+    ).fetchall()
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        payload = _json_object(row["payload_json"])
+        car_numbers = _json_array(row["car_numbers_json"])
+        needs_review = str(row["status"] or "") in ("pending", "ambiguous")
+        result.append({
+            "candidate_id": str(row["id"] or ""),
+            "project": str(payload.get("project_name") or payload.get("project") or ""),
+            "ship_name": str(payload.get("ship_name") or payload.get("ship") or ""),
+            "destination_station": str(payload.get("destination_station") or payload.get("station") or ""),
+            "candidate_lot": str(payload.get("lot") or payload.get("batch_sequence") or ""),
+            "release_batch_id": str(row["release_batch_id"] or ""),
+            "source_image_path": str(row["source_file_name"] or ""),
+            "source_json_path": str(payload.get("source_json_path") or payload.get("json_path") or ""),
+            "parsed_car_count": int(row["wagon_count"] or 0),
+            "defect_car_count": max(0, int(row["wagon_count"] or 0) - len(car_numbers)),
+            "status": str(row["status"] or ""),
+            "needs_review": needs_review,
+            "review_reasons": str(row["reason"] or ""),
+            "created_at": str(row["created_at"] or ""),
+        })
+    return result
+
+
+def _fetch_reconcile_plans_json(db: sqlite3.Connection) -> list[dict[str, Any]]:
+    if not _table_exists(db, "shipment_reconcile_plans"):
+        return []
+    rows = db.execute(
+        """
+        SELECT id, candidate_id, release_batch_id, safe_to_commit,
+               planned_rows, excluded_rows, review_reasons, status, created_at, committed_at
+        FROM shipment_reconcile_plans
+        ORDER BY created_at DESC
+        """
+    ).fetchall()
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        result.append({
+            "plan_id": str(row["id"] or ""),
+            "candidate_id": str(row["candidate_id"] or ""),
+            "release_batch_id": str(row["release_batch_id"] or ""),
+            "safe_to_commit": bool(row["safe_to_commit"]),
+            "planned_rows": int(row["planned_rows"] or 0),
+            "excluded_rows": int(row["excluded_rows"] or 0),
+            "review_reasons": str(row["review_reasons"] or ""),
+            "status": str(row["status"] or ""),
+            "created_at": str(row["created_at"] or ""),
+            "committed_at": str(row["committed_at"] or ""),
+        })
+    return result
+
+
+def _try_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _render_html_from_json(data: dict[str, Any]) -> str:
+    """Render the dispatch board HTML from a JSON data dict (no DB access)."""
+    meta = data.get("meta", {})
+    summary = data.get("summary", {})
+    pending_items = data.get("pending_items", [])
+    release_batches = data.get("release_batches", [])
+
+    generated_at = _h(meta.get("generated_at", ""))
+    source_db = _h(meta.get("source_db", ""))
+    rail_db = _h(meta.get("rail95306_db", "未配置"))
+    refresh_reason = _h(meta.get("refresh_reason", ""))
+
+    # summary cards
+    cards = [
+        ("待落实总数（文字/出港计划/检装车）", summary.get("pending_total", 0)),
+        ("待匹配文字放货消息", summary.get("pending_text_release", 0)),
+        ("待匹配出港计划/放货图片", summary.get("pending_release_plan_images", 0)),
+        ("待指认检装车通知单", summary.get("pending_inspection_assignment", 0)),
+        ("待95306校验装车候选", summary.get("pending_95306_check", 0)),
+        ("当前发运中批次数", summary.get("active_release_batches", 0)),
+        ("release_batch 总数", summary.get("release_batch_total", 0)),
+        ("已匹配检装车候选数（含已正式入库）", summary.get("matched_inspection_candidates", 0)),
+        ("待人工匹配候选数", summary.get("manual_candidate_count", 0)),
+        ("未分配待人工候选数", summary.get("unassigned_candidate_count", 0)),
+        ("已正式入库车数", summary.get("formal_wagon_count", 0)),
+        ("已正式入库重量", _fmt_num(summary.get("formal_weight"))),
+    ]
+    cards_html = "\n".join(
+        f'  <div class="card"><div class="label">{_h(label)}</div><div class="value">{_h(val)}</div></div>'
+        for label, val in cards
+    )
+
+    # pending_items table
+    pending_rows_html = _pending_items_table_html(pending_items)
+
+    # release_batches table (split active vs completed)
+    in_progress = [r for r in release_batches if r.get("status") != "已发完"]
+    completed = [r for r in release_batches if r.get("status") == "已发完"]
+    active_table = _release_batch_table_html(in_progress, "发运中 release_batch 明细")
+    completed_table = _release_batch_table_html(completed, "已发完 release_batch 明细")
+
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>放货 / 发运 / 图片识别 / 匹配入库看板</title>
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; color: #1f2937; background: #f8fafc; }}
+h1 {{ margin-bottom: 4px; }}
+.meta {{ color: #64748b; margin-bottom: 20px; font-size: 13px; }}
+.cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 18px 0; }}
+.card {{ background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; box-shadow: 0 1px 2px rgba(15,23,42,.05); }}
+.card .label {{ color: #64748b; font-size: 13px; }}
+.card .value {{ font-size: 28px; font-weight: 700; margin-top: 6px; }}
+.card .error {{ color: #dc2626; }}
+table {{ width: 100%; border-collapse: collapse; background: white; border: 1px solid #e2e8f0; margin-bottom: 16px; }}
+th, td {{ border: 1px solid #e2e8f0; padding: 8px; vertical-align: top; font-size: 13px; }}
+th {{ background: #e0f2fe; position: sticky; top: 0; }}
+.path {{ max-width: 260px; word-break: break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }}
+.mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }}
+.empty {{ text-align: center; color: #64748b; padding: 24px; }}
+.section-title {{ margin-top: 24px; }}
+.error-banner {{ background: #fee2e2; border: 1px solid #fecaca; padding: 16px; border-radius: 8px; margin-bottom: 16px; color: #991b1b; }}
+</style>
+</head>
+<body>
+<h1>放货记录 / 发运记录 / 图片下载识别 / 匹配入库看板</h1>
+<div class="meta">生成时间：{generated_at}；刷新原因：{refresh_reason}；业务库：{source_db}；95306正式匹配库（只读）：{rail_db}</div>
+<div id="error-banner" class="error-banner" style="display:none"></div>
+<div class="cards" id="summary-cards">
+{cards_html}
+</div>
+<h2 class="section-title">待落实消息汇总（优先处理）</h2>
+<div id="pending-items-section">
+{pending_rows_html}
+</div>
+<div id="active-release-batches-section">
+{active_table}
+</div>
+<div id="completed-release-batches-section">
+{completed_table}
+</div>
+<script>
+// Fallback: if JSON data is embedded in a script tag, this page also works standalone.
+// The primary loading path is via fetch('./dispatch_board_data.json').
+(function() {{
+  try {{
+    var script = document.getElementById('board-data');
+    if (script) {{
+      // Data was already rendered server-side — nothing to do.
+      console.log('Dispatch board rendered server-side.');
+      return;
+    }}
+  }} catch(e) {{}}
+  // If there's no embedded data, try to fetch it.
+  fetch('./dispatch_board_data.json')
+    .then(function(resp) {{
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return resp.json();
+    }})
+    .then(function(data) {{
+      console.log('Dispatch board data loaded from JSON.');
+    }})
+    .catch(function(err) {{
+      var banner = document.getElementById('error-banner');
+      banner.style.display = 'block';
+      banner.textContent = '⚠️ 无法加载 dispatch_board_data.json: ' + err.message + '。请运行 generate_dispatch_board_data.py 生成数据文件。';
+    }});
+}})();
+</script>
+</body>
+</html>
+"""
+
+
+def _pending_items_table_html(items: list[dict[str, Any]]) -> str:
+    rows = []
+    for item in items:
+        rows.append(
+            "<tr>"
+            f"<td>{_h(item.get('display_type'))}</td>"
+            f"<td>{_h(item.get('ship_name'))}</td>"
+            f"<td>{_h(item.get('cargo_name'))}</td>"
+            f"<td>{_h(item.get('quantity'))}</td>"
+            f"<td>{_h(item.get('plan_no'))}</td>"
+            f"<td>{_h(item.get('contract_no'))}</td>"
+            f"<td>{_h(item.get('status'))}</td>"
+            f"<td>{_h(item.get('reason'))}</td>"
+            f"<td>{_h(item.get('candidate_lots'))}</td>"
+            f"<td class='path'>{_file_link(str(item.get('source_image_path') or ''), '来源')}</td>"
+            f"<td class='path'>{_file_link(str(item.get('source_json_path') or ''), 'JSON')}</td>"
+            f"<td>{_h(item.get('recorded_at'))}</td>"
+            "</tr>"
+        )
+    if not rows:
+        rows.append("<tr><td colspan='12' class='empty'>暂无未匹配待落实消息</td></tr>")
+    return (
+        "<table><thead><tr>"
+        "<th>类型</th><th>船名</th><th>货名</th><th>数量/车数</th><th>计划号</th><th>合同号</th>"
+        "<th>状态</th><th>原因</th><th>候选 lot</th><th>来源</th><th>JSON</th><th>记录时间</th>"
+        "</tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table>"
+    )
+
+
+def _release_batch_table_html(batches: list[dict[str, Any]], title: str) -> str:
+    rows = []
+    for rb in batches:
+        car_details = rb.get("formal_shipments") or []
+        car_html = _car_details_html(car_details) if car_details else ""
+        rows.append(
+            "<tr>"
+            f"<td>{_h(rb.get('project'))}</td>"
+            f"<td>{_h(rb.get('ship_name'))}</td>"
+            f"<td>{_h(rb.get('destination_station'))}</td>"
+            f"<td>{_h(rb.get('batch_sequence'))}</td>"
+            f"<td>{_fmt_num(rb.get('planned_quantity'))}</td>"
+            f"<td>{_h(rb.get('batch_date'))}</td>"
+            f"<td>{_h(rb.get('cargo_name'))}</td>"
+            f"<td>{_h(rb.get('plan_no'))}</td>"
+            f"<td>{_h(rb.get('contract_no'))}</td>"
+            f"<td>{_h(rb.get('status'))}</td>"
+            f"<td>{rb.get('matched_candidate_count', 0)}</td>"
+            f"<td>{rb.get('manual_candidate_count', 0)}</td>"
+            f"<td>{_h(rb.get('candidate_lots'))}</td>"
+            f"<td>{rb.get('formal_wagon_count', 0)}</td>"
+            f"<td>{_fmt_num(rb.get('formal_weight'))}</td>"
+            f"<td>{car_html}</td>"
+            f"<td>{_h(rb.get('remaining_quantity'))}</td>"
+            f"<td class='path'>{_file_link(str(rb.get('source_image_path') or ''), '打开图片')}</td>"
+            f"<td class='path'>{_file_link(str(rb.get('source_json_path') or ''), '打开JSON')}</td>"
+            f"<td class='path'>{_file_link(str(rb.get('state_file_path') or ''), '打开状态')}</td>"
+            "</tr>"
+        )
+    if not rows:
+        rows.append("<tr><td colspan='20' class='empty'>暂无 release_batch 数据</td></tr>")
+    return (
+        f'<h2 class="section-title">{_h(title)}</h2>'
+        "<table><thead><tr>"
+        "<th>项目</th><th>船名</th><th>到站</th><th>lot</th><th>计划吨数</th><th>批次日期</th>"
+        "<th>货物品名</th><th>计划号/订单号</th><th>合同号</th><th>当前状态</th>"
+        "<th>已匹配候选数</th><th>待人工候选数</th><th>候选 lot 列表</th>"
+        "<th>已正式入库车数</th><th>已正式入库重量</th><th>已发运车辆明细</th>"
+        "<th>理论剩余货量/车数</th><th>原始图片</th><th>JSON</th><th>状态文件</th>"
+        "</tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table>"
+    )
+
+
 def _table_exists(db: sqlite3.Connection, table: str) -> bool:
     return db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
 

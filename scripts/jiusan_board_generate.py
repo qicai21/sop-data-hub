@@ -125,6 +125,29 @@ def _human_readable_plan(plan: Optional[dict]) -> str:
     return "\n".join(lines)
 
 
+def _plan_dict_with_details(row) -> dict:
+    """将 sqlite3.Row 转换为 dict 并解析 plan_details_json 为 details"""
+    d = dict(row)
+    if "plan_details_json" in d:
+        try:
+            d["details"] = json.loads(d["plan_details_json"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return d
+
+
+def _has_train_02_conflict(source_conflicts: list) -> bool:
+    """检查 source_conflicts 中是否包含 train_02 冲突"""
+    return any(c.get("object") == "container_cycle_train_02" for c in source_conflicts)
+
+
+def _train_02_status(source_conflicts: list, ts_02: dict) -> str:
+    """生成 train_02 的概要状态文本"""
+    if _has_train_02_conflict(source_conflicts):
+        return f"⚠️ 人工确认:已发出并到达高桥镇站 | 95306:{ts_02.get('summary_status', '未知')}"
+    return ts_02.get("summary_status", "待同步")
+
+
 def _load_tracking_snapshot() -> dict:
     """从追踪快照文件读取 tracking status"""
     tracking_path = REPO_ROOT / "samples" / "jiusan_tracking_status_snapshot.json"
@@ -208,16 +231,18 @@ def generate(conn) -> dict:
 
     # ── 状态冲突检测 ──
     source_conflicts = []
-    # Train 02: 用户确认已发车+到高桥镇, 但95306仍显示已制单
+    # Train 02: 用户确认已发车+已到高桥镇站, 但95306可能落后
     train_02_manual = "已发出并到达高桥镇站"
-    train_02_95306 = "已制单/待发"
     ts_02 = tracking_data.get("container_cycle_train_02", {})
-    if ts_02.get("summary_status", "").find("已制单") >= 0 or ts_02.get("departed_car_count", 0) == 0:
+    ts_02_95306 = ts_02.get("summary_status", "未知")
+    # 冲突条件：人工确认已到达，但95306尚未确认到达/交付
+    if ts_02 and (ts_02.get("arrived_car_count", 0) < ts_02.get("departed_car_count", 0)
+                  or ts_02.get("delivered_car_count", 0) < ts_02.get("departed_car_count", 0)):
         source_conflicts.append({
             "object": "container_cycle_train_02",
             "manual_status": train_02_manual,
-            "status_95306": train_02_95306,
-            "resolution": "等待下一次 95306 同步或人工确认覆盖",
+            "status_95306": ts_02_95306,
+            "resolution": "人工确认已到达高桥镇站，但 95306 同步仍显示在途/未交付。等待下一次 95306 同步或人工确认覆盖。",
         })
 
     # ── 构建 cycle_trains 区块 ──
@@ -418,7 +443,10 @@ def generate(conn) -> dict:
             },
             "container_train_02": {
                 "wagon_count": 54,
-                "status": "港口装箱待发",
+                "status": _train_02_status(source_conflicts, ts_02),
+                "status_manual": train_02_manual if _has_train_02_conflict(source_conflicts) else None,
+                "status_95306": ts_02_95306 if _has_train_02_conflict(source_conflicts) else None,
+                "source_conflict": True if _has_train_02_conflict(source_conflicts) else False,
                 "depart": None,
                 "arrive": None,
             },
@@ -427,7 +455,12 @@ def generate(conn) -> dict:
         "container_resources": {
             "total_containers": 216,  # 54×2×2
             "train_01": {"status": "returning", "containers": 108, "note": "已卸空，返程中"},
-            "train_02": {"status": "loaded", "containers": 108, "note": "港口装箱完成，等待发车"},
+            "train_02": {
+                "status": "departed_conflict" if _has_train_02_conflict(source_conflicts) else "loaded",
+                "containers": 108,
+                "note": f"人工确认已发出（95306仍标记{ts_02_95306}）" if _has_train_02_conflict(source_conflicts)
+                        else "港口装箱完成",
+            },
         },
         "cycle_trains": cycle_trains_block,
         "one_time_shipments": one_time_shipments,
@@ -475,7 +508,9 @@ def generate(conn) -> dict:
             "note": "当前 Phase 2.5 阶段无定时任务。只打开 HTML 不会自动更新。需在服务器运行 python3 scripts/jiusan_refresh_board.py 后再刷新浏览器。",
         },
         "source_conflicts": source_conflicts,
-        "active_plan_human": _human_readable_plan(dict(active_plan) if active_plan else None),
+        "active_plan_human": _human_readable_plan(
+            _plan_dict_with_details(active_plan) if active_plan else None
+        ),
         "95306_scan_status": {
             "last_scan": last_scan['scan_time'] if last_scan else None,
             "new_records": last_scan['new_records'] if last_scan else None,
@@ -752,7 +787,7 @@ td {{ padding: 6px 8px; border-bottom: 1px solid #1e3040; }}
     <h2>📊 今日摘要</h2>
     <div style="font-size:0.9em; line-height:1.8;">
         {dashboard.get('daily_summary', {}).get('container_train_01', {}).get('wagon_count', 0)} 车集装箱列1 已交付·返空中<br>
-        {dashboard.get('daily_summary', {}).get('container_train_02', {}).get('wagon_count', 0)} 车集装箱列2 港口待发<br>
+        {dashboard.get('daily_summary', {}).get('container_train_02', {}).get('wagon_count', 0)} 车集装箱列2 {dashboard.get('daily_summary', {}).get('container_train_02', {}).get('status', '待同步')}<br>
         散粮 40 车/2,571吨 — 一次性发运（非循环）
     </div>
 </div>

@@ -1,7 +1,7 @@
 {
   "_meta": {
     "dashboard_name": "九三大豆循环运输看板",
-    "generated_at": "2026-05-20T06:20:11.530400+00:00",
+    "generated_at": "2026-05-20T06:26:24.103186+00:00",
     "data_sources": [
       "jiusan_cycle.db",
       "95306_sync"
@@ -80,7 +80,7 @@
         "unload_time": null,
         "return_time": null,
         "status": "unloaded",
-        "notes": "已交付，返空中，预计今晚到锦州港。箱型: {\"open_top_count\": 102, \"top_open_count\": 6, \"unknown_count\": 0, \"open_top_weight_tons\": 2907.0, \"top_open_weight_tons\": 160.2, \"business_weight_tons\": 3067.2, \"rail_marked_weight_tons\": 3456.0, \"weight_diff_tons\": -388.8, \"weight_source\": \"container_type_rule\"}",
+        "notes": "已交付（95306 状态=80）。95306 不追踪返空，返空状态待人工确认。箱型: {\"open_top_count\": 102, \"top_open_count\": 6, \"unknown_count\": 0, \"open_top_weight_tons\": 2907.0, \"top_open_weight_tons\": 160.2, \"business_weight_tons\": 3067.2, \"rail_marked_weight_tons\": 3456.0, \"weight_diff_tons\": -388.8, \"weight_source\": \"container_type_rule\"}",
         "container_type_summary": {
           "open_top_count": 102,
           "top_open_count": 6,
@@ -216,6 +216,7 @@
     "adjustment": 0.0,
     "red_line": 20000.0,
     "days_supported": 8.2,
+    "data_quality": "sample",
     "warning_level": "normal",
     "other_source_inferred": 2861.8
   },
@@ -230,7 +231,11 @@
     },
     {
       "type": "train_01_return",
-      "question": "container_cycle_train_01 是否按预计今晚到锦州港？"
+      "question": "container_cycle_train_01 是否已到锦州港？95306 不追踪返空状态，当前标记为\"预计返空中\"需人工确认。"
+    },
+    {
+      "type": "train_02_departure",
+      "question": "container_cycle_train_02 是否已发车？95306 状态为\"已制单\"（制票完成），尚未记录发车时间。"
     },
     {
       "type": "bulk_non_return",
@@ -239,11 +244,11 @@
     },
     {
       "type": "inventory_other_source",
-      "question": "库存差额是否来自其他来源入库？反推值需确认"
+      "question": "库存差额是否来自其他来源入库？当前库存为样例值（data_quality=sample），需晨报/人工录入确认。"
     }
   ],
   "95306_scan_status": {
-    "last_scan": "2026-05-20T06:20:11.496805+00:00",
+    "last_scan": "2026-05-20T06:26:24.075177+00:00",
     "new_records": 148,
     "matched_to_train": 2
   }

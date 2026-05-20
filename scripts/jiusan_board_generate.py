@@ -199,22 +199,29 @@ def generate(conn) -> dict:
     # ── 构建 factory_inventory 区块 ──
     inv_block = None
     if inv:
+        inv_dict = dict(inv)  # sqlite3.Row → dict
+        inv_notes = inv_dict.get('notes', '') or ''
+        data_quality = 'sample' if 'data_quality=sample' in inv_notes else (
+            'user_reported' if 'data_quality=user_reported' in inv_notes else
+            'actual' if 'data_quality=actual' in inv_notes else 'unknown'
+        )
         inv_block = {
-            "record_date": inv['record_date'],
-            "opening_stock": inv['opening_stock'],
-            "line_in_qty": inv['line_in_qty'],
-            "other_source_in_qty": inv['other_source_in_qty'],
-            "consumption": inv['consumption'],
-            "closing_stock": inv['closing_stock'],
-            "adjustment": inv['adjustment'],
-            "red_line": inv['red_line'],
-            "days_supported": round(inv['days_supported'], 1) if inv['days_supported'] else None,
-            "warning_level": "normal" if (inv['closing_stock'] or 0) > (inv['red_line'] or 0) * 1.2
-                            else ("yellow" if (inv['closing_stock'] or 0) > (inv['red_line'] or 0)
+            "record_date": inv_dict['record_date'],
+            "opening_stock": inv_dict['opening_stock'],
+            "line_in_qty": inv_dict['line_in_qty'],
+            "other_source_in_qty": inv_dict['other_source_in_qty'],
+            "consumption": inv_dict['consumption'],
+            "closing_stock": inv_dict['closing_stock'],
+            "adjustment": inv_dict['adjustment'],
+            "red_line": inv_dict['red_line'],
+            "days_supported": round(inv_dict['days_supported'], 1) if inv_dict['days_supported'] else None,
+            "data_quality": data_quality,
+            "warning_level": "normal" if (inv_dict['closing_stock'] or 0) > (inv_dict['red_line'] or 0) * 1.2
+                            else ("yellow" if (inv_dict['closing_stock'] or 0) > (inv_dict['red_line'] or 0)
                                   else "red"),
             "other_source_inferred": round(
-                inv['closing_stock'] - inv['opening_stock'] - inv['line_in_qty'] + inv['consumption']
-                - (inv['adjustment'] or 0), 2
+                inv_dict['closing_stock'] - inv_dict['opening_stock'] - inv_dict['line_in_qty'] + inv_dict['consumption']
+                - (inv_dict['adjustment'] or 0), 2
             ),
         }
 
@@ -238,7 +245,11 @@ def generate(conn) -> dict:
         },
         {
             "type": "train_01_return",
-            "question": "container_cycle_train_01 是否按预计今晚到锦州港？",
+            "question": "container_cycle_train_01 是否已到锦州港？95306 不追踪返空状态，当前标记为\"预计返空中\"需人工确认。",
+        },
+        {
+            "type": "train_02_departure",
+            "question": "container_cycle_train_02 是否已发车？95306 状态为\"已制单\"（制票完成），尚未记录发车时间。",
         },
         {
             "type": "bulk_non_return",
@@ -247,7 +258,7 @@ def generate(conn) -> dict:
         },
         {
             "type": "inventory_other_source",
-            "question": "库存差额是否来自其他来源入库？反推值需确认",
+            "question": "库存差额是否来自其他来源入库？当前库存为样例值（data_quality=sample），需晨报/人工录入确认。",
         },
     ]
 
@@ -396,6 +407,9 @@ def generate_html(dashboard: dict) -> str:
     inv = dashboard.get('factory_inventory', {}) or {}
     inv_level = inv.get('warning_level', 'normal')
     inv_icon = {"normal": "🟢", "yellow": "🟡", "red": "🔴"}.get(inv_level, "⚪")
+    inv_dq = inv.get('data_quality', 'unknown')
+    inv_dq_label = {"sample": "样例值（待确认）", "user_reported": "用户填报", "actual": "实际数据"}.get(inv_dq, "未知")
+    inv_dq_icon = {"sample": "⚠️", "user_reported": "📝", "actual": "✅"}.get(inv_dq, "❓")
 
     # 待确认 HTML
     pending_html = ""
@@ -503,7 +517,7 @@ td {{ padding: 6px 8px; border-bottom: 1px solid #1e3040; }}
 </div>
 
 <div class="card">
-    <h2>🏭 厂家库存</h2>
+    <h2>🏭 厂家库存 {inv_dq_icon} {inv_dq_label}</h2>
     <div class="inv-level">{inv_icon} 库存水平: {inv_level}</div>
     <div class="inv-detail">
         <span>库存: {inv.get('closing_stock', '?')} 吨</span>

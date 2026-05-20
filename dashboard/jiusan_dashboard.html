@@ -46,7 +46,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
 <body>
 <h1>🌱 九三大豆循环运输看板</h1>
 <div class="meta">
-    <span>生成时间: 2026-05-20 14:20</span> |
+    <span>生成时间: 2026-05-20 14:26</span> |
     <span>数据窗口: >= 2026-05-19 06:00</span> |
     <span>Phase 2 MVP</span>
 </div>
@@ -111,7 +111,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
             <div class="train-timeline">
                 <span>发车: 2026-05-19 11:31</span>
                 <span>到站: 2026-05-19 19:15</span>
-                <span class="note">已交付，返空中，预计今晚到锦州港。箱型: {"open_top_count": 102, "top_open_count": 6, "unknown_count": 0, "open_top_weight_tons": 2907.0, "top_open_weight_tons": 160.2, "business_weight_tons": 3067.2, "rail_marked_weight_tons": 3456.0, "weight_diff_tons": -388.8, "weight_source": "container_type_rule"}</span>
+                <span class="note">已交付（95306 状态=80）。95306 不追踪返空，返空状态待人工确认。箱型: {"open_top_count": 102, "top_open_count": 6, "unknown_count": 0, "open_top_weight_tons": 2907.0, "top_open_weight_tons": 160.2, "business_weight_tons": 3067.2, "rail_marked_weight_tons": 3456.0, "weight_diff_tons": -388.8, "weight_source": "container_type_rule"}</span>
             </div>
         </div>
         <div class="train-card">
@@ -213,7 +213,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
 </div>
 
 <div class="card">
-    <h2>🏭 厂家库存</h2>
+    <h2>🏭 厂家库存 ⚠️ 样例值（待确认）</h2>
     <div class="inv-level">🟢 库存水平: normal</div>
     <div class="inv-detail">
         <span>库存: 45000.0 吨</span>
@@ -237,7 +237,11 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
         </div>
         <div class="pending-item">
             <span>⏳</span>
-            <span>container_cycle_train_01 是否按预计今晚到锦州港？</span>
+            <span>container_cycle_train_01 是否已到锦州港？95306 不追踪返空状态，当前标记为"预计返空中"需人工确认。</span>
+        </div>
+        <div class="pending-item">
+            <span>⏳</span>
+            <span>container_cycle_train_02 是否已发车？95306 状态为"已制单"（制票完成），尚未记录发车时间。</span>
         </div>
         <div class="pending-item">
             <span>✅</span>
@@ -245,13 +249,13 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
         </div>
         <div class="pending-item">
             <span>⏳</span>
-            <span>库存差额是否来自其他来源入库？反推值需确认</span>
+            <span>库存差额是否来自其他来源入库？当前库存为样例值（data_quality=sample），需晨报/人工录入确认。</span>
         </div>
 </div>
 
 </div>
 <div class="meta" style="margin-top:20px;">
-    数据来源: jiusan_cycle.db | 扫描: 2026-05-20T06:20:11.496805+00:00 | 148 条记录
+    数据来源: jiusan_cycle.db | 扫描: 2026-05-20T06:26:24.075177+00:00 | 148 条记录
 </div>
 </body>
 </html>

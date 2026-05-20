@@ -214,7 +214,7 @@ def write_trains_and_runs(conn, scan):
         c1['count'], c1['count'] * 2, c1.get('total_weight', 0),
         c1['departed_at'], c1['arrived_at'],
         "unloaded", "95306_sync", f"scan_{scan['scan_time']}",
-        f"已交付，返空中，预计今晚到锦州港。"
+        f"已交付（95306 状态=80）。95306 不追踪返空，返空状态待人工确认。"
         f"箱型: {c1_types}",
         now, now
     ))
@@ -393,7 +393,8 @@ def write_inventory_sample(conn, scan):
         inv['red_line'],
         inv['days_supported'],
         "manual",
-        "Phase 2 weight patch — line_in_qty 使用业务重量。"
+        "Phase 2.5 — data_quality=sample。库存值为样例，待晨报/人工录入确认。"
+        "line_in_qty 使用业务重量。"
         "集装箱05-19业务重量: {:.1f}吨 + 散粮业务重量: {:.1f}吨 = {:.1f}吨。"
         "反推其他来源: {:.0f} 吨。".format(
             c1_business, b_business, arrived_business_weight, other_reverse

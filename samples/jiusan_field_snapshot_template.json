@@ -1,0 +1,47 @@
+{
+  "snapshot_time": "2026-05-20 07:00",
+  "source": "manual_or_morning_report",
+  "_schema_version": "1.0",
+  "_note": "Phase 2.5 人工实况模板。所有 null 值需手动填报。",
+  "port": {
+    "empty_containers": null,
+    "loaded_containers": null,
+    "loaded_container_train_lines": null,
+    "bulk_empty_wagons_in_port": null,
+    "bulk_loaded_wagons_in_port": null,
+    "_notes": "锦州港当前空箱/重箱/装箱列数/散粮空重车数"
+  },
+  "in_transit": {
+    "loaded_containers": null,
+    "returning_empty_containers": null,
+    "container_train_01_status": null,
+    "container_train_02_status": null,
+    "_notes": "铁路在途重箱/返空空箱/两列当前状态描述"
+  },
+  "destination": {
+    "xintaizi_loaded_containers": null,
+    "xintaizi_empty_containers": null,
+    "line_330_loaded_containers": null,
+    "line_330_empty_containers": null,
+    "_notes": "新台子站内重箱/空箱，三三〇处专用线重箱/空箱"
+  },
+  "flows": {
+    "yesterday_loaded_containers": null,
+    "yesterday_dispatched_containers": null,
+    "yesterday_arrived_containers": null,
+    "yesterday_unloaded_containers": null,
+    "yesterday_returned_empty_containers": null,
+    "yesterday_bulk_arrived_wagons": null,
+    "_notes": "昨日期流量：装箱/发车/到站/卸空/返空/散粮到站"
+  },
+  "factory_inventory": {
+    "opening_stock_tons": null,
+    "line_in_business_tons": null,
+    "other_source_in_tons": null,
+    "consumption_tons": 5500,
+    "closing_stock_tons": null,
+    "red_line_tons": null,
+    "data_quality": "manual_pending",
+    "_notes": "厂家库存。data_quality=manual_pending 表示待人工录入。5500 为计划日耗（来自计划B）"
+  }
+}

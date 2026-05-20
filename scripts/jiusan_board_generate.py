@@ -443,7 +443,9 @@ h1 {{ font-size: 1.5em; margin-bottom: 8px; color: #fff; }}
 .train-icon {{ font-size: 1.2em; }}
 .status-badge {{ font-size: 0.78em; padding: 2px 8px; border-radius: 10px; }}
 .status-returning {{ background: #f9a825; color: #1a2633; }}
+.status-returned {{ background: #4caf50; color: #1a2633; }}
 .status-loaded {{ background: #4fc3f7; color: #1a2633; }}
+.status-departed {{ background: #ff9800; color: #1a2633; }}
 .status-pending {{ background: #78909c; color: #fff; }}
 .status-unloaded {{ background: #66bb6a; color: #1a2633; }}
 .train-detail {{ display: flex; gap: 16px; font-size: 0.85em; color: #b0bec5; margin-bottom: 4px; }}

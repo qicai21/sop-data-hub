@@ -1,7 +1,7 @@
 {
   "_meta": {
     "dashboard_name": "九三大豆循环运输看板",
-    "generated_at": "2026-05-20T06:26:24.103186+00:00",
+    "generated_at": "2026-05-20T06:46:17.968714+00:00",
     "data_sources": [
       "jiusan_cycle.db",
       "95306_sync"
@@ -67,7 +67,7 @@
       "train_id": "container_cycle_train_01",
       "type": "集装箱",
       "lot": "lot01",
-      "status": "returning",
+      "status": "returned",
       "current_round": 1,
       "destination_line": "三三〇处专用线",
       "last_run": {
@@ -78,9 +78,9 @@
         "depart_time": "2026-05-19 11:31:00",
         "arrive_time": "2026-05-19 19:15:00",
         "unload_time": null,
-        "return_time": null,
+        "return_time": "2026-05-20 20:00",
         "status": "unloaded",
-        "notes": "已交付（95306 状态=80）。95306 不追踪返空，返空状态待人工确认。箱型: {\"open_top_count\": 102, \"top_open_count\": 6, \"unknown_count\": 0, \"open_top_weight_tons\": 2907.0, \"top_open_weight_tons\": 160.2, \"business_weight_tons\": 3067.2, \"rail_marked_weight_tons\": 3456.0, \"weight_diff_tons\": -388.8, \"weight_source\": \"container_type_rule\"}",
+        "notes": "已交付，返空已到锦州港（用户确认 20日20时到港）。95306 状态=80(货物已交付)。。箱型: {\"open_top_count\": 102, \"top_open_count\": 6, \"unknown_count\": 0, \"open_top_weight_tons\": 2907.0, \"top_open_weight_tons\": 160.2, \"business_weight_tons\": 3067.2, \"rail_marked_weight_tons\": 3456.0, \"weight_diff_tons\": -388.8, \"weight_source\": \"container_type_rule\"}",
         "container_type_summary": {
           "open_top_count": 102,
           "top_open_count": 6,
@@ -98,7 +98,7 @@
       "train_id": "container_cycle_train_02",
       "type": "集装箱",
       "lot": "lot01",
-      "status": "loaded",
+      "status": "departed",
       "current_round": 1,
       "destination_line": "三三〇处专用线",
       "last_run": {
@@ -110,8 +110,8 @@
         "arrive_time": null,
         "unload_time": null,
         "return_time": null,
-        "status": "pending",
-        "notes": "锦州港装箱完成，待发。箱型: {\"open_top_count\": 64, \"top_open_count\": 44, \"unknown_count\": 0, \"open_top_weight_tons\": 1824.0, \"top_open_weight_tons\": 1174.8, \"business_weight_tons\": 2998.8, \"rail_marked_weight_tons\": 3456.0, \"weight_diff_tons\": -457.2, \"weight_source\": \"container_type_rule\"}",
+        "status": "departed",
+        "notes": "锦州港已发车（用户确认）。95306 状态=35(已制单)，发车时间待确认。。箱型: {\"open_top_count\": 64, \"top_open_count\": 44, \"unknown_count\": 0, \"open_top_weight_tons\": 1824.0, \"top_open_weight_tons\": 1174.8, \"business_weight_tons\": 2998.8, \"rail_marked_weight_tons\": 3456.0, \"weight_diff_tons\": -457.2, \"weight_source\": \"container_type_rule\"}",
         "container_type_summary": {
           "open_top_count": 64,
           "top_open_count": 44,
@@ -182,7 +182,7 @@
         "node": "散粮到站事实 (bulk_arrival)",
         "formula": "散粮40车到站 = 95306 已到达事实",
         "expected": 40,
-        "actual": 40,
+        "actual": 0,
         "match": true,
         "adjustment": 0,
         "note": "一次性发运，不计入循环列效率"
@@ -211,14 +211,14 @@
     "opening_stock": 42000.0,
     "line_in_qty": 5638.2,
     "other_source_in_qty": 0.0,
-    "consumption": 5500.0,
-    "closing_stock": 45000.0,
+    "consumption": 0.0,
+    "closing_stock": 5000.0,
     "adjustment": 0.0,
-    "red_line": 20000.0,
-    "days_supported": 8.2,
-    "data_quality": "sample",
-    "warning_level": "normal",
-    "other_source_inferred": 2861.8
+    "red_line": 8000.0,
+    "days_supported": 0.9,
+    "data_quality": "user_reported",
+    "warning_level": "red",
+    "other_source_inferred": -42638.2
   },
   "pending_confirmations": [
     {
@@ -248,7 +248,7 @@
     }
   ],
   "95306_scan_status": {
-    "last_scan": "2026-05-20T06:26:24.075177+00:00",
+    "last_scan": "2026-05-20T06:46:17.894081+00:00",
     "new_records": 148,
     "matched_to_train": 2
   }

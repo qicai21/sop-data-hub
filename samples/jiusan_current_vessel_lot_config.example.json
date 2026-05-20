@@ -1,26 +1,31 @@
 {
   "_schema_version": "1.0",
-  "_note": "当前船/lot配置。所有null值表示待用户确认/未配置。",
-  "vessel_name": null,
+  "_note": "当前船/lot配置。已从用户确认事实写入（2026-05-20 Phase 2.5-D）。未从旧版看板/放货库的 release_batches 表读取到现有九三船名/lot数据。",
+  "vessel_name": "玛格丽特",
   "lot1": {
     "name": "lot1",
-    "cargo_mode": "container",
-    "total_planned_tons": null,
+    "cargo_mode": "container_open_top",
+    "display_name": "lot1：敞顶箱发运",
+    "total_planned_tons": 48719,
     "confirmed_dispatched_tons": 6066.0,
     "candidate_dispatched_tons": 6066.0,
-    "remaining_tons": null,
-    "note": "集装箱货。总货量待配置。已发6066吨=3067.2(列1)+2998.8(列2)。"
+    "remaining_tons": 42653.0,
+    "remaining_formula": "48719 - 6066.0",
+    "note": "敞顶箱发运。已发6066吨=3067.2(列1)+2998.8(列2)。剩余=48719-6066.0=42653.0吨。后续以数据库放货记录为准。"
   },
   "lot2": {
     "name": "lot2",
     "cargo_mode": "bulk_wagon",
-    "total_planned_tons": null,
+    "display_name": "lot2：散粮车/整车发运",
+    "total_planned_tons": 20300,
     "confirmed_dispatched_tons": 249.0,
     "candidate_dispatched_tons": 2571.0,
-    "remaining_tons": null,
+    "confirmed_remaining_tons": 20051.0,
+    "candidate_remaining_tons": 17729.0,
     "confirmed_cars": ["8103798", "8101469", "8101431", "8105474"],
     "candidate_car_count": 40,
     "candidate_weight_tons": 2571.0,
-    "note": "散粮车。4车用户确认(249吨)，36车待归属确认(2322吨)。总货量待配置。"
+    "pending_cars": 36,
+    "note": "散粮车发运。4车用户确认(249吨)，36车待归属确认(2322吨)。确认剩余=20300-249=20051吨；候选剩余=20300-2571=17729吨。36车归属待确认，不能直接扣减正式剩余。"
   }
 }

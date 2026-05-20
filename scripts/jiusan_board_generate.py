@@ -390,22 +390,26 @@ def generate(conn) -> dict:
         "current_vessel_lots": {
             "vessel_name": vessel_config.get("vessel_name") or "待用户确认",
             "lot1": {
-                "mode": "container",
+                "mode": vessel_config.get("lot1", {}).get("cargo_mode", "container_open_top"),
+                "display_name": vessel_config.get("lot1", {}).get("display_name", "lot1：敞顶箱发运"),
                 "total_planned_tons": vessel_config.get("lot1", {}).get("total_planned_tons"),
                 "confirmed_dispatched_tons": vessel_config.get("lot1", {}).get("confirmed_dispatched_tons"),
                 "remaining_tons": vessel_config.get("lot1", {}).get("remaining_tons"),
-                "note": vessel_config.get("lot1", {}).get("note") or "总货量待配置",
+                "remaining_formula": vessel_config.get("lot1", {}).get("remaining_formula"),
+                "note": vessel_config.get("lot1", {}).get("note") or "已发按业务重量计算；如后续有真实放货/装车数据，以数据库为准。",
             },
             "lot2": {
                 "mode": "bulk_wagon",
+                "display_name": vessel_config.get("lot2", {}).get("display_name", "lot2：散粮车/整车发运"),
                 "total_planned_tons": vessel_config.get("lot2", {}).get("total_planned_tons"),
                 "confirmed_cars": 4,
                 "confirmed_weight_tons": 249.0,
+                "confirmed_remaining_tons": vessel_config.get("lot2", {}).get("confirmed_remaining_tons"),
                 "candidate_cars": 40,
                 "candidate_weight_tons": 2571.0,
                 "pending_cars": 36,
-                "remaining_tons": vessel_config.get("lot2", {}).get("remaining_tons"),
-                "note": "仅4车用户确认（8103798/8101469/8101431/8105474），36车归属待确认",
+                "candidate_remaining_tons": vessel_config.get("lot2", {}).get("candidate_remaining_tons"),
+                "note": vessel_config.get("lot2", {}).get("note") or "4车为用户确认本船；40车为同窗口候选。36车归属待确认，不能直接扣减正式剩余。",
             },
         },
         "refresh_policy": {
@@ -577,25 +581,38 @@ def generate_html(dashboard: dict) -> str:
     vessel = dashboard.get('current_vessel_lots', {})
     lot1 = vessel.get('lot1', {})
     lot2 = vessel.get('lot2', {})
+    lot1_remaining = lot1.get('remaining_tons')
+    lot1_remaining_fmt = f"{lot1_remaining:,.1f}" if lot1_remaining is not None else "待配置"
+    lot1_planned = lot1.get('total_planned_tons')
+    lot1_planned_fmt = f"{lot1_planned:,}" if lot1_planned is not None else "待配置"
+    lot2_planned = lot2.get('total_planned_tons')
+    lot2_planned_fmt = f"{lot2_planned:,}" if lot2_planned is not None else "待配置"
+    lot2_confirmed_rem = lot2.get('confirmed_remaining_tons')
+    lot2_confirmed_rem_fmt = f"{lot2_confirmed_rem:,.1f}" if lot2_confirmed_rem is not None else "待配置"
+    lot2_candidate_rem = lot2.get('candidate_remaining_tons')
+    lot2_candidate_rem_fmt = f"{lot2_candidate_rem:,.1f}" if lot2_candidate_rem is not None else "待配置"
+
     vessel_lot_html = f"""
 <div class="card">
     <h2>🚢 本船放货批次 / Lot 进度</h2>
     <div style="font-size:0.85em; line-height:1.8;">
         <div><strong>船名：</strong>{vessel.get('vessel_name', '待用户确认')}</div>
         <hr style="border-color:#2a3a4a; margin:6px 0;">
-        <div><strong>lot1：集装箱货</strong></div>
-        <div>&nbsp;&nbsp;总货量：{lot1.get('total_planned_tons', '待配置')} 吨</div>
-        <div>&nbsp;&nbsp;已发（业务重量）：{lot1.get('confirmed_dispatched_tons', 0)} 吨</div>
-        <div>&nbsp;&nbsp;剩余：{lot1.get('remaining_tons', '待配置')} 吨</div>
+        <div><strong>{lot1.get('display_name', 'lot1：敞顶箱发运')}</strong></div>
+        <div>&nbsp;&nbsp;计划数量：{lot1_planned_fmt} 吨</div>
+        <div>&nbsp;&nbsp;已发：{lot1.get('confirmed_dispatched_tons', 0):,.1f} 吨</div>
+        <div>&nbsp;&nbsp;剩余：{lot1_remaining_fmt} 吨</div>
         <div class="note">&nbsp;&nbsp;{lot1.get('note', '')}</div>
         <hr style="border-color:#2a3a4a; margin:6px 0;">
-        <div><strong>lot2：散粮车货</strong></div>
-        <div>&nbsp;&nbsp;总货量：{lot2.get('total_planned_tons', '待配置')} 吨</div>
-        <div>&nbsp;&nbsp;已确认已发：{lot2.get('confirmed_cars', 0)} 车 / {lot2.get('confirmed_weight_tons', 0)} 吨</div>
-        <div>&nbsp;&nbsp;候选已发：{lot2.get('candidate_cars', 0)} 车 / {lot2.get('candidate_weight_tons', 0)} 吨（待确认）</div>
-        <div>&nbsp;&nbsp;待归属确认：{lot2.get('pending_cars', 0)} 车</div>
-        <div>&nbsp;&nbsp;剩余：{lot2.get('remaining_tons', '待配置')} 吨</div>
-        <div class="note">&nbsp;&nbsp;{lot2.get('note', '')}</div>
+        <div><strong>{lot2.get('display_name', 'lot2：散粮车/整车发运')}</strong></div>
+        <div>&nbsp;&nbsp;计划数量：{lot2_planned_fmt} 吨</div>
+        <div style="margin-top:4px;"><strong>━━ 确认口径 ━━</strong></div>
+        <div>&nbsp;&nbsp;已确认已发：{lot2.get('confirmed_cars', 0)} 车 / {lot2.get('confirmed_weight_tons', 0):,.1f} 吨</div>
+        <div>&nbsp;&nbsp;确认剩余：{lot2_confirmed_rem_fmt} 吨</div>
+        <div style="margin-top:4px;"><strong>━━ 候选口径 ━━</strong></div>
+        <div>&nbsp;&nbsp;候选已发：{lot2.get('candidate_cars', 0)} 车 / {lot2.get('candidate_weight_tons', 0):,.1f} 吨（{lot2.get('pending_cars', 0)} 车归属待确认）</div>
+        <div>&nbsp;&nbsp;候选剩余：{lot2_candidate_rem_fmt} 吨</div>
+        <div class="note" style="margin-top:4px;">&nbsp;&nbsp;{lot2.get('note', '')}</div>
     </div>
 </div>"""
 

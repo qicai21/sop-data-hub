@@ -16,6 +16,7 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 JIUSAN_DB = REPO_ROOT / "data" / "jiusan_cycle.db"
+AGENT_DB = REPO_ROOT / "data" / "agent.db"
 DASHBOARD_DIR = REPO_ROOT / "dashboard"
 
 from typing import Optional
@@ -24,13 +25,68 @@ VESSEL_LOT_CONFIG_PATH = REPO_ROOT / "samples" / "jiusan_current_vessel_lot_conf
 
 
 def _load_vessel_lot_config() -> dict:
-    """读取当前船/lot 配置"""
+    """读取当前船/lot 配置 — 优先从 agent.db release_batches 读取，退回到 config 文件"""
+    config = {}
     if VESSEL_LOT_CONFIG_PATH.exists():
         try:
-            return json.loads(VESSEL_LOT_CONFIG_PATH.read_text(encoding="utf-8"))
+            config = json.loads(VESSEL_LOT_CONFIG_PATH.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             pass
-    return {}
+
+    # 尝试从 agent.db release_batches 读取九三大豆项目数据
+    db_data = _load_vessel_lot_from_db()
+    if db_data:
+        config.setdefault("vessel_name", db_data.get("vessel_name", "待用户确认"))
+        config.setdefault("lot1", {})
+        config["lot1"].setdefault("total_planned_tons", db_data.get("lot1", {}).get("planned_tons"))
+        config["lot1"].setdefault("cargo_mode", db_data.get("lot1", {}).get("transport_mode", "container_open_top"))
+        config["lot1"].setdefault("destination_station", db_data.get("lot1", {}).get("destination_station"))
+        config["lot1"].setdefault("contract_no", db_data.get("lot1", {}).get("contract_no"))
+        config.setdefault("lot2", {})
+        config["lot2"].setdefault("total_planned_tons", db_data.get("lot2", {}).get("planned_tons"))
+        config["lot2"].setdefault("cargo_mode", db_data.get("lot2", {}).get("transport_mode", "bulk_wagon"))
+        config["lot2"].setdefault("destination_station", db_data.get("lot2", {}).get("destination_station"))
+        config["lot2"].setdefault("contract_no", db_data.get("lot2", {}).get("contract_no"))
+        config["_data_source"] = "agent.db.release_batches + config_file"
+        config["_db_contract_no"] = db_data.get("lot1", {}).get("contract_no")
+    else:
+        config["_data_source"] = "config_file_only"
+
+    return config
+
+
+def _load_vessel_lot_from_db() -> Optional[dict]:
+    """从 agent.db release_batches 表读取九三大豆项目的船名/lot数据"""
+    if not AGENT_DB.exists():
+        return None
+    try:
+        conn = sqlite3.connect(str(AGENT_DB))
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        rows = cur.execute(
+            "SELECT batch_sequence, batch_quantity, transport_mode, "
+            "destination_station, contract_no, ship_name "
+            "FROM release_batches "
+            "WHERE project = ? AND dispatch_status = 'in_progress' "
+            "ORDER BY batch_sequence",
+            ("九三大豆铁路发运项目",)
+        ).fetchall()
+        conn.close()
+        if not rows:
+            return None
+        result = {"vessel_name": rows[0]["ship_name"]}
+        for r in rows:
+            lot_idx = r["batch_sequence"].lstrip("lot").lstrip("0") or "1"
+            lot_num = f"lot{lot_idx}"
+            result[lot_num] = {
+                "planned_tons": r["batch_quantity"],
+                "transport_mode": r["transport_mode"],
+                "destination_station": r["destination_station"] or "",
+                "contract_no": r["contract_no"] or "",
+            }
+        return result
+    except Exception:
+        return None
 
 
 def _human_readable_plan(plan: Optional[dict]) -> str:

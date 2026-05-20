@@ -2,7 +2,7 @@
   "_meta": {
     "dashboard_name": "九三大豆循环运输看板",
     "version": "3.0",
-    "generated_at": "2026-05-20T09:21:43.577811+00:00",
+    "generated_at": "2026-05-20T09:37:57.426721+00:00",
     "data_sources": [
       "jiusan_cycle.db",
       "rail95306-sync (只读)"
@@ -10,20 +10,22 @@
     "architecture": "V3 — 循环运输资源账 + 运行态势 + 运力计划 + 库存风险预警",
     "design_principles": [
       "运行状态以 95306 最新事件为准单向映射",
-      "不搞预期 vs 实际冲突检测",
+      "source_conflicts 保留（当前为空），供将来人工实况与 95306 不一致时使用",
       "三账独立存证交叉验证"
-    ]
+    ],
+    "contract": {
+      "contract_no": "JGWL-JZTS-DD-202601",
+      "contract_path": "/Users/qicai21/projects/repos/ops-data-hub/data/contracts/jiusan_soybean/物流发展-铁盛2026大豆合同.docx"
+    }
   },
   "summary": {
     "date": "2026-05-20",
     "today_dispatched_wagons": 54,
     "container_on_way": 54,
-    "container_total_dispatched": 54,
     "bulk_dispatch_once": [
       40
     ],
-    "source": "95306 实时",
-    "note": "已发车数据直接来源于 95306 shipments 表，无预期冲突检测"
+    "source": "95306 实时"
   },
   "current_plan": {
     "plan": {
@@ -135,6 +137,7 @@
       }
     ]
   },
+  "active_plan_human": "计划名称：第二轮调整计划（当前）\n生效时间：2026-05-16\n集装箱计划：2天3列，目标12000吨/日\n散粮/K车计划：按需/暂停；散粮40车已发，本次不参与循环，后续恢复待确认\n厂家日耗：5500 吨/日",
   "resource_pool": {
     "container": {
       "id": "container_pool_seed",
@@ -163,29 +166,58 @@
       "notes": "初始配置，列二54车在途，散粮40车已到站待返空"
     }
   },
+  "current_vessel_lots": {
+    "_schema_version": "1.0",
+    "_note": "当前船/lot配置。已从用户确认事实写入（2026-05-20 Phase 2.5-D）。未从旧版看板/放货库的 release_batches 表读取到现有九三船名/lot数据。",
+    "vessel_name": "玛格丽特",
+    "lot1": {
+      "name": "lot1",
+      "cargo_mode": "container_open_top",
+      "display_name": "lot1：敞顶箱发运",
+      "total_planned_tons": 48719,
+      "confirmed_dispatched_tons": 6066.0,
+      "candidate_dispatched_tons": 6066.0,
+      "remaining_tons": 42653.0,
+      "remaining_formula": "48719 - 6066.0",
+      "note": "敞顶箱发运。已发6066吨=3067.2(列1)+2998.8(列2)。剩余=48719-6066.0=42653.0吨。后续以数据库放货记录为准。"
+    },
+    "lot2": {
+      "name": "lot2",
+      "cargo_mode": "bulk_wagon",
+      "display_name": "lot2：散粮车/整车发运",
+      "total_planned_tons": 20300,
+      "confirmed_dispatched_tons": 249.0,
+      "confirmed_weight_tons": 249.0,
+      "candidate_dispatched_tons": 2571.0,
+      "confirmed_remaining_tons": 20051.0,
+      "candidate_remaining_tons": 17729.0,
+      "confirmed_cars": 4,
+      "candidate_car_count": 40,
+      "candidate_weight_tons": 2571.0,
+      "pending_cars": 36,
+      "note": "散粮车发运。4车用户确认(249吨)，36车待归属确认(2322吨)。确认剩余=20300-249=20051吨；候选剩余=20300-2571=17729吨。36车归属待确认，不能直接扣减正式剩余。"
+    },
+    "_data_source": "config_file_only"
+  },
   "cycle_trains": [
     {
       "train_id": "container_cycle_train_01",
       "type": "集装箱",
       "lot": "lot01",
       "status": "returned",
-      "status_text": "待同步",
+      "status_text": "货物已交付",
       "current_round": 1,
       "destination_line": "三三〇处专用线",
-      "departure_window": null,
-      "trains_per_day": 1,
-      "target_wagon_count": null,
-      "return_to_port": 1,
       "tracking": {
-        "total_cars": 0,
+        "total_cars": 54,
         "departed_cars": 0,
         "arrived_cars": 0,
-        "delivered_cars": 0,
-        "latest_event": "",
-        "latest_event_time": "",
-        "current_location": "",
-        "depart_at": "",
-        "summary_status": "待同步"
+        "delivered_cars": 54,
+        "latest_event": "已交付（到达新台子并卸车）",
+        "latest_event_time": "2026-05-20 05:22:58",
+        "current_location": "新台子/三三〇处专用线",
+        "depart_at": "2026-05-19 11:31:00",
+        "summary_status": "货物已交付"
       },
       "last_run": {
         "round_no": 1,
@@ -197,7 +229,18 @@
         "unload_time": null,
         "return_time": "2026-05-20 20:00",
         "status": "unloaded",
-        "notes": "已交付，返空已到锦州港（用户确认 20日20时到港）。95306 状态=80(货物已交付)。。箱型: {\"open_top_count\": 102, \"top_open_count\": 6, \"unknown_count\": 0, \"open_top_weight_tons\": 2907.0, \"top_open_weight_tons\": 160.2, \"business_weight_tons\": 3067.2, \"rail_marked_weight_tons\": 3456.0, \"weight_diff_tons\": -388.8, \"weight_source\": \"container_type_rule\"}"
+        "notes": "已交付，返空已到锦州港（用户确认 20日20时到港）。95306 状态=80(货物已交付)。。箱型: {\"open_top_count\": 102, \"top_open_count\": 6, \"unknown_count\": 0, \"open_top_weight_tons\": 2907.0, \"top_open_weight_tons\": 160.2, \"business_weight_tons\": 3067.2, \"rail_marked_weight_tons\": 3456.0, \"weight_diff_tons\": -388.8, \"weight_source\": \"container_type_rule\"}",
+        "container_type_summary": {
+          "open_top_count": 102,
+          "top_open_count": 6,
+          "unknown_count": 0,
+          "open_top_weight_tons": 2907.0,
+          "top_open_weight_tons": 160.2,
+          "business_weight_tons": 3067.2,
+          "rail_marked_weight_tons": 3456.0,
+          "weight_diff_tons": -388.8,
+          "weight_source": "container_type_rule"
+        }
       }
     },
     {
@@ -208,10 +251,6 @@
       "status_text": "已发车（在途）",
       "current_round": 1,
       "destination_line": "三三〇处专用线",
-      "departure_window": null,
-      "trains_per_day": 1,
-      "target_wagon_count": null,
-      "return_to_port": 1,
       "tracking": {
         "total_cars": 54,
         "departed_cars": 54,
@@ -233,7 +272,18 @@
         "unload_time": null,
         "return_time": null,
         "status": "departed",
-        "notes": "锦州港已发车（用户确认）。95306 状态=35(已制单)，发车时间待确认。。箱型: {\"open_top_count\": 64, \"top_open_count\": 44, \"unknown_count\": 0, \"open_top_weight_tons\": 1824.0, \"top_open_weight_tons\": 1174.8, \"business_weight_tons\": 2998.8, \"rail_marked_weight_tons\": 3456.0, \"weight_diff_tons\": -457.2, \"weight_source\": \"container_type_rule\"}"
+        "notes": "锦州港已发车（用户确认）。95306 状态=35(已制单)，发车时间待确认。。箱型: {\"open_top_count\": 64, \"top_open_count\": 44, \"unknown_count\": 0, \"open_top_weight_tons\": 1824.0, \"top_open_weight_tons\": 1174.8, \"business_weight_tons\": 2998.8, \"rail_marked_weight_tons\": 3456.0, \"weight_diff_tons\": -457.2, \"weight_source\": \"container_type_rule\"}",
+        "container_type_summary": {
+          "open_top_count": 64,
+          "top_open_count": 44,
+          "unknown_count": 0,
+          "open_top_weight_tons": 1824.0,
+          "top_open_weight_tons": 1174.8,
+          "business_weight_tons": 2998.8,
+          "rail_marked_weight_tons": 3456.0,
+          "weight_diff_tons": -457.2,
+          "weight_source": "container_type_rule"
+        }
       }
     }
   ],
@@ -253,7 +303,16 @@
       "source": "95306_sync",
       "source_ref": "scan_2026-05-20T09:15:32.805278+00:00",
       "notes": "散粮40车一次性发运/入库，用户确认不返回锦州，非循环列。车型统计: {\"L18_count\": 21, \"L70_count\": 19, \"unknown_count\": 0, \"business_weight_tons\": 2571.0, \"rail_marked_weight_tons\": 2571.0, \"weight_diff_tons\": 0.0, \"weight_source\": \"bulk_wagon_model_rule\"}",
-      "created_at": "2026-05-20T17:15:32.809780"
+      "created_at": "2026-05-20T17:15:32.809780",
+      "bulk_wagon_type_summary": {
+        "L18_count": 21,
+        "L70_count": 19,
+        "unknown_count": 0,
+        "business_weight_tons": 2571.0,
+        "rail_marked_weight_tons": 2571.0,
+        "weight_diff_tons": 0.0,
+        "weight_source": "bulk_wagon_model_rule"
+      }
     }
   ],
   "three_accounts": {
@@ -322,6 +381,7 @@
       "created_at": "2026-05-20 09:17:53"
     }
   ],
+  "source_conflicts": [],
   "pending_confirmations": [
     {
       "type": "train_reorganization",
@@ -330,7 +390,7 @@
     },
     {
       "type": "train_01_return",
-      "question": "container_train_01 是否已返回锦州港？当前标记为 returned，需人工确认实际到港时间。",
+      "question": "container_cycle_train_01 已到锦州港？当前标记为已交付返空到港（用户确认 20日20时到港），需人工确认实际返空情况。",
       "confirmed": false
     },
     {
@@ -345,7 +405,7 @@
     }
   ],
   "95306_status": {
-    "last_scan": "2026-05-20T17:15:32.862578",
+    "last_scan": "2026-05-20T17:37:27.837098",
     "new_records": 148,
     "daily_stats": {
       "today_container_count": 54,
@@ -356,7 +416,7 @@
   "refresh_policy": {
     "mode": "manual",
     "auto_refresh_enabled": false,
-    "last_generated_at": "2026-05-20T09:21:43.577811+00:00",
-    "note": "Phase 1 阶段无定时任务。执行 python3 scripts/jiusan_refresh_board.py 后刷新浏览器。"
+    "last_generated_at": "2026-05-20T09:37:57.426721+00:00",
+    "note": "Phase 1 V3 收口阶段无定时任务。执行 python3 scripts/jiusan_refresh_board.py 后刷新浏览器。"
   }
 }

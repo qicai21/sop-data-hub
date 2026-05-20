@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """
-九三大豆循环运输看板生成器（V3 架构）
+九三大豆循环运输看板生成器（V3 收口修正版）
 
 读取 jiusan_cycle.db + 95306 实时状态 → 生成 dashboard JSON + HTML
 
 V3 核心设计原则：
-- 运行状态以 95306 最新事件为准，单向映射，不搞"预期 vs 实际"冲突检测
-- 循环列状态 = 95306 latest_event 的如实反映
-- 三账校验：Snapshot + Flow + Adjustment 独立存证，交叉验证
+- 运行状态以 95306 最新事件为准，单向映射
+- source_conflicts 字段保留（当前为空数组），供将来人工实况与 95306 不一致时使用
+- 已确认业务口径与 V3 轨迹能力共存
 
 Usage:
     python3 scripts/jiusan_board_generate.py
-    python3 scripts/jiusan_board_generate.py --example  # 同时生成 example JSON
+    python3 scripts/jiusan_board_generate.py --example
 """
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +26,7 @@ JIUSAN_DB = REPO_ROOT / "data" / "jiusan_cycle.db"
 AGENT_DB = REPO_ROOT / "data" / "agent.db"
 DASHBOARD_DIR = REPO_ROOT / "dashboard"
 RAIL95306_DB = Path("/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3")
+VESSEL_LOT_CONFIG_PATH = REPO_ROOT / "samples" / "jiusan_current_vessel_lot_config.example.json"
 
 STATUS_LABELS = {
     "30": "已装车",
@@ -41,10 +43,135 @@ def get_conn():
     return conn
 
 
+# ── Vessel / Lot 配置（旧版逻辑恢复） ──
+
+def _load_vessel_lot_config() -> dict:
+    """读取船/lot配置 — 优先 agent.db release_batches，退回到 config 文件"""
+    config = {}
+    if VESSEL_LOT_CONFIG_PATH.exists():
+        try:
+            config = json.loads(VESSEL_LOT_CONFIG_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    db_data = _load_vessel_lot_from_db()
+    if db_data:
+        config.setdefault("vessel_name", db_data.get("vessel_name", "待用户确认"))
+        for lot_key in ("lot1", "lot2"):
+            if lot_key in db_data:
+                config.setdefault(lot_key, {})
+                for field in ("total_planned_tons", "cargo_mode", "destination_station", "contract_no",
+                              "confirmed_dispatched_tons", "remaining_tons", "remaining_formula",
+                              "confirmed_cars", "confirmed_weight_tons", "confirmed_remaining_tons",
+                              "candidate_cars", "candidate_weight_tons", "pending_cars",
+                              "candidate_remaining_tons", "display_name", "note"):
+                    val = db_data.get(lot_key, {}).get(field)
+                    if val is not None:
+                        config[lot_key][field] = val
+        config["_data_source"] = "agent.db.release_batches + config_file"
+    else:
+        config["_data_source"] = "config_file_only"
+    return config
+
+
+def _load_vessel_lot_from_db():
+    """从 agent.db release_batches 读取九三大豆项目船/lot"""
+    if not AGENT_DB.exists():
+        return None
+    try:
+        conn = sqlite3.connect(str(AGENT_DB))
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        rows = cur.execute(
+            "SELECT batch_sequence, batch_quantity, transport_mode, "
+            "destination_station, contract_no, ship_name "
+            "FROM release_batches "
+            "WHERE project = ? AND dispatch_status = 'in_progress' "
+            "ORDER BY batch_sequence",
+            ("九三大豆铁路发运项目",),
+        ).fetchall()
+        conn.close()
+        if not rows:
+            return None
+        result = {"vessel_name": rows[0]["ship_name"]}
+        for r in rows:
+            lot_idx = r["batch_sequence"].lstrip("lot").lstrip("0") or "1"
+            lot_num = f"lot{lot_idx}"
+            result[lot_num] = {
+                "planned_tons": r["batch_quantity"],
+                "transport_mode": r["transport_mode"],
+                "destination_station": r["destination_station"] or "",
+                "contract_no": r["contract_no"] or "",
+            }
+        return result
+    except Exception:
+        return None
+
+
+# ── 重量解析（从 notes 恢复） ──
+
+def _parse_type_summary_from_notes(notes, prefix="箱型: "):
+    """从 notes 中解析 JSON 格式的 type summary"""
+    if not notes:
+        return None
+    m = re.search(re.escape(prefix) + r'(\{.+?\})', notes)
+    if m:
+        try:
+            return json.loads(m.group(1))
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return None
+
+
+# ── 人话计划摘要恢复 ──
+
+def _human_readable_plan(plan_row) -> str:
+    """将发运计划转为自然语言"""
+    if not plan_row:
+        return "当前无有效发运计划"
+    plan = dict(plan_row)
+    details = {}
+    if "plan_details_json" in plan:
+        try:
+            details = json.loads(plan["plan_details_json"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+    container = details.get("container", {})
+    bulk = details.get("bulk_wagon", {})
+    lines = []
+    lines.append(f"计划名称：{plan.get('name', '未命名')}")
+    lines.append(f"生效时间：{plan.get('effective_from', '未知')}")
+    if container:
+        freq = container.get("frequency_label", "")
+        train_count = container.get("target_train_count", "?")
+        daily = container.get("average_daily_train_count", "?")
+        target = container.get("target_tons_per_day", "?")
+        parts = []
+        if freq:
+            parts.append(freq)
+        else:
+            parts.append(f"{train_count}列/{daily}列/日")
+        if target:
+            parts.append(f"目标{target}吨/日")
+        lines.append(f"集装箱计划：{'，'.join(parts)}")
+    if bulk:
+        freq = bulk.get("frequency_label", "待确认")
+        note = bulk.get("note", "")
+        parts = [freq]
+        if note:
+            parts.append(note)
+        lines.append(f"散粮/K车计划：{'；'.join(parts)}")
+    cons = details.get("factory_consumption")
+    if cons:
+        lines.append(f"厂家日耗：{cons} 吨/日")
+    return "\n".join(lines)
+
+
+# ── V3 轨迹/状态能力 ──
+
 def _load_tracking_summary(conn, train_id: str) -> dict:
     """从 jiusan_tracking_status 表加载某列的追踪摘要"""
     rows = conn.execute(
-        """SELECT 
+        """SELECT
                COUNT(*) as total,
                SUM(CASE WHEN status_code = '40' THEN 1 ELSE 0 END) as departed,
                SUM(CASE WHEN status_code = '60' THEN 1 ELSE 0 END) as arrived,
@@ -84,14 +211,12 @@ def _load_tracking_summary(conn, train_id: str) -> dict:
 
 
 def _load_resource_pool(conn) -> dict:
-    """从 jiusan_resource_pool 表加载最新资源池快照"""
     container = conn.execute(
         "SELECT * FROM jiusan_resource_pool WHERE pool_type = 'container' ORDER BY last_updated DESC LIMIT 1"
     ).fetchone()
     wagon = conn.execute(
         "SELECT * FROM jiusan_resource_pool WHERE pool_type = 'wagon' ORDER BY last_updated DESC LIMIT 1"
     ).fetchone()
-
     block = {}
     if container:
         block["container"] = dict(container)
@@ -101,7 +226,6 @@ def _load_resource_pool(conn) -> dict:
 
 
 def _load_warnings(conn) -> list:
-    """从 jiusan_warnings 表加载未解决的预警"""
     rows = conn.execute(
         "SELECT * FROM jiusan_warnings WHERE acknowledged = 0 ORDER BY warning_time DESC"
     ).fetchall()
@@ -109,7 +233,6 @@ def _load_warnings(conn) -> list:
 
 
 def _load_shipment_plan_days(conn, plan_id: str) -> list:
-    """加载发运计划按日明细"""
     rows = conn.execute(
         "SELECT * FROM jiusan_shipment_plan_days WHERE plan_id = ? ORDER BY seq_no",
         (plan_id,),
@@ -118,14 +241,11 @@ def _load_shipment_plan_days(conn, plan_id: str) -> list:
 
 
 def _load_95306_daily_stats() -> dict:
-    """从 95306 数据库读取今天的大豆发运统计（只读）"""
     if not RAIL95306_DB.exists():
         return {}
     try:
         conn = sqlite3.connect(str(RAIL95306_DB))
         conn.row_factory = sqlite3.Row
-
-        # 今天高桥镇→新台子大豆集装箱
         container_today = conn.execute(
             "SELECT COUNT(*) as cnt FROM shipments "
             "WHERE cargo_name = '大豆' AND origin_name = '高桥镇' "
@@ -133,8 +253,6 @@ def _load_95306_daily_stats() -> dict:
             "AND ticketed_at >= date('now') "
             "AND transport_mode_name = '集装箱运输'"
         ).fetchone()
-
-        # 已发车（在途）的数量
         on_way = conn.execute(
             "SELECT COUNT(*) as cnt FROM shipments "
             "WHERE cargo_name = '大豆' AND origin_name = '高桥镇' "
@@ -142,7 +260,6 @@ def _load_95306_daily_stats() -> dict:
             "AND ticketed_at >= date('now', '-7 days') "
             "AND status_code = '40'"
         ).fetchone()
-
         conn.close()
         return {
             "today_container_count": container_today["cnt"] if container_today else 0,
@@ -158,65 +275,30 @@ def generate(conn) -> dict:
     date_str = datetime.now().strftime("%Y-%m-%d")
 
     # ── 读取各表数据 ──
-
-    # 循环列
-    trains = conn.execute(
-        "SELECT * FROM jiusan_cycle_trains ORDER BY id"
-    ).fetchall()
-
-    # 运行记录
-    runs = conn.execute(
-        "SELECT * FROM jiusan_cycle_train_runs ORDER BY train_id, round_no"
-    ).fetchall()
+    trains = conn.execute("SELECT * FROM jiusan_cycle_trains ORDER BY id").fetchall()
+    runs = conn.execute("SELECT * FROM jiusan_cycle_train_runs ORDER BY train_id, round_no").fetchall()
     runs_by_train = {}
     for r in runs:
         runs_by_train.setdefault(r["train_id"], []).append(dict(r))
 
-    # 资源事件
-    events = conn.execute(
-        "SELECT * FROM jiusan_resource_events ORDER BY created_at DESC"
-    ).fetchall()
-
-    # 流量
-    flows = conn.execute(
-        "SELECT * FROM jiusan_flows ORDER BY flow_date DESC"
-    ).fetchall()
-
-    # 快照
-    snapshots = conn.execute(
-        "SELECT * FROM jiusan_snapshots ORDER BY snapshot_date DESC"
-    ).fetchall()
-
-    # 调整
-    adjustments = conn.execute(
-        "SELECT * FROM jiusan_adjustments ORDER BY adj_date DESC"
-    ).fetchall()
-
-    # 计划
+    events = conn.execute("SELECT * FROM jiusan_resource_events ORDER BY created_at DESC").fetchall()
+    flows = conn.execute("SELECT * FROM jiusan_flows ORDER BY flow_date DESC").fetchall()
+    snapshots = conn.execute("SELECT * FROM jiusan_snapshots ORDER BY snapshot_date DESC").fetchall()
+    adjustments = conn.execute("SELECT * FROM jiusan_adjustments ORDER BY adj_date DESC").fetchall()
     active_plan = conn.execute(
         "SELECT * FROM jiusan_shipment_plans WHERE is_active=1 ORDER BY created_at DESC LIMIT 1"
     ).fetchone()
-
-    # 库存
     inv = conn.execute(
         "SELECT * FROM jiusan_factory_inventory ORDER BY record_date DESC LIMIT 1"
     ).fetchone()
-
-    # 扫描日志
     last_scan = conn.execute(
         "SELECT * FROM jiusan_95306_scan_log ORDER BY created_at DESC LIMIT 1"
     ).fetchone()
 
-    # ── V3 新增数据源 ──
-
-    # 资源池
     resource_pool = _load_resource_pool(conn)
-
-    # 预警
     warnings = _load_warnings(conn)
-
-    # 95306 实时统计（只读）
     daily_95306 = _load_95306_daily_stats()
+    vessel_config = _load_vessel_lot_config()
 
     # ── 构建循环列区块 ──
     cycle_trains_block = []
@@ -224,8 +306,6 @@ def generate(conn) -> dict:
         t = dict(t_row)
         t_runs = runs_by_train.get(t["id"], [])
         last_run = t_runs[-1] if t_runs else None
-
-        # 从 tracking_status 获取实时状态
         ts = _load_tracking_summary(conn, t["id"])
 
         train_entry = {
@@ -236,11 +316,6 @@ def generate(conn) -> dict:
             "status_text": ts.get("summary_status", "待同步"),
             "current_round": t["current_round"],
             "destination_line": t["destination_line"],
-            "departure_window": t.get("departure_window"),
-            "trains_per_day": t.get("trains_per_day", 1),
-            "target_wagon_count": t.get("target_wagon_count"),
-            "return_to_port": t.get("return_to_port", 1),
-            # 95306 实时追踪
             "tracking": {
                 "total_cars": ts.get("total", 0),
                 "departed_cars": ts.get("departed", 0),
@@ -254,6 +329,7 @@ def generate(conn) -> dict:
             },
         }
         if last_run:
+            cts = _parse_type_summary_from_notes(last_run.get("notes", ""))
             train_entry["last_run"] = {
                 "round_no": last_run["round_no"],
                 "wagon_count": last_run["wagon_count"],
@@ -265,17 +341,20 @@ def generate(conn) -> dict:
                 "return_time": last_run["return_time"],
                 "status": last_run["status"],
                 "notes": last_run["notes"],
+                "container_type_summary": cts,
             }
         cycle_trains_block.append(train_entry)
 
-    # ── 构建散粮一次性发运区块 ──
+    # ── 散粮一次性 ──
     one_time_shipments = []
     for e in events:
         if e["event_type"] == "bulk_dispatch_once":
             entry = dict(e)
+            bws = _parse_type_summary_from_notes(entry.get("notes", ""), prefix="车型统计: ")
+            entry["bulk_wagon_type_summary"] = bws
             one_time_shipments.append(entry)
 
-    # ── 构建三账校验区块 ──
+    # ── 三账校验 ──
     three_accounts_block = {
         "snapshots": [dict(s) for s in snapshots],
         "flows": [dict(f) for f in flows],
@@ -286,19 +365,15 @@ def generate(conn) -> dict:
         },
     }
 
-    # ── 构建 factory_inventory 区块 ──
+    # ── 库存 ──
     inv_block = None
     if inv:
         inv_dict = dict(inv)
         inv_notes = inv_dict.get("notes", "") or ""
         data_quality = (
-            "sample"
-            if "data_quality=sample" in inv_notes
-            else (
-                "user_reported"
-                if "data_quality=user_reported" in inv_notes
-                else "actual" if "data_quality=actual" in inv_notes else "unknown"
-            )
+            "sample" if "data_quality=sample" in inv_notes else
+            "user_reported" if "data_quality=user_reported" in inv_notes else
+            "actual" if "data_quality=actual" in inv_notes else "unknown"
         )
         inv_block = {
             "record_date": inv_dict["record_date"],
@@ -313,18 +388,16 @@ def generate(conn) -> dict:
             "data_quality": data_quality,
             "below_red_line": (inv_dict["closing_stock"] or 0) < (inv_dict["red_line"] or 0),
             "other_source_inferred": round(
-                inv_dict["closing_stock"]
-                - inv_dict["opening_stock"]
-                - inv_dict["line_in_qty"]
-                + inv_dict["consumption"]
-                - (inv_dict["adjustment"] or 0),
-                2,
+                inv_dict["closing_stock"] - inv_dict["opening_stock"]
+                - inv_dict["line_in_qty"] + inv_dict["consumption"]
+                - (inv_dict["adjustment"] or 0), 2
             ),
         }
 
-    # ── 构建 active_plan 区块 ──
+    # ── 计划 ──
     plan_block = None
     plan_days_block = []
+    active_plan_human = "当前无有效发运计划"
     if active_plan:
         plan_block = dict(active_plan)
         if "plan_details_json" in plan_block:
@@ -333,48 +406,30 @@ def generate(conn) -> dict:
             except (json.JSONDecodeError, TypeError):
                 pass
         plan_days_block = _load_shipment_plan_days(conn, active_plan["id"])
+        active_plan_human = _human_readable_plan(active_plan)
 
-    # ── 构建 daily_summary 区块 ──
+    # ── 今日摘要 ──
     container_cars_on_way = sum(
         t.get("tracking", {}).get("departed_cars", 0) - t.get("tracking", {}).get("arrived_cars", 0)
-        for t in cycle_trains_block
-        if t["type"] == "集装箱"
+        for t in cycle_trains_block if t["type"] == "集装箱"
     )
-    total_container_dispatched = sum(
-        t.get("tracking", {}).get("departed_cars", 0)
-        for t in cycle_trains_block
-        if t["type"] == "集装箱"
-    )
-
     daily_summary = {
         "date": date_str,
         "today_dispatched_wagons": daily_95306.get("today_container_count", 0),
         "container_on_way": container_cars_on_way,
-        "container_total_dispatched": total_container_dispatched,
         "bulk_dispatch_once": [s["quantity"] for s in one_time_shipments] if one_time_shipments else [0],
         "source": "95306 实时",
-        "note": "已发车数据直接来源于 95306 shipments 表，无预期冲突检测",
     }
 
-    # ── 构建 pending_confirmations ──
+    # ── source_conflicts（字段保留，当前为空—V3 以 95306 为准） ──
+    source_conflicts = []
+
+    # ── 待确认项 ──
     pending = [
-        {
-            "type": "train_reorganization",
-            "question": "集装箱两列后续是否重组/合并？",
-            "confirmed": False,
-        },
-        {
-            "type": "train_01_return",
-            "question": "container_train_01 是否已返回锦州港？当前标记为 returned，需人工确认实际到港时间。",
-            "confirmed": False,
-        },
-        {
-            "type": "pool_quantity",
-            "question": "集装箱池当前约 212 只、车体池约 106 辆为估算值，是否需要调整基准配置量？",
-            "confirmed": False,
-        },
+        {"type": "train_reorganization", "question": "集装箱两列后续是否重组/合并？", "confirmed": False},
+        {"type": "train_01_return", "question": "container_cycle_train_01 已到锦州港？当前标记为已交付返空到港（用户确认 20日20时到港），需人工确认实际返空情况。", "confirmed": False},
+        {"type": "pool_quantity", "question": "集装箱池当前约 212 只、车体池约 106 辆为估算值，是否需要调整基准配置量？", "confirmed": False},
     ]
-    # 库存预警自动追加
     if inv_block and inv_block.get("below_red_line"):
         pending.append({
             "type": "inventory_redline",
@@ -392,21 +447,22 @@ def generate(conn) -> dict:
             "architecture": "V3 — 循环运输资源账 + 运行态势 + 运力计划 + 库存风险预警",
             "design_principles": [
                 "运行状态以 95306 最新事件为准单向映射",
-                "不搞预期 vs 实际冲突检测",
+                "source_conflicts 保留（当前为空），供将来人工实况与 95306 不一致时使用",
                 "三账独立存证交叉验证",
             ],
+            "contract": {"contract_no": "JGWL-JZTS-DD-202601", "contract_path": str(REPO_ROOT / "data" / "contracts" / "jiusan_soybean" / "物流发展-铁盛2026大豆合同.docx")},
         },
         "summary": daily_summary,
-        "current_plan": {
-            "plan": plan_block,
-            "plan_days": plan_days_block,
-        },
+        "current_plan": {"plan": plan_block, "plan_days": plan_days_block},
+        "active_plan_human": active_plan_human,
         "resource_pool": resource_pool,
+        "current_vessel_lots": vessel_config,
         "cycle_trains": cycle_trains_block,
         "one_time_shipments": one_time_shipments,
         "three_accounts": three_accounts_block,
         "factory_inventory": inv_block,
         "warnings": warnings,
+        "source_conflicts": source_conflicts,
         "pending_confirmations": pending,
         "95306_status": {
             "last_scan": last_scan["scan_time"] if last_scan else None,
@@ -417,10 +473,9 @@ def generate(conn) -> dict:
             "mode": "manual",
             "auto_refresh_enabled": False,
             "last_generated_at": now,
-            "note": "Phase 1 阶段无定时任务。执行 python3 scripts/jiusan_refresh_board.py 后刷新浏览器。",
+            "note": "Phase 1 V3 收口阶段无定时任务。执行 python3 scripts/jiusan_refresh_board.py 后刷新浏览器。",
         },
     }
-
     return dashboard
 
 
@@ -437,39 +492,114 @@ def generate_html(dashboard: dict) -> str:
     pending = dashboard.get("pending_confirmations", [])
     plan_info = dashboard.get("current_plan", {}).get("plan", {}) or {}
     plan_days = dashboard.get("current_plan", {}).get("plan_days", []) or []
+    vessel = dashboard.get("current_vessel_lots", {})
+    source_conflicts = dashboard.get("source_conflicts", [])
 
-    # ── 今日摘要 ──
     dispatched = summary.get("today_dispatched_wagons", 0)
     on_way = summary.get("container_on_way", 0)
-    soon_arrive = max(0, on_way - sum(t.get("tracking", {}).get("arrived_cars", 0) for t in cycle_trains))
+    active_plan_human = dashboard.get("active_plan_human", "")
 
-    # ── 循环列卡片 ──
+    lot1 = vessel.get("lot1", {})
+    lot2 = vessel.get("lot2", {})
+
+    # Safe format helpers for lot values
+    def _fmt_n(val, fmt=",d"):
+        try:
+            return format(int(val), fmt)
+        except (ValueError, TypeError):
+            return str(val) if val else "待配置"
+
+    def _fmt_f(val, fmt=",.1f"):
+        try:
+            return format(float(val), fmt)
+        except (ValueError, TypeError):
+            return str(val) if val else "待配置"
+
+    lot1_planned = _fmt_n(lot1.get("total_planned_tons"))
+    lot1_dispatched = _fmt_f(lot1.get("confirmed_dispatched_tons"))
+    lot1_remaining = _fmt_f(lot1.get("remaining_tons"))
+    lot2_planned = _fmt_n(lot2.get("total_planned_tons"))
+    lot2_conf_cars = len(lot2.get("confirmed_cars", [])) if isinstance(lot2.get("confirmed_cars"), list) else lot2.get("confirmed_cars", 0)
+    lot2_conf_weight = _fmt_f(lot2.get("confirmed_dispatched_tons", lot2.get("confirmed_weight_tons", 0)))
+    lot2_conf_rem = _fmt_f(lot2.get("confirmed_remaining_tons"))
+    lot2_cand_cars = lot2.get("candidate_car_count", lot2.get("candidate_cars", 0))
+    lot2_cand_weight = _fmt_f(lot2.get("candidate_weight_tons", 0))
+    lot2_pending = lot2.get("pending_cars", 0)
+    lot2_cand_rem = _fmt_f(lot2.get("candidate_remaining_tons"))
+
+    vessel_lot_html = f"""<div class="card">
+    <h2>🚢 本船放货批次 / Lot 进度</h2>
+    <div style="font-size:0.85em; line-height:1.8;">
+        <div><strong>船名：</strong>{vessel.get('vessel_name', '待用户确认')}</div>
+        <hr style="border-color:#2a3a4a; margin:6px 0;">
+        <div><strong>{lot1.get('display_name', 'lot1：敞顶箱发运')}</strong></div>
+        <div>&nbsp;&nbsp;计划数量：{lot1_planned} 吨</div>
+        <div>&nbsp;&nbsp;已发：{lot1_dispatched} 吨</div>
+        <div>&nbsp;&nbsp;剩余：{lot1_remaining} 吨</div>
+        <div class="note">&nbsp;&nbsp;{lot1.get('note', '已发按业务重量计算；如后续有真实放货/装车数据，以数据库为准。')}</div>
+        <hr style="border-color:#2a3a4a; margin:6px 0;">
+        <div><strong>{lot2.get('display_name', 'lot2：散粮车/整车发运')}</strong></div>
+        <div>&nbsp;&nbsp;计划数量：{lot2_planned} 吨</div>
+        <div style="margin-top:4px;"><strong>━━ 确认口径 ━━</strong></div>
+        <div>&nbsp;&nbsp;已确认已发：{lot2_conf_cars} 车 / {lot2_conf_weight} 吨</div>
+        <div>&nbsp;&nbsp;确认剩余：{lot2_conf_rem} 吨</div>
+        <div style="margin-top:4px;"><strong>━━ 候选口径 ━━</strong></div>
+        <div>&nbsp;&nbsp;候选已发：{lot2_cand_cars} 车 / {lot2_cand_weight} 吨（{lot2_pending} 车归属待确认）</div>
+        <div>&nbsp;&nbsp;候选剩余：{lot2_cand_rem} 吨</div>
+        <div class="note" style="margin-top:4px;">&nbsp;&nbsp;{lot2.get('note', '4车为用户确认本船；40车为同窗口候选。36车归属待确认，不能直接扣减正式剩余。')}</div>
+    </div>
+</div>"""
+
+    # ── 循环列卡片（含重量明细恢复） ──
     trains_html = ""
     for t in cycle_trains:
         tr = t.get("tracking", {})
         lr = t.get("last_run", {})
-        status = t.get("status_text", "待同步")
+        cts = lr.get("container_type_summary", {}) or {}
+        status = t.get("status_text", "")
         latest_time = tr.get("latest_event_time", "")
         location = tr.get("current_location", "")
         total = tr.get("total_cars", 0)
         departed = tr.get("departed_cars", 0)
         arrived = tr.get("arrived_cars", 0)
+        delivered = tr.get("delivered_cars", 0)
         depart_at = tr.get("depart_at", "")
+
         if depart_at and len(depart_at) > 16:
             depart_at = depart_at[:16]
         if latest_time and len(latest_time) > 16:
             latest_time = latest_time[:16]
 
-        # 状态颜色
         status_color = {
-            "returned": "status-returned",
-            "unloaded": "status-unloaded",
-            "departed": "status-departed",
-            "arrived": "status-arrived",
-            "returning": "status-returning",
-            "forming": "status-pending",
+            "returned": "status-returned", "unloaded": "status-unloaded",
+            "departed": "status-departed", "arrived": "status-arrived",
+            "returning": "status-returning", "forming": "status-pending",
             "loaded": "status-loaded",
         }.get(t.get("status", ""), "status-pending")
+
+        # 重量明细
+        weight_detail = ""
+        if cts:
+            oc = cts.get("open_top_count", 0)
+            tc = cts.get("top_open_count", 0)
+            ow = cts.get("open_top_weight_tons", 0)
+            tw = cts.get("top_open_weight_tons", 0)
+            bw = cts.get("business_weight_tons", 0)
+            rm = cts.get("rail_marked_weight_tons", 0)
+            wd = cts.get("weight_diff_tons", 0)
+            weight_detail = f"""
+            <div class="weight-detail">
+                <div>敞顶箱: {oc}箱 × 28.5 = {ow}吨</div>
+                <div>顶开门箱: {tc}箱 × 26.7 = {tw}吨</div>
+                <div><strong>业务重量: {bw}吨</strong> | 95306标重: {rm}吨 | 差异: {wd}吨</div>
+            </div>"""
+
+        # 追踪状态说明
+        tracking_note = ""
+        if "02" in t["train_id"]:
+            tracking_note = '<div class="tracking-note">⚠️ 此为 95306 发车事件映射（最新事件=已发车），不等同于完整车辆级轨迹路径。完整轨迹依赖 95306 tracking API（Phase 3 接入）。</div>'
+        elif "01" in t["train_id"]:
+            tracking_note = '<div class="tracking-note">列一 95306 已交付 54/54 车。卸空后返空已到锦州港（用户确认 20日20时到港）。</div>'
 
         trains_html += f"""
         <div class="train-card">
@@ -480,34 +610,61 @@ def generate_html(dashboard: dict) -> str:
             </div>
             <div class="train-detail">
                 <span>第{t["current_round"]}轮</span>
-                <span>{lr.get("wagon_count", total or "?")}车 / {lr.get("container_count", "?")}箱</span>
+                <span>{lr.get("wagon_count", total or "?")}车</span>
+                {f'<span>{lr.get("container_count", "?")}箱</span>' if lr.get("container_count") else ''}
+                <span>载重: {lr.get("total_weight", lr.get("total_weight", "?"))}吨</span>
                 {f'<span>到站: {t["destination_line"]}</span>' if t.get("destination_line") else ""}
             </div>
             <div class="tracking-status">
-                <div class="ts-row"><span class="ts-label">95306 状态：</span><strong class="ts-value">{status}</strong></div>
+                <div class="ts-row"><span class="ts-label">95306 最新事件：</span><strong class="ts-value">{status}</strong></div>
                 {f'<div class="ts-row"><span class="ts-label">当前位置：</span><span class="ts-value">{location}</span></div>' if location else ""}
-                {f'<div class="ts-row"><span class="ts-label">最新轨迹时间：</span><span class="ts-value">{latest_time}</span></div>' if latest_time else ""}
+                {f'<div class="ts-row"><span class="ts-label">最新事件时间：</span><span class="ts-value">{latest_time}</span></div>' if latest_time else ""}
                 {f'<div class="ts-row"><span class="ts-label">发车时间：</span><span class="ts-value">{depart_at}</span></div>' if depart_at else ""}
                 <div class="ts-row"><span class="ts-label">已跟踪：</span><span class="ts-value">{total if total else "?"}</span>
                 <span class="ts-label">已发车：</span><span class="ts-value">{departed}</span>
-                <span class="ts-label">已到达：</span><span class="ts-value">{arrived}</span></div>
+                <span class="ts-label">已到达：</span><span class="ts-value">{arrived}</span>
+                <span class="ts-label">已交付：</span><span class="ts-value">{delivered}</span></div>
             </div>
+            {tracking_note}
+            {weight_detail}
             <div class="train-timeline">
                 {f'<span>发车: {lr["depart_time"][:16]}</span>' if lr.get("depart_time") else ""}
                 {f'<span>到站: {lr["arrive_time"][:16]}</span>' if lr.get("arrive_time") else ""}
+                {f'<span>返空到港: {lr["return_time"][:16]}</span>' if lr.get("return_time") else ""}
                 {f'<span class="note">{lr.get("notes", "")}</span>' if lr.get("notes") else ""}
             </div>
         </div>"""
 
-    # ── 散粮一次性 ──
+    # ── 散粮卡 ──
     bulk_html = ""
     for s in one_time:
+        bws = s.get("bulk_wagon_type_summary", {}) or {}
+        bulk_detail = ""
+        if bws:
+            l18 = bws.get("L18_count", 0)
+            l70 = bws.get("L70_count", 0)
+            bw = bws.get("business_weight_tons", 0)
+            rm = bws.get("rail_marked_weight_tons", 0)
+            wd = bws.get("weight_diff_tons", 0)
+            bulk_detail = f"""
+            <div class="weight-detail">
+                <div>L18: {l18}车 × 60 = {l18 * 60}吨 | L70: {l70}车 × 69 = {l70 * 69}吨</div>
+                <div><strong>业务重量: {bw}吨</strong> | 95306标重: {rm}吨 | 差异: {wd}吨</div>
+            </div>"""
+        attribution_note = f"""
+            <div class="attribution-note">散粮40车已到站；
+                其中 <strong>{lot2.get('confirmed_cars', 0)}车</strong> 用户确认（{lot2.get('confirmed_weight_tons', 0)}吨），
+                <strong>{lot2.get('pending_cars', 0)}车</strong> 待归属确认。
+                不得将全部40车计入本船lot2。
+            </div>"""
         bulk_html += f"""
         <div class="bulk-card">
             <span class="bulk-icon">📦</span>
             <strong>散粮一次性发运</strong>
             <span>{s.get("quantity", 0)}车</span>
             <span>时间: {s.get("event_time", "")}</span>
+            {bulk_detail}
+            {attribution_note}
             <span class="note">{s.get("notes", "")}</span>
         </div>"""
     if not bulk_html:
@@ -517,38 +674,33 @@ def generate_html(dashboard: dict) -> str:
     cp = resource_pool.get("container", {}) or {}
     wp = resource_pool.get("wagon", {}) or {}
     pool_html = f"""
-    <div class="pool-col">
-        <div class="pool-title">📦 箱资源</div>
+    <div class="pool-col"><div class="pool-title">📦 箱资源</div>
         <div class="pool-row"><span class="ts-label">总量：</span><span class="ts-value">{cp.get("current_total", "?")}</span></div>
         <div class="pool-row"><span class="ts-label">在途：</span><span class="ts-value">{cp.get("in_use_qty", "?")}</span></div>
         <div class="pool-row"><span class="ts-label">可用：</span><span class="ts-value">{cp.get("available_qty", "?")}</span></div>
         <div class="pool-row"><span class="ts-label">维修：</span><span class="ts-value">{cp.get("in_repair_qty", 0)}</span></div>
     </div>
-    <div class="pool-col">
-        <div class="pool-title">🚃 车体资源</div>
+    <div class="pool-col"><div class="pool-title">🚃 车体资源</div>
         <div class="pool-row"><span class="ts-label">总量：</span><span class="ts-value">{wp.get("current_total", "?")}</span></div>
         <div class="pool-row"><span class="ts-label">在途/到站：</span><span class="ts-value">{wp.get("in_use_qty", "?")}</span></div>
         <div class="pool-row"><span class="ts-label">可用：</span><span class="ts-value">{wp.get("available_qty", "?")}</span></div>
         <div class="pool-row"><span class="ts-label">维修：</span><span class="ts-value">{wp.get("in_repair_qty", 0)}</span></div>
     </div>"""
 
-    # ── 三账校验 ──
+    # ── 三账 ──
     snapshots = three_acc.get("snapshots", [])
     flows = three_acc.get("flows", [])
     adjustments = three_acc.get("adjustments", [])
     three_html = f"""
-    <div class="three-col">
-        <div class="three-title">📸 Snapshot</div>
+    <div class="three-col"><div class="three-title">📸 Snapshot</div>
         <div class="three-count">{len(snapshots)} 条记录</div>
         {''.join(f'<div class="three-item">{s.get("snapshot_date","")} — {s.get("source","")}</div>' for s in snapshots[:3])}
     </div>
-    <div class="three-col">
-        <div class="three-title">📊 Flow</div>
+    <div class="three-col"><div class="three-title">📊 Flow</div>
         <div class="three-count">{len(flows)} 条记录</div>
         {''.join(f'<div class="three-item">{f.get("flow_date","")} — {f.get("source","")}</div>' for f in flows[:3])}
     </div>
-    <div class="three-col">
-        <div class="three-title">🔧 Adjustment</div>
+    <div class="three-col"><div class="three-title">🔧 Adjustment</div>
         <div class="three-count">{len(adjustments)} 条记录</div>
         {''.join(f'<div class="three-item">{a.get("adj_date","")} — {a.get("adj_type","")} × {a.get("quantity","")}</div>' for a in adjustments[:3])}
     </div>"""
@@ -558,108 +710,58 @@ def generate_html(dashboard: dict) -> str:
     for w in warnings:
         sev = w.get("severity", "info")
         icon = {"critical": "🔴", "warning": "🟡", "info": "ℹ️"}.get(sev, "⚪")
-        warnings_html += f"""
-        <div class="warning-item warning-{sev}">
-            <span>{icon}</span>
-            <strong>{w.get("warning_type", "")}</strong>
-            <span>{w.get("message", "")}</span>
-            <span class="note">{w.get("warning_time", "")}</span>
-        </div>"""
+        warnings_html += f"""<div class="warning-item warning-{sev}"><span>{icon}</span><strong>{w.get("warning_type", "")}</strong><span>{w.get("message", "")}</span><span class="note">{w.get("warning_time", "")}</span></div>"""
+
+    # ── source_conflicts ──
+    conflict_html = ""
+    for c in source_conflicts:
+        conflict_html += f"""<div class="card full" style="border-color:#ff9800; background:#2a2010;">
+    <h2>⚠️ 状态来源冲突</h2>
+    <div style="font-size:0.85em; line-height:1.8;">
+        <strong>{c.get("object", "")}</strong><br>
+        人工状态：{c.get("manual_status", "")}<br>
+        95306同步状态：{c.get("status_95306", "")}<br>
+        处理措施：{c.get("resolution", "")}
+    </div>
+</div>"""
+    if not conflict_html:
+        conflict_html = ""
 
     # ── 待确认 ──
     pending_html = ""
     for p in pending:
         icon = "✅" if p.get("confirmed") else "⏳"
-        pending_html += f"""
-        <div class="pending-item">
-            <span>{icon}</span>
-            <span>{p.get("question", "")}</span>
-        </div>"""
+        pending_html += f"""<div class="pending-item"><span>{icon}</span><span>{p.get("question", "")}</span></div>"""
 
     # ── 发运计划 ──
-    plan_details = plan_info.get("details", {}) if plan_info else {}
-    plan_container = plan_details.get("container", {})
-    plan_bulk = plan_details.get("bulk_wagon", {})
-    plan_consumption = plan_details.get("factory_consumption", "")
-
     plan_days_rows = ""
     for pd in plan_days:
-        plan_days_rows += (
-            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>"
-        ).format(
-            pd.get("day_of_week", ""),
-            pd.get("container_trains", 0),
-            pd.get("container_wagons", 0),
-            pd.get("bulk_grain_wagons", 0),
+        plan_days_rows += "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(
+            pd.get("day_of_week", ""), pd.get("container_trains", 0),
+            pd.get("container_wagons", 0), pd.get("bulk_grain_wagons", 0),
             pd.get("estimated_tons", 0),
         )
 
-    # Pre-compute dynamic HTML fragments to avoid nested f-string issues
-    _plan_name = ""
-    if plan_info:
-        _plan_name = '<div class="inv-row"><strong>计划名称：</strong>{}</div>'.format(plan_info.get("name", "未命名"))
-    _plan_eff = ""
-    if plan_info and plan_info.get("effective_from"):
-        _plan_eff = '<div class="inv-row"><strong>生效：</strong>{}</div>'.format(plan_info["effective_from"])
-    _plan_ct = ""
-    if plan_container:
-        _plan_ct = '<div class="inv-row"><strong>集装箱：</strong>{}</div>'.format(plan_container.get("frequency_label", "待配置"))
-    _plan_bk = ""
-    if plan_bulk:
-        _plan_bk = '<div class="inv-row"><strong>散粮：</strong>{}</div>'.format(plan_bulk.get("frequency_label", "按需或暂停"))
-    _plan_cons = ""
-    if plan_consumption:
-        _plan_cons = '<div class="inv-row"><strong>厂耗：</strong>{} 吨/日</div>'.format(plan_consumption)
-    _plan_table = ""
-    if plan_days_rows:
-        _plan_table = (
-            '<div class="inv-row" style="margin-top:6px;"><strong>按日明细</strong></div>'
-            "<table><tr><th>日</th><th>箱列</th><th>箱车</th><th>散粮车</th><th>预计吨</th></tr>{}</table>"
-        ).format(plan_days_rows)
-
     # ── 库存 ──
-    inv_level = "below_redline" if inv.get("below_red_line") else "normal"
-    inv_icon = "🔴" if inv.get("below_red_line") else "🟢"
-
     _inv_stock = ""
+    _inv_meta = _inv_flow = _inv_other = _inv_dq = ""
     if inv:
-        _inv_stock = (
-            '<div class="inv-level {level}">{icon} 库存水平 {stock} 吨'
-            '{warn}</div>'
-        ).format(
-            level=inv_level,
-            icon=inv_icon,
-            stock=inv.get("closing_stock", "?"),
-            warn=' <span style="color:#ffcdd2;">&#x26A0;&#xFE0F; 低于红线 {} 吨</span>'.format(inv.get("red_line", "?"))
-            if inv.get("below_red_line") else "",
-        )
-        _inv_meta = '<div class="inv-detail"><span>红线: {} 吨</span><span>可支撑: {} 天</span></div>'.format(
-            inv.get("red_line", "?"), inv.get("days_supported", "?")
-        )
-        _inv_flow = '<div class="inv-detail"><span>本线入库: {} 吨</span><span>其他来源: {} 吨</span><span>消耗: {} 吨</span></div>'.format(
-            inv.get("line_in_qty", 0), inv.get("other_source_in_qty", 0), inv.get("consumption", 0)
-        )
-        _inv_other = ""
+        inv_level = "below_redline" if inv.get("below_red_line") else "normal"
+        inv_icon_char = "🔴" if inv.get("below_red_line") else "🟢"
+        warn_html = ' <span style="color:#ffcdd2;">⚠️ 低于红线 {} 吨</span>'.format(inv.get("red_line", "?")) if inv.get("below_red_line") else ""
+        _inv_stock = '<div class="inv-level {}">{} 库存水平 {} 吨{}</div>'.format(inv_level, inv_icon_char, inv.get("closing_stock", "?"), warn_html)
+        _inv_meta = '<div class="inv-detail"><span>红线: {} 吨</span><span>可支撑: {} 天</span></div>'.format(inv.get("red_line", "?"), inv.get("days_supported", "?"))
+        _inv_flow = '<div class="inv-detail"><span>本线入库: {} 吨</span><span>其他来源: {} 吨</span><span>消耗: {} 吨</span></div>'.format(inv.get("line_in_qty", 0), inv.get("other_source_in_qty", 0), inv.get("consumption", 0))
         if inv.get("other_source_inferred"):
-            _inv_other = '<div class="inv-row">反推其他来源: {:.0f} 吨 <span class="note">(期末 - 期初 - 本线入库 + 消耗 &#xB1; 调整)</span></div>'.format(
-                inv.get("other_source_inferred", 0)
-            )
-        _inv_dq = '<div class="inv-row" style="margin-top:4px;"><span class="note">数据质量: {}</span></div>'.format(
-            inv.get("data_quality", "unknown")
-        )
-    else:
-        _inv_stock = ""
-        _inv_meta = ""
-        _inv_flow = ""
-        _inv_other = ""
-        _inv_dq = ""
+            _inv_other = '<div class="inv-row">反推其他来源: {:.0f} 吨 <span class="note">(期末 - 期初 - 本线入库 + 消耗 &#xB1; 调整)</span></div>'.format(inv.get("other_source_inferred", 0))
+        _inv_dq = '<div class="inv-row" style="margin-top:4px;"><span class="note">数据质量: {}</span></div>'.format(inv.get("data_quality", "unknown"))
 
-    # ── Build HTML body in segments ──
+    # ── Build segments ──
     _header = f"""<h1>🌱 九三大豆循环运输看板</h1>
 <div class="meta">
     <span>生成时间: {now}</span> |
     <span>架构: V3 循环运输资源账</span> |
-    <span>数据: jiusan_cycle.db + 95306</span>
+    <span>合同: JGWL-JZTS-DD-202601</span>
 </div>"""
 
     _summary_block = f"""<div class="card">
@@ -668,55 +770,37 @@ def generate_html(dashboard: dict) -> str:
         <div>今日发出: <strong>{dispatched}</strong> 车</div>
         <div>在途: <strong>{on_way}</strong> 车</div>
         <div>散粮一次性: {summary.get("bulk_dispatch_once", [0])[0]} 车</div>
-        <div class="note" style="margin-top:4px;">数据来源: 95306 实时状态，无预期冲突检测</div>
     </div>
 </div>"""
 
     _plan_block = f"""<div class="card">
     <h2>📋 当前发运计划</h2>
-    {_plan_name}
-    {_plan_eff}
-    {_plan_ct}
-    {_plan_bk}
-    {_plan_cons}
-    {_plan_table}
+    <div class="plan-detail">{active_plan_human.replace(chr(10), '<br>')}</div>
+    {f'<table style="margin-top:8px;"><tr><th>日</th><th>箱列</th><th>箱车</th><th>散粮车</th><th>预计吨</th></tr>{plan_days_rows}</table>' if plan_days_rows else ''}
 </div>"""
 
-    _trains_block = f"""<div class="card full">
-    <h2>🚂 循环列状态</h2>
-    <div class="note" style="margin-bottom:6px;">运行状态直接来源于 95306 最新事件，无冲突检测</div>
-    {trains_html}
-</div>"""
+    _pool_block = f"""<div class="card full"><h2>📦 资源池分布</h2><div class="pool-grid">{pool_html}</div></div>"""
+
+    _trains_block = f"""<div class="card full"><h2>🚂 循环列状态</h2>{trains_html}</div>"""
 
     _tracking_block = f"""<div class="card full">
     <h2>🛤️ 95306 发运 / 在途轨迹</h2>
     {f'<div class="inv-row">今天 95306 已发车: {dispatched} 车</div>' if dispatched else '<div class="inv-row">今天暂无发车记录</div>'}
-    {f'<div class="inv-row">当前在途: {on_way} 车</div>' if on_way else '<div class="inv-row">暂无在途车辆</div>'}
-    {f'<div class="inv-row">即将到达: {soon_arrive} 车</div>' if soon_arrive else ''}
+    {f'<div class="inv-row">当前在途: {on_way} 车（列二 54 车）</div>' if on_way else ''}
     <div class="tracking-status" style="margin-top:6px;">
-        <div class="ts-row"><span class="ts-label">数据来源：</span><span class="ts-value">rail95306-sync (只读)</span></div>
-        <div class="ts-row"><span class="ts-label">状态映射：</span><span class="ts-value">95306 已发车(40) → 在途 · 已到达(60) → 已到站 · 已交付(80) → 已交付</span></div>
-        <div class="ts-row"><span class="ts-label">冲突检测：</span><span class="ts-value">❌ 已移除 — 运行状态以 95306 为准</span></div>
+        <div class="ts-row"><span class="ts-label">数据来源：</span><span class="ts-value">rail95306-sync (只读) — 95306 发车/运单状态字段</span></div>
+        <div class="ts-row"><span class="ts-label">列二说明：</span><span class="ts-value">最新 95306 事件为 已发车(40) @15:42，非完整车辆级轨迹路径。轨迹 API 待 Phase 3 接入。</span></div>
+        <div class="ts-row"><span class="ts-label">冲突检测：</span><span class="ts-value">source_conflicts 字段保留（当前为空），供将来人工实况与 95306 不一致时使用。</span></div>
     </div>
 </div>"""
 
     _three_block = f"""<div class="card full">
     <h2>✅ 状态 / 流量 / 调整三账</h2>
-    <div class="three-grid">
-        {three_html}
-    </div>
+    <div class="three-grid">{three_html}</div>
     <div class="note" style="margin-top:8px;">完整三账校验请运行: python3 scripts/jiusan_three_account_verify.py</div>
 </div>"""
 
-    _efficiency_block = f"""<div class="card">
-    <h2>📈 每日效率统计</h2>
-    <div class="inv-row">本日发出: {dispatched} 车</div>
-    <div class="inv-row">在途: {on_way} 车</div>
-    <div class="inv-row">散粮一次性: {summary.get("bulk_dispatch_once", [0])[0]} 车</div>
-    <div class="inv-row">三日达成率: <span class="note">待多日数据积累后计算</span></div>
-</div>"""
-
-    _warning_block = f"""<div class="card">
+    _warning_block = f"""<div class="card full">
     <h2>⚠️ 预警与待确认</h2>
     {warnings_html if warnings_html else '<div class="note">暂无活跃预警</div>'}
     <div style="margin-top:8px;">
@@ -725,24 +809,20 @@ def generate_html(dashboard: dict) -> str:
     </div>
 </div>"""
 
-    _bulk_block = f"""<div class="card">
-    <h2>📦 非循环发运</h2>
-    {bulk_html}
+    _bulk_block = f"""<div class="card"><h2>📦 非循环发运（散粮一次性）</h2>{bulk_html}</div>"""
+
+    _inv_block = f"""<div class="card"><h2>🏭 厂家库存与风险</h2>
+    {_inv_stock}{_inv_meta}{_inv_flow}{_inv_other}{_inv_dq}
 </div>"""
 
-    _inv_block = f"""<div class="card">
-    <h2>🏭 厂家库存与风险</h2>
-    {_inv_stock}
-    {_inv_meta}
-    {_inv_flow}
-    {_inv_other}
-    {_inv_dq}
-</div>"""
-
-    _pool_block = f"""<div class="card full">
-    <h2>📦 资源池分布</h2>
-    <div class="pool-grid">
-        {pool_html}
+    _hist_block = f"""<div class="card">
+    <h2>📜 历史数据与配置</h2>
+    <div class="inv-row" style="font-size:0.85em; line-height:1.7;">
+        <div>合同编号: <strong>JGWL-JZTS-DD-202601</strong></div>
+        <div>合同路径: <span class="note">ops-data-hub/data/contracts/jiusan_soybean/物流发展-铁盛2026大豆合同.docx</span></div>
+        <div>SOP: <span class="note">prompts_and_reports/SOPs/jiusan_soybean_sop.md</span></div>
+        <div>旧 release_batches: <span class="note">已迁移至 jiusan_cycle.db，备份见 samples/legacy_jiusan_release_batches_backup.json</span></div>
+        <div>历史报告: <span class="note">prompts_and_reports/reports/ (18 个九三相关报告已归档)</span></div>
     </div>
 </div>"""
 
@@ -759,22 +839,7 @@ def generate_html(dashboard: dict) -> str:
     </code>
 </div>"""
 
-    html_body = (
-        _header
-        + '<div class="grid">'
-        + _summary_block
-        + _plan_block
-        + _pool_block
-        + _trains_block
-        + _tracking_block
-        + _three_block
-        + _efficiency_block
-        + _warning_block
-        + _bulk_block
-        + _inv_block
-        + "</div>"
-        + _footer
-    )
+    html_body = _header + '<div class="grid">' + _summary_block + _plan_block + vessel_lot_html + _pool_block + _trains_block + _tracking_block + _three_block + _warning_block + _bulk_block + _inv_block + _hist_block + conflict_html + "</div>" + _footer
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -803,12 +868,14 @@ h1 {{ font-size: 1.5em; margin-bottom: 8px; color: #fff; }}
 .status-arrived {{ background: #66bb6a; color: #1a2633; }}
 .status-pending {{ background: #78909c; color: #fff; }}
 .status-unloaded {{ background: #66bb6a; color: #1a2633; }}
-.train-detail {{ display: flex; gap: 16px; font-size: 0.85em; color: #b0bec5; margin-bottom: 4px; }}
+.train-detail {{ display: flex; gap: 16px; font-size: 0.85em; color: #b0bec5; margin-bottom: 4px; flex-wrap: wrap; }}
 .train-timeline {{ font-size: 0.82em; color: #78909c; display: flex; gap: 12px; flex-wrap: wrap; }}
 .tracking-status {{ font-size: 0.82em; color: #b3e5fc; background: #0d2a3a; border-radius: 4px; padding: 6px 10px; margin: 4px 0; line-height: 1.6; }}
+.tracking-note {{ font-size: 0.82em; color: #ffcc80; background: #2a2010; border-radius: 4px; padding: 4px 8px; margin: 4px 0; }}
 .ts-row {{ margin: 1px 0; }}
 .ts-label {{ color: #78909c; }}
 .ts-value {{ color: #e0e0e0; }}
+.weight-detail {{ font-size: 0.82em; color: #a5d6a7; background: #1a2a1a; border-radius: 4px; padding: 6px 10px; margin: 4px 0; line-height: 1.6; }}
 .pool-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
 .pool-col {{ background: #1e3040; border-radius: 6px; padding: 10px; }}
 .pool-title {{ font-weight: bold; color: #4fc3f7; margin-bottom: 6px; }}
@@ -816,8 +883,10 @@ h1 {{ font-size: 1.5em; margin-bottom: 8px; color: #fff; }}
 .bulk-card {{ background: #2a1a20; border-radius: 6px; padding: 10px; margin-bottom: 6px;
              display: flex; gap: 12px; align-items: center; font-size: 0.85em; flex-wrap: wrap; }}
 .bulk-icon {{ font-size: 1.1em; }}
+.attribution-note {{ font-size: 0.82em; color: #ffcc80; background: #2a2010; border-radius: 4px; padding: 6px 10px; margin: 4px 0; line-height: 1.6; }}
 .empty {{ color: #78909c; font-style: italic; }}
 .note {{ color: #78909c; font-size: 0.85em; }}
+.plan-detail {{ font-size: 0.85em; line-height: 1.6; white-space: pre-line; }}
 .three-grid {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }}
 .three-col {{ background: #1e3040; border-radius: 6px; padding: 10px; }}
 .three-title {{ color: #4fc3f7; font-weight: bold; margin-bottom: 4px; }}
@@ -850,15 +919,12 @@ td {{ padding: 6px 8px; border-bottom: 1px solid #1e3040; }}
 def main():
     import sys
     conn = get_conn()
-
-    print("生成 V3 九三大豆循环运输看板...")
-    print(f"  DB: {JIUSAN_DB}")
+    print("生成 V3 九三大豆循环运输看板（收口修正版）...")
     dashboard = generate(conn)
     conn.close()
 
     DASHBOARD_DIR.mkdir(parents=True, exist_ok=True)
 
-    # JSON
     json_path = DASHBOARD_DIR / "jiusan_dashboard_data.json"
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(dashboard, f, ensure_ascii=False, indent=2, default=str)
@@ -870,16 +936,17 @@ def main():
             json.dump(dashboard, f, ensure_ascii=False, indent=2, default=str)
         print(f"  Example: {example_path}")
 
-    # HTML
     html_content = generate_html(dashboard)
     html_path = DASHBOARD_DIR / "jiusan_dashboard.html"
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(html_content)
     print(f"  HTML: {html_path}")
 
-    print("✅ V3 看板生成完成")
-    print("  运行状态直接映射 95306，无冲突检测")
-    print(f"  列二状态 = {dashboard.get('cycle_trains', [{}])[1].get('tracking', {}).get('summary_status', 'N/A')}")
+    print("✅ V3 收口修正版看板生成完成")
+    for t in dashboard.get("cycle_trains", []):
+        print(f"  {t['train_id']}: {t['status_text']} ({t.get('tracking', {}).get('delivered_cars', 0)}/{t.get('tracking', {}).get('total_cars', 0)} delivered)")
+    print(f"  船名: {dashboard.get('current_vessel_lots', {}).get('vessel_name', 'N/A')}")
+    print(f"  source_conflicts: {len(dashboard.get('source_conflicts', []))} 条")
 
 
 if __name__ == "__main__":

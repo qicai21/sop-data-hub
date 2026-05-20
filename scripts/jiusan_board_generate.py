@@ -20,6 +20,55 @@ DASHBOARD_DIR = REPO_ROOT / "dashboard"
 
 from typing import Optional
 
+VESSEL_LOT_CONFIG_PATH = REPO_ROOT / "samples" / "jiusan_current_vessel_lot_config.example.json"
+
+
+def _load_vessel_lot_config() -> dict:
+    """读取当前船/lot 配置"""
+    if VESSEL_LOT_CONFIG_PATH.exists():
+        try:
+            return json.loads(VESSEL_LOT_CONFIG_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _human_readable_plan(plan: Optional[dict]) -> str:
+    """将发运计划转为自然语言"""
+    if not plan:
+        return "当前无有效发运计划"
+    details = plan.get("details", {})
+    container = details.get("container", {})
+    bulk = details.get("bulk_wagon", {})
+    lines = []
+    lines.append(f"计划名称：{plan.get('name', '未命名')}")
+    lines.append(f"生效时间：{plan.get('effective_from', '未知')}")
+    if container:
+        freq = container.get("frequency_label", "")
+        train_count = container.get("target_train_count", "?")
+        daily = container.get("average_daily_train_count", "?")
+        target = container.get("target_tons_per_day", "?")
+        parts = []
+        if freq:
+            parts.append(freq)
+        else:
+            parts.append(f"{train_count}列/{daily}列/日")
+        if target:
+            parts.append(f"目标{target}吨/日")
+        lines.append(f"集装箱计划：{'，'.join(parts)}")
+    if bulk:
+        freq = bulk.get("frequency_label", "待确认")
+        note = bulk.get("note", "")
+        parts = [freq]
+        if note:
+            parts.append(note)
+        lines.append(f"散粮/K车计划：{'；'.join(parts)}")
+    cons = details.get("factory_consumption")
+    if cons:
+        lines.append(f"厂家日耗：{cons} 吨/日")
+    return "\n".join(lines)
+
+
 def _load_tracking_snapshot() -> dict:
     """从追踪快照文件读取 tracking status"""
     tracking_path = REPO_ROOT / "samples" / "jiusan_tracking_status_snapshot.json"
@@ -97,6 +146,23 @@ def generate(conn) -> dict:
 
     # ── 追踪状态 ──
     tracking_data = _load_tracking_snapshot()
+
+    # ── 船/lot 配置 ──
+    vessel_config = _load_vessel_lot_config()
+
+    # ── 状态冲突检测 ──
+    source_conflicts = []
+    # Train 02: 用户确认已发车+到高桥镇, 但95306仍显示已制单
+    train_02_manual = "已发出并到达高桥镇站"
+    train_02_95306 = "已制单/待发"
+    ts_02 = tracking_data.get("container_cycle_train_02", {})
+    if ts_02.get("summary_status", "").find("已制单") >= 0 or ts_02.get("departed_car_count", 0) == 0:
+        source_conflicts.append({
+            "object": "container_cycle_train_02",
+            "manual_status": train_02_manual,
+            "status_95306": train_02_95306,
+            "resolution": "等待下一次 95306 同步或人工确认覆盖",
+        })
 
     # ── 构建 cycle_trains 区块 ──
     cycle_trains_block = []
@@ -321,6 +387,35 @@ def generate(conn) -> dict:
         },
         "factory_inventory": inv_block,
         "pending_confirmations": pending,
+        "current_vessel_lots": {
+            "vessel_name": vessel_config.get("vessel_name") or "待用户确认",
+            "lot1": {
+                "mode": "container",
+                "total_planned_tons": vessel_config.get("lot1", {}).get("total_planned_tons"),
+                "confirmed_dispatched_tons": vessel_config.get("lot1", {}).get("confirmed_dispatched_tons"),
+                "remaining_tons": vessel_config.get("lot1", {}).get("remaining_tons"),
+                "note": vessel_config.get("lot1", {}).get("note") or "总货量待配置",
+            },
+            "lot2": {
+                "mode": "bulk_wagon",
+                "total_planned_tons": vessel_config.get("lot2", {}).get("total_planned_tons"),
+                "confirmed_cars": 4,
+                "confirmed_weight_tons": 249.0,
+                "candidate_cars": 40,
+                "candidate_weight_tons": 2571.0,
+                "pending_cars": 36,
+                "remaining_tons": vessel_config.get("lot2", {}).get("remaining_tons"),
+                "note": "仅4车用户确认（8103798/8101469/8101431/8105474），36车归属待确认",
+            },
+        },
+        "refresh_policy": {
+            "mode": "manual",
+            "auto_refresh_enabled": False,
+            "last_generated_at": now,
+            "note": "当前 Phase 2.5 阶段无定时任务。只打开 HTML 不会自动更新。需在服务器运行 python3 scripts/jiusan_refresh_board.py 后再刷新浏览器。",
+        },
+        "source_conflicts": source_conflicts,
+        "active_plan_human": _human_readable_plan(dict(active_plan) if active_plan else None),
         "95306_scan_status": {
             "last_scan": last_scan['scan_time'] if last_scan else None,
             "new_records": last_scan['new_records'] if last_scan else None,
@@ -361,6 +456,14 @@ def generate_html(dashboard: dict) -> str:
                 <div class="ts-row"><span class="ts-label">已跟踪车辆：</span><span class="ts-value">{tracked}/{tracked}</span></div>
                 <div class="ts-row"><span class="ts-label">已发车：</span><span class="ts-value">{departed}</span><span class="ts-label"> 已到达：</span><span class="ts-value">{arrived}</span><span class="ts-label"> 已交付：</span><span class="ts-value">{delivered}</span></div>
                 <div class="ts-note">{note}</div>
+            </div>"""
+        # 如果存在 source_conflicts 且这条 tracking 属于冲突列，加注冲突标识
+        t_id = t.get('train_id', '')
+        for sc in dashboard.get('source_conflicts', []):
+            if t_id in sc.get('object', ''):
+                tracking_html += f"""
+            <div style="font-size:0.82em; color:#ff9800; background:#2a2010; border-radius:4px; padding:4px 8px; margin:4px 0;">
+                ⚠️ {sc['manual_status']}（人工确认）；{sc['status_95306']}（95306 同步）— 状态冲突
             </div>"""
         weight_detail = ""
         if cts:
@@ -415,6 +518,15 @@ def generate_html(dashboard: dict) -> str:
                 <div>L18: {l18}车 × 60 = {l18 * 60}吨 | L70: {l70}车 × 69 = {l70 * 69}吨</div>
                 <div><strong>业务重量: {bw}吨</strong> | 95306标重: {rm}吨 | 差异: {wd}吨</div>
             </div>"""
+        # 归属提示
+        vessel = dashboard.get('current_vessel_lots', {})
+        lot2 = vessel.get('lot2', {})
+        attribution_note = f"""
+            <div class="attribution-note">散粮40车已到站；
+                其中 <strong>{lot2.get('confirmed_cars', 0)}车</strong> 用户确认（{lot2.get('confirmed_weight_tons', 0)}吨），
+                <strong>{lot2.get('pending_cars', 0)}车</strong> 待归属确认。
+                不得将全部40车计入本船lot2。
+            </div>"""
         bulk_html += f"""
         <div class="bulk-card">
             <span class="bulk-icon">📦</span>
@@ -422,6 +534,7 @@ def generate_html(dashboard: dict) -> str:
             <span>{s['quantity']}车</span>
             <span>时间: {s['event_time']}</span>
             {bulk_detail}
+            {attribution_note}
             <span class="note">{s.get('notes', '')}</span>
         </div>"""
     if not bulk_html:
@@ -460,6 +573,46 @@ def generate_html(dashboard: dict) -> str:
             <span>{p.get('question', '')}</span>
         </div>"""
 
+    # 船/lot HTML
+    vessel = dashboard.get('current_vessel_lots', {})
+    lot1 = vessel.get('lot1', {})
+    lot2 = vessel.get('lot2', {})
+    vessel_lot_html = f"""
+<div class="card">
+    <h2>🚢 本船放货批次 / Lot 进度</h2>
+    <div style="font-size:0.85em; line-height:1.8;">
+        <div><strong>船名：</strong>{vessel.get('vessel_name', '待用户确认')}</div>
+        <hr style="border-color:#2a3a4a; margin:6px 0;">
+        <div><strong>lot1：集装箱货</strong></div>
+        <div>&nbsp;&nbsp;总货量：{lot1.get('total_planned_tons', '待配置')} 吨</div>
+        <div>&nbsp;&nbsp;已发（业务重量）：{lot1.get('confirmed_dispatched_tons', 0)} 吨</div>
+        <div>&nbsp;&nbsp;剩余：{lot1.get('remaining_tons', '待配置')} 吨</div>
+        <div class="note">&nbsp;&nbsp;{lot1.get('note', '')}</div>
+        <hr style="border-color:#2a3a4a; margin:6px 0;">
+        <div><strong>lot2：散粮车货</strong></div>
+        <div>&nbsp;&nbsp;总货量：{lot2.get('total_planned_tons', '待配置')} 吨</div>
+        <div>&nbsp;&nbsp;已确认已发：{lot2.get('confirmed_cars', 0)} 车 / {lot2.get('confirmed_weight_tons', 0)} 吨</div>
+        <div>&nbsp;&nbsp;候选已发：{lot2.get('candidate_cars', 0)} 车 / {lot2.get('candidate_weight_tons', 0)} 吨（待确认）</div>
+        <div>&nbsp;&nbsp;待归属确认：{lot2.get('pending_cars', 0)} 车</div>
+        <div>&nbsp;&nbsp;剩余：{lot2.get('remaining_tons', '待配置')} 吨</div>
+        <div class="note">&nbsp;&nbsp;{lot2.get('note', '')}</div>
+    </div>
+</div>"""
+
+    # 状态冲突 HTML
+    conflict_html = ""
+    for c in dashboard.get('source_conflicts', []):
+        conflict_html += f"""
+<div class="card full" style="border-color:#ff9800; background:#2a2010;">
+    <h2>⚠️ 状态来源冲突</h2>
+    <div style="font-size:0.85em; line-height:1.8;">
+        <strong>{c['object']}</strong><br>
+        人工状态：{c['manual_status']}<br>
+        95306同步状态：{c['status_95306']}<br>
+        处理措施：{c['resolution']}
+    </div>
+</div>"""
+
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -494,6 +647,7 @@ h1 {{ font-size: 1.5em; margin-bottom: 8px; color: #fff; }}
 .ts-label {{ color: #78909c; }}
 .ts-value {{ color: #e0e0e0; }}
 .ts-note {{ color: #607d8b; font-size: 0.85em; margin-top: 4px; font-style: italic; }}
+.attribution-note {{ font-size: 0.82em; color: #ffcc80; background: #2a2010; border-radius: 4px; padding: 6px 10px; margin: 4px 0; line-height: 1.6; }}
 .bulk-card {{ background: #2a1a20; border-radius: 6px; padding: 10px; margin-bottom: 6px;
              display: flex; gap: 12px; align-items: center; font-size: 0.85em; flex-wrap: wrap; }}
 .bulk-icon {{ font-size: 1.1em; }}
@@ -530,13 +684,16 @@ td {{ padding: 6px 8px; border-bottom: 1px solid #1e3040; }}
     </div>
 </div>
 
+    {vessel_lot_html}
+
 <div class="card">
     <h2>📋 当前发运计划</h2>
-    <div class="plan-detail">
-        {dashboard.get('active_plan', {}).get('plan_id', 'N/A')}: {dashboard.get('active_plan', {}).get('name', '')}<br>
-        {json.dumps(dashboard.get('active_plan', {}).get('details', {}), ensure_ascii=False, indent=2)}
+    <div class="plan-detail" style="white-space:pre-line;">
+        {dashboard.get('active_plan_human', '当前无有效发运计划')}
     </div>
 </div>
+
+{conflict_html}
 
 <div class="card full">
     <h2>🚂 循环列状态</h2>
@@ -585,6 +742,16 @@ td {{ padding: 6px 8px; border-bottom: 1px solid #1e3040; }}
 </div>
 <div class="meta" style="margin-top:20px;">
     数据来源: jiusan_cycle.db | 扫描: {dashboard.get('95306_scan_status', {}).get('last_scan', 'N/A')} | {dashboard.get('95306_scan_status', {}).get('new_records', 0)} 条记录
+</div>
+<div class="meta" style="margin-top:4px; border:1px solid #ff9800; padding:8px 12px; border-radius:6px; background:#2a2010;">
+    <strong>🔄 刷新方式：手动</strong> — 当前 Phase 2.5 阶段无自动刷新服务。<br>
+    只打开此页面不会自动拉取最新数据。<br>
+    如需更新，请在服务器执行：
+    <code style="display:block; margin:4px 0 0 20px; font-size:0.85em;">
+    cd /Users/qicai21/projects/repos/ops-data-hub<br>
+    python3 scripts/jiusan_refresh_board.py<br>
+    </code>
+    然后刷新浏览器或重新打开此 HTML 文件。
 </div>
 </body>
 </html>"""

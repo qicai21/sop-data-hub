@@ -1,7 +1,7 @@
 {
   "_meta": {
     "dashboard_name": "九三大豆循环运输看板",
-    "generated_at": "2026-05-20T06:58:24.416739+00:00",
+    "generated_at": "2026-05-20T07:16:53.842371+00:00",
     "data_sources": [
       "jiusan_cycle.db",
       "95306_sync"
@@ -96,7 +96,7 @@
       "tracking_status": {
         "enabled": true,
         "source": "rail95306-sync (shipments table)",
-        "last_checked_at": "2026-05-20T06:58:24.376143+00:00",
+        "last_checked_at": "2026-05-20T07:16:37.574403+00:00",
         "summary_status": "已交付；返空待人工确认",
         "current_location": "交付",
         "latest_event_time": "2026-05-20 05:22:58",
@@ -151,7 +151,7 @@
       "tracking_status": {
         "enabled": true,
         "source": "rail95306-sync (shipments table)",
-        "last_checked_at": "2026-05-20T06:58:24.376299+00:00",
+        "last_checked_at": "2026-05-20T07:16:37.574588+00:00",
         "summary_status": "已制单/待发",
         "current_location": "制票",
         "latest_event_time": "2026-05-20 10:23:47",
@@ -295,8 +295,44 @@
       "question": "库存差额是否来自其他来源入库？当前库存为样例值（data_quality=sample），需晨报/人工录入确认。"
     }
   ],
+  "current_vessel_lots": {
+    "vessel_name": "待用户确认",
+    "lot1": {
+      "mode": "container",
+      "total_planned_tons": null,
+      "confirmed_dispatched_tons": 6066.0,
+      "remaining_tons": null,
+      "note": "集装箱货。总货量待配置。已发6066吨=3067.2(列1)+2998.8(列2)。"
+    },
+    "lot2": {
+      "mode": "bulk_wagon",
+      "total_planned_tons": null,
+      "confirmed_cars": 4,
+      "confirmed_weight_tons": 249.0,
+      "candidate_cars": 40,
+      "candidate_weight_tons": 2571.0,
+      "pending_cars": 36,
+      "remaining_tons": null,
+      "note": "仅4车用户确认（8103798/8101469/8101431/8105474），36车归属待确认"
+    }
+  },
+  "refresh_policy": {
+    "mode": "manual",
+    "auto_refresh_enabled": false,
+    "last_generated_at": "2026-05-20T07:16:53.842371+00:00",
+    "note": "当前 Phase 2.5 阶段无定时任务。只打开 HTML 不会自动更新。需在服务器运行 python3 scripts/jiusan_refresh_board.py 后再刷新浏览器。"
+  },
+  "source_conflicts": [
+    {
+      "object": "container_cycle_train_02",
+      "manual_status": "已发出并到达高桥镇站",
+      "status_95306": "已制单/待发",
+      "resolution": "等待下一次 95306 同步或人工确认覆盖"
+    }
+  ],
+  "active_plan_human": "计划名称：第二轮调整计划（当前）\n生效时间：2026-05-16",
   "95306_scan_status": {
-    "last_scan": "2026-05-20T14:58:24.376424",
+    "last_scan": "2026-05-20T15:16:37.574715",
     "new_records": 148,
     "matched_to_train": 2
   }

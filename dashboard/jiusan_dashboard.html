@@ -32,6 +32,7 @@ h1 { font-size: 1.5em; margin-bottom: 8px; color: #fff; }
 .ts-label { color: #78909c; }
 .ts-value { color: #e0e0e0; }
 .ts-note { color: #607d8b; font-size: 0.85em; margin-top: 4px; font-style: italic; }
+.attribution-note { font-size: 0.82em; color: #ffcc80; background: #2a2010; border-radius: 4px; padding: 6px 10px; margin: 4px 0; line-height: 1.6; }
 .bulk-card { background: #2a1a20; border-radius: 6px; padding: 10px; margin-bottom: 6px;
              display: flex; gap: 12px; align-items: center; font-size: 0.85em; flex-wrap: wrap; }
 .bulk-icon { font-size: 1.1em; }
@@ -53,7 +54,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
 <body>
 <h1>🌱 九三大豆循环运输看板</h1>
 <div class="meta">
-    <span>生成时间: 2026-05-20 14:58</span> |
+    <span>生成时间: 2026-05-20 15:16</span> |
     <span>数据窗口: >= 2026-05-19 06:00</span> |
     <span>Phase 2 MVP</span>
 </div>
@@ -68,29 +69,44 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
     </div>
 </div>
 
+    
+<div class="card">
+    <h2>🚢 本船放货批次 / Lot 进度</h2>
+    <div style="font-size:0.85em; line-height:1.8;">
+        <div><strong>船名：</strong>待用户确认</div>
+        <hr style="border-color:#2a3a4a; margin:6px 0;">
+        <div><strong>lot1：集装箱货</strong></div>
+        <div>&nbsp;&nbsp;总货量：None 吨</div>
+        <div>&nbsp;&nbsp;已发（业务重量）：6066.0 吨</div>
+        <div>&nbsp;&nbsp;剩余：None 吨</div>
+        <div class="note">&nbsp;&nbsp;集装箱货。总货量待配置。已发6066吨=3067.2(列1)+2998.8(列2)。</div>
+        <hr style="border-color:#2a3a4a; margin:6px 0;">
+        <div><strong>lot2：散粮车货</strong></div>
+        <div>&nbsp;&nbsp;总货量：None 吨</div>
+        <div>&nbsp;&nbsp;已确认已发：4 车 / 249.0 吨</div>
+        <div>&nbsp;&nbsp;候选已发：40 车 / 2571.0 吨（待确认）</div>
+        <div>&nbsp;&nbsp;待归属确认：36 车</div>
+        <div>&nbsp;&nbsp;剩余：None 吨</div>
+        <div class="note">&nbsp;&nbsp;仅4车用户确认（8103798/8101469/8101431/8105474），36车归属待确认</div>
+    </div>
+</div>
+
 <div class="card">
     <h2>📋 当前发运计划</h2>
-    <div class="plan-detail">
-        plan_B: 第二轮调整计划（当前）<br>
-        {
-  "container": {
-    "target_cycle_days": 2,
-    "target_train_count": 3,
-    "average_daily_train_count": 1.5,
-    "frequency_label": "2天3列",
-    "target_tons_per_day": 12000
-  },
-  "bulk_wagon": {
-    "target_cycle_days": 1,
-    "target_train_count": 1,
-    "average_daily_train_count": 1.0,
-    "frequency_label": "按需/暂停",
-    "note": "散粮40车已发，本次不参与循环，后续恢复待确认"
-  },
-  "factory_consumption": 5500,
-  "daily_target": 12000,
-  "notes": "当前计划B：两列集装箱循环运输中。散粮列暂不恢复。"
-}
+    <div class="plan-detail" style="white-space:pre-line;">
+        计划名称：第二轮调整计划（当前）
+生效时间：2026-05-16
+    </div>
+</div>
+
+
+<div class="card full" style="border-color:#ff9800; background:#2a2010;">
+    <h2>⚠️ 状态来源冲突</h2>
+    <div style="font-size:0.85em; line-height:1.8;">
+        <strong>container_cycle_train_02</strong><br>
+        人工状态：已发出并到达高桥镇站<br>
+        95306同步状态：已制单/待发<br>
+        处理措施：等待下一次 95306 同步或人工确认覆盖
     </div>
 </div>
 
@@ -151,6 +167,9 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
                 <div class="ts-row"><span class="ts-label">已发车：</span><span class="ts-value">0</span><span class="ts-label"> 已到达：</span><span class="ts-value">0</span><span class="ts-label"> 已交付：</span><span class="ts-value">0</span></div>
                 <div class="ts-note">基于 shipments 表状态字段。车辆级实时轨迹（vehicle_tracking表）尚未填充，95306 跟踪 API 需 Python 3.10+。</div>
             </div>
+            <div style="font-size:0.82em; color:#ff9800; background:#2a2010; border-radius:4px; padding:4px 8px; margin:4px 0;">
+                ⚠️ 已发出并到达高桥镇站（人工确认）；已制单/待发（95306 同步）— 状态冲突
+            </div>
             
             <div class="weight-detail">
                 <div>敞顶箱: 64箱 × 28.5 = 1824.0吨</div>
@@ -177,6 +196,12 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
             <div class="weight-detail">
                 <div>L18: 21车 × 60 = 1260吨 | L70: 19车 × 69 = 1311吨</div>
                 <div><strong>业务重量: 2571.0吨</strong> | 95306标重: 2571.0吨 | 差异: 0.0吨</div>
+            </div>
+            
+            <div class="attribution-note">散粮40车已到站；
+                其中 <strong>4车</strong> 用户确认（249.0吨），
+                <strong>36车</strong> 待归属确认。
+                不得将全部40车计入本船lot2。
             </div>
             <span class="note">散粮40车一次性发运/入库，用户确认不返回锦州，非循环列。车型统计: {"L18_count": 21, "L70_count": 19, "unknown_count": 0, "business_weight_tons": 2571.0, "rail_marked_weight_tons": 2571.0, "weight_diff_tons": 0.0, "weight_source": "bulk_wagon_model_rule"}</span>
         </div>
@@ -280,7 +305,17 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
 
 </div>
 <div class="meta" style="margin-top:20px;">
-    数据来源: jiusan_cycle.db | 扫描: 2026-05-20T14:58:24.376424 | 148 条记录
+    数据来源: jiusan_cycle.db | 扫描: 2026-05-20T15:16:37.574715 | 148 条记录
+</div>
+<div class="meta" style="margin-top:4px; border:1px solid #ff9800; padding:8px 12px; border-radius:6px; background:#2a2010;">
+    <strong>🔄 刷新方式：手动</strong> — 当前 Phase 2.5 阶段无自动刷新服务。<br>
+    只打开此页面不会自动拉取最新数据。<br>
+    如需更新，请在服务器执行：
+    <code style="display:block; margin:4px 0 0 20px; font-size:0.85em;">
+    cd /Users/qicai21/projects/repos/ops-data-hub<br>
+    python3 scripts/jiusan_refresh_board.py<br>
+    </code>
+    然后刷新浏览器或重新打开此 HTML 文件。
 </div>
 </body>
 </html>

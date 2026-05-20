@@ -1,0 +1,26 @@
+{
+  "_schema_version": "1.0",
+  "_note": "当前船/lot配置。所有null值表示待用户确认/未配置。",
+  "vessel_name": null,
+  "lot1": {
+    "name": "lot1",
+    "cargo_mode": "container",
+    "total_planned_tons": null,
+    "confirmed_dispatched_tons": 6066.0,
+    "candidate_dispatched_tons": 6066.0,
+    "remaining_tons": null,
+    "note": "集装箱货。总货量待配置。已发6066吨=3067.2(列1)+2998.8(列2)。"
+  },
+  "lot2": {
+    "name": "lot2",
+    "cargo_mode": "bulk_wagon",
+    "total_planned_tons": null,
+    "confirmed_dispatched_tons": 249.0,
+    "candidate_dispatched_tons": 2571.0,
+    "remaining_tons": null,
+    "confirmed_cars": ["8103798", "8101469", "8101431", "8105474"],
+    "candidate_car_count": 40,
+    "candidate_weight_tons": 2571.0,
+    "note": "散粮车。4车用户确认(249吨)，36车待归属确认(2322吨)。总货量待配置。"
+  }
+}

@@ -27,6 +27,11 @@ h1 { font-size: 1.5em; margin-bottom: 8px; color: #fff; }
 .train-detail { display: flex; gap: 16px; font-size: 0.85em; color: #b0bec5; margin-bottom: 4px; }
 .train-timeline { font-size: 0.82em; color: #78909c; display: flex; gap: 12px; flex-wrap: wrap; }
 .weight-detail { font-size: 0.82em; color: #a5d6a7; background: #1a2a1a; border-radius: 4px; padding: 6px 10px; margin: 4px 0; line-height: 1.6; }
+.tracking-status { font-size: 0.82em; color: #b3e5fc; background: #0d2a3a; border-radius: 4px; padding: 6px 10px; margin: 4px 0; line-height: 1.6; }
+.ts-row { margin: 1px 0; }
+.ts-label { color: #78909c; }
+.ts-value { color: #e0e0e0; }
+.ts-note { color: #607d8b; font-size: 0.85em; margin-top: 4px; font-style: italic; }
 .bulk-card { background: #2a1a20; border-radius: 6px; padding: 10px; margin-bottom: 6px;
              display: flex; gap: 12px; align-items: center; font-size: 0.85em; flex-wrap: wrap; }
 .bulk-icon { font-size: 1.1em; }
@@ -48,7 +53,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
 <body>
 <h1>🌱 九三大豆循环运输看板</h1>
 <div class="meta">
-    <span>生成时间: 2026-05-20 14:46</span> |
+    <span>生成时间: 2026-05-20 14:58</span> |
     <span>数据窗口: >= 2026-05-19 06:00</span> |
     <span>Phase 2 MVP</span>
 </div>
@@ -105,6 +110,15 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
                 <span>到站: 三三〇处专用线</span>
             </div>
             
+            <div class="tracking-status">
+                <div class="ts-row"><span class="ts-label">当前状态：</span><strong class="ts-value">已交付；返空待人工确认</strong></div>
+                <div class="ts-row"><span class="ts-label">当前位置：</span><span class="ts-value">交付</span></div>
+                <div class="ts-row"><span class="ts-label">最新轨迹时间：</span><span class="ts-value">2026-05-20 05:22:58</span></div>
+                <div class="ts-row"><span class="ts-label">已跟踪车辆：</span><span class="ts-value">54/54</span></div>
+                <div class="ts-row"><span class="ts-label">已发车：</span><span class="ts-value">54</span><span class="ts-label"> 已到达：</span><span class="ts-value">54</span><span class="ts-label"> 已交付：</span><span class="ts-value">54</span></div>
+                <div class="ts-note">基于 shipments 表状态字段。车辆级实时轨迹（vehicle_tracking表）尚未填充，95306 跟踪 API 需 Python 3.10+。</div>
+            </div>
+            
             <div class="weight-detail">
                 <div>敞顶箱: 102箱 × 28.5 = 2907.0吨</div>
                 <div>顶开门箱: 6箱 × 26.7 = 160.2吨</div>
@@ -127,6 +141,15 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
                 <span>54车 / 108箱</span>
                 <span>载重: 3456.0吨</span>
                 <span>到站: 三三〇处专用线</span>
+            </div>
+            
+            <div class="tracking-status">
+                <div class="ts-row"><span class="ts-label">当前状态：</span><strong class="ts-value">已制单/待发</strong></div>
+                <div class="ts-row"><span class="ts-label">当前位置：</span><span class="ts-value">制票</span></div>
+                <div class="ts-row"><span class="ts-label">最新轨迹时间：</span><span class="ts-value">2026-05-20 10:23:47</span></div>
+                <div class="ts-row"><span class="ts-label">已跟踪车辆：</span><span class="ts-value">54/54</span></div>
+                <div class="ts-row"><span class="ts-label">已发车：</span><span class="ts-value">0</span><span class="ts-label"> 已到达：</span><span class="ts-value">0</span><span class="ts-label"> 已交付：</span><span class="ts-value">0</span></div>
+                <div class="ts-note">基于 shipments 表状态字段。车辆级实时轨迹（vehicle_tracking表）尚未填充，95306 跟踪 API 需 Python 3.10+。</div>
             </div>
             
             <div class="weight-detail">
@@ -257,7 +280,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
 
 </div>
 <div class="meta" style="margin-top:20px;">
-    数据来源: jiusan_cycle.db | 扫描: 2026-05-20T06:46:17.894081+00:00 | 148 条记录
+    数据来源: jiusan_cycle.db | 扫描: 2026-05-20T14:58:24.376424 | 148 条记录
 </div>
 </body>
 </html>

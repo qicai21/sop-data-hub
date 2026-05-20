@@ -18,8 +18,17 @@ sys.path.insert(0, str(REPO_ROOT))
 JIUSAN_DB = REPO_ROOT / "data" / "jiusan_cycle.db"
 DASHBOARD_DIR = REPO_ROOT / "dashboard"
 
-
 from typing import Optional
+
+def _load_tracking_snapshot() -> dict:
+    """从追踪快照文件读取 tracking status"""
+    tracking_path = REPO_ROOT / "samples" / "jiusan_tracking_status_snapshot.json"
+    if tracking_path.exists():
+        try:
+            return json.loads(tracking_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
 
 
 def _parse_type_summary_from_notes(notes: Optional[str], prefix: str = "箱型: ") -> Optional[dict]:
@@ -86,6 +95,9 @@ def generate(conn) -> dict:
         "SELECT * FROM jiusan_95306_scan_log ORDER BY created_at DESC LIMIT 1"
     ).fetchone()
 
+    # ── 追踪状态 ──
+    tracking_data = _load_tracking_snapshot()
+
     # ── 构建 cycle_trains 区块 ──
     cycle_trains_block = []
     for t in trains:
@@ -115,6 +127,9 @@ def generate(conn) -> dict:
                 "notes": last_run['notes'],
                 "container_type_summary": cts,
             }
+        # 从 tracking snapshot 关联追踪状态
+        ts_key = "container_cycle_train_01" if "01" in t['id'] else "container_cycle_train_02"
+        train_entry["tracking_status"] = tracking_data.get(ts_key, {})
         cycle_trains_block.append(train_entry)
 
     # ── 构建 one_time_shipments 区块 ──
@@ -324,7 +339,29 @@ def generate_html(dashboard: dict) -> str:
     trains_html = ""
     for t in dashboard.get('cycle_trains', []):
         lr = t.get('last_run', {})
+        ts = t.get('tracking_status', {}) or {}
         cts = lr.get('container_type_summary', {}) or {}
+
+        # 追踪状态 HTML
+        tracking_html = ""
+        if ts:
+            status = ts.get('summary_status', '未知')
+            location = ts.get('current_location', '')
+            latest_time = ts.get('latest_event_time', '')
+            tracked = ts.get('tracked_car_count', 0)
+            delivered = ts.get('delivered_car_count', 0)
+            arrived = ts.get('arrived_car_count', 0)
+            departed = ts.get('departed_car_count', 0)
+            note = ts.get('note', '')
+            tracking_html = f"""
+            <div class="tracking-status">
+                <div class="ts-row"><span class="ts-label">当前状态：</span><strong class="ts-value">{status}</strong></div>
+                <div class="ts-row"><span class="ts-label">当前位置：</span><span class="ts-value">{location or '无车辆级位置'}</span></div>
+                <div class="ts-row"><span class="ts-label">最新轨迹时间：</span><span class="ts-value">{latest_time or '--'}</span></div>
+                <div class="ts-row"><span class="ts-label">已跟踪车辆：</span><span class="ts-value">{tracked}/{tracked}</span></div>
+                <div class="ts-row"><span class="ts-label">已发车：</span><span class="ts-value">{departed}</span><span class="ts-label"> 已到达：</span><span class="ts-value">{arrived}</span><span class="ts-label"> 已交付：</span><span class="ts-value">{delivered}</span></div>
+                <div class="ts-note">{note}</div>
+            </div>"""
         weight_detail = ""
         if cts:
             oc = cts.get('open_top_count', 0)
@@ -353,6 +390,7 @@ def generate_html(dashboard: dict) -> str:
                 <span>载重: {lr.get('total_weight', '?')}吨</span>
                 <span>到站: {t.get('destination_line', '?')}</span>
             </div>
+            {tracking_html}
             {weight_detail}
             <div class="train-timeline">
                 {('<span>发车: ' + lr['depart_time'][:16] + '</span>') if lr.get('depart_time') else ''}
@@ -451,6 +489,11 @@ h1 {{ font-size: 1.5em; margin-bottom: 8px; color: #fff; }}
 .train-detail {{ display: flex; gap: 16px; font-size: 0.85em; color: #b0bec5; margin-bottom: 4px; }}
 .train-timeline {{ font-size: 0.82em; color: #78909c; display: flex; gap: 12px; flex-wrap: wrap; }}
 .weight-detail {{ font-size: 0.82em; color: #a5d6a7; background: #1a2a1a; border-radius: 4px; padding: 6px 10px; margin: 4px 0; line-height: 1.6; }}
+.tracking-status {{ font-size: 0.82em; color: #b3e5fc; background: #0d2a3a; border-radius: 4px; padding: 6px 10px; margin: 4px 0; line-height: 1.6; }}
+.ts-row {{ margin: 1px 0; }}
+.ts-label {{ color: #78909c; }}
+.ts-value {{ color: #e0e0e0; }}
+.ts-note {{ color: #607d8b; font-size: 0.85em; margin-top: 4px; font-style: italic; }}
 .bulk-card {{ background: #2a1a20; border-radius: 6px; padding: 10px; margin-bottom: 6px;
              display: flex; gap: 12px; align-items: center; font-size: 0.85em; flex-wrap: wrap; }}
 .bulk-icon {{ font-size: 1.1em; }}

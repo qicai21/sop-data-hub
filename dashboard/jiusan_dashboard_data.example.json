@@ -1,7 +1,7 @@
 {
   "_meta": {
     "dashboard_name": "九三大豆循环运输看板",
-    "generated_at": "2026-05-20T06:46:17.968714+00:00",
+    "generated_at": "2026-05-20T06:58:24.416739+00:00",
     "data_sources": [
       "jiusan_cycle.db",
       "95306_sync"
@@ -92,6 +92,30 @@
           "weight_diff_tons": -388.8,
           "weight_source": "container_type_rule"
         }
+      },
+      "tracking_status": {
+        "enabled": true,
+        "source": "rail95306-sync (shipments table)",
+        "last_checked_at": "2026-05-20T06:58:24.376143+00:00",
+        "summary_status": "已交付；返空待人工确认",
+        "current_location": "交付",
+        "latest_event_time": "2026-05-20 05:22:58",
+        "tracked_car_count": 54,
+        "departed_car_count": 54,
+        "arrived_car_count": 54,
+        "delivered_car_count": 54,
+        "unknown_car_count": 0,
+        "sample_cars": [
+          {
+            "car_no": "1834476",
+            "status": "货物已交付",
+            "latest_stage_name": "交付",
+            "latest_event_time": "2026-05-20 05:22:58",
+            "departed_at": "2026-05-19 11:31:00",
+            "arrived_at": "2026-05-19 19:15:00"
+          }
+        ],
+        "note": "基于 shipments 表状态字段。车辆级实时轨迹（vehicle_tracking表）尚未填充，95306 跟踪 API 需 Python 3.10+。"
       }
     },
     {
@@ -123,6 +147,30 @@
           "weight_diff_tons": -457.2,
           "weight_source": "container_type_rule"
         }
+      },
+      "tracking_status": {
+        "enabled": true,
+        "source": "rail95306-sync (shipments table)",
+        "last_checked_at": "2026-05-20T06:58:24.376299+00:00",
+        "summary_status": "已制单/待发",
+        "current_location": "制票",
+        "latest_event_time": "2026-05-20 10:23:47",
+        "tracked_car_count": 54,
+        "departed_car_count": 0,
+        "arrived_car_count": 0,
+        "delivered_car_count": 0,
+        "unknown_car_count": 0,
+        "sample_cars": [
+          {
+            "car_no": "1735691",
+            "status": "已制单",
+            "latest_stage_name": "制票",
+            "latest_event_time": "2026-05-20 10:19:21",
+            "departed_at": null,
+            "arrived_at": null
+          }
+        ],
+        "note": "基于 shipments 表状态字段。车辆级实时轨迹（vehicle_tracking表）尚未填充，95306 跟踪 API 需 Python 3.10+。"
       }
     }
   ],
@@ -248,7 +296,7 @@
     }
   ],
   "95306_scan_status": {
-    "last_scan": "2026-05-20T06:46:17.894081+00:00",
+    "last_scan": "2026-05-20T14:58:24.376424",
     "new_records": 148,
     "matched_to_train": 2
   }

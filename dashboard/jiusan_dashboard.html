@@ -22,6 +22,7 @@ h1 { font-size: 1.5em; margin-bottom: 8px; color: #fff; }
 .status-returned { background: #4caf50; color: #1a2633; }
 .status-loaded { background: #4fc3f7; color: #1a2633; }
 .status-departed { background: #ff9800; color: #1a2633; }
+.status-departed-conflict { background: #e65100; color: #fff; }
 .status-pending { background: #78909c; color: #fff; }
 .status-unloaded { background: #66bb6a; color: #1a2633; }
 .train-detail { display: flex; gap: 16px; font-size: 0.85em; color: #b0bec5; margin-bottom: 4px; }
@@ -64,7 +65,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
     <h2>📊 今日摘要</h2>
     <div style="font-size:0.9em; line-height:1.8;">
         54 车集装箱列1 已交付·返空中<br>
-        54 车集装箱列2 港口待发<br>
+        54 车集装箱列2 ⚠️ 人工确认:已发出并到达高桥镇站 | 95306:已制单/待发<br>
         散粮 40 车/2,571吨 — 一次性发运（非循环）
     </div>
 </div>
@@ -96,6 +97,10 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
     <div class="plan-detail" style="white-space:pre-line;">
         计划名称：第二轮调整计划（当前）
 生效时间：2026-05-16
+
+【集装箱计划】2天3列，日均1.5列，目标 12000 吨/日
+【散粮/K车计划】按需/暂停；本次散粮40车不参与循环，后续恢复待确认
+【厂家日耗】5500 吨/日
     </div>
 </div>
 
@@ -150,7 +155,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
             <div class="train-header">
                 <span class="train-icon">🚂</span>
                 <strong>container_cycle_train_02</strong>
-                <span class="status-badge status-departed">departed</span>
+                <span class="status-badge status-departed-conflict">departed⚠️</span>
             </div>
             <div class="train-detail">
                 <span>第1轮</span>
@@ -160,15 +165,16 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
             </div>
             
             <div class="tracking-status">
-                <div class="ts-row"><span class="ts-label">当前状态：</span><strong class="ts-value">已制单/待发</strong></div>
+                <div class="ts-row"><span class="ts-label">业务状态（人工确认）：</span><strong class="ts-value" style="color:#ff9800;">已发出并到达高桥镇站</strong></div>
+                <div class="ts-row"><span class="ts-label">95306同步状态：</span><span class="ts-value">已制单/待发</span></div>
                 <div class="ts-row"><span class="ts-label">当前位置：</span><span class="ts-value">制票</span></div>
                 <div class="ts-row"><span class="ts-label">最新轨迹时间：</span><span class="ts-value">2026-05-20 10:23:47</span></div>
                 <div class="ts-row"><span class="ts-label">已跟踪车辆：</span><span class="ts-value">54/54</span></div>
                 <div class="ts-row"><span class="ts-label">已发车：</span><span class="ts-value">0</span><span class="ts-label"> 已到达：</span><span class="ts-value">0</span><span class="ts-label"> 已交付：</span><span class="ts-value">0</span></div>
-                <div class="ts-note">基于 shipments 表状态字段。车辆级实时轨迹（vehicle_tracking表）尚未填充，95306 跟踪 API 需 Python 3.10+。</div>
+                <div class="ts-note">⚠️ 人工确认与 95306 同步状态冲突。基于 shipments 表状态字段，车辆级实时轨迹（vehicle_tracking表）尚未填充，95306 跟踪 API 需 Python 3.10+。</div>
             </div>
             <div style="font-size:0.82em; color:#ff9800; background:#2a2010; border-radius:4px; padding:4px 8px; margin:4px 0;">
-                ⚠️ 已发出并到达高桥镇站（人工确认）；已制单/待发（95306 同步）— 状态冲突
+                ⚠️ 已发出并到达高桥镇站（人工确认）；已制单/待发（95306 同步）— 状态冲突。人工状态暂未推送到看板，业务数据源不一致。
             </div>
             
             <div class="weight-detail">
@@ -242,8 +248,8 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
             <td>✅</td>
             <td>散粮到站事实 (bulk_arrival)</td>
             <td>40</td>
-            <td>0</td>
-            <td>散粮40车到站 = 95306 已到达事实 <span class="note">一次性发运，不计入循环列效率</span></td>
+            <td>40</td>
+            <td>散粮40车到站 = 95306 已到达事实 <span class="note">一次性发运，不计入循环列效率。95306确认全部40车已到达/交付。</span></td>
         </tr>
         <tr class="check-pass">
             <td>✅</td>
@@ -299,7 +305,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
         </div>
         <div class="pending-item">
             <span>⏳</span>
-            <span>库存差额是否来自其他来源入库？当前库存为样例值（data_quality=sample），需晨报/人工录入确认。</span>
+            <span>库存数据为用户填报（库存5000吨，红线8000吨，data_quality=user_reported）。但consumption=0为占位值（非真实消耗），需确认实际日消耗量以闭合公式。</span>
         </div>
 </div>
 

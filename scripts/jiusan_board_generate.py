@@ -193,6 +193,8 @@ def generate(conn) -> dict:
         })
 
     three_account_checks = checks_data
+    # 看板中的三账校验为简化检查（固定模拟值 + 落库数据交叉验证），
+    # 仅作为运行态势概览。完整检查请运行 scripts/jiusan_three_account_verify.py。
 
     # ── 构建 factory_inventory 区块 ──
     inv_block = None
@@ -282,6 +284,8 @@ def generate(conn) -> dict:
         "cycle_trains": cycle_trains_block,
         "one_time_shipments": one_time_shipments,
         "three_account_check": {
+            "check_type": "dashboard_simplified",
+            "note": "看板简化检查：使用固定模拟值 + 落库数据交叉验证，仅作运行态势概览。完整检查请运行 python3 scripts/jiusan_three_account_verify.py",
             "check_summary": {
                 "total": len(three_account_checks),
                 "passed": sum(1 for c in three_account_checks if c.get('match')),
@@ -486,10 +490,11 @@ td {{ padding: 6px 8px; border-bottom: 1px solid #1e3040; }}
 </div>
 
 <div class="card full">
-    <h2>✅ 三账校验</h2>
+    <h2>✅ 三账校验 <span style="font-size:0.7em; color:#78909c;">(看板简化版)</span></h2>
     <div style="margin-bottom:8px; font-size:0.85em;">
         通过: {dashboard.get('three_account_check', {}).get('check_summary', {}).get('passed', 0)} /
         总计: {dashboard.get('three_account_check', {}).get('check_summary', {}).get('total', 0)}
+        <span style="color:#78909c; margin-left:12px;">完整检查: python3 scripts/jiusan_three_account_verify.py</span>
     </div>
     <table>
         <tr><th></th><th>节点</th><th>期望</th><th>实际</th><th>公式</th></tr>
@@ -528,6 +533,7 @@ td {{ padding: 6px 8px; border-bottom: 1px solid #1e3040; }}
 
 
 def main():
+    import sys
     conn = get_conn()
 
     print("生成 Phase 2 看板...")
@@ -536,11 +542,18 @@ def main():
 
     DASHBOARD_DIR.mkdir(parents=True, exist_ok=True)
 
-    # JSON
+    # JSON — 运行文件
     json_path = DASHBOARD_DIR / "jiusan_dashboard_data.json"
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(dashboard, f, ensure_ascii=False, indent=2, default=str)
     print(f"  JSON: {json_path}")
+
+    # 如果带 --example 参数，同时生成 example JSON
+    if "--example" in sys.argv:
+        example_path = DASHBOARD_DIR / "jiusan_dashboard_data.example.json"
+        with open(example_path, "w", encoding="utf-8") as f:
+            json.dump(dashboard, f, ensure_ascii=False, indent=2, default=str)
+        print(f"  Example: {example_path}")
 
     # HTML
     html_content = generate_html(dashboard)

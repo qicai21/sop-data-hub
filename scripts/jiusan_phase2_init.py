@@ -312,13 +312,17 @@ def write_plan_sample(conn):
 
     plan_details = {
         "container": {
-            "daily_cols": 2,
-            "frequency": "2天3列",
+            "target_cycle_days": 2,
+            "target_train_count": 3,
+            "average_daily_train_count": 1.5,
+            "frequency_label": "2天3列",
             "target_tons_per_day": 12000,
         },
         "bulk_wagon": {
-            "daily_cols": 0,
-            "frequency": "按需/暂停",
+            "target_cycle_days": 1,
+            "target_train_count": 1,
+            "average_daily_train_count": 1.0,
+            "frequency_label": "按需/暂停",
             "note": "散粮40车已发，本次不参与循环，后续恢复待确认",
         },
         "factory_consumption": 5500,

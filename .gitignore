@@ -29,4 +29,6 @@ _previews/
 
 # Dashboard runtime JSON (contains local absolute paths, not portable)
 dashboard/dispatch_board_data.json
-\n# 九三大豆看板 — 本地运行文件，不提交\ndashboard/jiusan_dashboard_data.json
+
+# 九三大豆看板 — 本地运行文件，不提交
+dashboard/jiusan_dashboard_data.json

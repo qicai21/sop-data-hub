@@ -1,7 +1,7 @@
 {
   "_meta": {
     "dashboard_name": "九三大豆循环运输看板",
-    "generated_at": "2026-05-20T06:06:39.721577+00:00",
+    "generated_at": "2026-05-20T06:20:11.530400+00:00",
     "data_sources": [
       "jiusan_cycle.db",
       "95306_sync"
@@ -31,13 +31,17 @@
     "effective_to": null,
     "details": {
       "container": {
-        "daily_cols": 2,
-        "frequency": "2天3列",
+        "target_cycle_days": 2,
+        "target_train_count": 3,
+        "average_daily_train_count": 1.5,
+        "frequency_label": "2天3列",
         "target_tons_per_day": 12000
       },
       "bulk_wagon": {
-        "daily_cols": 0,
-        "frequency": "按需/暂停",
+        "target_cycle_days": 1,
+        "target_train_count": 1,
+        "average_daily_train_count": 1.0,
+        "frequency_label": "按需/暂停",
         "note": "散粮40车已发，本次不参与循环，后续恢复待确认"
       },
       "factory_consumption": 5500,
@@ -142,6 +146,8 @@
     }
   ],
   "three_account_check": {
+    "check_type": "dashboard_simplified",
+    "note": "看板简化检查：使用固定模拟值 + 落库数据交叉验证，仅作运行态势概览。完整检查请运行 python3 scripts/jiusan_three_account_verify.py",
     "check_summary": {
       "total": 6,
       "passed": 6,
@@ -237,7 +243,7 @@
     }
   ],
   "95306_scan_status": {
-    "last_scan": "2026-05-20T06:06:16.125979+00:00",
+    "last_scan": "2026-05-20T06:20:11.496805+00:00",
     "new_records": 148,
     "matched_to_train": 2
   }

@@ -1,0 +1,220 @@
+{
+  "_meta": {
+    "dashboard_name": "九三大豆循环运输看板",
+    "generated_at": "2026-05-20T10:35:01.994816",
+    "data_sources": [
+      "95306_sync(read_only)",
+      "manual_simulated"
+    ],
+    "note": "Phase 1 only: 基于真实 95306 数据 + 手动模拟值演示。不写入任何生产库。",
+    "95306_data_date_range": "2026-03-19 ~ 2026-05-20"
+  },
+  "daily_summary": {
+    "date": "2026-05-20",
+    "loaded_today": 36,
+    "dispatched_today": 33,
+    "arrived_today": 30,
+    "unloaded_today": 27,
+    "daily_plan_target": 12000,
+    "daily_plan_achieved_tons": 10560,
+    "daily_achievement_rate_pct": 88.0,
+    "rolling_3d_achieved_tons": 34560,
+    "rolling_3d_target": 36000,
+    "rolling_3d_achievement_rate_pct": 96.0,
+    "machine_readable_summary": {
+      "loaded": 36,
+      "dispatched": 33,
+      "arrived": 30,
+      "unloaded": 27,
+      "avg_daily_95306": 59.9,
+      "total_95306_records": 1786,
+      "unique_cars_95306": 526
+    }
+  },
+  "active_plan": {
+    "plan_id": "plan_B",
+    "name": "第二轮调整计划",
+    "effective_from": "2026-05-16",
+    "details": {
+      "container": {
+        "daily_cols": 2,
+        "frequency": "2天3列"
+      },
+      "bulk_wagon": {
+        "daily_cols": 1,
+        "frequency": "1天1列"
+      },
+      "factory_consumption": 5500,
+      "daily_target": 12000
+    }
+  },
+  "container_resources": {
+    "total_active": 312,
+    "total_from_95306": 1241,
+    "distribution": {
+      "port_empty": 80,
+      "port_loaded": 56,
+      "in_transit_loaded": 72,
+      "xintaizi_330_loaded": 48,
+      "xintaizi_330_empty": 24,
+      "return_empty": 32
+    },
+    "adjustments_recent": [
+      {
+        "date": "2026-05-19",
+        "type": "transfer_in",
+        "qty": 20,
+        "note": "从其他项目调入（模拟）"
+      }
+    ]
+  },
+  "wagon_resources": {
+    "total_active": 160,
+    "total_from_95306_soybean": 545,
+    "distribution": {
+      "port": 40,
+      "in_transit": 80,
+      "arrived_factory": 40
+    },
+    "adjustments_recent": []
+  },
+  "cycle_trains": [
+    {
+      "train_id": "train_candidate_28",
+      "type": "集装箱",
+      "lot": "lot01",
+      "status": "on_way",
+      "depart_info": {
+        "time": "2026-05-20 10:19",
+        "wagon_count": 54,
+        "car_no_count": 0
+      }
+    },
+    {
+      "train_id": "train_candidate_27",
+      "type": "散粮",
+      "lot": "lot02",
+      "status": "on_way",
+      "depart_info": {
+        "time": "2026-05-19 21:25",
+        "wagon_count": 40,
+        "car_no_count": 40
+      }
+    }
+  ],
+  "three_account_check": {
+    "check_summary": {
+      "total_checks": 6,
+      "passed": 5,
+      "failed": 1,
+      "pending": 0
+    },
+    "checks": [
+      {
+        "node": "port_loaded_container",
+        "formula": "今日 = 昨日 + 昨日装箱 - 昨日发出",
+        "expected": 56,
+        "actual": 56,
+        "match": true,
+        "adjustment": 0
+      },
+      {
+        "node": "in_transit_loaded_container",
+        "formula": "今日在途 = 昨在途 + 昨发出 - 昨到达",
+        "expected": 72,
+        "actual": 74,
+        "match": false,
+        "adjustment": 0,
+        "discrepancy": 2,
+        "discrepancy_note": "待解释差异（模拟）"
+      },
+      {
+        "node": "xintaizi_330_loaded",
+        "formula": "今日330重箱 = 昨330重箱 + 昨到达 - 昨卸空",
+        "expected": 48,
+        "actual": 48,
+        "match": true,
+        "adjustment": 0
+      },
+      {
+        "node": "return_trip_empty",
+        "formula": "今日返空 = 昨返空 + 昨卸空 - 昨返港",
+        "expected": 32,
+        "actual": 32,
+        "match": true,
+        "adjustment": 0
+      },
+      {
+        "node": "port_bulk_wagon",
+        "formula": "今日港口散粮车 = 昨港口 + 昨返空 - 昨发散粮",
+        "expected": 40,
+        "actual": 40,
+        "match": true,
+        "adjustment": 0
+      },
+      {
+        "node": "in_transit_bulk",
+        "formula": "今日在途散粮 = 昨在途 + 昨发散粮 - 昨到散粮",
+        "expected": 80,
+        "actual": 82,
+        "match": false,
+        "adjustment": 0,
+        "discrepancy": 2,
+        "discrepancy_note": "待解释差异（模拟）"
+      }
+    ]
+  },
+  "factory_inventory": {
+    "current_stock": 45000,
+    "red_line": 20000,
+    "warning_level": "normal",
+    "days_supported": 8.2,
+    "today_consumption": 5500,
+    "today_line_in": 5280,
+    "today_other_source": 0,
+    "other_source_inferred": 220,
+    "trend_7d": [
+      42000,
+      43500,
+      44000,
+      45000,
+      46000,
+      45500,
+      45000
+    ],
+    "note": "7日趋势为模拟值。其他来源入库通过差额反推公式计算。"
+  },
+  "pending_confirmations": [
+    {
+      "type": "train_membership",
+      "ydid": "模拟示例1",
+      "car_no": "XXXXXX",
+      "question": "该车辆应归属哪列循环列？",
+      "candidates": [
+        "train_candidate_20",
+        "train_candidate_26",
+        "train_candidate_28",
+        "train_candidate_24",
+        "train_candidate_25",
+        "train_candidate_27"
+      ]
+    },
+    {
+      "type": "inventory_discrepancy",
+      "detail": "其他来源入库差额 -220 吨需确认（模拟）"
+    },
+    {
+      "type": "column_20_review",
+      "detail": "最近循环列候选 16 组集装箱 + 13 组散粮，建议人工确认列归属"
+    }
+  ],
+  "95306_scan_status": {
+    "last_scan": "2026-05-20T10:35:01.994840",
+    "new_records_found": 1786,
+    "matched_to_lot": 1786,
+    "matched_to_train": 29,
+    "pending_lot_assignment": 0,
+    "pending_train_assignment": 29,
+    "errors_last_scan": null
+  }
+}

@@ -1,0 +1,159 @@
+{
+  "verifier": "jiusan_three_account_verifier_v0.1",
+  "phase": "1",
+  "description": "三账校验验证样例 — 纯计算，不落库",
+  "input_data": {
+    "snapshot_t": {
+      "date": "2026-05-19",
+      "source": "morning_report",
+      "port_loaded_container": 48,
+      "port_empty_container": 88,
+      "in_transit_loaded_container": 64,
+      "330_line_loaded_container": 40,
+      "330_line_empty_container": 20,
+      "return_trip_empty_container": 28,
+      "port_bulk_wagon": 40,
+      "in_transit_bulk_wagon": 72,
+      "arrived_bulk_wagon": 32
+    },
+    "flow": {
+      "date": "2026-05-19",
+      "source": "morning_report",
+      "yesterday_loaded_container": 28,
+      "yesterday_dispatched_container": 24,
+      "yesterday_arrived_container": 20,
+      "yesterday_unloaded_container": 16,
+      "yesterday_returned_empty": 12,
+      "yesterday_dispatched_bulk": 40,
+      "yesterday_arrived_bulk": 36
+    },
+    "adjustment": {
+      "date": "2026-05-19",
+      "events": [
+        {
+          "type": "transfer_in",
+          "pool_type": "container",
+          "quantity": 20,
+          "note": "从其他项目调入"
+        },
+        {
+          "type": "repair",
+          "pool_type": "container",
+          "quantity": 2,
+          "note": "送修2箱"
+        }
+      ]
+    },
+    "snapshot_t1": {
+      "date": "2026-05-20",
+      "source": "95306_calc",
+      "port_loaded_container": 52,
+      "port_empty_container": 92,
+      "in_transit_loaded_container": 68,
+      "330_line_loaded_container": 44,
+      "330_line_empty_container": 24,
+      "return_trip_empty_container": 32,
+      "port_bulk_wagon": 0,
+      "in_transit_bulk_wagon": 76,
+      "arrived_bulk_wagon": 68
+    }
+  },
+  "checks": [
+    {
+      "node": "港口重箱 (port_loaded_container)",
+      "formula": "港口重箱 (port_loaded_container) = 48(期初) + 28(流入) - 24(流出) + 18(调整)",
+      "expected_value": 52,
+      "calculated_value": 70,
+      "match": false,
+      "discrepancy": -18,
+      "adjustment": 18
+    },
+    {
+      "node": "铁路在途重箱 (in_transit_loaded_container)",
+      "formula": "铁路在途重箱 (in_transit_loaded_container) = 64(期初) + 24(流入) - 20(流出) + 0(调整)",
+      "expected_value": 68,
+      "calculated_value": 68,
+      "match": true,
+      "discrepancy": null,
+      "adjustment": 0
+    },
+    {
+      "node": "330处专用线重箱 (330_line_loaded_container)",
+      "formula": "330处专用线重箱 (330_line_loaded_container) = 40(期初) + 20(流入) - 16(流出) + 0(调整)",
+      "expected_value": 44,
+      "calculated_value": 44,
+      "match": true,
+      "discrepancy": null,
+      "adjustment": 0
+    },
+    {
+      "node": "返程空箱 (return_trip_empty_container)",
+      "formula": "返程空箱 (return_trip_empty_container) = 28(期初) + 16(流入) - 12(流出) + 0(调整)",
+      "expected_value": 32,
+      "calculated_value": 32,
+      "match": true,
+      "discrepancy": null,
+      "adjustment": 0
+    },
+    {
+      "node": "港口空箱 (port_empty_container)",
+      "formula": "港口空箱 (port_empty_container) = 88(期初) + 12(流入) - 28(流出) + 20(调整)",
+      "expected_value": 92,
+      "calculated_value": 92,
+      "match": true,
+      "discrepancy": null,
+      "adjustment": 20
+    },
+    {
+      "node": "港内散粮车 (port_bulk_wagon)",
+      "formula": "港内散粮车 (port_bulk_wagon) = 40(期初) + 0(流入) - 40(流出) + 0(调整)",
+      "expected_value": 0,
+      "calculated_value": 0,
+      "match": true,
+      "discrepancy": null,
+      "adjustment": 0
+    },
+    {
+      "node": "在途散粮车 (in_transit_bulk_wagon)",
+      "formula": "在途散粮车 (in_transit_bulk_wagon) = 72(期初) + 40(流入) - 36(流出) + 0(调整)",
+      "expected_value": 76,
+      "calculated_value": 76,
+      "match": true,
+      "discrepancy": null,
+      "adjustment": 0
+    },
+    {
+      "node": "到站散粮车 (arrived_bulk_wagon)",
+      "formula": "到站散粮车 (arrived_bulk_wagon) = 32(期初) + 36(流入) - 0(流出) + 0(调整)",
+      "expected_value": 68,
+      "calculated_value": 68,
+      "match": true,
+      "discrepancy": null,
+      "adjustment": 0
+    },
+    {
+      "node": "厂家库存 (factory_inventory)",
+      "formula": "期末 = 42000 + 5280 + 220 - 5500",
+      "expected_value": 45000,
+      "calculated_value": 42000,
+      "match": false,
+      "discrepancy": 3000.0,
+      "adjustment": 0
+    },
+    {
+      "node": "其他来源入库反推 (other_source_inferred)",
+      "formula": "其他来源 = 45000 - 42000 - 5280 + 5500",
+      "expected_value": 220,
+      "calculated_value": 3220,
+      "match": false,
+      "discrepancy": -3000.0,
+      "adjustment": 0
+    }
+  ],
+  "summary": {
+    "total": 10,
+    "passed": 7,
+    "failed": 3,
+    "skipped": 0
+  }
+}

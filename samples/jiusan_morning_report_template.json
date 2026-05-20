@@ -1,0 +1,222 @@
+{
+  "_meta": {
+    "template_name": "九三大豆循环运输晨报字段模板",
+    "version": "0.1",
+    "phase": "1",
+    "description": "每日晨报解析所需字段清单。来源：GROUP013（数据单发群），约每日 07:00 发送。",
+    "note": "Phase 1: 字段模板定义。Phase 2 实现自动解析写入对应的 jiusan_snapshots / jiusan_flows 表。"
+  },
+  "snapshot_fields": {
+    "description": "状态快照 — 记录某时点各节点的资源分布数量",
+    "expected_time": "约 07:00",
+    "source_type": "morning_report",
+    "fields": {
+      "port_empty_container": {
+        "label": "港口空箱",
+        "type": "integer",
+        "unit": "箱",
+        "example": 80,
+        "table": "jiusan_snapshots",
+        "json_path": "$.port_empty_container"
+      },
+      "port_loaded_container": {
+        "label": "港口重箱",
+        "type": "integer",
+        "unit": "箱",
+        "example": 56,
+        "table": "jiusan_snapshots",
+        "json_path": "$.port_loaded_container"
+      },
+      "in_transit_loaded_container": {
+        "label": "铁路在途重箱",
+        "type": "integer",
+        "unit": "箱",
+        "example": 72,
+        "table": "jiusan_snapshots",
+        "json_path": "$.in_transit_loaded_container"
+      },
+      "xintaizi_station_loaded_container": {
+        "label": "新台子站内重箱",
+        "type": "integer",
+        "unit": "箱",
+        "example": 10,
+        "table": "jiusan_snapshots",
+        "json_path": "$.xintaizi_station_loaded_container"
+      },
+      "xintaizi_station_empty_container": {
+        "label": "新台子站内空箱",
+        "type": "integer",
+        "unit": "箱",
+        "example": 6,
+        "table": "jiusan_snapshots",
+        "json_path": "$.xintaizi_station_empty_container"
+      },
+      "330_line_loaded_container": {
+        "label": "三三〇处专用线重箱",
+        "type": "integer",
+        "unit": "箱",
+        "example": 48,
+        "table": "jiusan_snapshots",
+        "json_path": "$.330_line_loaded_container"
+      },
+      "330_line_empty_container": {
+        "label": "三三〇处专用线空箱",
+        "type": "integer",
+        "unit": "箱",
+        "example": 24,
+        "table": "jiusan_snapshots",
+        "json_path": "$.330_line_empty_container"
+      },
+      "return_trip_empty_container": {
+        "label": "返程空箱/铁路在途空箱",
+        "type": "integer",
+        "unit": "箱",
+        "example": 32,
+        "table": "jiusan_snapshots",
+        "json_path": "$.return_trip_empty_container"
+      },
+      "port_bulk_wagon": {
+        "label": "港内散粮车",
+        "type": "integer",
+        "unit": "车",
+        "example": 40,
+        "table": "jiusan_snapshots",
+        "json_path": "$.port_bulk_wagon"
+      },
+      "in_transit_bulk_wagon": {
+        "label": "在途散粮车",
+        "type": "integer",
+        "unit": "车",
+        "example": 80,
+        "table": "jiusan_snapshots",
+        "json_path": "$.in_transit_bulk_wagon"
+      },
+      "arrived_bulk_wagon": {
+        "label": "到站散粮车（九三厂内专用线）",
+        "type": "integer",
+        "unit": "车",
+        "example": 40,
+        "table": "jiusan_snapshots",
+        "json_path": "$.arrived_bulk_wagon"
+      },
+      "factory_inventory": {
+        "label": "厂家当前库存",
+        "type": "number",
+        "unit": "吨",
+        "example": 45000,
+        "table": "jiusan_factory_inventory",
+        "json_path": "$.factory_inventory"
+      },
+      "factory_red_line": {
+        "label": "库存红线",
+        "type": "number",
+        "unit": "吨",
+        "example": 20000,
+        "table": "jiusan_factory_inventory",
+        "json_path": "$.factory_red_line"
+      }
+    }
+  },
+  "flow_fields": {
+    "description": "期间流量 — 记录昨日发生的运输活动量",
+    "expected_time": "约 07:00（随晨报）",
+    "source_type": "morning_report",
+    "fields": {
+      "yesterday_loaded_container": {
+        "label": "昨日装箱",
+        "type": "integer",
+        "unit": "箱",
+        "example": 104,
+        "table": "jiusan_flows",
+        "json_path": "$.yesterday_loaded_container"
+      },
+      "yesterday_dispatched_container": {
+        "label": "昨日发出（集装箱列）",
+        "type": "integer",
+        "unit": "箱",
+        "example": 96,
+        "table": "jiusan_flows",
+        "json_path": "$.yesterday_dispatched_container"
+      },
+      "yesterday_arrived_container": {
+        "label": "昨日到达（330处专用线）",
+        "type": "integer",
+        "unit": "箱",
+        "example": 88,
+        "table": "jiusan_flows",
+        "json_path": "$.yesterday_arrived_container"
+      },
+      "yesterday_unloaded_container": {
+        "label": "昨日卸空",
+        "type": "integer",
+        "unit": "箱",
+        "example": 80,
+        "table": "jiusan_flows",
+        "json_path": "$.yesterday_unloaded_container"
+      },
+      "yesterday_returned_empty": {
+        "label": "昨日返空",
+        "type": "integer",
+        "unit": "箱",
+        "example": 76,
+        "table": "jiusan_flows",
+        "json_path": "$.yesterday_returned_empty"
+      },
+      "yesterday_dispatched_bulk": {
+        "label": "昨日发散粮车",
+        "type": "integer",
+        "unit": "车",
+        "example": 40,
+        "table": "jiusan_flows",
+        "json_path": "$.yesterday_dispatched_bulk"
+      },
+      "yesterday_arrived_bulk": {
+        "label": "昨日到散粮车",
+        "type": "integer",
+        "unit": "车",
+        "example": 36,
+        "table": "jiusan_flows",
+        "json_path": "$.yesterday_arrived_bulk"
+      },
+      "yesterday_factory_consumption": {
+        "label": "昨日厂家消耗",
+        "type": "number",
+        "unit": "吨",
+        "example": 5500,
+        "table": "jiusan_factory_inventory",
+        "json_path": "$.yesterday_factory_consumption"
+      },
+      "yesterday_other_source_in": {
+        "label": "昨日其他来源入库",
+        "type": "number",
+        "unit": "吨",
+        "example": 0,
+        "table": "jiusan_factory_inventory",
+        "json_path": "$.yesterday_other_source_in"
+      }
+    }
+  },
+  "adjustment_fields": {
+    "description": "资源调整—非正常流转导致的箱/车数量变化",
+    "source_type": "morning_report_or_manual",
+    "event_types": [
+      "container_transfer_in",
+      "container_transfer_out",
+      "container_repair",
+      "container_damage",
+      "container_scrap",
+      "container_loan_out",
+      "container_loan_return",
+      "wagon_transfer_in",
+      "wagon_transfer_out",
+      "inventory_gain",
+      "inventory_loss"
+    ],
+    "example_entry": {
+      "date": "2026-05-19",
+      "type": "container_transfer_in",
+      "quantity": 20,
+      "note": "从其他项目调入"
+    }
+  }
+}

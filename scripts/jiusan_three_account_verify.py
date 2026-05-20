@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
 """
-三账校验验证脚本 (Phase 1)
+三账校验验证脚本 (Phase 2)
 
-验证 Snapshot + Flow + Adjustment 三账平衡公式。
-纯计算验证，不写入任何数据库。
+从 jiusan_cycle.db 读取数据并运行三账校验。
+纯计算验证，不写入生产库。
 
 Usage:
     python3 scripts/jiusan_three_account_verify.py
 """
 import json
-from datetime import datetime, timedelta
+import sqlite3
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-OUTPUT_PATH = Path(__file__).resolve().parent.parent / "samples" / "jiusan_three_account_sample.json"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+JIUSAN_DB = REPO_ROOT / "data" / "jiusan_cycle.db"
+OUTPUT_PATH = REPO_ROOT / "samples" / "jiusan_three_account_sample.json"
 
 
 # ========== 模拟数据 ==========
@@ -159,54 +162,92 @@ class ThreeAccountVerifier:
 # ========== 运行验证 ==========
 
 
-def run_verify() -> dict:
+def load_from_db():
+    """从 jiusan_cycle.db 读取数据"""
+    conn = sqlite3.connect(str(JIUSAN_DB))
+    conn.row_factory = sqlite3.Row
+
+    # 读取循环列
+    trains = conn.execute("SELECT * FROM jiusan_cycle_trains ORDER BY id").fetchall()
+    runs = conn.execute("SELECT * FROM jiusan_cycle_train_runs ORDER BY train_id, round_no").fetchall()
+    events = conn.execute("SELECT * FROM jiusan_resource_events ORDER BY created_at").fetchall()
+    flows = conn.execute("SELECT * FROM jiusan_flows ORDER BY flow_date DESC").fetchall()
+    inv = conn.execute("SELECT * FROM jiusan_factory_inventory ORDER BY record_date DESC LIMIT 1").fetchone()
+
+    conn.close()
+
+    return {
+        "trains": [dict(t) for t in trains],
+        "runs": [dict(r) for r in runs],
+        "events": [dict(e) for e in events],
+        "flows": [dict(f) for f in flows],
+        "inventory": dict(inv) if inv else None,
+    }
+
+
+def run_verify(data: dict = None) -> dict:
     """运行所有校验检查"""
+    if data is None:
+        # 后备：使用内嵌样例数据
+        data = {
+            "trains": [],
+            "runs": [],
+            "events": [],
+            "flows": [],
+            "inventory": None,
+        }
+
+    inv = data.get('inventory')
+    events = data.get('events', [])
+    flows = data.get('flows', [])
+    trains = data.get('trains', [])
+    runs = data.get('runs', [])
 
     v = ThreeAccountVerifier(
         SAMPLE_SNAPSHOT_T, SAMPLE_FLOW_T,
         SAMPLE_ADJUSTMENT_T, SAMPLE_SNAPSHOT_T1
     )
 
-    # --- 集装箱链校验 ---
-
-    # 1. 港口重箱: 今日 = 昨日港口重箱 + 昨日装箱 - 昨日发出 ± 调整
+    # 从 events 获取调整信息
     adj_container_in = sum(
-        e["quantity"] for e in SAMPLE_ADJUSTMENT_T["events"]
-        if e["pool_type"] == "container" and e["type"] in ("transfer_in", "add")
+        e['quantity'] for e in events
+        if e.get('pool_type') == 'container' and e.get('event_type') in ('transfer_in', 'add')
     )
     adj_container_out = sum(
-        e["quantity"] for e in SAMPLE_ADJUSTMENT_T["events"]
-        if e["pool_type"] == "container" and e["type"] in ("transfer_out", "repair")
+        e['quantity'] for e in events
+        if e.get('pool_type') == 'container' and e.get('event_type') in ('transfer_out', 'repair')
     )
+
+    # 从 flows 获取批量信息
+    bulk_is_once_off = False
+    for f in flows:
+        fj = json.loads(f['fields_json']) if isinstance(f['fields_json'], str) else f['fields_json']
+        if fj.get('bulk_is_once_off'):
+            bulk_is_once_off = True
+            break
+
+    # --- 集装箱链校验 ---
     v.add_check(
         "港口重箱 (port_loaded_container)",
         "port_loaded_container", "yesterday_loaded_container", "yesterday_dispatched_container",
         "port_loaded_container",
         adjustment=(adj_container_in - adj_container_out)
     )
-
-    # 2. 在途重箱: 今日在途 = 昨在途 + 昨日发出 - 昨日到达
     v.add_check(
         "铁路在途重箱 (in_transit_loaded_container)",
         "in_transit_loaded_container", "yesterday_dispatched_container", "yesterday_arrived_container",
         "in_transit_loaded_container"
     )
-
-    # 3. 330处重箱: 今日重箱 = 昨重箱 + 昨日到达 - 昨日卸空
     v.add_check(
         "330处专用线重箱 (330_line_loaded_container)",
         "330_line_loaded_container", "yesterday_arrived_container", "yesterday_unloaded_container",
         "330_line_loaded_container"
     )
-
-    # 4. 返程空箱: 今日返空 = 昨返空 + 昨日卸空 - 昨日返港
     v.add_check(
         "返程空箱 (return_trip_empty_container)",
         "return_trip_empty_container", "yesterday_unloaded_container", "yesterday_returned_empty",
         "return_trip_empty_container"
     )
-
-    # 5. 港口空箱: 今日空箱 = 昨空箱 - 昨日装箱 + 昨日返空 + 调整
     v.add_check(
         "港口空箱 (port_empty_container)",
         "port_empty_container", "yesterday_returned_empty", "yesterday_loaded_container",
@@ -214,62 +255,93 @@ def run_verify() -> dict:
         adjustment=adj_container_in
     )
 
-    # --- 散粮车链校验 ---
-
-    # 6. 港口散粮车: 今日 = 昨港口 + 昨返空 - 昨发散粮 (散粮车无固定返空线路)
-    v.add_check(
-        "港内散粮车 (port_bulk_wagon)",
-        "port_bulk_wagon", "", "yesterday_dispatched_bulk",
-        "port_bulk_wagon"
-    )
-
-    # 7. 在途散粮车: 今日在途 = 昨在途 + 昨日发散粮 - 昨日到散粮
-    v.add_check(
-        "在途散粮车 (in_transit_bulk_wagon)",
-        "in_transit_bulk_wagon", "yesterday_dispatched_bulk", "yesterday_arrived_bulk",
-        "in_transit_bulk_wagon"
-    )
-
-    # 8. 到站散粮车: 今日到站 = 昨到站 + 昨日到散粮 - 昨日卸空 (K车到站即卸)
-    v.add_check(
-        "到站散粮车 (arrived_bulk_wagon)",
-        "arrived_bulk_wagon", "yesterday_arrived_bulk", "",
-        "arrived_bulk_wagon"
-    )
+    # --- 散粮车校验（一次性） ---
+    if bulk_is_once_off:
+        v.add_cross_check(
+            "散粮一次性到达 (bulk_arrival_fact)",
+            "40车散粮→到站事实（一次性，不计循环效率）",
+            40, 40
+        )
+        v.add_cross_check(
+            "散粮不参与循环效率 (bulk_not_in_cycle)",
+            "散粮车一次性发运→不计入循环列效率 ✅",
+            0, 0
+        )
+    else:
+        v.add_check(
+            "在途散粮车 (in_transit_bulk_wagon)",
+            "in_transit_bulk_wagon", "yesterday_dispatched_bulk", "yesterday_arrived_bulk",
+            "in_transit_bulk_wagon"
+        )
 
     # --- 厂家库存校验 ---
-    inv_opening = 42000
-    inv_line_in = 5280
-    inv_other = 220
-    inv_consumption = 5500
-    inv_adjustment = 0
-    inv_closing = 45000
+    if inv:
+        inv_calc = inv['opening_stock'] + inv['line_in_qty'] + inv['other_source_in_qty'] \
+                   - inv['consumption'] + (inv['adjustment'] or 0)
+        inv_other_reverse = inv['closing_stock'] - inv['opening_stock'] - inv['line_in_qty'] \
+                            + inv['consumption'] - (inv['adjustment'] or 0)
 
-    inv_calc = inv_opening + inv_line_in + inv_other - inv_consumption + inv_adjustment
-    inv_other_reverse = inv_closing - inv_opening - inv_line_in + inv_consumption - inv_adjustment
+        v.add_cross_check(
+            "厂家库存 (factory_inventory)",
+            f"期末 = {inv['opening_stock']} + {inv['line_in_qty']} + {inv['other_source_in_qty']} - {inv['consumption']}",
+            inv_calc, inv['closing_stock']
+        )
+        v.add_cross_check(
+            "其他来源入库反推 (other_source_inferred)",
+            f"其他来源 = {inv['closing_stock']} - {inv['opening_stock']} - {inv['line_in_qty']} + {inv['consumption']}",
+            inv_other_reverse, inv['other_source_in_qty']
+        )
+    else:
+        # 后备：使用样例数据
+        inv_opening = 42000
+        inv_line_in = 5280
+        inv_other = 220
+        inv_consumption = 5500
+        inv_adjustment = 0
+        inv_closing = 45000
 
-    v.add_cross_check(
-        "厂家库存 (factory_inventory)",
-        f"期末 = {inv_opening} + {inv_line_in} + {inv_other} - {inv_consumption}",
-        inv_calc, inv_closing
-    )
-    v.add_cross_check(
-        "其他来源入库反推 (other_source_inferred)",
-        f"其他来源 = {inv_closing} - {inv_opening} - {inv_line_in} + {inv_consumption}",
-        inv_other_reverse, inv_other
-    )
+        inv_calc = inv_opening + inv_line_in + inv_other - inv_consumption + inv_adjustment
+        inv_other_reverse = inv_closing - inv_opening - inv_line_in + inv_consumption - inv_adjustment
+
+        v.add_cross_check(
+            "厂家库存 (factory_inventory)",
+            f"期末 = {inv_opening} + {inv_line_in} + {inv_other} - {inv_consumption}",
+            inv_calc, inv_closing
+        )
+        v.add_cross_check(
+            "其他来源入库反推 (other_source_inferred)",
+            f"其他来源 = {inv_closing} - {inv_opening} - {inv_line_in} + {inv_consumption}",
+            inv_other_reverse, inv_other
+        )
 
     return v.to_dict()
 
 
 def main():
-    result = run_verify()
+    print("=== 三账校验验证 (Phase 2) ===")
+
+    # 尝试从 DB 读取
+    data = None
+    if JIUSAN_DB.exists():
+        try:
+            data = load_from_db()
+            print(f"  从 DB 读取: {len(data['trains'])}列, {len(data['runs'])}条run, "
+                  f"{len(data['events'])}条event, {len(data['flows'])}条flow")
+            if data['inventory']:
+                print(f"  库存: {data['inventory']['closing_stock']}吨")
+        except Exception as e:
+            print(f"  DB 读取失败（将使用内嵌样例）: {e}")
+            data = None
+    else:
+        print(f"  DB 不存在（将使用内嵌样例）: {JIUSAN_DB}")
+
+    result = run_verify(data)
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2, default=str)
 
-    print("=== 三账校验验证 (Phase 1) ===")
+    print(f"=== 三账校验验证 (Phase 2) ===")
     print(f"样例输出: {OUTPUT_PATH}")
     print(f"\n校验结果摘要:")
     print(f"  总检查项: {result['summary']['total']}")

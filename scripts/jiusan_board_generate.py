@@ -11,10 +11,29 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 JIUSAN_DB = REPO_ROOT / "data" / "jiusan_cycle.db"
 DASHBOARD_DIR = REPO_ROOT / "dashboard"
+
+
+from typing import Optional
+
+
+def _parse_type_summary_from_notes(notes: Optional[str], prefix: str = "箱型: ") -> Optional[dict]:
+    """从 notes 中解析 JSON 格式的 type summary"""
+    if not notes:
+        return None
+    import re
+    m = re.search(re.escape(prefix) + r'(\{.+?\})', notes)
+    if m:
+        try:
+            return json.loads(m.group(1))
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return None
 
 
 def get_conn():
@@ -81,6 +100,8 @@ def generate(conn) -> dict:
             "destination_line": t['destination_line'],
         }
         if last_run:
+            # 从 notes 解析 container_type_summary
+            cts = _parse_type_summary_from_notes(last_run.get('notes', ''))
             train_entry["last_run"] = {
                 "round_no": last_run['round_no'],
                 "wagon_count": last_run['wagon_count'],
@@ -92,6 +113,7 @@ def generate(conn) -> dict:
                 "return_time": last_run['return_time'],
                 "status": last_run['status'],
                 "notes": last_run['notes'],
+                "container_type_summary": cts,
             }
         cycle_trains_block.append(train_entry)
 
@@ -99,14 +121,17 @@ def generate(conn) -> dict:
     bulk_events = [dict(e) for e in events if e['event_type'] == 'bulk_dispatch_once']
     one_time_shipments = []
     for e in bulk_events:
-        one_time_shipments.append({
+        bws = _parse_type_summary_from_notes(e.get('notes', ''), prefix="车型统计: ")
+        entry = {
             "event_type": e['event_type'],
             "pool_type": e['pool_type'],
             "quantity": e['quantity'],
             "event_time": e['event_time'],
             "source": e['source'],
             "notes": e['notes'],
-        })
+            "bulk_wagon_type_summary": bws,
+        }
+        one_time_shipments.append(entry)
 
     # ── 构建 three_account_check 区块 ──
     # 用读取的数据进行三账校验
@@ -284,6 +309,22 @@ def generate_html(dashboard: dict) -> str:
     trains_html = ""
     for t in dashboard.get('cycle_trains', []):
         lr = t.get('last_run', {})
+        cts = lr.get('container_type_summary', {}) or {}
+        weight_detail = ""
+        if cts:
+            oc = cts.get('open_top_count', 0)
+            tc = cts.get('top_open_count', 0)
+            ow = cts.get('open_top_weight_tons', 0)
+            tw = cts.get('top_open_weight_tons', 0)
+            bw = cts.get('business_weight_tons', 0)
+            rm = cts.get('rail_marked_weight_tons', 0)
+            wd = cts.get('weight_diff_tons', 0)
+            weight_detail = f"""
+            <div class="weight-detail">
+                <div>敞顶箱: {oc}箱 × 28.5 = {ow}吨</div>
+                <div>顶开门箱: {tc}箱 × 26.7 = {tw}吨</div>
+                <div><strong>业务重量: {bw}吨</strong> | 95306标重: {rm}吨 | 差异: {wd}吨</div>
+            </div>"""
         trains_html += f"""
         <div class="train-card">
             <div class="train-header">
@@ -297,6 +338,7 @@ def generate_html(dashboard: dict) -> str:
                 <span>载重: {lr.get('total_weight', '?')}吨</span>
                 <span>到站: {t.get('destination_line', '?')}</span>
             </div>
+            {weight_detail}
             <div class="train-timeline">
                 {('<span>发车: ' + lr['depart_time'][:16] + '</span>') if lr.get('depart_time') else ''}
                 {('<span>到站: ' + lr['arrive_time'][:16] + '</span>') if lr.get('arrive_time') else ''}
@@ -307,12 +349,26 @@ def generate_html(dashboard: dict) -> str:
     # 散粮一次性 HTML
     bulk_html = ""
     for s in dashboard.get('one_time_shipments', []):
+        bws = s.get('bulk_wagon_type_summary', {}) or {}
+        bulk_detail = ""
+        if bws:
+            l18 = bws.get('L18_count', 0)
+            l70 = bws.get('L70_count', 0)
+            bw = bws.get('business_weight_tons', 0)
+            rm = bws.get('rail_marked_weight_tons', 0)
+            wd = bws.get('weight_diff_tons', 0)
+            bulk_detail = f"""
+            <div class="weight-detail">
+                <div>L18: {l18}车 × 60 = {l18 * 60}吨 | L70: {l70}车 × 69 = {l70 * 69}吨</div>
+                <div><strong>业务重量: {bw}吨</strong> | 95306标重: {rm}吨 | 差异: {wd}吨</div>
+            </div>"""
         bulk_html += f"""
         <div class="bulk-card">
             <span class="bulk-icon">📦</span>
             <strong>散粮一次性发运</strong>
             <span>{s['quantity']}车</span>
             <span>时间: {s['event_time']}</span>
+            {bulk_detail}
             <span class="note">{s.get('notes', '')}</span>
         </div>"""
     if not bulk_html:
@@ -374,6 +430,7 @@ h1 {{ font-size: 1.5em; margin-bottom: 8px; color: #fff; }}
 .status-unloaded {{ background: #66bb6a; color: #1a2633; }}
 .train-detail {{ display: flex; gap: 16px; font-size: 0.85em; color: #b0bec5; margin-bottom: 4px; }}
 .train-timeline {{ font-size: 0.82em; color: #78909c; display: flex; gap: 12px; flex-wrap: wrap; }}
+.weight-detail {{ font-size: 0.82em; color: #a5d6a7; background: #1a2a1a; border-radius: 4px; padding: 6px 10px; margin: 4px 0; line-height: 1.6; }}
 .bulk-card {{ background: #2a1a20; border-radius: 6px; padding: 10px; margin-bottom: 6px;
              display: flex; gap: 12px; align-items: center; font-size: 0.85em; flex-wrap: wrap; }}
 .bulk-icon {{ font-size: 1.1em; }}

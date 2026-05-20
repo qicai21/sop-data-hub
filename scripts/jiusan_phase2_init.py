@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-九三大豆 Phase 2 MVP 初始化脚本
+九三大豆 Phase 2 初始化脚本（含箱型/车型重量规则）
 
 功能：
 1. 创建/重建 jiusan_cycle.db（schema 落库）
-2. 扫描 95306 新船窗口
-3. 写入两个集装箱循环列 + round 1 runs
-4. 写入散粮一次性发运事实
+2. 扫描 95306 新船窗口，计算箱型/车型重量
+3. 写入两个集装箱循环列 + round 1 runs（含 container_type_summary）
+4. 写入散粮一次性发运事实（含 bulk_wagon_type_summary）
 5. 写入发运计划版本样例
-6. 写入厂家库存样例
+6. 写入厂家库存样例（line_in_qty 使用业务重量）
 7. 写入 scan log
 
 Usage:
@@ -24,6 +24,19 @@ from pathlib import Path
 # ── 路径 ────────────────────────────────────────────
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# 确保可以 import scripts/
+sys.path.insert(0, str(REPO_ROOT))
+
+# ── 引入箱型/车型规则 ──
+
+from scripts.jiusan_container_type_rules import (
+    calc_container_train_weight,
+    calc_bulk_wagon_weight,
+)
+
+# ── 路径 ────────────────────────────────────────────
+
 SCHEMA_PATH = REPO_ROOT / "schema" / "jiusan_cycle_schema.sql"
 JIUSAN_DB = REPO_ROOT / "data" / "jiusan_cycle.db"
 RAIL95306_DB = Path("/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3")
@@ -84,7 +97,8 @@ def scan_new_vessel():
         SELECT ydid, car_no, car_model, transport_mode_name,
                container_no_raw, container_numbers_json,
                ticketed_at, departed_at, arrived_at,
-               status_code, status_name, marked_weight
+               status_code, status_name, marked_weight,
+               freight_fee
         FROM shipments
         WHERE cargo_name = '大豆'
           AND origin_name = '高桥镇'
@@ -113,7 +127,7 @@ def scan_new_vessel():
         and r['ticketed_at'] and r['ticketed_at'].startswith('2026-05-19')
     ]
 
-    # 计算总重量
+    # 计算总重量（保留，用于 summary）
     def total_weight(recs):
         total = 0.0
         for r in recs:
@@ -124,6 +138,11 @@ def scan_new_vessel():
                 except (ValueError, TypeError):
                     pass
         return round(total, 2)
+
+    # ── 箱型/车型统计 ──
+    container_0519_stats = calc_container_train_weight(container_05_19)
+    container_0520_stats = calc_container_train_weight(container_05_20)
+    bulk_stats = calc_bulk_wagon_weight(bulk_05_19)
 
     result = {
         "scan_time": datetime.now(timezone.utc).isoformat(),
@@ -136,6 +155,7 @@ def scan_new_vessel():
             "departed_at": container_05_19[0]['departed_at'] if container_05_19 else None,
             "arrived_at": container_05_19[0]['arrived_at'] if container_05_19 else None,
             "status": container_05_19[0]['status_name'] if container_05_19 else None,
+            "container_type_summary": container_0519_stats,
         },
         "container_05_20": {
             "count": len(container_05_20),
@@ -143,6 +163,7 @@ def scan_new_vessel():
             "first_ticketed": container_05_20[0]['ticketed_at'] if container_05_20 else None,
             "last_ticketed": container_05_20[-1]['ticketed_at'] if container_05_20 else None,
             "status": container_05_20[0]['status_name'] if container_05_20 else None,
+            "container_type_summary": container_0520_stats,
         },
         "bulk_05_19": {
             "count": len(bulk_05_19),
@@ -152,6 +173,7 @@ def scan_new_vessel():
             "departed_at": bulk_05_19[0]['departed_at'] if bulk_05_19 else None,
             "arrived_at": bulk_05_19[0]['arrived_at'] if bulk_05_19 else None,
             "status": bulk_05_19[0]['status_name'] if bulk_05_19 else None,
+            "bulk_wagon_type_summary": bulk_stats,
             "known_cars": [
                 {"car_no": "8103798", "model": "L18"},
                 {"car_no": "8101469", "model": "L18"},
@@ -181,6 +203,7 @@ def write_trains_and_runs(conn, scan):
 
     # container_cycle_train_01 round 1 run
     c1 = scan['container_05_19']
+    c1_types = json.dumps(c1.get('container_type_summary', {}), ensure_ascii=False)
     conn.execute("""
         INSERT OR REPLACE INTO jiusan_cycle_train_runs
         (id, train_id, round_no, wagon_count, container_count, total_weight,
@@ -188,12 +211,17 @@ def write_trains_and_runs(conn, scan):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         f"run_{uuid.uuid4().hex[:12]}", "container_cycle_train_01", 1,
-        c1['count'], c1['count'] * 2, c1['total_weight'],
+        c1['count'], c1['count'] * 2, c1.get('total_weight', 0),
         c1['departed_at'], c1['arrived_at'],
         "unloaded", "95306_sync", f"scan_{scan['scan_time']}",
-        "已交付，返空中，预计今晚到锦州港", now, now
+        f"已交付，返空中，预计今晚到锦州港。"
+        f"箱型: {c1_types}",
+        now, now
     ))
-    print(f"  ✅ container_cycle_train_01: {c1['count']}车 / {c1['total_weight']}吨 / 状态=returning")
+    print(f"  ✅ container_cycle_train_01: {c1['count']}车 / {c1.get('total_weight', 0)}吨 / 状态=returning")
+    c1_summary = c1.get('container_type_summary', {})
+    print(f"     敞顶箱{c1_summary.get('open_top_count', 0)}箱×28.5 + 顶开门箱{c1_summary.get('top_open_count', 0)}箱×26.7")
+    print(f"     business_weight={c1_summary.get('business_weight_tons', '?')}t / rail_marked={c1_summary.get('rail_marked_weight_tons', '?')}t / diff={c1_summary.get('weight_diff_tons', '?')}t")
 
     # container_cycle_train_02
     conn.execute("""
@@ -207,6 +235,7 @@ def write_trains_and_runs(conn, scan):
 
     # container_cycle_train_02 round 1 run
     c2 = scan['container_05_20']
+    c2_types = json.dumps(c2.get('container_type_summary', {}), ensure_ascii=False)
     conn.execute("""
         INSERT OR REPLACE INTO jiusan_cycle_train_runs
         (id, train_id, round_no, wagon_count, container_count, total_weight,
@@ -214,12 +243,17 @@ def write_trains_and_runs(conn, scan):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         f"run_{uuid.uuid4().hex[:12]}", "container_cycle_train_02", 1,
-        c2['count'], c2['count'] * 2, c2['total_weight'],
+        c2['count'], c2['count'] * 2, c2.get('total_weight', 0),
         None,  # depart_time — 尚未发车
         "pending", "95306_sync", f"scan_{scan['scan_time']}",
-        "锦州港装箱完成，待发", now, now
+        f"锦州港装箱完成，待发。"
+        f"箱型: {c2_types}",
+        now, now
     ))
-    print(f"  ✅ container_cycle_train_02: {c2['count']}车 / {c2['total_weight']}吨 / 状态=loaded")
+    print(f"  ✅ container_cycle_train_02: {c2['count']}车 / {c2.get('total_weight', 0)}吨 / 状态=loaded")
+    c2_summary = c2.get('container_type_summary', {})
+    print(f"     敞顶箱{c2_summary.get('open_top_count', 0)}箱×28.5 + 顶开门箱{c2_summary.get('top_open_count', 0)}箱×26.7")
+    print(f"     business_weight={c2_summary.get('business_weight_tons', '?')}t / rail_marked={c2_summary.get('rail_marked_weight_tons', '?')}t / diff={c2_summary.get('weight_diff_tons', '?')}t")
 
 
 def write_bulk_dispatch(conn, scan):
@@ -228,6 +262,7 @@ def write_bulk_dispatch(conn, scan):
     b = scan['bulk_05_19']
 
     # jiusan_resource_events — 散粮一次性发运
+    b_stats = json.dumps(b.get('bulk_wagon_type_summary', {}), ensure_ascii=False)
     conn.execute("""
         INSERT INTO jiusan_resource_events
         (id, pool_type, event_type, quantity, event_time, source, source_ref, notes, created_at)
@@ -237,17 +272,26 @@ def write_bulk_dispatch(conn, scan):
         b['count'], b['first_ticketed'] or now,
         "95306_sync", f"scan_{scan['scan_time']}",
         f"散粮{b['count']}车一次性发运/入库，用户确认不返回锦州，非循环列。"
-        f"已知4车：8103798/8101469/8101431/8105474（L18/L70混合），到站时间{b['arrived_at']}",
+        f"车型统计: {b_stats}",
         now
     ))
-    print(f"  ✅ bulk_dispatch_once: {b['count']}车 / {b['total_weight']}吨 / 一次性发运")
+    print(f"  ✅ bulk_dispatch_once: {b['count']}车 / {b.get('total_weight', 0)}吨 / 一次性发运")
+    b_summary = b.get('bulk_wagon_type_summary', {})
+    print(f"     L18={b_summary.get('L18_count', 0)}车×60 + L70={b_summary.get('L70_count', 0)}车×69")
+    print(f"     business_weight={b_summary.get('business_weight_tons', '?')}t / rail_marked={b_summary.get('rail_marked_weight_tons', '?')}t / diff={b_summary.get('weight_diff_tons', '?')}t")
 
     # jiusan_flows — 散粮发运/到达流量
+    b_summary = b.get('bulk_wagon_type_summary', {})
     flow_fields = {
         "yesterday_dispatched_bulk": b['count'],
         "yesterday_arrived_bulk_count": b['count'],
         "yesterday_arrived_bulk_time": b['arrived_at'],
         "bulk_is_once_off": True,
+        "bulk_wagon_type_summary": b_summary,
+        "bulk_business_weight_tons": b_summary.get('business_weight_tons', 0),
+        "bulk_rail_marked_weight_tons": b_summary.get('rail_marked_weight_tons', 0),
+        "bulk_weight_diff_tons": b_summary.get('weight_diff_tons', 0),
+        "bulk_weight_source": "bulk_wagon_model_rule",
         "bulk_note": f"散粮{b['count']}车一次性发运，用户确认不返回锦州，非循环列。不计入循环列效率。",
     }
     conn.execute("""
@@ -295,14 +339,25 @@ def write_plan_sample(conn):
     print(f"  ✅ plan_B active: {json.dumps(plan_details, ensure_ascii=False)}")
 
 
-def write_inventory_sample(conn):
-    """写入厂家库存样例"""
+def write_inventory_sample(conn, scan):
+    """写入厂家库存样例（line_in_qty 使用业务重量）"""
     now = datetime.now().isoformat()
+
+    # 计算已到站业务重量
+    c1 = scan.get('container_05_19', {})
+    c1_summary = c1.get('container_type_summary', {})
+    c1_business = c1_summary.get('business_weight_tons', 0)
+    b = scan.get('bulk_05_19', {})
+    b_summary = b.get('bulk_wagon_type_summary', {})
+    b_business = b_summary.get('business_weight_tons', 0)
+
+    # 05-19 已到达的本线入库业务重量
+    arrived_business_weight = c1_business + b_business
 
     inv = {
         "record_date": "2026-05-20",
         "opening_stock": 42000.0,
-        "line_in_qty": 5280.0,
+        "line_in_qty": round(arrived_business_weight, 1),  # 使用业务重量
         "other_source_in_qty": 0.0,
         "consumption": 5500.0,
         "closing_stock": 45000.0,
@@ -310,6 +365,11 @@ def write_inventory_sample(conn):
         "red_line": 20000.0,
         "days_supported": 8.2,
     }
+
+    other_reverse = (
+        inv['closing_stock'] - inv['opening_stock']
+        - inv['line_in_qty'] + inv['consumption']
+    )
 
     conn.execute("""
         INSERT OR REPLACE INTO jiusan_factory_inventory
@@ -329,9 +389,10 @@ def write_inventory_sample(conn):
         inv['red_line'],
         inv['days_supported'],
         "manual",
-        "Phase 2 MVP 样例。line_in_qty 含集装箱 + 散粮到站入库（估算）。"
-        "反推其他来源: {:.0f} 吨".format(
-            inv['closing_stock'] - inv['opening_stock'] - inv['line_in_qty'] + inv['consumption']
+        "Phase 2 weight patch — line_in_qty 使用业务重量。"
+        "集装箱05-19业务重量: {:.1f}吨 + 散粮业务重量: {:.1f}吨 = {:.1f}吨。"
+        "反推其他来源: {:.0f} 吨。".format(
+            c1_business, b_business, arrived_business_weight, other_reverse
         ),
         now
     ))
@@ -407,7 +468,7 @@ def main():
     # Step 5: 写入计划 + 库存
     print("\n[5/6] 写入发运计划 + 厂家库存...")
     write_plan_sample(conn)
-    write_inventory_sample(conn)
+    write_inventory_sample(conn, scan)
 
     # Step 6: 写入 scan log
     print("\n[6/6] 写入扫描日志...")

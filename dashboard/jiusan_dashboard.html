@@ -24,6 +24,7 @@ h1 { font-size: 1.5em; margin-bottom: 8px; color: #fff; }
 .status-unloaded { background: #66bb6a; color: #1a2633; }
 .train-detail { display: flex; gap: 16px; font-size: 0.85em; color: #b0bec5; margin-bottom: 4px; }
 .train-timeline { font-size: 0.82em; color: #78909c; display: flex; gap: 12px; flex-wrap: wrap; }
+.weight-detail { font-size: 0.82em; color: #a5d6a7; background: #1a2a1a; border-radius: 4px; padding: 6px 10px; margin: 4px 0; line-height: 1.6; }
 .bulk-card { background: #2a1a20; border-radius: 6px; padding: 10px; margin-bottom: 6px;
              display: flex; gap: 12px; align-items: center; font-size: 0.85em; flex-wrap: wrap; }
 .bulk-icon { font-size: 1.1em; }
@@ -45,7 +46,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
 <body>
 <h1>🌱 九三大豆循环运输看板</h1>
 <div class="meta">
-    <span>生成时间: 2026-05-20 11:28</span> |
+    <span>生成时间: 2026-05-20 14:06</span> |
     <span>数据窗口: >= 2026-05-19 06:00</span> |
     <span>Phase 2 MVP</span>
 </div>
@@ -97,10 +98,16 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
                 <span>载重: 3456.0吨</span>
                 <span>到站: 三三〇处专用线</span>
             </div>
+            
+            <div class="weight-detail">
+                <div>敞顶箱: 102箱 × 28.5 = 2907.0吨</div>
+                <div>顶开门箱: 6箱 × 26.7 = 160.2吨</div>
+                <div><strong>业务重量: 3067.2吨</strong> | 95306标重: 3456.0吨 | 差异: -388.8吨</div>
+            </div>
             <div class="train-timeline">
                 <span>发车: 2026-05-19 11:31</span>
                 <span>到站: 2026-05-19 19:15</span>
-                <span class="note">已交付，返空中，预计今晚到锦州港</span>
+                <span class="note">已交付，返空中，预计今晚到锦州港。箱型: {"open_top_count": 102, "top_open_count": 6, "unknown_count": 0, "open_top_weight_tons": 2907.0, "top_open_weight_tons": 160.2, "business_weight_tons": 3067.2, "rail_marked_weight_tons": 3456.0, "weight_diff_tons": -388.8, "weight_source": "container_type_rule"}</span>
             </div>
         </div>
         <div class="train-card">
@@ -115,10 +122,16 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
                 <span>载重: 3456.0吨</span>
                 <span>到站: 三三〇处专用线</span>
             </div>
+            
+            <div class="weight-detail">
+                <div>敞顶箱: 64箱 × 28.5 = 1824.0吨</div>
+                <div>顶开门箱: 44箱 × 26.7 = 1174.8吨</div>
+                <div><strong>业务重量: 2998.8吨</strong> | 95306标重: 3456.0吨 | 差异: -457.2吨</div>
+            </div>
             <div class="train-timeline">
                 
                 
-                <span class="note">锦州港装箱完成，待发</span>
+                <span class="note">锦州港装箱完成，待发。箱型: {"open_top_count": 64, "top_open_count": 44, "unknown_count": 0, "open_top_weight_tons": 1824.0, "top_open_weight_tons": 1174.8, "business_weight_tons": 2998.8, "rail_marked_weight_tons": 3456.0, "weight_diff_tons": -457.2, "weight_source": "container_type_rule"}</span>
             </div>
         </div>
 </div>
@@ -131,7 +144,12 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
             <strong>散粮一次性发运</strong>
             <span>40车</span>
             <span>时间: 2026-05-19 21:25:35</span>
-            <span class="note">散粮40车一次性发运/入库，用户确认不返回锦州，非循环列。已知4车：8103798/8101469/8101431/8105474（L18/L70混合），到站时间2026-05-20 04:14:00</span>
+            
+            <div class="weight-detail">
+                <div>L18: 21车 × 60 = 1260吨 | L70: 19车 × 69 = 1311吨</div>
+                <div><strong>业务重量: 2571.0吨</strong> | 95306标重: 2571.0吨 | 差异: 0.0吨</div>
+            </div>
+            <span class="note">散粮40车一次性发运/入库，用户确认不返回锦州，非循环列。车型统计: {"L18_count": 21, "L70_count": 19, "unknown_count": 0, "business_weight_tons": 2571.0, "rail_marked_weight_tons": 2571.0, "weight_diff_tons": 0.0, "weight_source": "bulk_wagon_model_rule"}</span>
         </div>
 </div>
 
@@ -198,11 +216,11 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
         <span>可支撑: 8.2 天</span>
     </div>
     <div class="inv-detail">
-        <span>本线入库: 5280.0 吨</span>
+        <span>本线入库: 5638.2 吨</span>
         <span>其他来源: 0.0 吨</span>
         <span>消耗: 5500.0 吨</span>
     </div>
-    <div class="inv-detail"><span>反推其他来源: 3220.0 吨</span></div>
+    <div class="inv-detail"><span>反推其他来源: 2861.8 吨</span></div>
 </div>
 
 <div class="card">
@@ -228,7 +246,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
 
 </div>
 <div class="meta" style="margin-top:20px;">
-    数据来源: jiusan_cycle.db | 扫描: 2026-05-20T03:26:47.951752+00:00 | 148 条记录
+    数据来源: jiusan_cycle.db | 扫描: 2026-05-20T06:06:16.125979+00:00 | 148 条记录
 </div>
 </body>
 </html>

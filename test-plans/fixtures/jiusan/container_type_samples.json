@@ -1,0 +1,107 @@
+[
+  {
+    "test_case": "顶开门箱 — TBJU 594 区间起点",
+    "container_no": "TBJU5940000",
+    "freight_fee": null,
+    "expected_type": "top_open",
+    "expected_weight": 26.7
+  },
+  {
+    "test_case": "顶开门箱 — TBJU 620 区间终点",
+    "container_no": "TBJU6200000",
+    "freight_fee": null,
+    "expected_type": "top_open",
+    "expected_weight": 26.7
+  },
+  {
+    "test_case": "敞顶箱 — TBJU 621 区间后一位",
+    "container_no": "TBJU6210000",
+    "freight_fee": null,
+    "expected_type": "open_top",
+    "expected_weight": 28.5
+  },
+  {
+    "test_case": "顶开门箱 — TBJU 705 第二区间起点",
+    "container_no": "TBJU7050000",
+    "freight_fee": null,
+    "expected_type": "top_open",
+    "expected_weight": 26.7
+  },
+  {
+    "test_case": "顶开门箱 — TBJU 711 第二区间终点",
+    "container_no": "TBJU7110000",
+    "freight_fee": null,
+    "expected_type": "top_open",
+    "expected_weight": 26.7
+  },
+  {
+    "test_case": "敞顶箱 — TBJU 712 第二区间后一位",
+    "container_no": "TBJU7120000",
+    "freight_fee": null,
+    "expected_type": "open_top",
+    "expected_weight": 28.5
+  },
+  {
+    "test_case": "顶开门箱 — TBJU 758 第三区间起点",
+    "container_no": "TBJU7580000",
+    "freight_fee": null,
+    "expected_type": "top_open",
+    "expected_weight": 26.7
+  },
+  {
+    "test_case": "顶开门箱 — TBJU 781 第三区间终点",
+    "container_no": "TBJU7810000",
+    "freight_fee": null,
+    "expected_type": "top_open",
+    "expected_weight": 26.7
+  },
+  {
+    "test_case": "敞顶箱 — TBJU 782 第三区间后一位",
+    "container_no": "TBJU7820000",
+    "freight_fee": null,
+    "expected_type": "open_top",
+    "expected_weight": 28.5
+  },
+  {
+    "test_case": "敞顶箱 — TBCU 前缀",
+    "container_no": "TBCU0405966",
+    "freight_fee": null,
+    "expected_type": "open_top",
+    "expected_weight": 28.5
+  },
+  {
+    "test_case": "敞顶箱 — freight_fee 强校验193260",
+    "container_no": "TBJU0000000",
+    "freight_fee": 193260,
+    "expected_type": "open_top",
+    "expected_weight": 28.5
+  },
+  {
+    "test_case": "顶开门箱 — freight_fee 强校验176710",
+    "container_no": "TBJU0000000",
+    "freight_fee": 176710,
+    "expected_type": "top_open",
+    "expected_weight": 26.7
+  },
+  {
+    "test_case": "实际数据 — 05-19 顶开门箱",
+    "container_no": "TBJU6044887",
+    "freight_fee": 176710,
+    "expected_type": "top_open",
+    "expected_weight": 26.7
+  },
+  {
+    "test_case": "实际数据 — 05-19 敞顶箱（含TBCU）",
+    "container_no": "TBCU0405966",
+    "freight_fee": 193260,
+    "expected_type": "open_top",
+    "expected_weight": 28.5
+  },
+  {
+    "test_case": "实际数据 — 05-19 敞顶箱（TBJU）",
+    "container_no": "TBJU1581327",
+    "freight_fee": 193260,
+    "expected_type": "open_top",
+    "expected_weight": 28.5
+  }
+]

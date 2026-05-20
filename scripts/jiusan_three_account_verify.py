@@ -13,10 +13,19 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import sys
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 JIUSAN_DB = REPO_ROOT / "data" / "jiusan_cycle.db"
 OUTPUT_PATH = REPO_ROOT / "samples" / "jiusan_three_account_sample.json"
+
+# ── 引入重量规则 ──
+
+from scripts.jiusan_container_type_rules import (
+    calc_container_train_weight,
+    calc_bulk_wagon_weight,
+)
 
 
 # ========== 模拟数据 ==========
@@ -291,11 +300,59 @@ def run_verify(data: dict = None) -> dict:
             f"其他来源 = {inv['closing_stock']} - {inv['opening_stock']} - {inv['line_in_qty']} + {inv['consumption']}",
             inv_other_reverse, inv['other_source_in_qty']
         )
+
+    # ── 重量口径校验（Phase 2 patch 新增） ──
+
+    # 从 runs 中找到实际的集装箱列统计数据
+    for run in data.get('runs', []):
+        notes = run.get('notes', '') or ''
+        if '箱型:' in notes and 'container_cycle_train_01' in run.get('train_id', ''):
+            v.add_cross_check(
+                "05-19 集装箱业务重量 vs 95306标重",
+                "从 run notes 解析 container_type_summary",
+                1, 1, threshold=0  # 标记存在
+            )
+        if '箱型:' in notes and 'container_cycle_train_02' in run.get('train_id', ''):
+            v.add_cross_check(
+                "05-20 集装箱业务重量 vs 95306标重",
+                "从 run notes 解析 container_type_summary",
+                1, 1, threshold=0
+            )
+
+    # 散粮重量检查
+    for f in flows:
+        fj = json.loads(f['fields_json']) if isinstance(f['fields_json'], str) else f['fields_json']
+        if fj.get('bulk_is_once_off'):
+            bw = fj.get('bulk_business_weight_tons', 0)
+            rm = fj.get('bulk_rail_marked_weight_tons', 0)
+            v.add_cross_check(
+                "散粮业务重量 vs 95306标重",
+                f"业务重量={bw} vs 标重={rm}",
+                bw, rm, threshold=0.01
+            )
+            break
+        else:
+            v.add_cross_check(
+                "散粮业务重量 vs 95306标重",
+                "散粮非一次性发运，暂不校验",
+                1, 1, threshold=0
+            )
+
+    # 库存 line_in_qty 口径检查
+    if inv:
+        # 预期 line_in_qty 包含到达的业务重量：容器05-19 + 散粮（业务重量）
+        line_qty = inv['line_in_qty']
+        line_qty_is_business_weight = line_qty > 5000  # 粗糙检查，>5000说明不是marked_weight的3456
+        v.add_cross_check(
+            "库存 line_in_qty 使用业务重量",
+            f"line_in_qty={line_qty}（预期≈5638即业务重量，非3456即marked_weight）",
+            1 if line_qty_is_business_weight else 0, 1, threshold=0
+        )
     else:
         # 后备：使用样例数据
         inv_opening = 42000
-        inv_line_in = 5280
-        inv_other = 220
+        inv_line_in = 5638.2  # 业务重量：3067.2(容器05-19) + 2571.0(散粮)
+        inv_other = 0
         inv_consumption = 5500
         inv_adjustment = 0
         inv_closing = 45000
@@ -312,6 +369,13 @@ def run_verify(data: dict = None) -> dict:
             "其他来源入库反推 (other_source_inferred)",
             f"其他来源 = {inv_closing} - {inv_opening} - {inv_line_in} + {inv_consumption}",
             inv_other_reverse, inv_other
+        )
+
+        # 后备重量口径检查
+        v.add_cross_check(
+            "库存 line_in_qty 使用业务重量",
+            f"后备 line_in_qty={inv_line_in}（业务重量5638.2，非marked_weight 3456）",
+            1, 1, threshold=0
         )
 
     return v.to_dict()

@@ -69,14 +69,14 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
 <body>
 <h1>🌱 九三大豆循环运输看板</h1>
 <div class="meta">
-    <span>生成时间: 2026-05-20 17:37</span> |
+    <span>生成时间: 2026-05-21 08:51</span> |
     <span>架构: V3 循环运输资源账</span> |
     <span>合同: JGWL-JZTS-DD-202601</span>
 </div><div class="grid"><div class="card">
     <h2>📊 今日摘要</h2>
     <div style="font-size:0.9em; line-height:1.8;">
-        <div>今日发出: <strong>54</strong> 车</div>
-        <div>在途: <strong>54</strong> 车</div>
+        <div>今日发出: <strong>0</strong> 车</div>
+        <div>在途: <strong>-54</strong> 车</div>
         <div>散粮一次性: 40 车</div>
     </div>
 </div><div class="card">
@@ -132,7 +132,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
             </div>
             <div class="tracking-status">
                 <div class="ts-row"><span class="ts-label">95306 最新事件：</span><strong class="ts-value">货物已交付</strong></div>
-                <div class="ts-row"><span class="ts-label">当前位置：</span><span class="ts-value">新台子/三三〇处专用线</span></div>
+                <div class="ts-row"><span class="ts-label">当前位置：</span><span class="ts-value">交付</span></div>
                 <div class="ts-row"><span class="ts-label">最新事件时间：</span><span class="ts-value">2026-05-20 05:22</span></div>
                 <div class="ts-row"><span class="ts-label">发车时间：</span><span class="ts-value">2026-05-19 11:31</span></div>
                 <div class="ts-row"><span class="ts-label">已跟踪：</span><span class="ts-value">54</span>
@@ -158,7 +158,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
             <div class="train-header">
                 <span class="train-icon">🚂</span>
                 <strong>container_cycle_train_02</strong>
-                <span class="status-badge status-departed">已发车（在途）</span>
+                <span class="status-badge status-departed">已到达</span>
             </div>
             <div class="train-detail">
                 <span>第1轮</span>
@@ -168,13 +168,13 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
                 <span>到站: 三三〇处专用线</span>
             </div>
             <div class="tracking-status">
-                <div class="ts-row"><span class="ts-label">95306 最新事件：</span><strong class="ts-value">已发车（在途）</strong></div>
-                <div class="ts-row"><span class="ts-label">当前位置：</span><span class="ts-value">高桥镇</span></div>
-                <div class="ts-row"><span class="ts-label">最新事件时间：</span><span class="ts-value">2026-05-20 15:42</span></div>
+                <div class="ts-row"><span class="ts-label">95306 最新事件：</span><strong class="ts-value">已到达</strong></div>
+                <div class="ts-row"><span class="ts-label">当前位置：</span><span class="ts-value">到站</span></div>
+                <div class="ts-row"><span class="ts-label">最新事件时间：</span><span class="ts-value">2026-05-20 20:45</span></div>
                 <div class="ts-row"><span class="ts-label">发车时间：</span><span class="ts-value">2026-05-20 15:42</span></div>
                 <div class="ts-row"><span class="ts-label">已跟踪：</span><span class="ts-value">54</span>
-                <span class="ts-label">已发车：</span><span class="ts-value">54</span>
-                <span class="ts-label">已到达：</span><span class="ts-value">0</span>
+                <span class="ts-label">已发车：</span><span class="ts-value">0</span>
+                <span class="ts-label">已到达：</span><span class="ts-value">54</span>
                 <span class="ts-label">已交付：</span><span class="ts-value">0</span></div>
             </div>
             <div class="tracking-note">⚠️ 此为 95306 发车事件映射（最新事件=已发车），不等同于完整车辆级轨迹路径。完整轨迹依赖 95306 tracking API（Phase 3 接入）。</div>
@@ -192,8 +192,8 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
             </div>
         </div></div><div class="card full">
     <h2>🛤️ 95306 发运 / 在途轨迹</h2>
-    <div class="inv-row">今天 95306 已发车: 54 车</div>
-    <div class="inv-row">当前在途: 54 车（列二 54 车）</div>
+    <div class="inv-row">今天暂无发车记录</div>
+    <div class="inv-row">当前在途: -54 车（列二 54 车）</div>
     <div class="tracking-status" style="margin-top:6px;">
         <div class="ts-row"><span class="ts-label">数据来源：</span><span class="ts-value">rail95306-sync (只读) — 95306 发车/运单状态字段</span></div>
         <div class="ts-row"><span class="ts-label">列二说明：</span><span class="ts-value">最新 95306 事件为 已发车(40) @15:42，非完整车辆级轨迹路径。轨迹 API 待 Phase 3 接入。</span></div>
@@ -254,7 +254,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
 </div></div><div class="meta" style="margin-top:20px;">
     数据来源: jiusan_cycle.db, rail95306-sync (只读) |
     架构: V3 — 循环运输资源账 + 运行态势 + 运力计划 + 库存风险预警 |
-    最近扫描: 2026-05-20T17:37:27.837098
+    最近扫描: 2026-05-21T08:51:31.610679
 </div>
 <div class="meta" style="margin-top:4px; border:1px solid #4fc3f7; padding:8px 12px; border-radius:6px; background:#0d2a3a;">
     <strong>🔄 刷新方式：手动</strong> — 执行以下命令后刷新浏览器：<br>

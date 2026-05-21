@@ -159,6 +159,75 @@ def build_tracking_status(records: list[dict], train_label: str) -> dict:
     }
 
 
+TRAIN_MAPPING = {
+    "container_05_19": "container_cycle_train_01",
+    "container_05_20": "container_cycle_train_02",
+}
+
+
+def update_tracking_status_table(shipment_groups: dict):
+    """将 95306 shipment 数据写入 jiusan_tracking_status 表（覆盖刷新）"""
+    if not JIUSAN_DB.exists():
+        print(f"  [WARN] jiusan_cycle.db 不存在，跳过 tracking_status 写入")
+        return
+    conn = sqlite3.connect(str(JIUSAN_DB))
+    conn.row_factory = sqlite3.Row
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    for group_key, train_id in TRAIN_MAPPING.items():
+        records = shipment_groups.get(group_key, [])
+        if not records:
+            continue
+
+        # 删除该列旧记录
+        conn.execute("DELETE FROM jiusan_tracking_status WHERE train_id = ?", (train_id,))
+        print(f"  删除 {train_id} 旧记录（{len(records)} 条）")
+
+        # 插入新记录
+        for r in records:
+            sc = r.get("status_code", "")
+            is_on_way = 1 if sc and int(sc) < 60 else 0
+            latest_stage = r.get("latest_stage_name", "")
+            if not latest_stage:
+                latest_stage = r.get("status_name", "")
+
+            conn.execute("""
+                INSERT INTO jiusan_tracking_status
+                    (id, car_no, ydid, train_id, status_code, status_name,
+                     latest_event, latest_event_time, current_node,
+                     arrived_at, departed_at, delivered_at,
+                     is_on_way, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                f"ts_{r['car_no']}_{now[:10]}",
+                r["car_no"],
+                r.get("ydid", ""),
+                train_id,
+                sc,
+                r.get("status_name", ""),
+                latest_stage,
+                r.get("latest_event_time", ""),
+                latest_stage,  # current_node ≈ latest_stage_name
+                r.get("arrived_at", ""),
+                r.get("departed_at", ""),
+                r.get("delivered_at", ""),
+                is_on_way,
+                now,
+            ))
+
+        # 汇总打印
+        cur = conn.execute(
+            "SELECT status_code, COUNT(*) as cnt FROM jiusan_tracking_status WHERE train_id = ? GROUP BY status_code",
+            (train_id,),
+        )
+        status_summary = {r["status_code"]: r["cnt"] for r in cur.fetchall()}
+        print(f"  写入 {train_id} 完成：{status_summary}")
+
+    conn.commit()
+    conn.close()
+    print("  ✅ tracking_status 表已刷新")
+
+
 def main():
     print("=" * 60)
     print("九三大豆 Phase 2.5-B — 95306 追踪状态更新")
@@ -187,6 +256,12 @@ def main():
     # 生成 tracking status
     track_01 = build_tracking_status(c1, "container_cycle_train_01")
     track_02 = build_tracking_status(c2, "container_cycle_train_02")
+
+    # 刷新 jiusan_tracking_status 表
+    print()
+    print("—" * 60)
+    print("刷新 jiusan_tracking_status 表…")
+    update_tracking_status_table(shipment_groups)
 
     print(f"\n  container_cycle_train_01:")
     print(f"    状态: {track_01['summary_status']}")

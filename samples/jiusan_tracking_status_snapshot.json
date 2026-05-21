@@ -1,9 +1,9 @@
 {
-  "last_updated": "2026-05-21T09:56:55.441838",
+  "last_updated": "2026-05-21T10:32:56.895245",
   "container_cycle_train_01": {
     "enabled": true,
     "source": "rail95306-sync (shipments table)",
-    "last_checked_at": "2026-05-21T01:56:55.431244+00:00",
+    "last_checked_at": "2026-05-21T02:32:56.879282+00:00",
     "summary_status": "已交付；返空待人工确认",
     "current_location": "交付",
     "latest_event_time": "2026-05-20 05:22:58",
@@ -27,7 +27,7 @@
   "container_cycle_train_02": {
     "enabled": true,
     "source": "rail95306-sync (shipments table)",
-    "last_checked_at": "2026-05-21T01:56:55.431413+00:00",
+    "last_checked_at": "2026-05-21T02:32:56.879453+00:00",
     "summary_status": "已到达",
     "current_location": "到站",
     "latest_event_time": "2026-05-21 09:25:51",

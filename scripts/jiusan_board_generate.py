@@ -176,6 +176,7 @@ def _load_tracking_summary(conn, train_id: str) -> dict:
                SUM(CASE WHEN status_code = '40' THEN 1 ELSE 0 END) as departed,
                SUM(CASE WHEN status_code = '60' THEN 1 ELSE 0 END) as arrived,
                SUM(CASE WHEN status_code = '80' THEN 1 ELSE 0 END) as delivered,
+               SUM(CASE WHEN is_on_way = 1 THEN 1 ELSE 0 END) as on_way,
                MIN(latest_event_time) as earliest_event,
                MAX(latest_event_time) as latest_event
            FROM jiusan_tracking_status
@@ -360,6 +361,7 @@ def generate(conn) -> dict:
                 "departed_cars": ts.get("departed", 0),
                 "arrived_cars": ts.get("arrived", 0),
                 "delivered_cars": ts.get("delivered", 0),
+                "on_way_cars": ts.get("on_way", 0),
                 "latest_event": ts.get("latest_event", ""),
                 "latest_event_time": ts.get("latest_event_time", ""),
                 "current_location": ts.get("current_location", ""),
@@ -426,12 +428,14 @@ def generate(conn) -> dict:
             "days_supported": round(inv_dict["days_supported"], 1) if inv_dict["days_supported"] else None,
             "data_quality": data_quality,
             "below_red_line": (inv_dict["closing_stock"] or 0) < (inv_dict["red_line"] or 0),
-            "other_source_inferred": round(
-                inv_dict["closing_stock"] - inv_dict["opening_stock"]
-                - inv_dict["line_in_qty"] + inv_dict["consumption"]
-                - (inv_dict["adjustment"] or 0), 2
-            ),
+            "other_source_inferred": 0,  # 隐藏反推其他来源，等待库存模型完成
         }
+        # 用可用粮覆盖 below_red_line 判断
+        if factory_report_data and factory_report_data.get("available_grain"):
+            avail = factory_report_data["available_grain"]
+            inv_block["below_red_line"] = (avail or 0) < (inv_dict["red_line"] or 0)
+            inv_block["closing_stock_original"] = inv_dict["closing_stock"]
+            inv_block["closing_stock"] = avail
 
     # ── 计划 ──
     plan_block = None
@@ -449,7 +453,7 @@ def generate(conn) -> dict:
 
     # ── 今日摘要 ──
     container_cars_on_way = sum(
-        t.get("tracking", {}).get("departed_cars", 0) - t.get("tracking", {}).get("arrived_cars", 0)
+        t.get("tracking", {}).get("on_way_cars", 0)
         for t in cycle_trains_block if t["type"] == "集装箱"
     )
     daily_summary = {
@@ -467,12 +471,15 @@ def generate(conn) -> dict:
     pending = [
         {"type": "train_reorganization", "question": "集装箱两列后续是否重组/合并？", "confirmed": False},
         {"type": "train_01_return", "question": "container_cycle_train_01 已到锦州港？当前标记为已交付返空到港（用户确认 20日20时到港），需人工确认实际返空情况。", "confirmed": False},
-        {"type": "pool_quantity", "question": "集装箱池当前约 212 只、车体池约 106 辆为估算值，是否需要调整基准配置量？", "confirmed": False},
+        {"type": "pool_quantity", "question": "集装箱池当前容量 282 只（基础 200 + 调整 +82）、车体池约 106 辆，是否需要调整基准配置量？", "confirmed": False},
     ]
     if inv_block and inv_block.get("below_red_line"):
+        # 使用可用粮而非账面库存判断红线
+        avail_grain = factory_report_data.get("available_grain") if factory_report_data else None
+        actual_stock = avail_grain if avail_grain else inv_block.get("closing_stock", 0)
         pending.append({
             "type": "inventory_redline",
-            "question": f"库存 {inv_block['closing_stock']} 吨已跌破红线 {inv_block['red_line']} 吨，是否补充发运或确认其他来源入库？",
+            "question": f"可用粮 {actual_stock} 吨（需求 5500 吨/天，支撑约 {round(actual_stock / 5500, 1)} 天），是否补充发运或确认其他来源入库？",
             "confirmed": False,
         })
 
@@ -774,16 +781,33 @@ def generate_html(dashboard: dict) -> str:
 
     # ── 库存 ──
     _inv_stock = ""
-    _inv_meta = _inv_flow = _inv_other = _inv_dq = ""
+    _inv_meta = _inv_flow = _inv_dq = ""
+    _inv_other = ""  # 隐藏反推其他来源，等待库存模型完成
     if inv:
-        inv_level = "below_redline" if inv.get("below_red_line") else "normal"
-        inv_icon_char = "🔴" if inv.get("below_red_line") else "🟢"
-        warn_html = ' <span style="color:#ffcdd2;">⚠️ 低于红线 {} 吨</span>'.format(inv.get("red_line", "?")) if inv.get("below_red_line") else ""
-        _inv_stock = '<div class="inv-level {}">{} 库存水平 {} 吨{}</div>'.format(inv_level, inv_icon_char, inv.get("closing_stock", "?"), warn_html)
-        _inv_meta = '<div class="inv-detail"><span>红线: {} 吨</span><span>可支撑: {} 天</span></div>'.format(inv.get("red_line", "?"), inv.get("days_supported", "?"))
-        _inv_flow = '<div class="inv-detail"><span>本线入库: {} 吨</span><span>其他来源: {} 吨</span><span>消耗: {} 吨</span></div>'.format(inv.get("line_in_qty", 0), inv.get("other_source_in_qty", 0), inv.get("consumption", 0))
-        if inv.get("other_source_inferred"):
-            _inv_other = '<div class="inv-row">反推其他来源: {:.0f} 吨 <span class="note">(期末 - 期初 - 本线入库 + 消耗 &#xB1; 调整)</span></div>'.format(inv.get("other_source_inferred", 0))
+        factory_report = dashboard.get("factory_daily_report", None)
+        available_grain = factory_report.get("available_grain", 0) if factory_report else 0
+
+        if available_grain and available_grain > 0:
+            # 优先使用厂端日报的可用粮
+            below = available_grain < inv.get("red_line", 8000)
+            inv_icon_char = "🔴" if below else "🟢"
+            _inv_stock = '<div class="inv-level {}">{} 可用粮 {} 吨 (厂端日报/可用粮, 非账面库存)</div>'.format(
+                "below_redline" if below else "normal", inv_icon_char, available_grain)
+        else:
+            # 退回到 DB 库存
+            inv_level = "below_redline" if inv.get("below_red_line") else "normal"
+            inv_icon_char = "🔴" if inv.get("below_red_line") else "🟢"
+            warn_html = ' <span style="color:#ffcdd2;">⚠️ 低于红线 {} 吨</span>'.format(inv.get("red_line", "?")) if inv.get("below_red_line") else ""
+            _inv_stock = '<div class="inv-level {}">{} 账面库存 {} 吨{}</div>'.format(inv_level, inv_icon_char, inv.get("closing_stock", "?"), warn_html)
+
+        # 用实际库存值除以消耗率
+        stock_for_days = available_grain if (available_grain and available_grain > 0) else inv.get("closing_stock", 0)
+        stock_for_days = stock_for_days or 0
+        days = round(stock_for_days / 5500, 1) if stock_for_days else 0
+
+        _inv_meta = '<div class="inv-detail"><span>红线: {} 吨</span><span>可支撑: {} 天 (5500吨/天)</span></div>'.format(inv.get("red_line", "?"), days)
+        _inv_flow = '<div class="inv-detail"><span>本线入库: {} 吨</span><span>其他来源: {} 吨</span><span>日耗: 5500 吨/天</span></div>'.format(inv.get("line_in_qty", 0), inv.get("other_source_in_qty", 0))
+        # _inv_other隐藏 — 反推其他来源推导不成熟，等待库存模型完成
         _inv_dq = '<div class="inv-row" style="margin-top:4px;"><span class="note">数据质量: {}</span></div>'.format(inv.get("data_quality", "unknown"))
 
     # ── Build segments ──

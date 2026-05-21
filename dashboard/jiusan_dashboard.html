@@ -69,14 +69,14 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
 <body>
 <h1>🌱 九三大豆循环运输看板</h1>
 <div class="meta">
-    <span>生成时间: 2026-05-21 09:56</span> |
+    <span>生成时间: 2026-05-21 10:32</span> |
     <span>架构: V3 循环运输资源账</span> |
     <span>合同: JGWL-JZTS-DD-202601</span>
 </div><div class="grid"><div class="card">
     <h2>📊 今日摘要</h2>
     <div style="font-size:0.9em; line-height:1.8;">
         <div>今日发出: <strong>0</strong> 车</div>
-        <div>在途: <strong>-16</strong> 车</div>
+        <div>在途: <strong>0</strong> 车</div>
         <div>散粮一次性: 40 车</div>
     </div>
 </div><div class="card">
@@ -103,9 +103,9 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
     </div>
 </div><div class="card full"><h2>📦 资源池分布</h2><div class="pool-grid">
     <div class="pool-col"><div class="pool-title">📦 箱资源</div>
-        <div class="pool-row"><span class="ts-label">总量：</span><span class="ts-value">613</span></div>
+        <div class="pool-row"><span class="ts-label">总量：</span><span class="ts-value">282</span></div>
         <div class="pool-row"><span class="ts-label">在途：</span><span class="ts-value">108</span></div>
-        <div class="pool-row"><span class="ts-label">可用：</span><span class="ts-value">0</span></div>
+        <div class="pool-row"><span class="ts-label">可用：</span><span class="ts-value">174</span></div>
         <div class="pool-row"><span class="ts-label">维修：</span><span class="ts-value">0</span></div>
     </div>
     <div class="pool-col"><div class="pool-title">🚃 车体资源</div>
@@ -222,7 +222,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
         </div></div><div class="card full">
     <h2>🛤️ 95306 发运 / 在途轨迹</h2>
     <div class="inv-row">今天暂无发车记录</div>
-    <div class="inv-row">当前在途: -16 车（列一返 52 车 7 道装箱，列二 54 车已到站 330 端卸货，列三 54 车 8 道装箱）</div>
+    
     <div class="tracking-status" style="margin-top:6px;">
         <div class="ts-row"><span class="ts-label">数据来源：</span><span class="ts-value">rail95306-sync (只读) — 95306 发车/运单状态字段</span></div>
         <div class="ts-row"><span class="ts-label">列二最新：</span><span class="ts-value">已到达(60) @2026-05-20 20:45，54 车全部到站</span></div>
@@ -249,7 +249,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
     <div class="warning-item warning-critical"><span>🔴</span><strong>inventory_redline</strong><span>库存 5,000 吨已跌破红线 8,000 吨</span><span class="note">2026-05-20T00:00:00</span></div>
     <div style="margin-top:8px;">
         <div class="pending-title" style="color:#4fc3f7; font-size:0.9em; margin-bottom:4px;">⏳ 待人工确认</div>
-        <div class="pending-item"><span>⏳</span><span>集装箱两列后续是否重组/合并？</span></div><div class="pending-item"><span>⏳</span><span>container_cycle_train_01 已到锦州港？当前标记为已交付返空到港（用户确认 20日20时到港），需人工确认实际返空情况。</span></div><div class="pending-item"><span>⏳</span><span>集装箱池当前约 212 只、车体池约 106 辆为估算值，是否需要调整基准配置量？</span></div><div class="pending-item"><span>⏳</span><span>库存 5062.986 吨已跌破红线 8000.0 吨，是否补充发运或确认其他来源入库？</span></div>
+        <div class="pending-item"><span>⏳</span><span>集装箱两列后续是否重组/合并？</span></div><div class="pending-item"><span>⏳</span><span>container_cycle_train_01 已到锦州港？当前标记为已交付返空到港（用户确认 20日20时到港），需人工确认实际返空情况。</span></div><div class="pending-item"><span>⏳</span><span>集装箱池当前容量 282 只（基础 200 + 调整 +82）、车体池约 106 辆，是否需要调整基准配置量？</span></div><div class="pending-item"><span>⏳</span><span>可用粮 3200.0 吨（需求 5500 吨/天，支撑约 0.6 天），是否补充发运或确认其他来源入库？</span></div>
     </div>
 </div><div class="card"><h2>📦 非循环发运（散粮一次性）</h2>
         <div class="bulk-card">
@@ -265,7 +265,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
             <div class="attribution-note">散粮40车已到站。20日晨报：4 车（249.0 吨）为玛格丽特 lot2，昆娜 36 车为上一船。不得将昆娜 36 车计入玛格丽特 lot2。</div>
             <span class="note">散粮40车一次性发运/入库，用户确认不返回锦州，非循环列。车型统计: {"L18_count": 21, "L70_count": 19, "unknown_count": 0, "business_weight_tons": 2571.0, "rail_marked_weight_tons": 2571.0, "weight_diff_tons": 0.0, "weight_source": "bulk_wagon_model_rule"}</span>
         </div></div><div class="card"><h2>🏭 厂家库存与风险</h2>
-    <div class="inv-level below_redline">🔴 库存水平 5062.986 吨 <span style="color:#ffcdd2;">⚠️ 低于红线 8000.0 吨</span></div><div class="inv-detail"><span>红线: 8000.0 吨</span><span>可支撑: 0.9 天</span></div><div class="inv-detail"><span>本线入库: 6478.541 吨</span><span>其他来源: 0.0 吨</span><span>消耗: 5500.0 吨</span></div><div class="inv-row">反推其他来源: -37916 吨 <span class="note">(期末 - 期初 - 本线入库 + 消耗 &#xB1; 调整)</span></div><div class="inv-row" style="margin-top:4px;"><span class="note">数据质量: unknown</span></div>
+    <div class="inv-level below_redline">🔴 可用粮 3200.0 吨 (厂端日报/可用粮, 非账面库存)</div><div class="inv-detail"><span>红线: 8000.0 吨</span><span>可支撑: 0.6 天 (5500吨/天)</span></div><div class="inv-detail"><span>本线入库: 6478.541 吨</span><span>其他来源: 0.0 吨</span><span>日耗: 5500 吨/天</span></div><div class="inv-row" style="margin-top:4px;"><span class="note">数据质量: unknown</span></div>
 </div><div class="card">
     <h2>🏭 厂端日报（2026-05-20）</h2>
     <div style="font-size:0.85em; line-height:1.8;">
@@ -298,7 +298,7 @@ td { padding: 6px 8px; border-bottom: 1px solid #1e3040; }
 </div></div><div class="meta" style="margin-top:20px;">
     数据来源: jiusan_cycle.db, rail95306-sync (只读) |
     架构: V3 — 循环运输资源账 + 运行态势 + 运力计划 + 库存风险预警 |
-    最近扫描: 2026-05-21T09:56:55.438411
+    最近扫描: 2026-05-21T10:32:56.892456
 </div>
 <div class="meta" style="margin-top:4px; border:1px solid #4fc3f7; padding:8px 12px; border-radius:6px; background:#0d2a3a;">
     <strong>🔄 刷新方式：手动</strong> — 执行以下命令后刷新浏览器：<br>

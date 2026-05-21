@@ -1,6 +1,6 @@
 {
   "_schema_version": "1.0",
-  "_note": "当前船/lot配置。已从用户确认事实写入（2026-05-20 Phase 2.5-D）。未从旧版看板/放货库的 release_batches 表读取到现有九三船名/lot数据。",
+  "_note": "当前船/lot配置。2026-05-21 Phase 2.5 基线吸收：lot2 仅确认4车/249吨，昆娜36车剔除。",
   "vessel_name": "玛格丽特",
   "lot1": {
     "name": "lot1",
@@ -8,10 +8,9 @@
     "display_name": "lot1：敞顶箱发运",
     "total_planned_tons": 48719,
     "confirmed_dispatched_tons": 6066.0,
-    "candidate_dispatched_tons": 6066.0,
     "remaining_tons": 42653.0,
     "remaining_formula": "48719 - 6066.0",
-    "note": "敞顶箱发运。已发6066吨=3067.2(列1)+2998.8(列2)。剩余=48719-6066.0=42653.0吨。后续以数据库放货记录为准。"
+    "note": "敞顶箱发运。已发6066吨=3067.2(列1)+2998.8(列2)。剩余=48719-6066.0=42653.0吨。列2已于2026-05-20 20:45到站。列1返52车/104空箱已回港（7道重新装箱）。列3（54车/108箱）8道正在装箱。"
   },
   "lot2": {
     "name": "lot2",
@@ -20,13 +19,8 @@
     "total_planned_tons": 20300,
     "confirmed_dispatched_tons": 249.0,
     "confirmed_weight_tons": 249.0,
-    "candidate_dispatched_tons": 2571.0,
     "confirmed_remaining_tons": 20051.0,
-    "candidate_remaining_tons": 17729.0,
     "confirmed_cars": 4,
-    "candidate_car_count": 40,
-    "candidate_weight_tons": 2571.0,
-    "pending_cars": 36,
-    "note": "散粮车发运。4车用户确认(249吨)，36车待归属确认(2322吨)。确认剩余=20300-249=20051吨；候选剩余=20300-2571=17729吨。36车归属待确认，不能直接扣减正式剩余。"
+    "note": "散粮车发运。玛格丽特确认仅4车/249吨（20日晨报明确）。昆娜36车为上一船，不属于玛格丽特，已从lot2剔除。不得将昆娜36车计入lot2。散粮40车中的40节全部到站。昆娜36车已在2026-05-20 04:14到站，格瑞卡52车另有来源到站。"
   }
 }

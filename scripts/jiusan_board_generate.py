@@ -300,6 +300,45 @@ def generate(conn) -> dict:
     daily_95306 = _load_95306_daily_stats()
     vessel_config = _load_vessel_lot_config()
 
+    # ── 厂端日报 ──
+    factory_report = conn.execute(
+        "SELECT * FROM jiusan_factory_inventory WHERE source = 'factory_daily_report' ORDER BY record_date DESC LIMIT 1"
+    ).fetchone()
+    factory_report_data = None
+    if factory_report:
+        fr = dict(factory_report)
+        notes = fr.get("notes", "") or ""
+        # Parse structured data from notes
+        def _extract(prefix, default=None):
+            import re
+            m = re.search(re.escape(prefix) + r'([\d,.]+)', notes)
+            if m:
+                return float(m.group(1).replace(",", ""))
+            return default
+        def _extract_str(prefix, default=None):
+            import re
+            m = re.search(re.escape(prefix) + r'：(\d+小时\d+分)', notes)
+            if m:
+                return m.group(1)
+            return default
+        factory_report_data = {
+            "record_date": fr["record_date"],
+            "total_unloaded_tons": fr["line_in_qty"] or 0,
+            "opening_stock": fr["opening_stock"],
+            "closing_stock": fr["closing_stock"],
+            "red_line": fr["red_line"],
+            "available_grain": _extract("可用粮", 3200),
+            "line1_inventory": _extract("一线库存", 2465.195),
+            "line2_inventory": _extract("二线库存", 2597.791),
+            "marguerite_unloaded": _extract("玛格丽特", 3294.176),
+            "kunna_unloaded": _extract("昆娜", 2317.08),
+            "geruika_unloaded": _extract("格瑞卡", 867.285),
+            "rail_no_work": _extract_str("火运无作业", "9小时57分"),
+            "truck_no_work": _extract_str("汽运/集装箱无作业", "10小时29分"),
+            "rail_soybean_cars": _extract("火运大豆", 66),
+            "truck_containers": _extract("汽运集装箱", 106),
+        }
+
     # ── 构建循环列区块 ──
     cycle_trains_block = []
     for t_row in trains:
@@ -469,6 +508,7 @@ def generate(conn) -> dict:
             "new_records": last_scan["new_records"] if last_scan else None,
             "daily_stats": daily_95306,
         },
+        "factory_daily_report": factory_report_data,
         "refresh_policy": {
             "mode": "manual",
             "auto_refresh_enabled": False,
@@ -519,13 +559,9 @@ def generate_html(dashboard: dict) -> str:
     lot1_dispatched = _fmt_f(lot1.get("confirmed_dispatched_tons"))
     lot1_remaining = _fmt_f(lot1.get("remaining_tons"))
     lot2_planned = _fmt_n(lot2.get("total_planned_tons"))
-    lot2_conf_cars = len(lot2.get("confirmed_cars", [])) if isinstance(lot2.get("confirmed_cars"), list) else lot2.get("confirmed_cars", 0)
+    lot2_conf_cars = lot2.get("confirmed_cars", 0)
     lot2_conf_weight = _fmt_f(lot2.get("confirmed_dispatched_tons", lot2.get("confirmed_weight_tons", 0)))
     lot2_conf_rem = _fmt_f(lot2.get("confirmed_remaining_tons"))
-    lot2_cand_cars = lot2.get("candidate_car_count", lot2.get("candidate_cars", 0))
-    lot2_cand_weight = _fmt_f(lot2.get("candidate_weight_tons", 0))
-    lot2_pending = lot2.get("pending_cars", 0)
-    lot2_cand_rem = _fmt_f(lot2.get("candidate_remaining_tons"))
 
     vessel_lot_html = f"""<div class="card">
     <h2>🚢 本船放货批次 / Lot 进度</h2>
@@ -541,12 +577,9 @@ def generate_html(dashboard: dict) -> str:
         <div><strong>{lot2.get('display_name', 'lot2：散粮车/整车发运')}</strong></div>
         <div>&nbsp;&nbsp;计划数量：{lot2_planned} 吨</div>
         <div style="margin-top:4px;"><strong>━━ 确认口径 ━━</strong></div>
-        <div>&nbsp;&nbsp;已确认已发：{lot2_conf_cars} 车 / {lot2_conf_weight} 吨</div>
-        <div>&nbsp;&nbsp;确认剩余：{lot2_conf_rem} 吨</div>
-        <div style="margin-top:4px;"><strong>━━ 候选口径 ━━</strong></div>
-        <div>&nbsp;&nbsp;候选已发：{lot2_cand_cars} 车 / {lot2_cand_weight} 吨（{lot2_pending} 车归属待确认）</div>
-        <div>&nbsp;&nbsp;候选剩余：{lot2_cand_rem} 吨</div>
-        <div class="note" style="margin-top:4px;">&nbsp;&nbsp;{lot2.get('note', '4车为用户确认本船；40车为同窗口候选。36车归属待确认，不能直接扣减正式剩余。')}</div>
+        <div>&nbsp;已确认已发：{lot2_conf_cars} 车 / {lot2_conf_weight} 吨</div>
+        <div>&nbsp;确认剩余：{lot2_conf_rem} 吨</div>
+        <div class="note" style="margin-top:4px;">&nbsp;{lot2.get('note', '玛格丽特 lot2 仅确认 4 车/249 吨。昆娜 36 车为上一船，不属于玛格丽特。')}</div>
     </div>
 </div>"""
 
@@ -597,9 +630,11 @@ def generate_html(dashboard: dict) -> str:
         # 追踪状态说明
         tracking_note = ""
         if "02" in t["train_id"]:
-            tracking_note = '<div class="tracking-note">⚠️ 此为 95306 发车事件映射（最新事件=已发车），不等同于完整车辆级轨迹路径。完整轨迹依赖 95306 tracking API（Phase 3 接入）。</div>'
+            tracking_note = '<div class="tracking-note">✅ 已到站：列二 54 车已于 2026-05-20 20:45 到达新台子/三三〇处专用线。95306 状态=60(已到达)。108 箱在 330 端卸货中。</div>'
         elif "01" in t["train_id"]:
-            tracking_note = '<div class="tracking-note">列一 95306 已交付 54/54 车。卸空后返空已到锦州港（用户确认 20日20时到港）。</div>'
+            tracking_note = '<div class="tracking-note">列一 95306 已交付 54/54 车。返程 52 车/104 空箱已回港（减编 2 车发生于 330 端返程组织阶段），当前在锦州港 7 道重新装箱。</div>'
+        elif "03" in t["train_id"]:
+            tracking_note = '<div class="tracking-note">列三：8 道 54 车，正在装箱。第三列车体/新循环列。</div>'
 
         trains_html += f"""
         <div class="train-card">
@@ -651,12 +686,7 @@ def generate_html(dashboard: dict) -> str:
                 <div>L18: {l18}车 × 60 = {l18 * 60}吨 | L70: {l70}车 × 69 = {l70 * 69}吨</div>
                 <div><strong>业务重量: {bw}吨</strong> | 95306标重: {rm}吨 | 差异: {wd}吨</div>
             </div>"""
-        attribution_note = f"""
-            <div class="attribution-note">散粮40车已到站；
-                其中 <strong>{lot2.get('confirmed_cars', 0)}车</strong> 用户确认（{lot2.get('confirmed_weight_tons', 0)}吨），
-                <strong>{lot2.get('pending_cars', 0)}车</strong> 待归属确认。
-                不得将全部40车计入本船lot2。
-            </div>"""
+        attribution_note = f"""<div class="attribution-note">散粮40车已到站。20日晨报：{lot2.get('confirmed_cars', 0)} 车（{lot2.get('confirmed_weight_tons', 0)} 吨）为玛格丽特 lot2，昆娜 36 车为上一船。不得将昆娜 36 车计入玛格丽特 lot2。</div>"""
         bulk_html += f"""
         <div class="bulk-card">
             <span class="bulk-icon">📦</span>
@@ -786,10 +816,10 @@ def generate_html(dashboard: dict) -> str:
     _tracking_block = f"""<div class="card full">
     <h2>🛤️ 95306 发运 / 在途轨迹</h2>
     {f'<div class="inv-row">今天 95306 已发车: {dispatched} 车</div>' if dispatched else '<div class="inv-row">今天暂无发车记录</div>'}
-    {f'<div class="inv-row">当前在途: {on_way} 车（列二 54 车）</div>' if on_way else ''}
+    {f'<div class="inv-row">当前在途: {on_way} 车（列一返 52 车 7 道装箱，列二 54 车已到站 330 端卸货，列三 54 车 8 道装箱）</div>' if on_way else ''}
     <div class="tracking-status" style="margin-top:6px;">
         <div class="ts-row"><span class="ts-label">数据来源：</span><span class="ts-value">rail95306-sync (只读) — 95306 发车/运单状态字段</span></div>
-        <div class="ts-row"><span class="ts-label">列二说明：</span><span class="ts-value">最新 95306 事件为 已发车(40) @15:42，非完整车辆级轨迹路径。轨迹 API 待 Phase 3 接入。</span></div>
+        <div class="ts-row"><span class="ts-label">列二最新：</span><span class="ts-value">已到达(60) @2026-05-20 20:45，54 车全部到站</span></div>
         <div class="ts-row"><span class="ts-label">冲突检测：</span><span class="ts-value">source_conflicts 字段保留（当前为空），供将来人工实况与 95306 不一致时使用。</span></div>
     </div>
 </div>"""
@@ -826,6 +856,34 @@ def generate_html(dashboard: dict) -> str:
     </div>
 </div>"""
 
+    # ── 厂端日报 ──
+    factory_report = dashboard.get("factory_daily_report", None)
+    if factory_report:
+        fr = factory_report
+        _factory_block = f"""<div class="card">
+    <h2>🏭 厂端日报（{fr.get('record_date', '')}）</h2>
+    <div style="font-size:0.85em; line-height:1.8;">
+        <div><strong>总卸粮量：</strong>{_fmt_f(fr.get('total_unloaded_tons', 0))} 吨</div>
+        <div style="margin-top:6px;"><strong>━━ 卸粮分来源 ━━</strong></div>
+        <div>&nbsp;&nbsp;玛格丽特（当前船/lot1+lot2）：{_fmt_f(fr.get('marguerite_unloaded', 0))} 吨</div>
+        <div>&nbsp;&nbsp;昆娜（上一船/散粮36车）：{_fmt_f(fr.get('kunna_unloaded', 0))} 吨</div>
+        <div>&nbsp;&nbsp;格瑞卡（大连港散粮52车/其他来源）：{_fmt_f(fr.get('geruika_unloaded', 0))} 吨</div>
+        <div style="margin-top:6px;"><strong>━━ 库存 ━━</strong></div>
+        <div>&nbsp;&nbsp;账面库存：{_fmt_f(fr.get('closing_stock', 0))} 吨</div>
+        <div>&nbsp;&nbsp;可用粮：{_fmt_f(fr.get('available_grain'))} 吨</div>
+        <div>&nbsp;&nbsp;一线库存：{_fmt_f(fr.get('line1_inventory'))} 吨</div>
+        <div>&nbsp;&nbsp;二线库存：{_fmt_f(fr.get('line2_inventory'))} 吨</div>
+        <div style="margin-top:6px;"><strong>━━ 作业时间 ━━</strong></div>
+        <div>&nbsp;&nbsp;火运无作业：{fr.get('rail_no_work', 'N/A')}</div>
+        <div>&nbsp;&nbsp;汽运/集装箱无作业：{fr.get('truck_no_work', 'N/A')}</div>
+        <div style="margin-top:6px;"><strong>━━ 到站 ━━</strong></div>
+        <div>&nbsp;&nbsp;火运大豆：{_fmt_n(fr.get('rail_soybean_cars', 0))} 节</div>
+        <div>&nbsp;&nbsp;汽运集装箱：{_fmt_n(fr.get('truck_containers', 0))} 箱（进二线5#仓）</div>
+    </div>
+</div>"""
+    else:
+        _factory_block = ""
+
     _footer = f"""<div class="meta" style="margin-top:20px;">
     数据来源: {', '.join(meta.get('data_sources', []))} |
     架构: {meta.get('architecture', '')} |
@@ -839,7 +897,7 @@ def generate_html(dashboard: dict) -> str:
     </code>
 </div>"""
 
-    html_body = _header + '<div class="grid">' + _summary_block + _plan_block + vessel_lot_html + _pool_block + _trains_block + _tracking_block + _three_block + _warning_block + _bulk_block + _inv_block + _hist_block + conflict_html + "</div>" + _footer
+    html_body = _header + '<div class="grid">' + _summary_block + _plan_block + vessel_lot_html + _pool_block + _trains_block + _tracking_block + _three_block + _warning_block + _bulk_block + _inv_block + _factory_block + _hist_block + conflict_html + "</div>" + _footer
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">

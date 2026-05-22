@@ -36,12 +36,13 @@
 | jiusan_cycle.db flows（4条重写） | ✅ |
 | jiusan_cycle.db adjustments（3条确认，候选→confirmed） | ✅ |
 | jiusan_cycle.db resource_pool（container总箱596，wagon 104） | ✅ |
-| jiusan_cycle.db train_01 notes（清理160引用） | ✅ |
+| jiusan_cycle.db train_01 notes（清理旧基线引用） | ✅ |
 | dashboard/jiusan_dashboard_data.json（全量更新+baseline_lock元数据） | ✅ |
+| dashboard/jiusan_dashboard_data.example.json（同步示例口径，补齐596基线） | ✅ |
 | dashboard/jiusan_dashboard.html（重新生成） | ✅ |
 | context/2026-05-22_jiusan_morning_container_update.md | ✅ |
 | orders/2026-05-22_hermes_jiusan_margaret_container_baseline_lock.md | ✅ |
-| search & cleanup：160/223/164/650 | ✅ |
+| search & cleanup：legacy baseline references | ✅ |
 
 ## 资源池确认
 - **总箱**：596（基础200 + 调整7+75+37 = 319已确认空箱增量）

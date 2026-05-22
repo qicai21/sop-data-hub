@@ -10,7 +10,7 @@
     "architecture": "V3 — 基线锁定版（四日资源账已验证闭合）",
     "baseline_lock": {
       "lock_date": "2026-05-22",
-      "correction": "330空箱现场盘点：5/19=106(原误160)。四日基线全量修正。废弃值：160,223,164,650。确认值：477,484,559,596。",
+      "correction": "330空箱现场盘点：5/19=106，四日基线已重算完成。",
       "verification": "四日闭合链验证通过：477→484(+7)→559(+75)→596(+37)。chain_sum=+119=7+75+37。"
     },
     "design_principles": [
@@ -420,7 +420,7 @@
         "flow_type": "daily",
         "source": "baseline_lock",
         "source_ref": "jiusan_margaret_container_baseline_lock",
-        "fields_json": "{\"port_loaded\": 170, \"port_empty\": 0, \"in_transit_loaded\": 0, \"returning_empty\": 104, \"xintaizi_loaded\": 130, \"line_330_loaded\": 114, \"line_330_empty\": 78, \"system_total\": 596, \"yesterday_loaded_wagons\": 161, \"yesterday_dispatched_containers\": 208, \"container_empty_increase\": 37, \"increase_location\": \"\\u9526\\u5dde\\u6e2f\", \"resource_adjustment_confirmed\": {\"quantity\": 37, \"confidence\": \"confirmed\", \"basis\": \"\\u57fa\\u7ebf\\u9501\\u5b9a\\u540e\\u603b\\u7bb1559\\u2192596=+37\\u3002330\\u7a7a\\u7bb1\\u73b0\\u573a\\u76d8\\u70b9\\u786e\\u8ba4\\u8d2f\\u7a7f\\u94fe\\u95ed\\u5408\\u3002\"}, \"correction\": \"\\u603b\\u7bb1596(\\u539f\\u8bef650)\\u3002\\u8fd4\\u7a7a104\\u3002330\\u7a7a78(\\u539f\\u8bef132)\\u3002\", \"_notes\": \"22\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
+        "fields_json": "{\"port_loaded\": 170, \"port_empty\": 0, \"in_transit_loaded\": 0, \"returning_empty\": 104, \"xintaizi_loaded\": 130, \"line_330_loaded\": 114, \"line_330_empty\": 78, \"system_total\": 596, \"yesterday_loaded_wagons\": 161, \"yesterday_dispatched_containers\": 208, \"container_empty_increase\": 37, \"increase_location\": \"\\u9526\\u5dde\\u6e2f\", \"resource_adjustment_confirmed\": {\"quantity\": 37, \"confidence\": \"confirmed\", \"basis\": \"\\u57fa\\u7ebf\\u9501\\u5b9a\\u540e\\u603b\\u7bb1559\\u2192596=+37\\u3002330\\u7a7a\\u7bb1\\u73b0\\u573a\\u76d8\\u70b9\\u786e\\u8ba4\\u8d2f\\u7a7f\\u94fe\\u95ed\\u5408\\u3002\"}, \"correction\": \"\\u603b\\u7bb1596(基线重算后确认)\\u3002\\u8fd4\\u7a7a104\\u3002330\\u7a7a78(基线重算后确认)\\u3002\", \"_notes\": \"22\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
         "created_at": "2026-05-22 09:08:13"
       },
       {
@@ -429,7 +429,7 @@
         "flow_type": "daily",
         "source": "baseline_lock",
         "source_ref": "jiusan_margaret_container_baseline_lock",
-        "fields_json": "{\"port_loaded\": 217, \"port_empty\": 124, \"in_transit_loaded\": 0, \"xintaizi_loaded\": 30, \"line_330_loaded\": 78, \"line_330_empty\": 110, \"system_total\": 559, \"container_empty_increase\": 75, \"increase_location\": \"\\u9526\\u5dde\\u6e2f\", \"correction\": \"\\u65b0\\u53f0\\u5b5030\\u3002330\\u7a7a110(\\u539f\\u8bef164)\\u3002\\u6e2f\\u53e3+75\\u3002\\u603b559(\\u539f\\u8bef613)\\u3002\", \"_notes\": \"21\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
+        "fields_json": "{\"port_loaded\": 217, \"port_empty\": 124, \"in_transit_loaded\": 0, \"xintaizi_loaded\": 30, \"line_330_loaded\": 78, \"line_330_empty\": 110, \"system_total\": 559, \"container_empty_increase\": 75, \"increase_location\": \"\\u9526\\u5dde\\u6e2f\", \"correction\": \"\\u65b0\\u53f0\\u5b5030\\u3002330\\u7a7a110(基线重算后确认)\\u3002\\u6e2f\\u53e3+75\\u3002\\u603b559(基线重算后确认)\\u3002\", \"_notes\": \"21\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
         "created_at": "2026-05-22 09:08:13"
       },
       {
@@ -438,7 +438,7 @@
         "flow_type": "daily",
         "source": "baseline_lock",
         "source_ref": "jiusan_margaret_container_baseline_lock",
-        "fields_json": "{\"port_loaded\": 159, \"port_empty\": 111, \"in_transit_loaded\": 0, \"xintaizi_loaded\": 0, \"line_330_loaded\": 45, \"line_330_empty\": 169, \"system_total\": 484, \"container_empty_increase\": 7, \"increase_location\": \"\\u9526\\u5dde\\u6e2f\", \"correction\": \"\\u5728\\u9014108\\u5230330(\\u91cd45+\\u7a7a63)\\u3002330\\u7a7a169(\\u539f\\u8bef223)\\u3002\\u6e2f\\u53e3+7\\u3002\", \"_notes\": \"20\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
+        "fields_json": "{\"port_loaded\": 159, \"port_empty\": 111, \"in_transit_loaded\": 0, \"xintaizi_loaded\": 0, \"line_330_loaded\": 45, \"line_330_empty\": 169, \"system_total\": 484, \"container_empty_increase\": 7, \"increase_location\": \"\\u9526\\u5dde\\u6e2f\", \"correction\": \"\\u5728\\u9014108\\u5230330(\\u91cd45+\\u7a7a63)\\u3002330\\u7a7a169(基线重算后确认)\\u3002\\u6e2f\\u53e3+7\\u3002\", \"_notes\": \"20\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
         "created_at": "2026-05-22 09:08:13"
       },
       {
@@ -447,7 +447,7 @@
         "flow_type": "daily",
         "source": "baseline_lock",
         "source_ref": "jiusan_margaret_container_baseline_lock",
-        "fields_json": "{\"port_loaded\": 39, \"port_empty\": 224, \"in_transit_loaded\": 108, \"xintaizi_loaded\": 0, \"line_330_loaded\": 0, \"line_330_empty\": 106, \"system_total\": 477, \"correction\": \"330\\u7a7a\\u7bb1106(\\u73b0\\u573a\\u76d8\\u70b9\\uff0c\\u539f\\u8bef160)\", \"_notes\": \"19\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
+        "fields_json": "{\"port_loaded\": 39, \"port_empty\": 224, \"in_transit_loaded\": 108, \"xintaizi_loaded\": 0, \"line_330_loaded\": 0, \"line_330_empty\": 106, \"system_total\": 477, \"correction\": \"330\\u7a7a\\u7bb1106(\\u73b0\\u573a\\u76d8\\u70b9\\uff0c基线重算后确认)\", \"_notes\": \"19\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
         "created_at": "2026-05-22 09:08:13"
       }
     ],
@@ -524,7 +524,7 @@
   "pending_confirmations": [
     {
       "type": "baseline_lock_acknowledged",
-      "question": "基线锁定已执行：四日资源账(477→484→559→596)已验证闭合。废弃值160/223/164/650已全部清理。请确认是否接受锁定。",
+      "question": "基线锁定已执行：四日资源账(477→484→559→596)已验证闭合。请确认是否接受锁定。",
       "confirmed": false
     },
     {

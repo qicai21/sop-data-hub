@@ -23,6 +23,7 @@ from pathlib import Path
 RAIL95306_DB = Path("/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 JIUSAN_DB = REPO_ROOT / "data" / "jiusan_cycle.db"
+TRAIN_IDENTITY_MAP_PATH = REPO_ROOT / "samples" / "jiusan_cycle_train_identity_map.json"
 
 STATUS_MAP = {
     "30": "已装车",
@@ -39,8 +40,8 @@ DETAIL_FIELDS = [
 ]
 
 
-def get_jiusan_shipments(conn) -> dict:
-    """从 95306 DB 查询九三大豆的所有 shipments，按日期分组"""
+def get_jiusan_shipments(conn) -> list[dict]:
+    """从 95306 DB 查询九三大豆的所有 shipments，返回原始记录列表。"""
     rows = conn.execute("""
         SELECT ydid, car_no, status_code, status_name,
                latest_stage_key, latest_stage_name, latest_event_time,
@@ -51,33 +52,34 @@ def get_jiusan_shipments(conn) -> dict:
         WHERE cargo_name = '大豆'
           AND origin_name = '高桥镇'
           AND destination_name = '新台子'
+          AND transport_mode_name = '集装箱运输'
           AND ticketed_at >= '2026-05-19'
-        ORDER BY ticketed_at
+        ORDER BY ticketed_at, departed_at, arrived_at, car_no
     """).fetchall()
 
-    records = [dict(r) for r in rows]
-
-    # 分组
-    container_05_19 = [r for r in records
-                       if r['transport_mode_name'] == '集装箱运输'
-                       and r['ticketed_at'] and r['ticketed_at'].startswith('2026-05-19')]
-    container_05_20 = [r for r in records
-                       if r['transport_mode_name'] == '集装箱运输'
-                       and r['ticketed_at'] and r['ticketed_at'].startswith('2026-05-20')]
-    bulk_05_19 = [r for r in records
-                  if r['transport_mode_name'] == '整车运输'
-                  and r['ticketed_at'] and r['ticketed_at'].startswith('2026-05-19')]
-
-    return {
-        "container_05_19": container_05_19,
-        "container_05_20": container_05_20,
-        "bulk_05_19": bulk_05_19,
-    }
+    return [dict(r) for r in rows]
 
 
 def build_tracking_status(records: list[dict], train_label: str) -> dict:
     """为一列集装箱生成 tracking_status"""
     now = datetime.now(timezone.utc).isoformat()
+
+    if not records:
+        return {
+            "enabled": True,
+            "source": "rail95306-sync (shipments table)",
+            "last_checked_at": now,
+            "summary_status": "待同步",
+            "current_location": "",
+            "latest_event_time": "",
+            "tracked_car_count": 0,
+            "departed_car_count": 0,
+            "arrived_car_count": 0,
+            "delivered_car_count": 0,
+            "unknown_car_count": 0,
+            "sample_cars": [],
+            "note": "暂无匹配的 95306 记录。",
+        }
 
     total = len(records)
 
@@ -159,13 +161,40 @@ def build_tracking_status(records: list[dict], train_label: str) -> dict:
     }
 
 
-TRAIN_MAPPING = {
-    "container_05_19": "container_cycle_train_01",
-    "container_05_20": "container_cycle_train_02",
-}
+def _load_train_identity_map() -> dict:
+    """读取最小身份映射 JSON；缺失时回退到内置默认值。"""
+    fallback = {
+        "_schema_version": "1.0",
+        "_source_filters": {
+            "cargo_name": "大豆",
+            "origin_name": "高桥镇",
+            "destination_name": "新台子",
+            "transport_mode_name": "集装箱运输",
+        },
+        "container_cycle_train_01": {"label": "列1Z1", "departed_at": "2026-05-19 11:31:00", "arrived_at": "2026-05-19 19:15:00"},
+        "container_cycle_train_02": {"label": "列2Z1", "departed_at": "2026-05-20 15:42:00", "arrived_at": "2026-05-20 20:45:00"},
+        "container_cycle_train_03": {"label": "列3Z1", "departed_at": "2026-05-21 20:47:00", "arrived_at": "2026-05-22 04:46:00"},
+        "container_cycle_train_04": {"label": "列1Z2?", "departed_at": "2026-05-21 16:15:00", "arrived_at": "2026-05-21 23:45:00", "confidence": "tentative"},
+    }
+    if TRAIN_IDENTITY_MAP_PATH.exists():
+        try:
+            loaded = json.loads(TRAIN_IDENTITY_MAP_PATH.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                return loaded
+        except (OSError, json.JSONDecodeError):
+            pass
+    return fallback
 
 
-def update_tracking_status_table(shipment_groups: dict):
+def _iter_train_specs(identity_map: dict):
+    for train_id, spec in identity_map.items():
+        if train_id.startswith("_"):
+            continue
+        if isinstance(spec, dict):
+            yield train_id, spec
+
+
+def update_tracking_status_table(shipment_groups: dict, identity_map: dict):
     """将 95306 shipment 数据写入 jiusan_tracking_status 表（覆盖刷新）"""
     if not JIUSAN_DB.exists():
         print(f"  [WARN] jiusan_cycle.db 不存在，跳过 tracking_status 写入")
@@ -174,14 +203,17 @@ def update_tracking_status_table(shipment_groups: dict):
     conn.row_factory = sqlite3.Row
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    for group_key, train_id in TRAIN_MAPPING.items():
-        records = shipment_groups.get(group_key, [])
-        if not records:
-            continue
+    for train_id, spec in _iter_train_specs(identity_map):
+        records = shipment_groups.get(train_id, [])
+        label = spec.get("label", train_id)
 
         # 删除该列旧记录
         conn.execute("DELETE FROM jiusan_tracking_status WHERE train_id = ?", (train_id,))
-        print(f"  删除 {train_id} 旧记录（{len(records)} 条）")
+        print(f"  删除 {train_id} 旧记录（{label}，{len(records)} 条）")
+
+        if not records:
+            print(f"  [WARN] {train_id} 暂无 95306 记录，跳过写入")
+            continue
 
         # 插入新记录
         for r in records:
@@ -199,7 +231,7 @@ def update_tracking_status_table(shipment_groups: dict):
                      is_on_way, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                f"ts_{r['car_no']}_{now[:10]}",
+                f"ts_{train_id}_{r.get('ydid') or r['car_no']}",
                 r["car_no"],
                 r.get("ydid", ""),
                 train_id,
@@ -241,47 +273,55 @@ def main():
     src_conn = sqlite3.connect(str(RAIL95306_DB))
     src_conn.row_factory = sqlite3.Row
 
-    # 获取九三 shipments
-    shipment_groups = get_jiusan_shipments(src_conn)
+    # 获取身份映射与 95306 shipments
+    identity_map = _load_train_identity_map()
+    shipment_records = get_jiusan_shipments(src_conn)
     src_conn.close()
 
-    c1 = shipment_groups['container_05_19']
-    c2 = shipment_groups['container_05_20']
-    b = shipment_groups['bulk_05_19']
+    shipment_groups = {}
+    for train_id, spec in _iter_train_specs(identity_map):
+        departed_at = spec.get("departed_at", "")
+        arrived_at = spec.get("arrived_at", "")
+        ticketed_date = spec.get("ticketed_date", "")
+        matched = []
+        for r in shipment_records:
+            if departed_at and r.get("departed_at") != departed_at:
+                continue
+            if arrived_at and r.get("arrived_at") != arrived_at:
+                continue
+            if ticketed_date and not (r.get("ticketed_at") or "").startswith(ticketed_date):
+                continue
+            matched.append(r)
+        shipment_groups[train_id] = matched
 
-    print(f"\n  集装箱05-19: {len(c1)}车")
-    print(f"  集装箱05-20: {len(c2)}车")
-    print(f"  散粮05-19: {len(b)}车")
+    for train_id, spec in _iter_train_specs(identity_map):
+        label = spec.get("label", train_id)
+        print(f"\n  {label}: {len(shipment_groups.get(train_id, []))}车")
 
     # 生成 tracking status
-    track_01 = build_tracking_status(c1, "container_cycle_train_01")
-    track_02 = build_tracking_status(c2, "container_cycle_train_02")
+    tracking_snapshot = {}
+    for train_id, spec in _iter_train_specs(identity_map):
+        tracking_snapshot[train_id] = build_tracking_status(shipment_groups.get(train_id, []), train_id)
 
     # 刷新 jiusan_tracking_status 表
     print()
     print("—" * 60)
     print("刷新 jiusan_tracking_status 表…")
-    update_tracking_status_table(shipment_groups)
+    update_tracking_status_table(shipment_groups, identity_map)
 
-    print(f"\n  container_cycle_train_01:")
-    print(f"    状态: {track_01['summary_status']}")
-    print(f"    最新事件: {track_01['latest_event_time']}")
-    print(f"    已交付: {track_01['delivered_car_count']}/{track_01['tracked_car_count']}")
-
-    print(f"\n  container_cycle_train_02:")
-    print(f"    状态: {track_02['summary_status']}")
-    print(f"    最新事件: {track_02['latest_event_time']}")
-    print(f"    已发车: {track_02['departed_car_count']}/{track_02['tracked_car_count']}")
+    for train_id, spec in _iter_train_specs(identity_map):
+        track = tracking_snapshot[train_id]
+        label = spec.get("label", train_id)
+        print(f"\n  {train_id} ({label}):")
+        print(f"    状态: {track['summary_status']}")
+        print(f"    最新事件: {track['latest_event_time']}")
+        print(f"    已发车/到站/交付: {track['departed_car_count']}/{track['arrived_car_count']}/{track['delivered_car_count']}")
 
     # 写入 jiusan_cycle.db 的 scan log details_json
     if JIUSAN_DB.exists():
         jiusan_conn = sqlite3.connect(str(JIUSAN_DB))
         jiusan_conn.row_factory = sqlite3.Row
         now_iso = datetime.now().isoformat()
-        tracking_snapshot = {
-            "container_cycle_train_01": track_01,
-            "container_cycle_train_02": track_02,
-        }
         jiusan_conn.execute("""
             INSERT INTO jiusan_95306_scan_log
             (id, scan_time, scan_type, new_records, matched_to_lot, matched_to_train, details_json, created_at)
@@ -289,9 +329,9 @@ def main():
         """, (
             f"tracking_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             now_iso, "tracking_poll",
-            len(c1) + len(c2) + len(b),
-            len(c1) + len(c2) + len(b),
-            2,
+            sum(len(v) for v in shipment_groups.values()),
+            sum(len(v) for v in shipment_groups.values()),
+            len(tracking_snapshot),
             json.dumps(tracking_snapshot, ensure_ascii=False, default=str),
             now_iso
         ))
@@ -302,8 +342,7 @@ def main():
     # 输出 JSON 格式（供 board generator 使用）
     tracking_result = {
         "last_updated": datetime.now().isoformat(),
-        "container_cycle_train_01": track_01,
-        "container_cycle_train_02": track_02,
+        **tracking_snapshot,
     }
 
     # 保存为 sample

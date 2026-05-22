@@ -1,0 +1,39 @@
+{
+  "_schema_version": "1.0",
+  "_note": "九三大豆循环列最小身份映射，仅用于 95306 → tracking_status → dashboard 链路打通；不改数据库结构。",
+  "_source_filters": {
+    "cargo_name": "大豆",
+    "origin_name": "高桥镇",
+    "destination_name": "新台子",
+    "transport_mode_name": "集装箱运输"
+  },
+  "container_cycle_train_01": {
+    "label": "列1Z1",
+    "ticketed_date": "2026-05-19",
+    "departed_at": "2026-05-19 11:31:00",
+    "arrived_at": "2026-05-19 19:15:00",
+    "note": "首列返程闭环"
+  },
+  "container_cycle_train_02": {
+    "label": "列2Z1",
+    "ticketed_date": "2026-05-20",
+    "departed_at": "2026-05-20 15:42:00",
+    "arrived_at": "2026-05-20 20:45:00",
+    "note": "第二列重车到站"
+  },
+  "container_cycle_train_03": {
+    "label": "列3Z1",
+    "ticketed_date": "2026-05-21",
+    "departed_at": "2026-05-21 20:47:00",
+    "arrived_at": "2026-05-22 04:46:00",
+    "note": "第三列新循环列"
+  },
+  "container_cycle_train_04": {
+    "label": "列1Z2?",
+    "ticketed_date": "2026-05-21",
+    "departed_at": "2026-05-21 16:15:00",
+    "arrived_at": "2026-05-21 23:45:00",
+    "confidence": "tentative",
+    "note": "第四列候选归属，先保留问号"
+  }
+}

@@ -2,17 +2,12 @@
   "_meta": {
     "dashboard_name": "九三大豆循环运输看板",
     "version": "3.0",
-    "generated_at": "2026-05-22T09:08:43.821190+00:00",
+    "generated_at": "2026-05-22T06:56:51.129519+00:00",
     "data_sources": [
       "jiusan_cycle.db",
       "rail95306-sync (只读)"
     ],
-    "architecture": "V3 — 基线锁定版（四日资源账已验证闭合）",
-    "baseline_lock": {
-      "lock_date": "2026-05-22",
-      "correction": "330空箱现场盘点：5/19=106，四日基线已重算完成。",
-      "verification": "四日闭合链验证通过：477→484(+7)→559(+75)→596(+37)。chain_sum=+119=7+75+37。"
-    },
+    "architecture": "V3 — 循环运输资源账 + 运行态势 + 运力计划 + 库存风险预警",
     "design_principles": [
       "运行状态以 95306 最新事件为准单向映射",
       "source_conflicts 保留（当前为空），供将来人工实况与 95306 不一致时使用",
@@ -244,11 +239,11 @@
       "tracking": {
         "total_cars": 54,
         "departed_cars": 0,
-        "arrived_cars": 16,
-        "delivered_cars": 38,
+        "arrived_cars": 0,
+        "delivered_cars": 54,
         "on_way_cars": 0,
         "latest_event": "交付",
-        "latest_event_time": "2026-05-21 09:25:51",
+        "latest_event_time": "2026-05-21 17:05:54",
         "current_location": "交付",
         "depart_at": "2026-05-20 15:42:00",
         "summary_status": "货物已交付"
@@ -282,20 +277,20 @@
       "type": "集装箱",
       "lot": "lot01",
       "status": "arrived",
-      "status_text": "待同步",
+      "status_text": "已到达",
       "current_round": 1,
       "destination_line": "三三〇处专用线",
       "tracking": {
-        "total_cars": 0,
+        "total_cars": 52,
         "departed_cars": 0,
-        "arrived_cars": 0,
+        "arrived_cars": 52,
         "delivered_cars": 0,
         "on_way_cars": 0,
-        "latest_event": "",
-        "latest_event_time": "",
-        "current_location": "",
-        "depart_at": "",
-        "summary_status": "待同步"
+        "latest_event": "到站",
+        "latest_event_time": "2026-05-22 04:46:00",
+        "current_location": "到站",
+        "depart_at": "2026-05-21 20:47:00",
+        "summary_status": "已到达"
       },
       "last_run": {
         "round_no": 1,
@@ -316,20 +311,20 @@
       "type": "集装箱",
       "lot": "lot01",
       "status": "arrived",
-      "status_text": "待同步",
+      "status_text": "货物已交付",
       "current_round": 1,
       "destination_line": "三三〇处专用线",
       "tracking": {
-        "total_cars": 0,
+        "total_cars": 52,
         "departed_cars": 0,
         "arrived_cars": 0,
-        "delivered_cars": 0,
+        "delivered_cars": 52,
         "on_way_cars": 0,
-        "latest_event": "",
-        "latest_event_time": "",
-        "current_location": "",
-        "depart_at": "",
-        "summary_status": "待同步"
+        "latest_event": "交付",
+        "latest_event_time": "2026-05-22 10:35:10",
+        "current_location": "交付",
+        "depart_at": "2026-05-21 16:15:00",
+        "summary_status": "货物已交付"
       },
       "last_run": {
         "round_no": 1,
@@ -420,7 +415,7 @@
         "flow_type": "daily",
         "source": "baseline_lock",
         "source_ref": "jiusan_margaret_container_baseline_lock",
-        "fields_json": "{\"port_loaded\": 170, \"port_empty\": 0, \"in_transit_loaded\": 0, \"returning_empty\": 104, \"xintaizi_loaded\": 130, \"line_330_loaded\": 114, \"line_330_empty\": 78, \"system_total\": 596, \"yesterday_loaded_wagons\": 161, \"yesterday_dispatched_containers\": 208, \"container_empty_increase\": 37, \"increase_location\": \"\\u9526\\u5dde\\u6e2f\", \"resource_adjustment_confirmed\": {\"quantity\": 37, \"confidence\": \"confirmed\", \"basis\": \"\\u57fa\\u7ebf\\u9501\\u5b9a\\u540e\\u603b\\u7bb1559\\u2192596=+37\\u3002330\\u7a7a\\u7bb1\\u73b0\\u573a\\u76d8\\u70b9\\u786e\\u8ba4\\u8d2f\\u7a7f\\u94fe\\u95ed\\u5408\\u3002\"}, \"correction\": \"\\u603b\\u7bb1596(基线重算后确认)\\u3002\\u8fd4\\u7a7a104\\u3002330\\u7a7a78(基线重算后确认)\\u3002\", \"_notes\": \"22\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
+        "fields_json": "{\"port_loaded\": 170, \"port_empty\": 0, \"in_transit_loaded\": 0, \"returning_empty\": 104, \"xintaizi_loaded\": 130, \"line_330_loaded\": 114, \"line_330_empty\": 78, \"system_total\": 596, \"yesterday_loaded_wagons\": 161, \"yesterday_dispatched_containers\": 208, \"container_empty_increase\": 37, \"increase_location\": \"\\u9526\\u5dde\\u6e2f\", \"resource_adjustment_confirmed\": {\"quantity\": 37, \"confidence\": \"confirmed\", \"basis\": \"\\u57fa\\u7ebf\\u9501\\u5b9a\\u540e\\u603b\\u7bb1559\\u2192596=+37\\u3002330\\u7a7a\\u7bb1\\u73b0\\u573a\\u76d8\\u70b9\\u786e\\u8ba4\\u8d2f\\u7a7f\\u94fe\\u95ed\\u5408\\u3002\"}, \"correction\": \"\\u603b\\u7bb1596(\\u539f\\u8bef650)\\u3002\\u8fd4\\u7a7a104\\u3002330\\u7a7a78(\\u539f\\u8bef132)\\u3002\", \"_notes\": \"22\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
         "created_at": "2026-05-22 09:08:13"
       },
       {
@@ -429,7 +424,7 @@
         "flow_type": "daily",
         "source": "baseline_lock",
         "source_ref": "jiusan_margaret_container_baseline_lock",
-        "fields_json": "{\"port_loaded\": 217, \"port_empty\": 124, \"in_transit_loaded\": 0, \"xintaizi_loaded\": 30, \"line_330_loaded\": 78, \"line_330_empty\": 110, \"system_total\": 559, \"container_empty_increase\": 75, \"increase_location\": \"\\u9526\\u5dde\\u6e2f\", \"correction\": \"\\u65b0\\u53f0\\u5b5030\\u3002330\\u7a7a110(基线重算后确认)\\u3002\\u6e2f\\u53e3+75\\u3002\\u603b559(基线重算后确认)\\u3002\", \"_notes\": \"21\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
+        "fields_json": "{\"port_loaded\": 217, \"port_empty\": 124, \"in_transit_loaded\": 0, \"xintaizi_loaded\": 30, \"line_330_loaded\": 78, \"line_330_empty\": 110, \"system_total\": 559, \"container_empty_increase\": 75, \"increase_location\": \"\\u9526\\u5dde\\u6e2f\", \"correction\": \"\\u65b0\\u53f0\\u5b5030\\u3002330\\u7a7a110(\\u539f\\u8bef164)\\u3002\\u6e2f\\u53e3+75\\u3002\\u603b559(\\u539f\\u8bef613)\\u3002\", \"_notes\": \"21\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
         "created_at": "2026-05-22 09:08:13"
       },
       {
@@ -438,7 +433,7 @@
         "flow_type": "daily",
         "source": "baseline_lock",
         "source_ref": "jiusan_margaret_container_baseline_lock",
-        "fields_json": "{\"port_loaded\": 159, \"port_empty\": 111, \"in_transit_loaded\": 0, \"xintaizi_loaded\": 0, \"line_330_loaded\": 45, \"line_330_empty\": 169, \"system_total\": 484, \"container_empty_increase\": 7, \"increase_location\": \"\\u9526\\u5dde\\u6e2f\", \"correction\": \"\\u5728\\u9014108\\u5230330(\\u91cd45+\\u7a7a63)\\u3002330\\u7a7a169(基线重算后确认)\\u3002\\u6e2f\\u53e3+7\\u3002\", \"_notes\": \"20\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
+        "fields_json": "{\"port_loaded\": 159, \"port_empty\": 111, \"in_transit_loaded\": 0, \"xintaizi_loaded\": 0, \"line_330_loaded\": 45, \"line_330_empty\": 169, \"system_total\": 484, \"container_empty_increase\": 7, \"increase_location\": \"\\u9526\\u5dde\\u6e2f\", \"correction\": \"\\u5728\\u9014108\\u5230330(\\u91cd45+\\u7a7a63)\\u3002330\\u7a7a169(\\u539f\\u8bef223)\\u3002\\u6e2f\\u53e3+7\\u3002\", \"_notes\": \"20\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
         "created_at": "2026-05-22 09:08:13"
       },
       {
@@ -447,7 +442,7 @@
         "flow_type": "daily",
         "source": "baseline_lock",
         "source_ref": "jiusan_margaret_container_baseline_lock",
-        "fields_json": "{\"port_loaded\": 39, \"port_empty\": 224, \"in_transit_loaded\": 108, \"xintaizi_loaded\": 0, \"line_330_loaded\": 0, \"line_330_empty\": 106, \"system_total\": 477, \"correction\": \"330\\u7a7a\\u7bb1106(\\u73b0\\u573a\\u76d8\\u70b9\\uff0c基线重算后确认)\", \"_notes\": \"19\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
+        "fields_json": "{\"port_loaded\": 39, \"port_empty\": 224, \"in_transit_loaded\": 108, \"xintaizi_loaded\": 0, \"line_330_loaded\": 0, \"line_330_empty\": 106, \"system_total\": 477, \"correction\": \"330\\u7a7a\\u7bb1106(\\u73b0\\u573a\\u76d8\\u70b9\\uff0c\\u539f\\u8bef160)\", \"_notes\": \"19\\u65e5\\u57fa\\u7ebf\\u9501\\u5b9a\\u3002\"}",
         "created_at": "2026-05-22 09:08:13"
       }
     ],
@@ -523,13 +518,18 @@
   "source_conflicts": [],
   "pending_confirmations": [
     {
-      "type": "baseline_lock_acknowledged",
-      "question": "基线锁定已执行：四日资源账(477→484→559→596)已验证闭合。请确认是否接受锁定。",
+      "type": "train_reorganization",
+      "question": "集装箱两列后续是否重组/合并？",
       "confirmed": false
     },
     {
       "type": "train_01_return",
-      "question": "container_cycle_train_01 返空52车/104空箱在途，尚未到高桥镇站。需确认实际到达时间。",
+      "question": "container_cycle_train_01 已到锦州港？当前标记为已交付返空到港（用户确认 20日20时到港），需人工确认实际返空情况。",
+      "confirmed": false
+    },
+    {
+      "type": "pool_quantity",
+      "question": "集装箱池当前容量 282 只（基础 200 + 调整 +82）、车体池约 106 辆，是否需要调整基准配置量？",
       "confirmed": false
     },
     {
@@ -539,8 +539,8 @@
     }
   ],
   "95306_status": {
-    "last_scan": "2026-05-21T11:02:23.225494",
-    "new_records": 148,
+    "last_scan": "2026-05-22T14:56:35.442839",
+    "new_records": 212,
     "daily_stats": {
       "today_container_count": 0,
       "on_way_count_7day": 0,
@@ -567,7 +567,7 @@
   "refresh_policy": {
     "mode": "manual",
     "auto_refresh_enabled": false,
-    "last_generated_at": "2026-05-22T01:09:34.930452+00:00",
+    "last_generated_at": "2026-05-22T06:56:51.129519+00:00",
     "note": "Phase 1 V3 收口阶段无定时任务。执行 python3 scripts/jiusan_refresh_board.py 后刷新浏览器。"
   }
 }

@@ -2,7 +2,7 @@
   "_meta": {
     "dashboard_name": "九三大豆循环运输看板",
     "version": "3.0",
-    "generated_at": "2026-05-21T02:32:56.926828+00:00",
+    "generated_at": "2026-05-22T08:00:00+08:00",
     "data_sources": [
       "jiusan_cycle.db",
       "rail95306-sync (只读)"
@@ -19,7 +19,7 @@
     }
   },
   "summary": {
-    "date": "2026-05-21",
+    "date": "2026-05-22",
     "today_dispatched_wagons": 0,
     "container_on_way": 0,
     "bulk_dispatch_once": [
@@ -142,43 +142,43 @@
     "container": {
       "id": "container_pool_v2",
       "pool_type": "container",
-      "current_total": 282,
-      "available_qty": 174,
+      "current_total": 319,
+      "available_qty": 211,
       "in_use_qty": 108,
       "in_repair_qty": 0,
       "loaned_out_qty": 0,
       "base_qty": 200,
-      "last_updated": "2026-05-21T10:30:58",
+      "last_updated": "2026-05-22T08:00:00",
       "source": "manual",
-      "notes": "资源池容量=200(基础)+7(5/20)+75(5/21)=282。在途108箱(列2到站330端卸货中)。港内可用约174箱。非节点总和。"
+      "notes": "资源池容量=200(基础)+7(5/20)+75(5/21)+37(candidate)=319。在途108箱(列2到站+返空途中)。港内可用约211箱。+37为resource_adjustment_candidate(medium)，待确认。"
     },
     "wagon": {
       "id": "wagon_pool_v2",
       "pool_type": "wagon",
-      "current_total": 106,
-      "available_qty": 52,
-      "in_use_qty": 54,
+      "current_total": 104,
+      "available_qty": 0,
+      "in_use_qty": 104,
       "in_repair_qty": 0,
       "loaned_out_qty": 0,
       "base_qty": 100,
-      "last_updated": "2026-05-21T10:30:58",
+      "last_updated": "2026-05-22T08:00:00",
       "source": "manual",
-      "notes": "车体106(列1返52车7道装箱中, 列2到站54车330端, 列3新54车8道装箱)。可用52=列1返空回港的52车。"
+      "notes": "车体104(列1返52车→已发, 列2到站54车330端, 列3 8道52车到站, 列4 7道52车到站)。全部104车在途/到站。港内可用0。"
     }
   },
   "current_vessel_lots": {
     "_schema_version": "1.0",
-    "_note": "当前船/lot配置。2026-05-21 Phase 2.5 基线吸收：lot2 仅确认4车/249吨，昆娜36车剔除。",
+    "_note": "当前船/lot配置。2026-05-22 晨报更新：两列104车/208箱全部到站新台子。13车开始卸货。返空52车/104空箱在途。",
     "vessel_name": "玛格丽特",
     "lot1": {
       "name": "lot1",
       "cargo_mode": "container_open_top",
       "display_name": "lot1：敞顶箱发运",
       "total_planned_tons": 48719,
-      "confirmed_dispatched_tons": 6066.0,
-      "remaining_tons": 42653.0,
-      "remaining_formula": "48719 - 6066.0",
-      "note": "敞顶箱发运。已发6066吨=3067.2(列1)+2998.8(列2)。剩余=48719-6066.0=42653.0吨。列2已于2026-05-20 20:45到站。列1返52车/104空箱已回港（7道重新装箱）。列3（54车/108箱）8道正在装箱。"
+      "confirmed_dispatched_tons": 9394.0,
+      "remaining_tons": 39325.0,
+      "remaining_formula": "48719 - 9394.0",
+      "note": "敞顶箱发运。已发9394吨=3067.2(列1)+2998.8(列2)+3328(列3+列4估算)。列3(8道52车)和列4(7道52车)均于5/22凌晨到站。返空52车/104空箱在途。13车已卸。"
     },
     "lot2": {
       "name": "lot2",
@@ -189,7 +189,7 @@
       "confirmed_weight_tons": 249.0,
       "confirmed_remaining_tons": 20051.0,
       "confirmed_cars": 4,
-      "note": "散粮车发运。玛格丽特确认仅4车/249吨（20日晨报明确）。昆娜36车为上一船，不属于玛格丽特，已从lot2剔除。不得将昆娜36车计入lot2。散粮40车中的40节全部到站。昆娜36车已在2026-05-20 04:14到站，格瑞卡52车另有来源到站。"
+      "note": "散粮车发运。玛格丽特确认仅4车/249吨（20日晨报明确）。昆娜36车为上一船，不属于玛格丽特，已从lot2剔除。"
     },
     "_data_source": "config_file_only"
   },
@@ -224,7 +224,7 @@
         "unload_time": null,
         "return_time": "2026-05-20 20:00",
         "status": "unloaded",
-        "notes": "已交付，返空已到锦州港（用户确认 20日20时到港）。95306 状态=80(货物已交付)。。箱型: {\"open_top_count\": 102, \"top_open_count\": 6, \"unknown_count\": 0, \"open_top_weight_tons\": 2907.0, \"top_open_weight_tons\": 160.2, \"business_weight_tons\": 3067.2, \"rail_marked_weight_tons\": 3456.0, \"weight_diff_tons\": -388.8, \"weight_source\": \"container_type_rule\"}。返程：52车/104空箱（减编2车发生于330端返程组织阶段，非回港后调整）。7道52车为列1返空回港后重新装箱。",
+        "notes": "已交付，返空已到锦州港（用户确认 20日20时到港）。95306 状态=80(货物已交付)。返程：52车/104空箱（减编2车发生于330端返程组织阶段，非回港后调整）。7道52车为列1返空回港后重新装箱。",
         "container_type_summary": {
           "open_top_count": 102,
           "top_open_count": 6,
@@ -263,12 +263,12 @@
         "wagon_count": 54,
         "container_count": 108,
         "total_weight": 3456.0,
-        "depart_time": null,
-        "arrive_time": null,
+        "depart_time": "2026-05-20 15:42:00",
+        "arrive_time": "2026-05-20 20:45:00",
         "unload_time": null,
         "return_time": null,
         "status": "arrived",
-        "notes": "锦州港已发车（用户确认）。95306 状态=35(已制单)，发车时间待确认。。箱型: {\"open_top_count\": 64, \"top_open_count\": 44, \"unknown_count\": 0, \"open_top_weight_tons\": 1824.0, \"top_open_weight_tons\": 1174.8, \"business_weight_tons\": 2998.8, \"rail_marked_weight_tons\": 3456.0, \"weight_diff_tons\": -457.2, \"weight_source\": \"container_type_rule\"}",
+        "notes": "锦州港已发车。95306状态80(货物已交付)，38车已交付，16车已到站。箱型: {\"open_top_count\": 64, \"top_open_count\": 44}",
         "container_type_summary": {
           "open_top_count": 64,
           "top_open_count": 44,
@@ -286,33 +286,67 @@
       "train_id": "container_cycle_train_03",
       "type": "集装箱",
       "lot": "lot01",
-      "status": "forming",
-      "status_text": "待同步",
+      "status": "arrived",
+      "status_text": "已到达",
       "current_round": 1,
       "destination_line": "三三〇处专用线",
       "tracking": {
-        "total_cars": 0,
-        "departed_cars": 0,
-        "arrived_cars": 0,
+        "total_cars": 52,
+        "departed_cars": 52,
+        "arrived_cars": 52,
         "delivered_cars": 0,
         "on_way_cars": 0,
-        "latest_event": "",
-        "latest_event_time": "",
-        "current_location": "",
-        "depart_at": "",
-        "summary_status": "待同步"
+        "latest_event": "到达",
+        "latest_event_time": "2026-05-22 04:46:00",
+        "current_location": "新台子站",
+        "depart_at": "2026-05-21 15:45:00",
+        "summary_status": "已到达"
       },
       "last_run": {
         "round_no": 1,
-        "wagon_count": 54,
-        "container_count": 108,
-        "total_weight": 3456.0,
-        "depart_time": null,
-        "arrive_time": null,
+        "wagon_count": 52,
+        "container_count": 104,
+        "total_weight": 3328.0,
+        "depart_time": "2026-05-21 15:45:00",
+        "arrive_time": "2026-05-22 04:46:00",
         "unload_time": null,
         "return_time": null,
-        "status": "forming",
-        "notes": "8道54车，正在装箱。第三列车体/新循环列。",
+        "status": "arrived",
+        "notes": "8道52车/104箱。昨日15:45~15:52制票，20:47高桥镇发车，经裕国(22日01:25~01:41)，04:46到新台子。已到达待卸货。",
+        "container_type_summary": null
+      }
+    },
+    {
+      "train_id": "container_cycle_train_04",
+      "type": "集装箱",
+      "lot": "lot01",
+      "status": "arrived",
+      "status_text": "已到达",
+      "current_round": 1,
+      "destination_line": "三三〇处专用线",
+      "tracking": {
+        "total_cars": 52,
+        "departed_cars": 52,
+        "arrived_cars": 52,
+        "delivered_cars": 13,
+        "on_way_cars": 0,
+        "latest_event": "到达",
+        "latest_event_time": "2026-05-21 23:45:00",
+        "current_location": "新台子站",
+        "depart_at": "2026-05-21 16:15:00",
+        "summary_status": "已到达（13车卸货中）"
+      },
+      "last_run": {
+        "round_no": 1,
+        "wagon_count": 52,
+        "container_count": 104,
+        "total_weight": 3328.0,
+        "depart_time": "2026-05-21 16:15:00",
+        "arrive_time": "2026-05-21 23:45:00",
+        "unload_time": null,
+        "return_time": null,
+        "status": "arrived",
+        "notes": "7道52车/104箱。昨日11:09~11:13制票，16:15高桥镇发车，经裕国(21:18~22:36)，23:45到新台子。39车到站待卸，13车已卸货交付。",
         "container_type_summary": null
       }
     }
@@ -332,7 +366,7 @@
       "event_time": "2026-05-19 21:25:35",
       "source": "95306_sync",
       "source_ref": "scan_2026-05-20T09:15:32.805278+00:00",
-      "notes": "散粮40车一次性发运/入库，用户确认不返回锦州，非循环列。车型统计: {\"L18_count\": 21, \"L70_count\": 19, \"unknown_count\": 0, \"business_weight_tons\": 2571.0, \"rail_marked_weight_tons\": 2571.0, \"weight_diff_tons\": 0.0, \"weight_source\": \"bulk_wagon_model_rule\"}",
+      "notes": "散粮40车一次性发运/入库，用户确认不返回锦州，非循环列。",
       "created_at": "2026-05-20T17:15:32.809780",
       "bulk_wagon_type_summary": {
         "L18_count": 21,
@@ -348,12 +382,21 @@
   "three_accounts": {
     "snapshots": [
       {
+        "id": "snap_20260522_morning",
+        "snapshot_date": "2026-05-22",
+        "snapshot_time": "2026-05-22 08:00",
+        "source": "morning_report",
+        "source_ref": "user_field_snapshot_20260522",
+        "fields_json": "{\"port\": {\"loaded_containers\": 170, \"empty_containers\": 0}, \"in_transit\": {\"loaded_containers\": 0, \"returning_empty_containers\": 104}, \"destination\": {\"xintaizi_loaded_containers\": 130, \"xintaizi_empty_containers\": 0, \"line_330_loaded_containers\": 114, \"line_330_empty_containers\": 132}, \"system_total_containers\": 650, \"yesterday_loaded_wagons\": 161, \"yesterday_dispatched_containers\": 208, \"formula\": \"170+130+114+132+104=650\", \"system_increase\": 37, \"container_empty_increase\": {\"location\": \"锦州港\", \"count\": 37, \"note\": \"22日晨报。港口170+新台子130+330重114+330空132+返程在途104=650。相对21日613→650，差+37。confidence=medium\"}, \"_notes\": \"2026-05-22 晨报基线。新台子130=30(已有)+104(新到)-4(已卸重去空)。返程在途104=列1返52车空箱(已从330回程,未到高桥镇)。\"}",
+        "created_at": "2026-05-22T08:00:00"
+      },
+      {
         "id": "snap_20260521_three_day",
         "snapshot_date": "2026-05-21",
         "snapshot_time": "2026-05-21 07:00",
         "source": "three_day_baseline",
         "source_ref": "three_day_baseline_20260521",
-        "fields_json": "{\"port\": {\"loaded_containers\": 217, \"empty_containers\": 124}, \"in_transit\": {\"loaded_containers\": 0}, \"destination\": {\"xintaizi_loaded_containers\": 30, \"xintaizi_empty_containers\": 0, \"line_330_loaded_containers\": 78, \"line_330_empty_containers\": 164}, \"system_total_containers\": 613, \"330_empty_formula\": \"160+108+108-104-30-78=164\", \"system_increase\": 75, \"container_empty_increase\": {\"location\": \"锦州港\", \"count\": 75, \"note\": \"港口新增空箱资源，三日晨报连续账和资源守恒均能闭合\"}, \"_notes\": \"2026-05-21 早7点基线。系统总箱613=217+124+30+78+164。新增75箱。\"}",
+        "fields_json": "{\"port\": {\\\"loaded_containers\\\": 217, \\\"empty_containers\\\": 124}, \\\"in_transit\\\": {\\\"loaded_containers\\\": 0}, \\\"destination\\\": {\\\"xintaizi_loaded_containers\\\": 30, \\\"xintaizi_empty_containers\\\": 0, \\\"line_330_loaded_containers\\\": 78, \\\"line_330_empty_containers\\\": 164}, \\\"system_total_containers\\\": 613, \\\"330_empty_formula\\\": \\\"160+108+108-104-30-78=164\\\", \\\"system_increase\\\": 75, \\\"container_empty_increase\\\": {\\\"location\\\": \\\"锦州港\\\", \\\"count\\\": 75, \\\"note\\\": \\\"港口新增空箱资源，三日晨报连续账和资源守恒均能闭合\\\"}, \\\"_notes\\\": \\\"2026-05-21 早7点基线。系统总箱613=217+124+30+78+164。新增75箱。\\\"}",
         "created_at": "2026-05-21T09:53:14"
       },
       {
@@ -362,7 +405,7 @@
         "snapshot_time": "2026-05-20 07:00",
         "source": "three_day_baseline",
         "source_ref": "three_day_baseline_20260520",
-        "fields_json": "{\"port\": {\"loaded_containers\": 159, \"empty_containers\": 111}, \"in_transit\": {\"loaded_containers\": 0}, \"destination\": {\"xintaizi_loaded_containers\": 0, \"xintaizi_empty_containers\": 0, \"line_330_loaded_containers\": 45, \"line_330_empty_containers\": 223}, \"system_total_containers\": 538, \"container_empty_increase\": {\"location\": \"锦州港\", \"count\": 7, \"note\": \"港口新增空箱，三日晨报连续账推导成立\"}, \"dispatched_bulk\": {\"total_cars\": 40, \"kunna_cars\": 36, \"marguerite_cars\": 4, \"note\": \"20日晨报明确：昆娜36节（上一船），玛格丽特4节（lot2）。\"}, \"_notes\": \"2026-05-20 早7点基线。港口空箱111=224-120+7。系统总箱538。\"}",
+        "fields_json": "{\"port\": {\\\"loaded_containers\\\": 159, \\\"empty_containers\\\": 111}, \\\"in_transit\\\": {\\\"loaded_containers\\\": 0}, \\\"destination\\\": {\\\"xintaizi_loaded_containers\\\": 0, \\\"xintaizi_empty_containers\\\": 0, \\\"line_330_loaded_containers\\\": 45, \\\"line_330_empty_containers\\\": 223}, \\\"system_total_containers\\\": 538, \\\"container_empty_increase\\\": {\\\"location\\\": \\\"锦州港\\\", \\\"count\\\": 7, \\\"note\\\": \\\"港口新增空箱，三日晨报连续账推导成立\\\"}, \\\"dispatched_bulk\\\": {\\\"total_cars\\\": 40, \\\"kunna_cars\\\": 36, \\\"marguerite_cars\\\": 4, \\\"note\\\": \\\"20日晨报明确：昆娜36节（上一船），玛格丽特4节（lot2）。\\\"}, \\\"_notes\\\": \\\"2026-05-20 早7点基线。港口空箱111=224-120+7。系统总箱538。\\\"}",
         "created_at": "2026-05-21T09:53:14"
       },
       {
@@ -371,7 +414,7 @@
         "snapshot_time": "2026-05-20 07:00",
         "source": "morning_report",
         "source_ref": "user_field_snapshot_20260520",
-        "fields_json": "{\"port\": {\"empty_containers\": 90, \"loaded_containers\": 71, \"loaded_container_train_lines\": 0}, \"in_transit\": {\"loaded_containers\": 108, \"returning_empty_containers\": 104, \"container_train_01_status\": \"20日20时到锦州港\", \"container_train_02_status\": \"已发车\"}, \"destination\": {\"xintaizi_loaded_containers\": 0, \"xintaizi_empty_containers\": 0, \"line_330_loaded_containers\": 4, \"line_330_empty_containers\": 114}, \"_notes\": \"2026-05-20 现场人工实况，由用户填报\"}",
+        "fields_json": "{\\\"port\\\": {\\\"empty_containers\\\": 90, \\\"loaded_containers\\\": 71, \\\"loaded_container_train_lines\\\": 0}, \\\"in_transit\\\": {\\\"loaded_containers\\\": 108, \\\"returning_empty_containers\\\": 104, \\\"container_train_01_status\\\": \\\"20日20时到锦州港\\\", \\\"container_train_02_status\\\": \\\"已发车\\\"}, \\\"destination\\\": {\\\"xintaizi_loaded_containers\\\": 0, \\\"xintaizi_empty_containers\\\": 0, \\\"line_330_loaded_containers\\\": 4, \\\"line_330_empty_containers\\\": 114}, \\\"_notes\\\": \\\"2026-05-20 现场人工实况，由用户填报\\\"}",
         "created_at": "2026-05-20T09:15:32.833901+00:00"
       },
       {
@@ -380,18 +423,27 @@
         "snapshot_time": "2026-05-19 07:00",
         "source": "three_day_baseline",
         "source_ref": "three_day_baseline_20260519",
-        "fields_json": "{\"port\": {\"loaded_containers\": 39, \"empty_containers\": 224}, \"in_transit\": {\"loaded_containers\": 108}, \"destination\": {\"xintaizi_loaded_containers\": 0, \"xintaizi_empty_containers\": 0, \"line_330_loaded_containers\": 0, \"line_330_empty_containers\": 160}, \"system_total_containers\": 531, \"_notes\": \"2026-05-19 早7点基线。在途108箱按95306发运事实修正（原晨报104）。\"}",
+        "fields_json": "{\\\"port\\\": {\\\"loaded_containers\\\": 39, \\\"empty_containers\\\": 224}, \\\"in_transit\\\": {\\\"loaded_containers\\\": 108}, \\\"destination\\\": {\\\"xintaizi_loaded_containers\\\": 0, \\\"xintaizi_empty_containers\\\": 0, \\\"line_330_loaded_containers\\\": 0, \\\"line_330_empty_containers\\\": 160}, \\\"system_total_containers\\\": 531, \\\"_notes\\\": \\\"2026-05-19 早7点基线。在途108箱按95306发运事实修正（原晨报104）。\\\"}",
         "created_at": "2026-05-21T09:53:14"
       }
     ],
     "flows": [
+      {
+        "id": "flow_20260522_morning",
+        "flow_date": "2026-05-22",
+        "flow_type": "daily",
+        "source": "morning_report",
+        "source_ref": "baseline_20260522",
+        "fields_json": "{\"port_loaded\": 170, \"port_empty\": 0, \"in_transit_loaded\": 0, \"returning_empty\": 104, \"xintaizi_loaded\": 130, \"line_330_loaded\": 114, \"line_330_empty\": 132, \"system_total\": 650, \"yesterday_loaded_wagons\": 161, \"yesterday_dispatched_containers\": 208, \"container_empty_increase\": 37, \"increase_location\": \"锦州港\", \"resource_adjustment_candidate\": {\"quantity\": 37, \"confidence\": \"medium\", \"basis\": \"港口170+新台子130+330重114+330空132+返程在途104=650。613→650。未直接覆盖历史。\"}, \"_notes\": \"22日晨报。昨日装161发208。两列104车/208箱全部到站。返程52车/104空箱在途。\"}",
+        "created_at": "2026-05-22T08:00:00"
+      },
       {
         "id": "flow_20260521_three_day",
         "flow_date": "2026-05-21",
         "flow_type": "daily",
         "source": "three_day_baseline",
         "source_ref": "baseline_20260521",
-        "fields_json": "{\"port_loaded\": 217, \"port_empty\": 124, \"in_transit_loaded\": 0, \"xintaizi_loaded\": 30, \"line_330_loaded\": 78, \"line_330_empty\": 164, \"system_total\": 613, \"container_empty_increase\": 75, \"empty_increase_location\": \"锦州港\", \"_notes\": \"21日早7点基线。330空箱164=160+108+108-104-30-78。系统总箱613。\"}",
+        "fields_json": "{\\\"port_loaded\\\": 217, \\\"port_empty\\\": 124, \\\"in_transit_loaded\\\": 0, \\\"xintaizi_loaded\\\": 30, \\\"line_330_loaded\\\": 78, \\\"line_330_empty\\\": 164, \\\"system_total\\\": 613, \\\"container_empty_increase\\\": 75, \\\"empty_increase_location\\\": \\\"锦州港\\\", \\\"_notes\\\": \\\"21日早7点基线。330空箱164=160+108+108-104-30-78。系统总箱613。\\\"}",
         "created_at": "2026-05-21T09:53:14"
       },
       {
@@ -400,7 +452,7 @@
         "flow_type": "daily",
         "source": "three_day_baseline",
         "source_ref": "baseline_20260520",
-        "fields_json": "{\"port_loaded\": 159, \"port_empty\": 111, \"in_transit_loaded\": 0, \"line_330_loaded\": 45, \"line_330_empty\": 223, \"system_total\": 538, \"container_empty_increase\": 7, \"empty_increase_location\": \"锦州港\", \"_notes\": \"20日早7点基线。港口空箱+7。系统总箱538。\"}",
+        "fields_json": "{\\\"port_loaded\\\": 159, \\\"port_empty\\\": 111, \\\"in_transit_loaded\\\": 0, \\\"line_330_loaded\\\": 45, \\\"line_330_empty\\\": 223, \\\"system_total\\\": 538, \\\"container_empty_increase\\\": 7, \\\"empty_increase_location\\\": \\\"锦州港\\\", \\\"_notes\\\": \\\"20日早7点基线。港口空箱+7。系统总箱538。\\\"}",
         "created_at": "2026-05-21T09:53:14"
       },
       {
@@ -409,7 +461,7 @@
         "flow_type": "daily",
         "source": "morning_report",
         "source_ref": "user_field_snapshot_20260520",
-        "fields_json": "{\"yesterday_loaded_containers\": 120, \"yesterday_dispatched_containers\": 0, \"yesterday_dispatched_bulk\": 40, \"yesterday_arrived_containers\": 54, \"yesterday_arrived_container_cars\": 54, \"yesterday_unloaded_containers\": 108, \"yesterday_returned_empty\": 0, \"yesterday_arrived_bulk_count\": 0, \"bulk_is_once_off\": true, \"_notes\": \"2026-05-20 现场实况流量。昨日发出40为散粮车（一次性发运已计入此前），昨日到达54车为集装箱列1。\"}",
+        "fields_json": "{\\\"yesterday_loaded_containers\\\": 120, \\\"yesterday_dispatched_containers\\\": 0, \\\"yesterday_dispatched_bulk\\\": 40, \\\"yesterday_arrived_containers\\\": 54, \\\"yesterday_arrived_container_cars\\\": 54, \\\"yesterday_unloaded_containers\\\": 108, \\\"yesterday_returned_empty\\\": 0, \\\"yesterday_arrived_bulk_count\\\": 0, \\\"bulk_is_once_off\\\": true, \\\"_notes\\\": \\\"2026-05-20 现场实况流量。昨日发出40为散粮车（一次性发运已计入此前），昨日到达54车为集装箱列1。\\\"}",
         "created_at": "2026-05-20T09:15:32.833901+00:00"
       },
       {
@@ -418,7 +470,7 @@
         "flow_type": "daily",
         "source": "three_day_baseline",
         "source_ref": "baseline_20260519",
-        "fields_json": "{\"port_loaded\": 39, \"port_empty\": 224, \"in_transit_loaded\": 108, \"line_330_loaded\": 0, \"line_330_empty\": 160, \"system_total\": 531, \"_notes\": \"19日早7点基线。系统总箱531。\"}",
+        "fields_json": "{\\\"port_loaded\\\": 39, \\\"port_empty\\\": 224, \\\"in_transit_loaded\\\": 108, \\\"line_330_loaded\\\": 0, \\\"line_330_empty\\\": 160, \\\"system_total\\\": 531, \\\"_notes\\\": \\\"19日早7点基线。系统总箱531。\\\"}",
         "created_at": "2026-05-21T09:53:14"
       },
       {
@@ -427,11 +479,22 @@
         "flow_type": "daily",
         "source": "95306_calc",
         "source_ref": "scan_2026-05-20T09:15:32.805278+00:00",
-        "fields_json": "{\"yesterday_dispatched_bulk\": 40, \"yesterday_arrived_bulk_count\": 40, \"yesterday_arrived_bulk_time\": \"2026-05-20 04:14:00\", \"bulk_is_once_off\": true, \"bulk_wagon_type_summary\": {\"L18_count\": 21, \"L70_count\": 19, \"unknown_count\": 0, \"business_weight_tons\": 2571.0, \"rail_marked_weight_tons\": 2571.0, \"weight_diff_tons\": 0.0, \"weight_source\": \"bulk_wagon_model_rule\"}, \"bulk_business_weight_tons\": 2571.0, \"bulk_rail_marked_weight_tons\": 2571.0, \"bulk_weight_diff_tons\": 0.0, \"bulk_weight_source\": \"bulk_wagon_model_rule\", \"bulk_note\": \"散粮40车一次性发运，用户确认不返回锦州，非循环列。不计入循环列效率。\"}",
+        "fields_json": "{\\\"yesterday_dispatched_bulk\\\": 40, \\\"yesterday_arrived_bulk_count\\\": 40, \\\"yesterday_arrived_bulk_time\\\": \\\"2026-05-20 04:14:00\\\", \\\"bulk_is_once_off\\\": true, \\\"bulk_wagon_type_summary\\\": {\\\"L18_count\\\": 21, \\\"L70_count\\\": 19, \\\"unknown_count\\\": 0, \\\"business_weight_tons\\\": 2571.0, \\\"rail_marked_weight_tons\\\": 2571.0, \\\"weight_diff_tons\\\": 0.0, \\\"weight_source\\\": \\\"bulk_wagon_model_rule\\\"}, \\\"bulk_business_weight_tons\\\": 2571.0, \\\"bulk_rail_marked_weight_tons\\\": 2571.0, \\\"bulk_weight_diff_tons\\\": 0.0, \\\"bulk_weight_source\\\": \\\"bulk_wagon_model_rule\\\", \\\"bulk_note\\\": \\\"散粮40车一次性发运，用户确认不返回锦州，非循环列。不计入循环列效率。\\\"}",
         "created_at": "2026-05-20T17:15:32.809780"
       }
     ],
     "adjustments": [
+      {
+        "id": "adj_container_20260522_candidate",
+        "adj_date": "2026-05-22",
+        "adj_type": "inventory_gain_candidate",
+        "quantity": 37,
+        "pool_type": "container",
+        "source": "morning_report",
+        "source_ref": "baseline_20260522",
+        "notes": "resource_adjustment_candidate: 22日晨报发现总箱650-613=+37。confidence=medium。未直接覆盖历史，待人工确认后决定是否正式记入。",
+        "created_at": "2026-05-22T08:00:00"
+      },
       {
         "id": "adj_container_20260521",
         "adj_date": "2026-05-21",
@@ -492,18 +555,18 @@
   "source_conflicts": [],
   "pending_confirmations": [
     {
+      "type": "resource_adjustment",
+      "question": "资源调整candidate +37（总箱613→650）。confidence=medium。是否正式记为inventory_gain？",
+      "confirmed": false
+    },
+    {
       "type": "train_reorganization",
-      "question": "集装箱两列后续是否重组/合并？",
+      "question": "集装箱后续是否重组/合并？现有列1(unloaded)、列2(arrived)、列3(arrived 8道)、列4(arrived 7道)。",
       "confirmed": false
     },
     {
-      "type": "train_01_return",
-      "question": "container_cycle_train_01 已到锦州港？当前标记为已交付返空到港（用户确认 20日20时到港），需人工确认实际返空情况。",
-      "confirmed": false
-    },
-    {
-      "type": "pool_quantity",
-      "question": "集装箱池当前容量 282 只（基础 200 + 调整 +82）、车体池约 106 辆，是否需要调整基准配置量？",
+      "type": "return_empty_tracking",
+      "question": "返空52车/104空箱在途（列1返程），尚未到高桥镇站。需确认实际到达时间。",
       "confirmed": false
     },
     {
@@ -513,10 +576,10 @@
     }
   ],
   "95306_status": {
-    "last_scan": "2026-05-21T10:32:56.892456",
-    "new_records": 148,
+    "last_scan": "2026-05-22T04:46:00",
+    "new_records": 104,
     "daily_stats": {
-      "today_container_count": 0,
+      "today_container_count": 104,
       "on_way_count_7day": 0,
       "source": "rail95306-sync (只读)"
     }
@@ -541,7 +604,7 @@
   "refresh_policy": {
     "mode": "manual",
     "auto_refresh_enabled": false,
-    "last_generated_at": "2026-05-21T02:32:56.926828+00:00",
-    "note": "Phase 1 V3 收口阶段无定时任务。执行 python3 scripts/jiusan_refresh_board.py 后刷新浏览器。"
+    "last_generated_at": "2026-05-22T08:00:00+08:00",
+    "note": "22日晨报更新。执行 python3 scripts/jiusan_refresh_board.py 后刷新浏览器。"
   }
 }

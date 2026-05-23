@@ -32,10 +32,26 @@ def _business_db_from_args(args: argparse.Namespace) -> str | Path | None:
 def _run_reconcile(args: argparse.Namespace, *, deprecated_finalize_cli: bool = False) -> None:
     settings = load_settings(args.config)
     run_mode = "plan" if args.plan else "commit"
+
+    # Auto-detect project_id from release_batch when not explicitly provided
+    project_id = args.project_id
+    if not project_id:
+        try:
+            import sqlite3
+            biz_db = args.business_db or settings.agent_db_path
+            db = sqlite3.connect(biz_db)
+            db.row_factory = sqlite3.Row
+            row = db.execute("SELECT project FROM release_batches WHERE id=?", (args.release_batch_id,)).fetchone()
+            db.close()
+            if row and row["project"]:
+                project_id = row["project"]
+        except Exception:
+            pass
+
     result = reconcile_inspection_shipments(
         business_db_path=args.business_db or settings.agent_db_path,
         rail_db_path=args.rail_db or settings.db_95306_path,
-        project_id=args.project_id,
+        project_id=project_id,
         release_batch_id=args.release_batch_id,
         candidate_ids=args.candidate_id,
         inspection_json_paths=args.inspection_json,
@@ -104,7 +120,7 @@ def cmd_render_dispatch_board(args: argparse.Namespace) -> None:
 
 def _add_reconcile_args(p: argparse.ArgumentParser, *, legacy_dry_run: bool = False) -> None:
     p.add_argument("--release-batch-id", required=True)
-    p.add_argument("--project-id", default="中唐特钢铁矿发运项目")
+    p.add_argument("--project-id", default="")
     p.add_argument("--candidate-id", action="append", default=[], help="inspection_ingestion_candidates.id，可重复")
     p.add_argument("--inspection-json", action="append", default=[], help="检装车 JSON 路径，可重复")
     mode = p.add_mutually_exclusive_group(required=True)

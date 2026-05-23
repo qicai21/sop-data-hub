@@ -18,6 +18,7 @@ ORDINARY_DISPATCH_BOARD_PROJECTS = {
     "朝阳钢铁铁矿发运项目",
     "吉林金钢铁路发运项目",
     "吉林金钢",
+    "吉林金钢-锦州港铁矿发运项目",
     "jilin_jingang_jinzhou",
 }
 
@@ -560,6 +561,24 @@ def generate_dispatch_board_data(
 
     visible_release_ids = {str(row.get("id") or "") for row in release_rows}
     release_by_id = {str(row.get("id") or ""): row for row in release_rows}
+
+    # Fallback: if rail DB has 0 matches for a batch, check agent.db wagon_shipments
+    for release_id in visible_release_ids:
+        fs = formal_summary.get(release_id, {"formal_match_count": 0, "formal_weight": 0.0, "car_details": []})
+        if fs.get("formal_match_count", 0) == 0:
+            dep = business_db.execute(
+                "SELECT wagon_count FROM departure_records WHERE batch_id=? ORDER BY created_at DESC LIMIT 1",
+                (release_id,)
+            ).fetchone()
+            if dep and dep["wagon_count"] and dep["wagon_count"] > 0:
+                ws_rows = business_db.execute(
+                    "SELECT car_no, cargo_name, ticketed_at FROM wagon_shipments WHERE batch_id=? ORDER BY ticketed_at",
+                    (release_id,)
+                ).fetchall()
+                ws_count = len(ws_rows)
+                if ws_count > 0:
+                    car_details = [{"car_no": r["car_no"], "time": r["ticketed_at"] or "", "inspection_file": "agent.db fallback"} for r in ws_rows]
+                    formal_summary[release_id] = {"formal_match_count": ws_count, "formal_weight": 0.0, "car_details": car_details}
 
     # ── summary ──
     active_count = sum(1 for row in release_rows if row.get("dispatch_status") == "in_progress")

@@ -24,6 +24,8 @@ FALLBACK_BUSINESS_SOP_TOKENS = {
     "朝阳钢铁铁矿发运项目",
     "wugang_steel_baseline",
     WUGANG_PROJECT,
+    "jilin_jingang_jinzhou",
+    "吉林金钢-锦州港铁矿发运项目",
 }
 
 # Common OCR confusions discovered in live release-batch documents.  These are
@@ -112,6 +114,11 @@ def release_batch_sop_project(record: "ReleaseBatchRecord") -> str:
             return zhongtang
         if record.ship_name == "贝拉" and record.destination_station == "汐子" and "铁" in (record.cargo_name or ""):
             return zhongtang
+
+    jilin_jingang = "吉林金钢-锦州港铁矿发运项目"
+    if jilin_jingang in tokens:
+        if record.destination_station == "四平" and any(c in (record.cargo_name or "") for c in ("镍矿", "铁矿", "红土镍矿")):
+            return jilin_jingang
 
     return ""
 

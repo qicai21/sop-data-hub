@@ -623,6 +623,8 @@ def _infer_sop_project_token(payload: dict[str, Any], *, category: str) -> str:
             return "朝阳钢铁铁矿发运项目"
         if any(token in text for token in ("汐子", "鞍子河", "丰收散运", "丰收", "沱子", "中唐", "赤峰中唐", "ZLZT")):
             return "中唐特钢铁矿发运项目"
+        if any(token in text for token in ("四平", "吉林金钢", "金钢")) and any(token in text for token in ("镍矿", "铁矿", "红土镍矿")):
+            return "吉林金钢-锦州港铁矿发运项目"
         return ""
     if category == "检装车通知单":
         if any(token in text for token in ("合远9", "朝阳西", "朝阳铁", "朝阳钢铁", "朝钢")):

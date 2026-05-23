@@ -108,6 +108,14 @@ def _write_status_file(
 
 def _db_landing_summary(result: "ProcessingResult") -> dict[str, Any]:
     extracted = result.extracted if isinstance(result.extracted, dict) else {}
+    if extracted.get("_agent_committed"):
+        return {
+            "db_action": "candidate_committed",
+            "db_tables": ["inspection_ingestion_candidates", "shipment_release_batch_matches"],
+            "db_record_ids": extracted.get("_agent_committed_ids") or extracted.get("_agent_updated_ids") or [],
+            "status": "resolved",
+            "reason": extracted.get("_agent_committed_reason") or "matched_release_batch_waiting_95306_validation",
+        }
     if extracted.get("_agent_ingested"):
         return {
             "db_action": "release_batch_upsert",
@@ -147,6 +155,15 @@ def _db_landing_summary(result: "ProcessingResult") -> dict[str, Any]:
         "status": "failed" if result.error else ("extracted" if result.extraction_saved_path else "classified"),
         "reason": result.error or "no_db_landing_required",
     }
+
+
+def _refresh_dispatch_board_best_effort(reason: str = "runner_auto_refresh") -> None:
+    try:
+        from ops_hub.data_agent.dispatch_board import refresh_dispatch_board
+
+        refresh_dispatch_board(reason=reason)
+    except Exception:
+        pass
 
 
 def _write_audit_record(
@@ -463,6 +480,8 @@ def process_new_image(
     try:
         _write_status_file(settings, img, result, month_str=month_str, group_name=group_name)
         _write_audit_record(settings, img, result, group_name=group_name)
+        if result.extracted and not result.error:
+            _refresh_dispatch_board_best_effort()
     except Exception:
         pass
 
@@ -674,15 +693,36 @@ def _run_extraction(category: str, image_path: str, settings: Settings, *, group
                     source_file_name=Path(image_path).name,
                     group_name=group_name or None,
                 )
-                result["_agent_candidate_ids"] = landing.get("candidate_ids", [])
-                result["_agent_candidate_release_batch_ids"] = landing.get("release_batch_ids", [])
-                result["_candidate_release_batch_ids"] = landing.get("release_batch_ids", [])
-                if landing.get("status") == "candidate":
-                    result["_agent_updated_ids"] = landing.get("release_batch_ids", [])
-                else:
-                    result["_agent_updated_ids"] = []
+                candidate_ids = landing.get("candidate_ids", [])
+                release_batch_ids = landing.get("release_batch_ids", [])
+                result["_agent_candidate_ids"] = candidate_ids
+                result["_agent_candidate_release_batch_ids"] = release_batch_ids
+                result["_candidate_release_batch_ids"] = release_batch_ids
                 result["_agent_pending_reason"] = landing.get("reason")
                 result["_agent_status"] = landing.get("status")
+                result["_agent_updated_ids"] = release_batch_ids if landing.get("status") == "candidate" else []
+                if landing.get("status") == "candidate" and len(release_batch_ids) == 1 and candidate_ids:
+                    try:
+                        from ops_hub.matching.inspection_95306_reconciler import reconcile_inspection_shipments
+
+                        plan = reconcile_inspection_shipments(
+                            business_db_path=settings.agent_db_path,
+                            rail_db_path=settings.db_95306_path,
+                            project_id=str(result.get("project") or result.get("项目") or ""),
+                            release_batch_id=release_batch_ids[0],
+                            run_mode="commit",
+                            operator_note="auto commit from runner after inspection candidate ingestion",
+                            candidate_ids=candidate_ids,
+                        )
+                        result["_agent_reconcile_plan"] = plan.to_report_dict()
+                        if plan.safe_to_commit:
+                            result["_agent_committed"] = True
+                            result["_agent_committed_ids"] = candidate_ids
+                            result["_agent_committed_reason"] = plan.reason
+                            result["_agent_status"] = "committed"
+                            result["_agent_pending_reason"] = ""
+                    except Exception as e:
+                        result["_agent_ingest_error"] = str(e)
             except Exception as e:
                 result["_agent_ingest_error"] = str(e)
         return result

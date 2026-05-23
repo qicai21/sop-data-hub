@@ -24,6 +24,8 @@ FALLBACK_BUSINESS_SOP_TOKENS = {
     "朝阳钢铁铁矿发运项目",
     "wugang_steel_baseline",
     WUGANG_PROJECT,
+    "jiusan_soybean_baseline",
+    "九三大豆铁路发运项目",
     "jilin_jingang_jinzhou",
     "吉林金钢-锦州港铁矿发运项目",
 }

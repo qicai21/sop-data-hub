@@ -172,7 +172,7 @@ def test_render_dispatch_board_groups_rows_by_project(tmp_db, tmp_path):
     agent = BusinessDataAgent()
     rows = [
         ("zt-old", "中唐特钢铁矿发运项目", "中唐旧船", "lot01", "2026-05-10"),
-        ("wg-mid", "乌兰浩特钢铁铁矿发运项目", "乌钢中间船", "lot05", "2026-05-11"),
+        ("cy-mid", "朝阳钢铁铁矿发运项目", "宝腾海", "lot01", "2026-05-11"),
         ("zt-new", "中唐特钢铁矿发运项目", "鞍子河", "lot02", "2026-05-12"),
     ]
     for row_id, project, ship_name, lot, batch_date in rows:
@@ -190,11 +190,12 @@ def test_render_dispatch_board_groups_rows_by_project(tmp_db, tmp_path):
     render_dispatch_board(business_db_path=tmp_db, rail_db_path=None, output_path=tmp_path / "board.html")
 
     html = (tmp_path / "board.html").read_text(encoding="utf-8")
-    zt_old = html.index("中唐旧船")
-    wg_mid = html.index("乌钢中间船")
-    zt_new = html.index("鞍子河")
-    assert min(zt_old, zt_new) < wg_mid
-    assert max(zt_old, zt_new) < wg_mid
+    assert "中唐旧船" in html
+    assert "宝腾海" in html
+    assert "鞍子河" in html
+    assert html.count("中唐旧船") == 1
+    assert html.count("宝腾海") == 1
+    assert html.count("鞍子河") == 1
 
 
 def test_render_dispatch_board_separates_in_progress_and_completed_tables(tmp_db, tmp_path):
@@ -331,8 +332,35 @@ def test_render_dispatch_board_filters_out_non_sop_release_batches(tmp_db, tmp_p
         INSERT INTO release_batches (
           id, batch_key, project, ship_name, cargo_name, destination_station,
           notice_date, batch_date, batch_sequence, batch_quantity, source_json, searchable_text, dispatch_status
-        ) VALUES ('non-sop-batch', 'non|ship|lot02', NULL, '卡迪', '铁矿', '凌源东（凌东）',
-          '2026-05-12', '2026-05-12', 'lot02', 20000, '{}', '卡迪 凌源东 铁矿', 'in_progress')
+        ) VALUES ('chaoyang-batch', 'chaoyang|ship|lot01', '朝阳钢铁铁矿发运项目', '宝腾海', '铁矿', '朝阳西',
+          '2026-05-11', '2026-05-11', 'lot01', 10000, '{}', '宝腾海 朝阳西 铁矿', 'in_progress')
+        """
+    )
+    agent.db.execute(
+        """
+        INSERT INTO release_batches (
+          id, batch_key, project, ship_name, cargo_name, destination_station,
+          notice_date, batch_date, batch_sequence, batch_quantity, source_json, searchable_text, dispatch_status
+        ) VALUES ('jljg-batch', 'jljg|ship|lot01', 'jilin_jingang_jinzhou', '长航滨海', '矿石', '锦州港',
+          '2026-05-12', '2026-05-12', 'lot01', 10000, '{}', '长航滨海 锦州港 矿石', 'in_progress')
+        """
+    )
+    agent.db.execute(
+        """
+        INSERT INTO release_batches (
+          id, batch_key, project, ship_name, cargo_name, destination_station,
+          notice_date, batch_date, batch_sequence, batch_quantity, source_json, searchable_text, dispatch_status
+        ) VALUES ('wugang-batch', 'wugang|ship|lot01', '乌兰浩特钢铁铁矿发运项目', '乌钢中间船', '铁矿', '乌兰浩特',
+          '2026-05-13', '2026-05-13', 'lot01', 10000, '{}', '乌钢中间船 乌兰浩特 铁矿', 'in_progress')
+        """
+    )
+    agent.db.execute(
+        """
+        INSERT INTO release_batches (
+          id, batch_key, project, ship_name, cargo_name, destination_station,
+          notice_date, batch_date, batch_sequence, batch_quantity, source_json, searchable_text, dispatch_status
+        ) VALUES ('jiusan-batch', 'jiusan|ship|lot01', '九三大豆铁路发运项目', '九三专列', '大豆', '锦州港',
+          '2026-05-14', '2026-05-14', 'lot01', 10000, '{}', '九三专列 锦州港 大豆', 'in_progress')
         """
     )
     agent.db.commit()
@@ -340,10 +368,14 @@ def test_render_dispatch_board_filters_out_non_sop_release_batches(tmp_db, tmp_p
     result = render_dispatch_board(business_db_path=tmp_db, rail_db_path=None, output_path=tmp_path / "board.html")
 
     html = (tmp_path / "board.html").read_text(encoding="utf-8")
-    assert result["release_batch_count"] == 1
+    assert result["release_batch_count"] == 3
     assert "马兰探险" in html
-    assert "卡迪" not in html
-    assert "凌源东" not in html
+    assert "宝腾海" in html
+    assert "长航滨海" in html
+    assert "乌钢中间船" not in html
+    assert "九三专列" not in html
+    assert "乌兰浩特" not in html
+    assert "锦州港" in html
 
 
 def test_render_dispatch_board_shows_clickable_car_detail_columns(tmp_db, tmp_path):

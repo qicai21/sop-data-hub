@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ops_hub.models.project_sop import TrackingTask, load_all_tracking_tasks
+from ops_hub.models.project_sop import TrackingTask, load_all_tracking_tasks, load_project_sop
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2].parent
 FIXTURES_DIR = WORKSPACE_ROOT / "business-system-docs" / "test-plan" / "fixtures" / "project_sops"
@@ -66,6 +66,11 @@ def test_chaoyang_baseline_has_no_text_release_chain():
     assert inspection_route.report_targets["production"]["group_id"] == "[待确认]"
     assert inspection_route.report_targets["production"]["group_name"] == "朝钢铁矿发运群"
     assert inspection_route.report_targets["production"]["group_id"] != "[GROUP003]"
+    assert inspection_route.report_artifact["type"] == "departure_report"
+    assert inspection_route.report_artifact["template_path"] == "/Users/qicai21/projects/repos/ops-data-hub/config/report_templates/cysteel_departure_report_template.xlsx"
+    assert inspection_route.report_artifact["filename_pattern"] == "锦州港铁矿发运表_{wagon_count}_{date}.xlsx"
+    assert inspection_route.report_artifact["generate_after"] == "departure_records_committed"
+    assert inspection_route.report_artifact["send_after_generate"] is True
 
 
 def test_chaogang_report_group_is_not_a_listening_source():
@@ -93,6 +98,48 @@ def test_chaoyang_text_with_business_keywords_has_no_sop_route():
         if r.message_type == "text" and r.target_node == "create_release_batch"
     ]
     assert matched_text_routes == []
+
+
+def test_jiusan_soybean_initial_project_requires_manual_designation():
+    """测试 3.3: 九三大豆先立项目, 放货单和检装车都不自动进入业务链路"""
+    tasks = load_all_tracking_tasks(FIXTURES_DIR)
+
+    project_ids = {t.project_id for t in tasks}
+    assert "jiusan_soybean_baseline" in project_ids
+
+    jiusan_task = _find_task(tasks, project_id="jiusan_soybean_baseline", group_id="GROUP013")
+    assert jiusan_task.group_lookup_id == "[GROUP013]"
+    assert jiusan_task.group_name == "数据单发群-[GROUP013]"
+    assert jiusan_task.listen_options["image"] is True
+    assert jiusan_task.listen_options["text"] is True
+    assert jiusan_task.listen_options["file"] is True
+
+    assert len(jiusan_task.routing) == 1
+    route = jiusan_task.routing[0]
+    assert route.message_type == "*"
+    assert route.trigger_condition == "manual_designation_required"
+    assert route.target_node == "archive_for_manual_release_setup"
+    assert route.save_db is True
+
+    automatic_targets = {r.target_node for r in jiusan_task.routing}
+    assert "create_release_batch" not in automatic_targets
+    assert "process_inspection_slip" not in automatic_targets
+
+
+def test_jiusan_soybean_keeps_rail95306_and_contract_metadata():
+    """测试 3.4: 九三大豆的 xts 同步和合同路线配置不能被 loader 丢弃"""
+    sop = load_project_sop(FIXTURES_DIR / "jiusan_soybean_baseline.yaml")
+
+    assert sop.rail95306["account"] == "xts"
+    assert sop.rail95306["cargo_name"] == "大豆"
+    assert sop.rail95306["origin_station"] == "高桥镇"
+    assert sop.rail95306["primary_routes"][0]["private_line"] == "三三〇处专用线"
+    assert sop.rail95306["primary_routes"][1]["wagon_alias"] == "K车"
+    assert sop.rail95306["supplemental_routes"][0]["destination_station"] == "得胜台"
+
+    assert sop.contract["contract_no"] == "JGWL-JZTS-DD-202601"
+    assert sop.contract["cargo_name"] == "大豆"
+    assert len(sop.contract["pricing_routes"]) == 3
 
 
 def test_new_group_integration_via_config():

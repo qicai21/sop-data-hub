@@ -12,6 +12,7 @@ class RoutingRule:
     save_db: bool = False
     send_report_to: Optional[str] = None
     report_targets: Optional[Dict[str, Any]] = None
+    report_artifact: Optional[Dict[str, Any]] = None
 
 @dataclass
 class ListeningTask:
@@ -28,6 +29,8 @@ class ProjectSOP:
     project_id: str
     project_name: str
     status: str
+    rail95306: Optional[Dict[str, Any]] = None
+    contract: Optional[Dict[str, Any]] = None
     listening_tasks: List[ListeningTask] = field(default_factory=list)
 
 @dataclass
@@ -55,7 +58,8 @@ def load_project_sop(file_path: str | Path) -> ProjectSOP:
                 target_node=r_data.get("target_node", ""),
                 save_db=r_data.get("save_db", False),
                 send_report_to=r_data.get("send_report_to", None),
-                report_targets=r_data.get("report_targets", None)
+                report_targets=r_data.get("report_targets", None),
+                report_artifact=r_data.get("report_artifact", None)
             ))
         tasks.append(ListeningTask(
             group_id=t_data.get("group_id", ""),
@@ -71,6 +75,8 @@ def load_project_sop(file_path: str | Path) -> ProjectSOP:
         project_id=data.get("project_id", ""),
         project_name=data.get("project_name", ""),
         status=data.get("status", "active"),
+        rail95306=data.get("rail95306", None),
+        contract=data.get("contract", None),
         listening_tasks=tasks
     )
 

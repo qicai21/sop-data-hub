@@ -247,7 +247,7 @@ def test_footer_confirmed_loaded_segment_trusts_db_window_when_ocr_marks_inner_r
 
 
 def test_anzihe_lot04_scope_is_fixed_when_live_databases_exist() -> None:
-    biz_db = Path("/Users/qicai21/projects/repos/wx-ops-agent/data/agent.db")
+    biz_db = Path("/Users/qicai21/projects/repos/ops-data-hub/data/agent.db")
     rail_db = Path("/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3")
     if not biz_db.exists() or not rail_db.exists():
         pytest.skip("machine-local Anzihe lot04 databases are not present")

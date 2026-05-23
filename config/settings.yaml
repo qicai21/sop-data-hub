@@ -17,9 +17,8 @@ extraction_output_dir: /Users/qicai21/Documents/bussiness-artifacts/wechat_image
 # 服务器上通常是: /path/to/95306-agent/data/freight.db
 db_95306_path: "/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3"
 
-# 放货批次数据库路径
-# 本机唯一 canonical 业务库：禁止在 ops-data-hub 当前工作目录下再生成 data/agent.db，避免 agent 搜索到多份 release_batches。
-agent_db_path: /Users/qicai21/projects/repos/wx-ops-agent/data/agent.db
+# 业务数据库路径：合同、放货批次、检装车候选、报表任务等业务状态归 ops-data-hub 管理。
+agent_db_path: /Users/qicai21/projects/repos/ops-data-hub/data/agent.db
 
 # ── VLM 服务 ─────────────────────────────────────────
 

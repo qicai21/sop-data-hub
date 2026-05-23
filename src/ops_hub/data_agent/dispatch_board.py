@@ -11,7 +11,15 @@ import time
 from typing import Any
 from urllib.parse import quote
 
-from ops_hub.data_agent.agent import active_business_sop_project_tokens, parse_business_text_fields
+from ops_hub.data_agent.agent import parse_business_text_fields
+
+ORDINARY_DISPATCH_BOARD_PROJECTS = {
+    "中唐特钢铁矿发运项目",
+    "朝阳钢铁铁矿发运项目",
+    "吉林金钢铁路发运项目",
+    "吉林金钢",
+    "jilin_jingang_jinzhou",
+}
 
 
 STATUS_LABELS = {
@@ -103,8 +111,7 @@ def _fetch_release_batches(db: sqlite3.Connection) -> list[dict[str, Any]]:
           batch_sequence ASC
         """
     ).fetchall()
-    tokens = active_business_sop_project_tokens()
-    return [dict(row) for row in rows if str(row["project"] or "").strip() in tokens]
+    return [dict(row) for row in rows if str(row["project"] or "").strip() in ORDINARY_DISPATCH_BOARD_PROJECTS]
 
 
 def _fetch_candidate_summary(db: sqlite3.Connection) -> dict[str, dict[str, Any]]:

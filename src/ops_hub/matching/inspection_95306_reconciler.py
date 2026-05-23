@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import json
+import logging
 from pathlib import Path
 import re
 import sqlite3
@@ -10,6 +11,8 @@ from typing import Any, Iterable, Literal, Mapping
 
 from ops_hub.matching.release_match_spec import build_match_spec, row_matches_spec
 from ops_hub.matching.shipment_linkage import _ensure_match_table, _row_id, _write_candidate_rows
+
+logger = logging.getLogger(__name__)
 
 RunMode = Literal["plan", "commit"]
 
@@ -185,6 +188,27 @@ def reconcile_inspection_shipments(
             committed_count = formal["count"]
             actual_wagon_count = _sync_release_batch_actuals(biz, release_batch_id, formal["count"])
             _mark_candidates_committed(biz, [str(candidate["id"]) for candidate in candidates], operator_note)
+
+            # 提取本次提交候选的 inspection_file（去掉 #rows 后缀）
+            _inspection_files: list[str] = []
+            for c in candidates:
+                sf = str(c["source_file_name"] or "")
+                sf_clean = sf.split("#")[0]  # 去掉 #rows1-57#lot07 后缀
+                if sf_clean:
+                    _inspection_files.append(sf_clean)
+
+            # 发车数据正式入库后，触发发运报表生成（失败不回滚业务入库）
+            try:
+                _maybe_generate_departure_report(
+                    biz_path=business_db_path,
+                    rail_path=rail_db_path,
+                    project_id=project_id,
+                    release_batch_id=release_batch_id,
+                    committed_count=committed_count,
+                    inspection_files=_inspection_files,
+                )
+            except Exception:
+                logger.warning("Departure report generation failed (non-fatal, business ingest preserved)", exc_info=True)
 
         return InspectionReconcileResult(
             run_mode=run_mode,
@@ -686,3 +710,77 @@ def _float_or_none(value: Any) -> float | None:
 def _float_or_zero(value: Any) -> float:
     value = _float_or_none(value)
     return float(value or 0.0)
+
+
+def _maybe_generate_departure_report(
+    *,
+    biz_path: str | Path,
+    rail_path: str | Path,
+    project_id: str,
+    release_batch_id: str,
+    committed_count: int,
+    inspection_files: list[str] | None = None,
+) -> None:
+    """发车数据正式入库后，根据 SOP 的 report_artifact 配置生成发运报表。
+
+    失败不回滚业务入库，只记录错误并创建 failed 状态任务。
+    """
+    from ops_hub.reports.departure import (
+        ReportTarget,
+        create_report_task,
+        find_report_artifact_for_release,
+        generate_departure_report,
+    )
+    from ops_hub.config import load_settings
+
+    artifact, target = find_report_artifact_for_release(
+        project_id=project_id,
+        release_batch_id=release_batch_id,
+        business_db_path=biz_path,
+    )
+
+    if artifact is None:
+        logger.info("No report_artifact configured for project=%s batch=%s", project_id, release_batch_id)
+        return
+
+    settings = load_settings()
+    output_dir = Path(settings.classified_output_dir or "") / "reports"
+    result = generate_departure_report(
+        release_batch_id=release_batch_id,
+        artifact=artifact,
+        business_db_path=biz_path,
+        rail_db_path=rail_path,
+        output_dir=output_dir,
+        inspection_files=inspection_files,
+    )
+
+    target_obj = target or ReportTarget(type="contact", name_or_id="郭东北")
+    if result.success:
+        create_report_task(
+            db_path=biz_path,
+            release_batch_id=release_batch_id,
+            project_id=project_id,
+            report_path=result.report_path,
+            wagon_count=result.wagon_count,
+            report_date=result.report_date,
+            target=target_obj,
+        )
+        logger.info(
+            "Report task created: path=%s wagons=%d target=%s",
+            result.report_path, result.wagon_count, target_obj.name_or_id,
+        )
+    else:
+        create_report_task(
+            db_path=biz_path,
+            release_batch_id=release_batch_id,
+            project_id=project_id,
+            report_path="",
+            wagon_count=committed_count,
+            report_date=datetime.now().strftime("%Y%m%d"),
+            target=target_obj,
+            status="failed",
+            error=result.error,
+        )
+        logger.error(
+            "Report generation failed for batch=%s: %s", release_batch_id, result.error,
+        )

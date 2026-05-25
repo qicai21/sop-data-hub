@@ -4,7 +4,7 @@ Date: 2026-05-25
 Repository: `qicai21/ops-data-hub`
 Branch: `codex/sop-real-sop-topology-audit-20260525`
 Order mode: incremental
-Current round: `R5`
+Current round: `R6`
 
 ## 0. Standing workflow rule
 
@@ -22,21 +22,21 @@ Every work round must:
 
 ## 1. Branch purpose
 
-This branch continues from the completed SOP Monitoring Plan Compiler branch, but the goal is different.
+This branch moves from real SOP markdown fixtures toward a first real monitoring strategy preview.
 
-The previous branch proved compiler behavior using synthetic in-test SOP dictionaries.
-
-This branch must move toward real business material:
+The desired chain is:
 
 ```text
-真实项目 SOP 文件 from qicai21/prompts_and_reports
+real SOP markdown fixtures
   ↓
-复制/固化为 ops-data-hub functional test fixtures
+load / normalize
   ↓
-用真实 SOP fixture 驱动 loader / compiler / topology 重构
+compile with SopMonitoringPlanCompiler
+  ↓
+preview WeChat group monitoring strategy list
 ```
 
-Do not create a new fictional SOP set unless a required real SOP is truly missing and must be represented by a clearly marked placeholder.
+This branch must remain small and practical. Do not over-engineer.
 
 ## 2. Target real SOP projects
 
@@ -49,25 +49,7 @@ The four target projects are:
 4. 九三大豆
 ```
 
-Important naming note:
-
-- The user mentioned both `吉林金刚` and previous project material used `吉林金钢`.
-- Hermes must not guess. It should search and report the exact names found in repository files.
-- If both names appear, record whether they refer to the same project or different labels.
-
-## 3. Source repository for real SOP files
-
-The real SOP files are expected to live in:
-
-```text
-qicai21/prompts_and_reports
-```
-
-Not primarily in `qicai21/ops-data-hub`.
-
-Do not modify `prompts_and_reports`. Treat it as a read-only source of truth.
-
-## 4. Scope boundary
+## 3. Scope boundary
 
 Main working repository:
 
@@ -102,27 +84,20 @@ DB migration
 actual WeChat/95306 integration
 ```
 
-## 5. Required reading before work
+## 4. Required reading before work
 
 Read current branch context:
 
 ```text
 orders/sop_real_sop_fixture_topology_order_20260525.md
-reports/real_sop_fixture_topology_audit_20260525.md
-reports/real_sop_fixture_topology_r2_20260525.md
-reports/real_sop_fixture_topology_r3_20260525.md
+reports/real_sop_normalizer_20260525.md
 src/ops_hub/models/project_sop.py
-tests/functional/test_real_sop_fixture_contract.py
-```
-
-Also keep compiler boundary in mind:
-
-```text
+tests/functional/test_sop_normalizer.py
 src/ops_hub/sop/monitoring_plan_compiler.py
 tests/functional/test_sop_monitoring_plan_compiler.py
 ```
 
-## 6. Git round protocol
+## 5. Git round protocol
 
 Each work round must:
 
@@ -136,140 +111,160 @@ git branch --show-current
 
 Then execute only the current round task.
 
-## 7. Previous completed rounds
+## 6. Previous completed rounds
 
-### R1: real SOP discovery and topology audit
+- R1: found real SOPs and audited topology.
+- R2: copied four real SOPs into `tests/fixtures/sops/`.
+- R3: added minimal markdown loader contract.
+- R4: audited loader boundary.
+- R5: implemented minimal `SopNormalizer` for real SOP markdown fixtures.
 
-Found four real SOPs in `qicai21/prompts_and_reports` and audited dashboard/database topology.
+## 7. Current round task: R6 real SOP monitoring plan preview
 
-### R2: real SOP fixture copy and loader contract
+### 7.1 Purpose
 
-Copied four real SOP markdown files into:
+R6 is the first end-to-end preview round.
+
+It should answer:
 
 ```text
-tests/fixtures/sops/
+If we use the four real SOP fixtures, what WeChat group monitoring strategy list can the system generate today?
 ```
 
-Added fixture contract tests.
+This is not production integration. It is a functional preview.
 
-### R3: minimal markdown loader contract
+### 7.2 Scope
 
-Added minimal markdown loader behavior. Current loader only returns raw path, title, and content. It intentionally does not parse full SOP business semantics.
-
-## 8. Current round task: R4 loader schema boundary audit
-
-### 8.1 Purpose
-
-R4 is an audit/boundary round. It exists to prevent the markdown loader from becoming a hidden business parser or a second compiler.
-
-Do not add business parsing in R4.
-
-Do not connect loader output to the compiler in R4.
-
-Do not implement monitoring plan generation in R4.
-
-### 8.2 Audit questions
-
-Write a report answering:
-
-1. What should the markdown SOP loader be responsible for?
-2. What should it explicitly not be responsible for?
-3. What fields should a near-term raw markdown loader output?
-4. What should be left to a future `SopNormalizer` or similar layer?
-5. What should remain solely the responsibility of `SopMonitoringPlanCompiler`?
-6. Does current `load_markdown_sop_fixture()` stay within loader scope?
-7. Does current `test_real_sop_fixture_contract.py` overreach or remain appropriately narrow?
-8. What is the safest next step after R4?
-
-### 8.3 Proposed responsibility boundary
-
-Loader may own:
+Use the existing pieces:
 
 ```text
-file path
-raw content
-first markdown title
-basic markdown heading list
-raw group tokens such as [GROUP001]
-raw data-source blocks if directly extractable without inference
+tests/fixtures/sops/*.md
+SopNormalizer
+SopMonitoringPlanCompiler
 ```
 
-Loader must not own:
+Add only the thin glue needed to transform normalized SOPs into the compiler input shape, then generate a preview report.
+
+### 7.3 Required implementation behavior
+
+Implement a minimal adapter if needed, limited to `ops-data-hub`, that converts normalized SOP records into `project_sops` dictionaries accepted by `SopMonitoringPlanCompiler`.
+
+The adapter may:
+
+- read normalized project SOPs;
+- convert `monitoring_entries` into `sop_nodes[].monitoring[]` shape;
+- preserve `project_id` and `project_name`;
+- use source group token as `group_id` when present;
+- use group name if available;
+- use document keywords as document watch items;
+- use message keywords as text/message watch items.
+
+The adapter must not:
+
+- call WeChat;
+- call 95306;
+- write database records;
+- start runtime daemon;
+- publish config to source agents;
+- infer hidden SOP meanings beyond what the normalizer already extracted.
+
+### 7.4 Preview output requirement
+
+Generate a markdown report:
 
 ```text
-business semantic inference
-SOP node normalization
-monitoring requirement generation
-project merging
-Wechat monitoring plan compilation
-compiler invocation
-database reads/writes
-runtime scheduling
-```
-
-Future normalizer may own:
-
-```text
-turn raw SOP markdown structure into normalized project_sops
-map headings/tables to sop_nodes
-extract explicit monitoring requirements if present
-flag missing structured fields
-produce data suitable for compiler input
-```
-
-Compiler owns:
-
-```text
-merge normalized project_sops by channel/group
-remove duplicated watch items
-preserve candidate_projects
-generate target_sop_nodes mapping
-return channel monitoring plan
-```
-
-### 8.4 Deliverable
-
-Add report:
-
-```text
-reports/real_sop_loader_boundary_audit_20260525.md
+reports/real_sop_monitoring_plan_preview_20260525.md
 ```
 
 The report must include:
 
-- loader responsibilities;
-- loader non-responsibilities;
-- proposed raw loader schema;
-- proposed normalizer responsibilities;
-- compiler responsibilities;
-- assessment of current implementation;
-- assessment of current tests;
-- recommended next order.
+1. input fixture list;
+2. normalized project count;
+3. generated WeChat group monitoring plan;
+4. for each group:
+   - group id/token;
+   - group name if available;
+   - watch items;
+   - candidate projects;
+   - target SOP node mapping or source node placeholder;
+5. limitations / warnings;
+6. whether the generated plan looks usable enough to continue.
 
-Optional GitHub audit summary:
+The monitoring list should be readable by a human, not only JSON.
+
+### 7.5 Test requirement
+
+Add a small functional test proving the chain runs:
 
 ```text
-reports/github_audit_real_sop_loader_boundary_20260525.md
+real fixtures -> normalizer -> adapter -> compiler -> wechat_monitoring_plan
 ```
 
-### 8.5 Tests
+Suggested test file:
 
-R4 is an audit-only round.
+```text
+tests/functional/test_real_sop_monitoring_plan_preview.py
+```
 
-No tests are required if no code/test files are changed.
+Test expectations should stay basic:
 
-If any code/test file is changed, run:
+- output contains `wechat_monitoring_plan`;
+- output has at least one group;
+- output has at least one watch item;
+- at least one real project appears in candidate projects;
+- no runtime/publisher/DB dependency is required.
+
+Do not over-test exact business correctness yet. The user wants to see what the current system generates.
+
+### 7.6 Allowed files
+
+Implementation should be limited to one of:
+
+```text
+src/ops_hub/models/project_sop.py
+src/ops_hub/sop/monitoring_plan_preview.py
+```
+
+Tests:
+
+```text
+tests/functional/test_real_sop_monitoring_plan_preview.py
+```
+
+Reports:
+
+```text
+reports/real_sop_monitoring_plan_preview_20260525.md
+reports/github_audit_real_sop_monitoring_plan_preview_20260525.md
+```
+
+Order update:
+
+```text
+orders/sop_real_sop_fixture_topology_order_20260525.md
+```
+
+### 7.7 Tests to run
+
+Run:
 
 ```bash
+pytest tests/functional/test_real_sop_monitoring_plan_preview.py -v
 pytest tests/functional -v
 ```
 
-### 8.6 Commit requirements
+Expected result:
+
+```text
+all functional tests pass except intentional source supervision skip
+```
+
+### 7.8 Commit requirements
 
 Commit message:
 
 ```text
-docs: audit real sop loader boundary
+feat: preview real sop monitoring plan
 ```
 
 Push to:
@@ -278,7 +273,7 @@ Push to:
 origin codex/sop-real-sop-topology-audit-20260525
 ```
 
-## 9. Hermes response format
+## 8. Hermes response format
 
 After completion, reply:
 
@@ -289,7 +284,7 @@ branch: codex/sop-real-sop-topology-audit-20260525
 commit: <commit sha>
 PR: none
 order: orders/sop_real_sop_fixture_topology_order_20260525.md
-report: reports/real_sop_loader_boundary_audit_20260525.md
+report: reports/real_sop_monitoring_plan_preview_20260525.md
 modified_files:
 - <file>
 new_files:
@@ -297,15 +292,16 @@ new_files:
 git_status: <clean or summary>
 
 tests:
-- <command or not run with reason>
+- <command -> result>
 
 summary:
-- <what was audited>
-- <what boundary was set>
+- <what plan was generated>
+- <whether it looks usable>
+- <key limitations>
 - <next recommended order/update>
 ```
 
-## 10. Forbidden actions
+## 9. Forbidden actions
 
 Do not:
 
@@ -315,142 +311,19 @@ Do not:
 - implement runtime/publisher/source supervision;
 - modify database schema;
 - alter production/server deployment;
-- connect loader to compiler;
-- generate monitoring plans from markdown;
-- add business semantic parsing to loader;
-- invent fictional SOP content;
+- call external services;
+- use OCR or AI extraction;
+- over-test exact final business correctness;
 - merge this branch.
 
-## 11. Current round task: R5 minimal SopNormalizer
+## 10. Next planned order update
 
-### 11.1 Purpose
-
-R5 is a minimal normalization round. It exists to turn real markdown SOP fixtures into normalized `project_sops` without adding AI inference, OCR, runtime coupling, compiler coupling, WeChat integration, database access, or publisher behavior.
-
-### 11.2 Scope
-
-Read only the real SOP markdown fixtures and normalize them into raw project SOP records by extracting:
-
-- `project_id`
-- group token such as `GROUP001`
-- document/message keywords
-- monitoring entries
-
-Do not add business semantic reasoning in R5.
-Do not call the compiler in R5.
-Do not touch runtime / publisher / wx-ops-agent / rail95306-sync in R5.
-Do not read or write databases in R5.
-
-### 11.3 Expected boundary
-
-The minimal normalizer may own:
+After R6 is reviewed, decide whether to:
 
 ```text
-read markdown fixture
-extract project_id / project_name
-extract raw group tokens
-extract document keywords
-extract message keywords
-extract monitoring entries
-return normalized project_sops
+A. accept the generated monitoring plan shape and clean it up;
+B. adjust normalizer extraction rules lightly;
+C. pause and review fixture SOP content manually.
 ```
 
-The minimal normalizer must not own:
-
-```text
-AI understanding
-OCR
-runtime scheduling
-compiler invocation
-WeChat sending or receiving
-DB reads or writes
-publisher behavior
-```
-
-### 11.4 Deliverable
-
-Add report:
-
-```text
-reports/real_sop_normalizer_20260525.md
-```
-
-Optional GitHub audit summary:
-
-```text
-reports/github_audit_real_sop_normalizer_20260525.md
-```
-
-The report must include:
-
-- normalized loader responsibilities;
-- non-responsibilities;
-- proposed normalized project_sops shape;
-- assessment of current implementation;
-- assessment of current tests;
-- recommended next order.
-
-### 11.5 Tests
-
-If any code/test file is changed, run:
-
-```bash
-pytest tests/functional -v
-```
-
-### 11.6 Commit requirements
-
-Commit message:
-
-```text
-docs: add minimal sop normalizer
-```
-
-Push to:
-
-```text
-origin codex/sop-real-sop-topology-audit-20260525
-```
-
-## 12. Hermes response format
-
-After completion, reply:
-
-```text
-Execution Result
-
-branch: codex/sop-real-sop-topology-audit-20260525
-commit: <commit sha>
-PR: none
-order: orders/sop_real_sop_fixture_topology_order_20260525.md
-report: reports/real_sop_normalizer_20260525.md
-modified_files:
-- <file>
-new_files:
-- <file>
-git_status: <clean or summary>
-
-tests:
-- <command or not run with reason>
-
-summary:
-- <what was normalized>
-- <what boundary was set>
-- <next recommended order/update>
-```
-
-## 13. Forbidden actions
-
-Do not:
-
-- modify `prompts_and_reports`;
-- modify `wx-ops-agent`;
-- modify `rail95306-sync`;
-- implement runtime/publisher/source supervision;
-- modify database schema;
-- alter production/server deployment;
-- connect loader to compiler;
-- generate monitoring plans from markdown;
-- add business semantic parsing to loader;
-- invent fictional SOP content;
-- merge this branch.
+Do not proceed automatically.

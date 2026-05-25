@@ -4,7 +4,7 @@ Date: 2026-05-25
 Repository: `qicai21/ops-data-hub`
 Branch: `codex/sop-real-sop-topology-audit-20260525`
 Order mode: incremental
-Current round: `R7`
+Current round: `R8`
 
 ## 0. Standing workflow rule
 
@@ -20,36 +20,46 @@ Every work round must:
 4. commit and push;
 5. reply with the required Execution Result format.
 
-## 1. Branch purpose
+## 1. Five-round goal from R8 to R12
 
-This branch moves from real SOP markdown fixtures toward a first real monitoring strategy preview.
+The next five rounds should move SOP Data Hub toward supervising `wx-ops-agent` for ordinary freight projects.
 
-The desired chain is:
-
-```text
-real SOP markdown fixtures
-  ↓
-load / normalize
-  ↓
-compile with SopMonitoringPlanCompiler
-  ↓
-preview WeChat group monitoring strategy list
-```
-
-This branch must remain small and practical. Do not over-engineer.
-
-## 2. Target real SOP projects
-
-The four target projects are:
+Primary scope for these five rounds:
 
 ```text
-1. 中唐特钢
-2. 朝阳钢铁
-3. 吉林金钢 / 吉林金刚
-4. 九三大豆
+普通货运看板主线：
+- 中唐特钢
+- 朝阳钢铁
+- 吉林金钢 / 吉林金刚
 ```
 
-## 3. Scope boundary
+九三大豆 is intentionally not the current optimization target. Keep its fixture and tests, but do not let 九三 drive the ordinary freight workflow design in R8-R12.
+
+By the end of R12, the branch should define and test the core lifecycle:
+
+```text
+wx-ops-agent observed message
+  ↓
+SOP Data Hub receives message event
+  ↓
+raw image/json/text asset registered
+  ↓
+monitoring plan match
+  ↓
+project/node candidate produced
+  ↓
+workflow task created
+  ↓
+report template/recipient resolved
+  ↓
+delivery result recorded
+  ↓
+mismatch/failure falls into todo queue
+```
+
+R8 only starts this sequence. Do not implement later rounds early.
+
+## 2. Scope boundary
 
 Main working repository:
 
@@ -68,7 +78,7 @@ production/server deployment
 prompts_and_reports
 ```
 
-Do not implement:
+Do not implement in R8:
 
 ```text
 runtime daemon
@@ -76,15 +86,18 @@ source publisher
 real cross-module supervision
 DB migration
 actual WeChat/95306 integration
+report sending
+asset file copy/move
 ```
 
-## 4. Required reading before work
+## 3. Required reading before work
 
 Read current branch context:
 
 ```text
 orders/sop_real_sop_fixture_topology_order_20260525.md
 reports/real_sop_monitoring_plan_preview_20260525.md
+reports/real_sop_monitoring_plan_acceptance_20260525.md
 src/ops_hub/models/project_sop.py
 src/ops_hub/sop/monitoring_plan_preview.py
 src/ops_hub/sop/monitoring_plan_compiler.py
@@ -92,7 +105,7 @@ tests/functional/test_real_sop_monitoring_plan_preview.py
 tests/functional/test_sop_normalizer.py
 ```
 
-## 5. Git round protocol
+## 4. Git round protocol
 
 Each work round must:
 
@@ -106,7 +119,7 @@ git branch --show-current
 
 Then execute only the current round task.
 
-## 6. Previous completed rounds
+## 5. Previous completed rounds
 
 - R1: found real SOPs and audited topology.
 - R2: copied four real SOPs into `tests/fixtures/sops/`.
@@ -114,94 +127,202 @@ Then execute only the current round task.
 - R4: audited loader boundary.
 - R5: implemented minimal `SopNormalizer` for real SOP markdown fixtures.
 - R6: generated first real SOP monitoring plan preview from the four fixtures.
+- R7: accepted R6 plan as SOP-faithful baseline.
 
-## 7. Current round task: R7 accept generated preview as SOP-faithful baseline
+## 6. Current round task: R8 message lifecycle event and monitoring plan matcher
 
-### 7.1 Purpose
+### 6.1 Purpose
 
-R7 is an acceptance/documentation round.
+R8 should verify that the generated monitoring plan is usable for message-level supervision.
 
-The user reviewed the R6 monitoring plan and accepted the principle:
-
-```text
-SOP 写了什么，系统就解析什么；
-SOP 没写清楚的，不要替它脑补。
-```
-
-Therefore, R7 should freeze the current preview as a SOP-faithful baseline rather than trying to make vague SOP content more specific.
-
-### 7.2 Important acceptance principle
-
-Do not narrow broad items unless the SOP itself becomes more specific.
-
-Example:
+It should answer:
 
 ```text
-GROUP013 / 数据单发群 -> 文字
+Given a simulated wx-ops-agent message event, can SOP Data Hub match it against the generated monitoring plan and produce candidate projects/nodes?
 ```
 
-This may look broad, but if the current 九三 SOP only exposes that level of detail, the system should preserve it rather than inventing:
+This is still a pure functional simulation. No real WeChat, no runtime daemon, no database writes.
+
+### 6.2 Ordinary freight scope only
+
+R8 should focus on ordinary freight projects:
 
 ```text
-到站消息
-铁路消息
-发运动态
+zhongtang_special_steel
+chaoyang_steel
+jilin_jingang_jinzhou
 ```
 
-unless those exact meanings are explicitly represented in the SOP / normalized input.
+九三 can remain in fixtures and existing tests, but R8 matcher tests should not depend on 九三.
 
-### 7.3 Scope
+### 6.3 Required concepts
 
-This round should not change normalizer or compiler behavior.
+Add minimal data concepts if useful:
 
-Add a short acceptance note/report that records:
+```text
+MessageEvent
+- message_id
+- channel
+- group_id
+- message_type
+- text
+- image_path
+- json_path
+- received_at
 
-1. R6 generated plan is accepted as a SOP-faithful baseline;
-2. broad entries are acceptable when broadness comes from the SOP text;
-3. the system should not infer missing business detail;
-4. future specificity should come from editing SOP documents, not hidden parser logic;
-5. current output is preview-only and not runtime integration.
+MonitoringMatch
+- group_id
+- watch_item
+- candidate_projects
+- target_sop_nodes
+- reason
+```
 
-### 7.4 Deliverable
+Keep these as simple dataclasses or dictionaries. Do not introduce database models.
+
+### 6.4 Required behavior
+
+Use the existing preview chain:
+
+```text
+real SOP fixtures
+  ↓
+SopNormalizer / monitoring plan preview adapter
+  ↓
+SopMonitoringPlanCompiler
+  ↓
+wechat_monitoring_plan
+```
+
+Then implement a thin matcher that can match simulated message events.
+
+Basic matching rules for R8:
+
+1. Match by `group_id` first.
+2. For document/image-style messages, match if text or extracted label contains a `document_type` watch item.
+3. For text messages, match if text contains a `message_type` or one of `text_patterns`.
+4. Return candidate projects and target SOP node mapping from the compiled plan.
+5. If nothing matches, return no match and a reason.
+
+### 6.5 Example scenarios to test
+
+At minimum, add functional tests for:
+
+#### Scenario A: GROUP001 出港计划通知单
+
+Input:
+
+```text
+group_id: GROUP001
+message_type: image
+text: 出港计划通知单
+```
+
+Expected:
+
+- matched watch item: `出港计划通知单`
+- candidate projects include:
+  - `zhongtang_special_steel`
+  - `chaoyang_steel`
+  - `jilin_jingang_jinzhou`
+
+#### Scenario B: GROUP001 检装车通知单
+
+Input:
+
+```text
+group_id: GROUP001
+message_type: image
+text: 检装车通知单
+```
+
+Expected:
+
+- matched watch item: `检装车通知单`
+- candidate projects include:
+  - `zhongtang_special_steel`
+  - `chaoyang_steel`
+- candidate projects should not include `jilin_jingang_jinzhou` unless current SOP explicitly produced that watch item.
+
+#### Scenario C: unknown group or unmatched text
+
+Input:
+
+```text
+group_id: GROUP999
+text: 出港计划通知单
+```
+
+Expected:
+
+- no match
+- clear reason
+
+### 6.6 Allowed files
+
+Implementation should be limited to:
+
+```text
+src/ops_hub/sop/monitoring_plan_matcher.py
+src/ops_hub/sop/monitoring_plan_preview.py
+```
+
+Tests:
+
+```text
+tests/functional/test_monitoring_plan_matcher.py
+```
+
+Reports:
+
+```text
+reports/message_lifecycle_matcher_r8_20260525.md
+reports/github_audit_message_lifecycle_matcher_r8_20260525.md
+```
+
+Order update:
+
+```text
+orders/sop_real_sop_fixture_topology_order_20260525.md
+```
+
+### 6.7 Tests to run
+
+Run:
+
+```bash
+pytest tests/functional/test_monitoring_plan_matcher.py -v
+pytest tests/functional -v
+```
+
+Expected result:
+
+```text
+all functional tests pass except intentional source supervision skip
+```
+
+### 6.8 Report requirement
 
 Add report:
 
 ```text
-reports/real_sop_monitoring_plan_acceptance_20260525.md
+reports/message_lifecycle_matcher_r8_20260525.md
 ```
 
 The report must include:
 
-- accepted baseline plan reference;
-- acceptance principle;
-- examples of accepted broad entries;
-- explicit non-goals;
-- recommended next step.
+- what was implemented;
+- the three tested message scenarios;
+- generated matches;
+- explicit note that no real wx-ops-agent, DB, runtime, asset movement, OCR, or report sending was added;
+- next planned round R9: raw asset bundle registration protocol.
 
-Optional GitHub audit summary:
-
-```text
-reports/github_audit_real_sop_monitoring_plan_acceptance_20260525.md
-```
-
-### 7.5 Tests
-
-R7 is documentation-only.
-
-No tests are required if no code/test files are changed.
-
-If any code/test file changes, run:
-
-```bash
-pytest tests/functional -v
-```
-
-### 7.6 Commit requirements
+### 6.9 Commit requirements
 
 Commit message:
 
 ```text
-docs: accept real sop monitoring plan baseline
+feat: add monitoring plan message matcher
 ```
 
 Push to:
@@ -210,7 +331,7 @@ Push to:
 origin codex/sop-real-sop-topology-audit-20260525
 ```
 
-## 8. Hermes response format
+## 7. Hermes response format
 
 After completion, reply:
 
@@ -221,7 +342,7 @@ branch: codex/sop-real-sop-topology-audit-20260525
 commit: <commit sha>
 PR: none
 order: orders/sop_real_sop_fixture_topology_order_20260525.md
-report: reports/real_sop_monitoring_plan_acceptance_20260525.md
+report: reports/message_lifecycle_matcher_r8_20260525.md
 modified_files:
 - <file>
 new_files:
@@ -229,15 +350,16 @@ new_files:
 git_status: <clean or summary>
 
 tests:
-- <command or not run with reason>
+- <command -> result>
 
 summary:
-- <what baseline was accepted>
-- <what was not changed>
+- <what matching behavior was implemented>
+- <ordinary freight scenarios covered>
+- <what was not implemented>
 - <next recommended order/update>
 ```
 
-## 9. Forbidden actions
+## 8. Forbidden actions
 
 Do not:
 
@@ -249,18 +371,25 @@ Do not:
 - alter production/server deployment;
 - call external services;
 - use OCR or AI extraction;
-- narrow broad entries by inference;
-- change normalizer/compiler behavior;
+- move/copy raw assets;
+- send reports;
+- over-test exact final business correctness;
 - merge this branch.
 
-## 10. Next planned order update
+## 9. R9 preview
 
-After R7 is reviewed, likely next options are:
+Do not implement R9 in this round.
+
+R9 should define and test a raw asset bundle registration protocol:
 
 ```text
-A. stop this branch and prepare merge/PR review;
-B. add a small CLI/report command to regenerate the preview;
-C. edit SOP source documents in prompts_and_reports if more specificity is desired.
+MessageEvent
+  ↓
+RawAssetBundle
+  - original image path
+  - OCR/json path
+  - message metadata json path
+  - source group/message id
 ```
 
-Do not proceed automatically.
+R9 should still be local and functional-test based, not production runtime.

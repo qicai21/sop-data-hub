@@ -4,7 +4,7 @@ Date: 2026-05-25
 Repository: `qicai21/ops-data-hub`
 Branch: `codex/sop-data-hub-runtime-plan-20260525`
 Order mode: incremental
-Current round: `R2`
+Current round: `R3`
 
 ## 0. Standing workflow rule
 
@@ -46,21 +46,6 @@ SOP Monitoring Plan Compiler
 
 It must compile project-level SOP monitoring requirements into channel-level monitoring plans.
 
-Example:
-
-```text
-Project SOPs:
-  中唐特钢 -> group_1 watches 出港计划通知单 / 检装车通知单
-  朝阳钢铁 -> group_1 watches 出港计划通知单 / 检装车通知单; group_3 watches 出港计划通知单 / 文字放货消息
-  九三 -> group_2 watches 到站消息
-
-Compiled output:
-  group_1 watches 出港计划通知单 once, with candidate projects 中唐+朝阳
-  group_1 watches 检装车通知单 once, with candidate projects 中唐+朝阳
-  group_2 watches 到站消息, with candidate project 九三
-  group_3 watches 出港计划通知单 and 文字放货消息, with candidate project 朝阳
-```
-
 ## 3. Required reading before work
 
 Hermes must read these files before each work round in this branch:
@@ -72,7 +57,7 @@ tests/functional/test_sop_monitoring_plan_compiler.py
 tests/functional/test_sop_data_hub_source_supervision.py
 src/ops_hub/sop/monitoring_plan_compiler.py
 orders/sop_data_hub_runtime_order_20260525.md
-reports/test_hygiene_fix_20260525.md
+reports/sop_monitoring_plan_compiler_implementation_20260525.md
 ```
 
 ## 4. Git round protocol
@@ -145,137 +130,108 @@ Do not report completion based only on chat. Completion must be proven by git co
 
 ## 6. Current round task
 
-### R2: implement `SopMonitoringPlanCompiler.compile()`
+### R3: add near-scope basic compiler tests only
 
-R1-2 has been reviewed through GitHub and accepted. The compiler import contract now passes, and the remaining expected failure is `NotImplementedError` from `SopMonitoringPlanCompiler.compile()`.
+R2 has been reviewed through GitHub and accepted. `SopMonitoringPlanCompiler.compile()` now satisfies the main functional test.
 
-This round implements the minimal compiler needed to satisfy:
+This round should only add a few close-range/basic tests for the existing compiler behavior. Do not expand into source publisher, runtime daemon, cross-repo integration, adapter contracts, or monitoring of `wx-ops-agent` / `rail95306-sync`.
+
+The goal is to protect the basic compiler behavior without making tests increasingly distant from the current feature.
+
+#### 6.1 File to modify
+
+Only modify:
 
 ```text
 tests/functional/test_sop_monitoring_plan_compiler.py
 ```
 
-#### 6.1 Implementation file
-
-Only implement in:
+If implementation changes are truly required to satisfy these tests, keep them minimal and limited to:
 
 ```text
 src/ops_hub/sop/monitoring_plan_compiler.py
 ```
 
-Do not change `wx-ops-agent`, `rail95306-sync`, database schema, runtime daemon, or production/server deployment.
+Do not add new modules.
 
-#### 6.2 Required behavior
+#### 6.2 Required basic tests
 
-`SopMonitoringPlanCompiler.compile(project_sops)` must:
+Add tests for these close-range cases:
 
-1. accept a list of project SOP dictionaries;
-2. read each `project_id`;
-3. iterate each `sop_nodes[]` item;
-4. iterate each node's `monitoring[]` requirements;
-5. group WeChat requirements into:
+1. Empty input returns empty WeChat plan.
 
-```text
-wechat_monitoring_plan[group_id]
-```
-
-6. preserve `group_name` when provided;
-7. deduplicate identical watch items within the same group;
-8. preserve all `candidate_projects` for each watch item;
-9. preserve `target_sop_nodes` mapping from project id to node ids;
-10. preserve `text_patterns` for text watch items;
-11. return deterministic output suitable for tests and future source-agent plans.
-
-#### 6.3 Watch item identity
-
-A watch item should be considered identical within the same group when the following semantic fields match:
-
-```text
-input_type
-document_type
-message_type
-```
-
-For this round, this identity is enough.
-
-Examples:
-
-- `document + 出港计划通知单` in `group_1` for 中唐 and 朝阳 must become one watch item with two candidate projects.
-- `document + 检装车通知单` in `group_1` for 中唐 and 朝阳 must become one watch item with two candidate projects.
-- `text + 文字放货消息` in `group_3` must preserve its text patterns.
-
-#### 6.4 Deterministic ordering
-
-The compiler should keep deterministic order.
-
-Recommended rule:
-
-- groups appear in first-seen order;
-- watch items appear in first-seen order;
-- candidate projects appear in first-seen order;
-- target SOP node lists appear in first-seen order;
-- text patterns preserve first-seen order and should not duplicate values.
-
-Do not sort Chinese strings unless necessary.
-
-#### 6.5 Output shape
-
-The functional test expects this top-level structure:
+Expected:
 
 ```python
-{
-    "wechat_monitoring_plan": {
-        "group_1": {
-            "group_name": "微信1号群",
-            "watch_items": [
-                {
-                    "input_type": "document",
-                    "document_type": "出港计划通知单",
-                    "candidate_projects": ["zhongtang_special_steel", "chaoyang_steel"],
-                    "target_sop_nodes": {
-                        "zhongtang_special_steel": ["departure_plan_notice"],
-                        "chaoyang_steel": ["departure_plan_notice"],
-                    },
-                }
-            ],
-        }
-    }
-}
+SopMonitoringPlanCompiler().compile([]) == {"wechat_monitoring_plan": {}}
 ```
 
-For text watch items, preserve:
+2. Non-WeChat monitoring requirements are skipped.
+
+Example input may include `channel: email` or `channel: rail95306`.
+
+Expected:
 
 ```python
-"message_type": "文字放货消息"
-"text_patterns": ["放货", "发运", "到港", "卸船"]
+{"wechat_monitoring_plan": {}}
 ```
 
-#### 6.6 Input validation policy for this round
+3. WeChat monitoring requirements without `group_id` are skipped.
 
-Keep validation minimal.
+Expected:
 
-- If `project_sops` is empty, return `{"wechat_monitoring_plan": {}}`.
-- If a project lacks `sop_nodes`, skip it.
-- If a node lacks `monitoring`, skip it.
-- If a monitoring requirement uses a non-`wechat` channel, ignore it for now.
-- If a WeChat requirement lacks `group_id`, skip it for now.
+```python
+{"wechat_monitoring_plan": {}}
+```
 
-Do not introduce pydantic, database dependencies, or external service dependencies in this round.
+4. Duplicate text patterns are deduplicated while preserving first-seen order.
 
-#### 6.7 Report requirement
+Example:
+
+```python
+text_patterns: ["放货", "发运", "放货", "到港"]
+```
+
+Expected:
+
+```python
+["放货", "发运", "到港"]
+```
+
+5. Duplicate target SOP node ids are not repeated for the same project/watch item.
+
+If the same project and node repeats the same WeChat document requirement, the output should keep only one node id in:
+
+```python
+target_sop_nodes[project_id]
+```
+
+#### 6.3 Keep tests close to compiler scope
+
+Do not add tests for:
+
+- publishing plans to `wx-ops-agent`;
+- reading from `rail95306-sync`;
+- runtime daemon cycles;
+- database reads/writes;
+- report generation;
+- dashboard refresh;
+- real WeChat group IDs;
+- external services.
+
+#### 6.4 Report requirement
 
 Add report:
 
 ```text
-reports/sop_monitoring_plan_compiler_implementation_20260525.md
+reports/sop_monitoring_plan_compiler_basic_tests_20260525.md
 ```
 
 Report must include:
 
 - files changed;
-- implementation summary;
-- output shape summary;
-- validation/skipping policy;
+- tests added;
+- whether implementation changed;
 - test commands and results;
 - confirmation that no cross-module code was touched;
 - next recommended order update.
@@ -290,12 +246,12 @@ pytest tests/functional/test_sop_data_hub_source_supervision.py -v
 pytest tests/functional -v
 ```
 
-Expected result after R2:
+Expected result after R3:
 
 ```text
-tests/functional/test_sop_monitoring_plan_compiler.py -> 2 passed
+tests/functional/test_sop_monitoring_plan_compiler.py -> all compiler tests passed
 tests/functional/test_sop_data_hub_source_supervision.py -> 1 skipped
-tests/functional -> 2 passed, 1 skipped
+tests/functional -> all passed except the intentional source-supervision skip
 ```
 
 ## 8. Commit requirements
@@ -303,7 +259,7 @@ tests/functional -> 2 passed, 1 skipped
 Commit message should be:
 
 ```text
-feat: implement sop monitoring plan compiler
+test: add basic sop monitoring compiler coverage
 ```
 
 Push to:
@@ -323,22 +279,19 @@ Do not:
 - delete reconciler logic;
 - rename repository;
 - modify runtime daemon behavior;
-- hard-code test expected output;
-- implement source supervision adapters in this round;
-- add network/service dependencies.
+- implement source supervision adapters;
+- implement source plan publisher;
+- add network/service dependencies;
+- add broad architectural tests beyond the compiler's basic behavior.
 
 ## 10. Next planned order update
 
-After R2 is complete and reviewed through GitHub, the next order update should be one of:
+After R3 is complete and reviewed through GitHub, pause for review.
+
+Do not automatically proceed to publisher/runtime work.
+
+Possible next step, only after explicit approval:
 
 ```text
-R3-A: add compiler edge-case tests for duplicate text patterns and non-WeChat skipping.
+R4: decide whether to add a source-plan export contract or stop this branch for merge review.
 ```
-
-or
-
-```text
-R3-B: design source monitoring plan publisher contract for wx-ops-agent without modifying wx-ops-agent.
-```
-
-Choose only after GitHub review of R2.

@@ -4,7 +4,7 @@ Date: 2026-05-25
 Repository: `qicai21/ops-data-hub`
 Branch: `codex/sop-real-sop-topology-audit-20260525`
 Order mode: incremental
-Current round: `R4`
+Current round: `R5`
 
 ## 0. Standing workflow rule
 
@@ -321,12 +321,136 @@ Do not:
 - invent fictional SOP content;
 - merge this branch.
 
-## 11. Next planned order update
+## 11. Current round task: R5 minimal SopNormalizer
 
-After R4 is reviewed through GitHub, possible next step:
+### 11.1 Purpose
+
+R5 is a minimal normalization round. It exists to turn real markdown SOP fixtures into normalized `project_sops` without adding AI inference, OCR, runtime coupling, compiler coupling, WeChat integration, database access, or publisher behavior.
+
+### 11.2 Scope
+
+Read only the real SOP markdown fixtures and normalize them into raw project SOP records by extracting:
+
+- `project_id`
+- group token such as `GROUP001`
+- document/message keywords
+- monitoring entries
+
+Do not add business semantic reasoning in R5.
+Do not call the compiler in R5.
+Do not touch runtime / publisher / wx-ops-agent / rail95306-sync in R5.
+Do not read or write databases in R5.
+
+### 11.3 Expected boundary
+
+The minimal normalizer may own:
 
 ```text
-R5: Add a very small raw heading/group-token extraction test if the boundary report approves it.
+read markdown fixture
+extract project_id / project_name
+extract raw group tokens
+extract document keywords
+extract message keywords
+extract monitoring entries
+return normalized project_sops
 ```
 
-Do not proceed without review.
+The minimal normalizer must not own:
+
+```text
+AI understanding
+OCR
+runtime scheduling
+compiler invocation
+WeChat sending or receiving
+DB reads or writes
+publisher behavior
+```
+
+### 11.4 Deliverable
+
+Add report:
+
+```text
+reports/real_sop_normalizer_20260525.md
+```
+
+Optional GitHub audit summary:
+
+```text
+reports/github_audit_real_sop_normalizer_20260525.md
+```
+
+The report must include:
+
+- normalized loader responsibilities;
+- non-responsibilities;
+- proposed normalized project_sops shape;
+- assessment of current implementation;
+- assessment of current tests;
+- recommended next order.
+
+### 11.5 Tests
+
+If any code/test file is changed, run:
+
+```bash
+pytest tests/functional -v
+```
+
+### 11.6 Commit requirements
+
+Commit message:
+
+```text
+docs: add minimal sop normalizer
+```
+
+Push to:
+
+```text
+origin codex/sop-real-sop-topology-audit-20260525
+```
+
+## 12. Hermes response format
+
+After completion, reply:
+
+```text
+Execution Result
+
+branch: codex/sop-real-sop-topology-audit-20260525
+commit: <commit sha>
+PR: none
+order: orders/sop_real_sop_fixture_topology_order_20260525.md
+report: reports/real_sop_normalizer_20260525.md
+modified_files:
+- <file>
+new_files:
+- <file>
+git_status: <clean or summary>
+
+tests:
+- <command or not run with reason>
+
+summary:
+- <what was normalized>
+- <what boundary was set>
+- <next recommended order/update>
+```
+
+## 13. Forbidden actions
+
+Do not:
+
+- modify `prompts_and_reports`;
+- modify `wx-ops-agent`;
+- modify `rail95306-sync`;
+- implement runtime/publisher/source supervision;
+- modify database schema;
+- alter production/server deployment;
+- connect loader to compiler;
+- generate monitoring plans from markdown;
+- add business semantic parsing to loader;
+- invent fictional SOP content;
+- merge this branch.

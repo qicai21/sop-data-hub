@@ -4,7 +4,7 @@ Date: 2026-05-25
 Repository: `qicai21/ops-data-hub`
 Branch: `codex/sop-real-sop-topology-audit-20260525`
 Order mode: incremental
-Current round: `R1`
+Current round: `R2`
 
 ## 0. Standing workflow rule
 
@@ -365,3 +365,25 @@ R2: copy confirmed real SOP files from prompts_and_reports into tests/fixtures/s
 ```
 
 Only proceed after review.
+
+## 14. Current round task: R2 real SOP fixture copy and loader contract
+
+### 14.1 Scope
+
+- Copy the confirmed real SOP markdown files from `qicai21/prompts_and_reports` into `tests/fixtures/sops/`.
+- Preserve the source SOP content exactly; do not invent or rewrite SOP text.
+- Add a loader contract test that validates the copied fixtures still expose the expected SOP contract fields as markdown source material.
+
+### 14.2 Required tests
+
+If any test file changes, run:
+
+```bash
+pytest tests/functional -v
+```
+
+### 14.3 Forbidden in R2
+
+- modifying `prompts_and_reports`
+- modifying runtime / publisher / wx-ops-agent / rail95306-sync
+- expanding into database schema or production deployment

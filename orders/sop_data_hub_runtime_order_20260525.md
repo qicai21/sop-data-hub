@@ -4,7 +4,7 @@ Date: 2026-05-25
 Repository: `qicai21/ops-data-hub`
 Branch: `codex/sop-data-hub-runtime-plan-20260525`
 Order mode: incremental
-Current round: `R1-2`
+Current round: `R2`
 
 ## 0. Standing workflow rule
 
@@ -72,6 +72,7 @@ tests/functional/test_sop_monitoring_plan_compiler.py
 tests/functional/test_sop_data_hub_source_supervision.py
 src/ops_hub/sop/monitoring_plan_compiler.py
 orders/sop_data_hub_runtime_order_20260525.md
+reports/test_hygiene_fix_20260525.md
 ```
 
 ## 4. Git round protocol
@@ -144,110 +145,139 @@ Do not report completion based only on chat. Completion must be proven by git co
 
 ## 6. Current round task
 
-### R1-2: correct R1-1 bootstrap artifacts and test hygiene
+### R2: implement `SopMonitoringPlanCompiler.compile()`
 
-R1-1 has already completed the initial local bootstrap and produced two report files. This round fixes issues discovered after reviewing R1-1.
+R1-2 has been reviewed through GitHub and accepted. The compiler import contract now passes, and the remaining expected failure is `NotImplementedError` from `SopMonitoringPlanCompiler.compile()`.
 
-Current task only fixes path/report/test hygiene. Do not implement business logic.
-
-#### 6.1 Pull the latest branch first
-
-The remote branch already contains this updated order. Start with:
-
-```bash
-cd ~/projects/repos/sop-data-hub
-git fetch origin
-git pull --ff-only origin codex/sop-data-hub-runtime-plan-20260525
-```
-
-If the local clone currently exists only at the old path:
-
-```text
-~/projects/sop-data-hub-test/ops-data-hub
-```
-
-then create or move to the correct local working path:
-
-```text
-~/projects/repos/sop-data-hub
-```
-
-Do not keep using the old path for this branch.
-
-#### 6.2 Correct local path references in R1-1 reports
-
-Correct path:
-
-```text
-~/projects/repos/sop-data-hub
-```
-
-Old incorrect path:
-
-```text
-~/projects/sop-data-hub-test/ops-data-hub
-```
-
-Update any old-path references in:
-
-```text
-reports/local_sop_data_hub_branch_bootstrap_20260525.md
-reports/github_audit_local_sop_data_hub_branch_bootstrap_20260525.md
-```
-
-If these reports are not yet committed to this branch, add them now with corrected path content.
-
-#### 6.3 Fix XPASS in compiler functional test
-
-File:
+This round implements the minimal compiler needed to satisfy:
 
 ```text
 tests/functional/test_sop_monitoring_plan_compiler.py
 ```
 
-Problem discovered in R1-1:
+#### 6.1 Implementation file
+
+Only implement in:
 
 ```text
-pytest tests/functional/test_sop_monitoring_plan_compiler.py -v -> 1 failed, 1 xpassed
+src/ops_hub/sop/monitoring_plan_compiler.py
 ```
 
-Root cause:
+Do not change `wx-ops-agent`, `rail95306-sync`, database schema, runtime daemon, or production/server deployment.
 
-`test_sop_monitoring_plan_compiler_import_contract_exists()` is marked `xfail`, but `SopMonitoringPlanCompiler` already exists.
+#### 6.2 Required behavior
 
-Required change:
+`SopMonitoringPlanCompiler.compile(project_sops)` must:
 
-- remove `@pytest.mark.xfail` from this import contract test;
-- keep the assertion that `SopMonitoringPlanCompiler is not None`;
-- do not implement `compile()`.
-
-Expected test state after this round:
+1. accept a list of project SOP dictionaries;
+2. read each `project_id`;
+3. iterate each `sop_nodes[]` item;
+4. iterate each node's `monitoring[]` requirements;
+5. group WeChat requirements into:
 
 ```text
-tests/functional/test_sop_monitoring_plan_compiler.py -> 1 failed, 1 passed
-tests/functional/test_sop_data_hub_source_supervision.py -> 1 skipped
-tests/functional -> 1 failed, 1 passed, 1 skipped
+wechat_monitoring_plan[group_id]
 ```
 
-The remaining failure must be `NotImplementedError` from `SopMonitoringPlanCompiler.compile()`.
+6. preserve `group_name` when provided;
+7. deduplicate identical watch items within the same group;
+8. preserve all `candidate_projects` for each watch item;
+9. preserve `target_sop_nodes` mapping from project id to node ids;
+10. preserve `text_patterns` for text watch items;
+11. return deterministic output suitable for tests and future source-agent plans.
 
-#### 6.4 Add R1-2 report
+#### 6.3 Watch item identity
 
-Add a report:
+A watch item should be considered identical within the same group when the following semantic fields match:
 
 ```text
-reports/test_hygiene_fix_20260525.md
+input_type
+document_type
+message_type
 ```
 
-The report must include:
+For this round, this identity is enough.
 
-- acknowledgement that R1-1 bootstrap was completed;
-- local path correction;
-- whether R1-1 report files were newly added or updated;
-- test XPASS root cause;
+Examples:
+
+- `document + 出港计划通知单` in `group_1` for 中唐 and 朝阳 must become one watch item with two candidate projects.
+- `document + 检装车通知单` in `group_1` for 中唐 and 朝阳 must become one watch item with two candidate projects.
+- `text + 文字放货消息` in `group_3` must preserve its text patterns.
+
+#### 6.4 Deterministic ordering
+
+The compiler should keep deterministic order.
+
+Recommended rule:
+
+- groups appear in first-seen order;
+- watch items appear in first-seen order;
+- candidate projects appear in first-seen order;
+- target SOP node lists appear in first-seen order;
+- text patterns preserve first-seen order and should not duplicate values.
+
+Do not sort Chinese strings unless necessary.
+
+#### 6.5 Output shape
+
+The functional test expects this top-level structure:
+
+```python
+{
+    "wechat_monitoring_plan": {
+        "group_1": {
+            "group_name": "微信1号群",
+            "watch_items": [
+                {
+                    "input_type": "document",
+                    "document_type": "出港计划通知单",
+                    "candidate_projects": ["zhongtang_special_steel", "chaoyang_steel"],
+                    "target_sop_nodes": {
+                        "zhongtang_special_steel": ["departure_plan_notice"],
+                        "chaoyang_steel": ["departure_plan_notice"],
+                    },
+                }
+            ],
+        }
+    }
+}
+```
+
+For text watch items, preserve:
+
+```python
+"message_type": "文字放货消息"
+"text_patterns": ["放货", "发运", "到港", "卸船"]
+```
+
+#### 6.6 Input validation policy for this round
+
+Keep validation minimal.
+
+- If `project_sops` is empty, return `{"wechat_monitoring_plan": {}}`.
+- If a project lacks `sop_nodes`, skip it.
+- If a node lacks `monitoring`, skip it.
+- If a monitoring requirement uses a non-`wechat` channel, ignore it for now.
+- If a WeChat requirement lacks `group_id`, skip it for now.
+
+Do not introduce pydantic, database dependencies, or external service dependencies in this round.
+
+#### 6.7 Report requirement
+
+Add report:
+
+```text
+reports/sop_monitoring_plan_compiler_implementation_20260525.md
+```
+
+Report must include:
+
 - files changed;
+- implementation summary;
+- output shape summary;
+- validation/skipping policy;
 - test commands and results;
-- confirmation that `compile()` was not implemented;
+- confirmation that no cross-module code was touched;
 - next recommended order update.
 
 ## 7. Required tests for current round
@@ -260,14 +290,20 @@ pytest tests/functional/test_sop_data_hub_source_supervision.py -v
 pytest tests/functional -v
 ```
 
-Do not try to make the compiler functional test pass by implementing `compile()` in this round.
+Expected result after R2:
+
+```text
+tests/functional/test_sop_monitoring_plan_compiler.py -> 2 passed
+tests/functional/test_sop_data_hub_source_supervision.py -> 1 skipped
+tests/functional -> 2 passed, 1 skipped
+```
 
 ## 8. Commit requirements
 
 Commit message should be:
 
 ```text
-test: fix sop monitoring compiler test hygiene
+feat: implement sop monitoring plan compiler
 ```
 
 Push to:
@@ -280,7 +316,6 @@ origin codex/sop-data-hub-runtime-plan-20260525
 
 Do not:
 
-- implement `SopMonitoringPlanCompiler.compile()` in this round;
 - edit `wx-ops-agent`;
 - edit `rail95306-sync`;
 - edit production/server deployment;
@@ -288,14 +323,22 @@ Do not:
 - delete reconciler logic;
 - rename repository;
 - modify runtime daemon behavior;
-- hard-code expected output into compiler implementation.
+- hard-code test expected output;
+- implement source supervision adapters in this round;
+- add network/service dependencies.
 
 ## 10. Next planned order update
 
-After R1-2 is complete and reviewed through GitHub, the next order update should be:
+After R2 is complete and reviewed through GitHub, the next order update should be one of:
 
 ```text
-R2: Implement SopMonitoringPlanCompiler.compile() to satisfy the functional test.
+R3-A: add compiler edge-case tests for duplicate text patterns and non-WeChat skipping.
 ```
 
-R2 should still be limited to `ops-data-hub` and should not touch `wx-ops-agent` or `rail95306-sync`.
+or
+
+```text
+R3-B: design source monitoring plan publisher contract for wx-ops-agent without modifying wx-ops-agent.
+```
+
+Choose only after GitHub review of R2.

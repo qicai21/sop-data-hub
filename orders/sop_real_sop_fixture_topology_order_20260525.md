@@ -4,7 +4,7 @@ Date: 2026-05-25
 Repository: `qicai21/ops-data-hub`
 Branch: `codex/sop-real-sop-topology-audit-20260525`
 Order mode: incremental
-Current round: `R10`
+Current round: `R11`
 
 ## 0. Standing workflow rule
 
@@ -167,140 +167,122 @@ Then execute only the current round task.
 - R8: implemented local `MessageEvent -> monitoring plan matcher`.
 - R9: implemented local `RawAssetBundle` registration and binding protocol.
 
-## 7. Current round task: R10 WorkflowTask and TodoQueue
+## 7. Current round task: R11 Report template and recipient resolver
 
 ### 7.1 Purpose
 
-R10 should define what happens after a message is matched or not matched.
+R11 should resolve a `ReportIntent` from a `WorkflowTask`.
 
 It should answer:
 
 ```text
-Given a MessageEvent, RawAssetBundle, and MessageMatchResult,
-what workflow task or todo item should SOP Data Hub create?
+Given a WorkflowTask, what report template, recipient, report type,
+required fields, and missing fields should SOP Data Hub produce?
 ```
 
-This is still local and functional-test based. No database writes, no runtime daemon, no real wx-ops-agent integration.
+This is still local and functional-test based. No runtime daemon, no DB writes,
+no real wx-ops-agent integration, and no real delivery.
 
 ### 7.2 Required concepts
 
-Add minimal dataclasses or dictionaries:
+Add minimal dataclass or dictionary fields:
 
 ```text
-WorkflowTask
-- task_id
-- message_id
-- group_id
-- project_id
-- target_sop_node
-- watch_item
-- raw_asset_bundle
-- status
-- reason
-
-TodoItem
-- todo_id
-- message_id
-- group_id
-- category
-- reason
-- raw_asset_bundle
-- suggested_action
+ReportIntent
+- template_path
+- recipient_target
+- required_fields
+- missing_fields
+- report_type
 - status
 ```
 
-Recommended categories:
+Recommended statuses:
 
 ```text
-no_match
-missing_asset
-ambiguous_project
-incomplete_registration
+ready
+incomplete
+unknown_project
 ```
 
 Keep these as local Python objects. Do not add DB models.
 
 ### 7.3 Required behavior
 
-Implement a thin local planner that can:
+Implement a thin local resolver that can:
 
-1. Create one `WorkflowTask` per matched project/node from a successful `MessageMatchResult`.
-2. Create a `TodoItem` if no match is found.
-3. Create a `TodoItem` if the bound raw asset bundle is incomplete.
-4. Preserve links to message id, group id, watch item, project id, target SOP node, and raw asset bundle.
-5. Do not deduplicate across historical messages; this round is single-message only.
+1. Resolve report intent for ordinary freight projects (中唐、朝阳、吉林金钢).
+2. Populate `template_path`, `recipient_target`, `report_type`, and `required_fields` for known tasks.
+3. Return explicit `missing_fields` when a `WorkflowTask` lacks information needed to resolve the intent.
+4. Preserve links to `message_id`, `group_id`, `project_id`, and `target_sop_node` through the input task.
+5. Stay single-task only; do not add delivery or closeout behavior.
 
 ### 7.4 Test scenarios
 
 At minimum, add functional tests for:
 
-#### Scenario A: matched 出港计划通知单 creates workflow tasks
+#### Scenario A: ordinary freight task resolves to report intent
 
 Input:
 
 ```text
-GROUP001 image message
-text: 出港计划通知单
-complete RawAssetBundle
+WorkflowTask for 中唐 / 朝阳 / 吉林金钢 with project_id and target_sop_node
 ```
 
 Expected:
 
-- creates workflow tasks for matched ordinary freight projects;
-- each task has message id, group id, project id, target SOP node, watch item;
-- no todo item for this case.
+- `ReportIntent` contains report type;
+- `template_path` and `recipient_target` are resolved when available;
+- `required_fields` are explicit;
+- `missing_fields` is empty for complete tasks.
 
-#### Scenario B: no match creates todo item
+#### Scenario B: insufficient task information returns missing_fields
 
 Input:
 
 ```text
-GROUP999 text/image message
+WorkflowTask with missing project_id or target_sop_node
 ```
 
 Expected:
 
-- no workflow task;
-- creates todo item category `no_match`;
-- reason is clear.
+- no crash;
+- `missing_fields` explicitly lists missing values;
+- status is incomplete.
 
-#### Scenario C: incomplete asset bundle creates todo item
+#### Scenario C: ordinary freight scope only
 
 Input:
 
 ```text
-GROUP001 image message
-text: 检装车通知单
-RawAssetBundle with missing OCR JSON
+Tasks for 中唐、朝阳、吉林金钢 only
 ```
 
 Expected:
 
-- workflow task may still be created if match exists;
-- todo item category `incomplete_registration` or `missing_asset` is created;
-- warning/reason references missing path.
+- no runtime / delivery / DB behavior;
+- no R12 logic.
 
 ### 7.5 Allowed files
 
 Implementation should be limited to:
 
 ```text
+src/ops_hub/sop/report_intent.py
 src/ops_hub/sop/workflow_task.py
-src/ops_hub/sop/monitoring_plan_matcher.py
-src/ops_hub/sop/raw_asset_bundle.py
 ```
 
 Tests:
 
 ```text
-tests/functional/test_workflow_task_queue.py
+tests/functional/test_report_intent_resolver.py
 ```
 
 Reports:
 
 ```text
-reports/workflow_task_queue_r10_20260525.md
-reports/github_audit_workflow_task_queue_r10_20260525.md
+reports/report_intent_r11_20260525.md
+reports/github_audit_report_intent_r11_20260525.md
 ```
 
 ### 7.6 Tests to run
@@ -308,7 +290,7 @@ reports/github_audit_workflow_task_queue_r10_20260525.md
 Run:
 
 ```bash
-pytest tests/functional/test_workflow_task_queue.py -v
+pytest tests/functional/test_report_intent_resolver.py -v
 pytest tests/functional -v
 ```
 
@@ -323,24 +305,24 @@ all functional tests pass except the intentional source supervision skip
 Add report:
 
 ```text
-reports/workflow_task_queue_r10_20260525.md
+reports/report_intent_r11_20260525.md
 ```
 
 The report must include:
 
 - what was implemented;
-- how matched messages become workflow tasks;
-- how no-match/incomplete assets become todo items;
+- how `WorkflowTask` becomes `ReportIntent`;
+- how missing fields are reported explicitly;
 - the three test scenarios;
-- explicit note that no real wx-ops-agent, DB, runtime, asset movement, OCR, or report sending was added;
-- next planned round R11.
+- explicit note that no runtime, delivery, DB, wx-ops-agent, or R12 logic was added;
+- next planned round R12.
 
 ### 7.8 Commit requirements
 
 Commit message:
 
 ```text
-feat: add workflow task queue planner
+feat: add report intent resolver
 ```
 
 Push to:
@@ -348,7 +330,6 @@ Push to:
 ```text
 origin codex/sop-real-sop-topology-audit-20260525
 ```
-
 ## 8. Hermes response format
 
 After completion, reply:

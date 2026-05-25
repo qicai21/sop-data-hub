@@ -4,7 +4,7 @@ Date: 2026-05-25
 Repository: `qicai21/ops-data-hub`
 Branch: `codex/sop-real-sop-topology-audit-20260525`
 Order mode: incremental
-Current round: `R6`
+Current round: `R7`
 
 ## 0. Standing workflow rule
 
@@ -59,12 +59,6 @@ branch: codex/sop-real-sop-topology-audit-20260525
 local path: ~/projects/repos/sop-data-hub
 ```
 
-Read-only source repository:
-
-```text
-qicai21/prompts_and_reports
-```
-
 Do not modify:
 
 ```text
@@ -90,11 +84,12 @@ Read current branch context:
 
 ```text
 orders/sop_real_sop_fixture_topology_order_20260525.md
-reports/real_sop_normalizer_20260525.md
+reports/real_sop_monitoring_plan_preview_20260525.md
 src/ops_hub/models/project_sop.py
-tests/functional/test_sop_normalizer.py
+src/ops_hub/sop/monitoring_plan_preview.py
 src/ops_hub/sop/monitoring_plan_compiler.py
-tests/functional/test_sop_monitoring_plan_compiler.py
+tests/functional/test_real_sop_monitoring_plan_preview.py
+tests/functional/test_sop_normalizer.py
 ```
 
 ## 5. Git round protocol
@@ -118,153 +113,95 @@ Then execute only the current round task.
 - R3: added minimal markdown loader contract.
 - R4: audited loader boundary.
 - R5: implemented minimal `SopNormalizer` for real SOP markdown fixtures.
+- R6: generated first real SOP monitoring plan preview from the four fixtures.
 
-## 7. Current round task: R6 real SOP monitoring plan preview
+## 7. Current round task: R7 accept generated preview as SOP-faithful baseline
 
 ### 7.1 Purpose
 
-R6 is the first end-to-end preview round.
+R7 is an acceptance/documentation round.
 
-It should answer:
+The user reviewed the R6 monitoring plan and accepted the principle:
 
 ```text
-If we use the four real SOP fixtures, what WeChat group monitoring strategy list can the system generate today?
+SOP 写了什么，系统就解析什么；
+SOP 没写清楚的，不要替它脑补。
 ```
 
-This is not production integration. It is a functional preview.
+Therefore, R7 should freeze the current preview as a SOP-faithful baseline rather than trying to make vague SOP content more specific.
 
-### 7.2 Scope
+### 7.2 Important acceptance principle
 
-Use the existing pieces:
+Do not narrow broad items unless the SOP itself becomes more specific.
+
+Example:
 
 ```text
-tests/fixtures/sops/*.md
-SopNormalizer
-SopMonitoringPlanCompiler
+GROUP013 / 数据单发群 -> 文字
 ```
 
-Add only the thin glue needed to transform normalized SOPs into the compiler input shape, then generate a preview report.
-
-### 7.3 Required implementation behavior
-
-Implement a minimal adapter if needed, limited to `ops-data-hub`, that converts normalized SOP records into `project_sops` dictionaries accepted by `SopMonitoringPlanCompiler`.
-
-The adapter may:
-
-- read normalized project SOPs;
-- convert `monitoring_entries` into `sop_nodes[].monitoring[]` shape;
-- preserve `project_id` and `project_name`;
-- use source group token as `group_id` when present;
-- use group name if available;
-- use document keywords as document watch items;
-- use message keywords as text/message watch items.
-
-The adapter must not:
-
-- call WeChat;
-- call 95306;
-- write database records;
-- start runtime daemon;
-- publish config to source agents;
-- infer hidden SOP meanings beyond what the normalizer already extracted.
-
-### 7.4 Preview output requirement
-
-Generate a markdown report:
+This may look broad, but if the current 九三 SOP only exposes that level of detail, the system should preserve it rather than inventing:
 
 ```text
-reports/real_sop_monitoring_plan_preview_20260525.md
+到站消息
+铁路消息
+发运动态
+```
+
+unless those exact meanings are explicitly represented in the SOP / normalized input.
+
+### 7.3 Scope
+
+This round should not change normalizer or compiler behavior.
+
+Add a short acceptance note/report that records:
+
+1. R6 generated plan is accepted as a SOP-faithful baseline;
+2. broad entries are acceptable when broadness comes from the SOP text;
+3. the system should not infer missing business detail;
+4. future specificity should come from editing SOP documents, not hidden parser logic;
+5. current output is preview-only and not runtime integration.
+
+### 7.4 Deliverable
+
+Add report:
+
+```text
+reports/real_sop_monitoring_plan_acceptance_20260525.md
 ```
 
 The report must include:
 
-1. input fixture list;
-2. normalized project count;
-3. generated WeChat group monitoring plan;
-4. for each group:
-   - group id/token;
-   - group name if available;
-   - watch items;
-   - candidate projects;
-   - target SOP node mapping or source node placeholder;
-5. limitations / warnings;
-6. whether the generated plan looks usable enough to continue.
+- accepted baseline plan reference;
+- acceptance principle;
+- examples of accepted broad entries;
+- explicit non-goals;
+- recommended next step.
 
-The monitoring list should be readable by a human, not only JSON.
-
-### 7.5 Test requirement
-
-Add a small functional test proving the chain runs:
+Optional GitHub audit summary:
 
 ```text
-real fixtures -> normalizer -> adapter -> compiler -> wechat_monitoring_plan
+reports/github_audit_real_sop_monitoring_plan_acceptance_20260525.md
 ```
 
-Suggested test file:
+### 7.5 Tests
 
-```text
-tests/functional/test_real_sop_monitoring_plan_preview.py
-```
+R7 is documentation-only.
 
-Test expectations should stay basic:
+No tests are required if no code/test files are changed.
 
-- output contains `wechat_monitoring_plan`;
-- output has at least one group;
-- output has at least one watch item;
-- at least one real project appears in candidate projects;
-- no runtime/publisher/DB dependency is required.
-
-Do not over-test exact business correctness yet. The user wants to see what the current system generates.
-
-### 7.6 Allowed files
-
-Implementation should be limited to one of:
-
-```text
-src/ops_hub/models/project_sop.py
-src/ops_hub/sop/monitoring_plan_preview.py
-```
-
-Tests:
-
-```text
-tests/functional/test_real_sop_monitoring_plan_preview.py
-```
-
-Reports:
-
-```text
-reports/real_sop_monitoring_plan_preview_20260525.md
-reports/github_audit_real_sop_monitoring_plan_preview_20260525.md
-```
-
-Order update:
-
-```text
-orders/sop_real_sop_fixture_topology_order_20260525.md
-```
-
-### 7.7 Tests to run
-
-Run:
+If any code/test file changes, run:
 
 ```bash
-pytest tests/functional/test_real_sop_monitoring_plan_preview.py -v
 pytest tests/functional -v
 ```
 
-Expected result:
-
-```text
-all functional tests pass except intentional source supervision skip
-```
-
-### 7.8 Commit requirements
+### 7.6 Commit requirements
 
 Commit message:
 
 ```text
-feat: preview real sop monitoring plan
+docs: accept real sop monitoring plan baseline
 ```
 
 Push to:
@@ -284,7 +221,7 @@ branch: codex/sop-real-sop-topology-audit-20260525
 commit: <commit sha>
 PR: none
 order: orders/sop_real_sop_fixture_topology_order_20260525.md
-report: reports/real_sop_monitoring_plan_preview_20260525.md
+report: reports/real_sop_monitoring_plan_acceptance_20260525.md
 modified_files:
 - <file>
 new_files:
@@ -292,12 +229,11 @@ new_files:
 git_status: <clean or summary>
 
 tests:
-- <command -> result>
+- <command or not run with reason>
 
 summary:
-- <what plan was generated>
-- <whether it looks usable>
-- <key limitations>
+- <what baseline was accepted>
+- <what was not changed>
 - <next recommended order/update>
 ```
 
@@ -313,17 +249,18 @@ Do not:
 - alter production/server deployment;
 - call external services;
 - use OCR or AI extraction;
-- over-test exact final business correctness;
+- narrow broad entries by inference;
+- change normalizer/compiler behavior;
 - merge this branch.
 
 ## 10. Next planned order update
 
-After R6 is reviewed, decide whether to:
+After R7 is reviewed, likely next options are:
 
 ```text
-A. accept the generated monitoring plan shape and clean it up;
-B. adjust normalizer extraction rules lightly;
-C. pause and review fixture SOP content manually.
+A. stop this branch and prepare merge/PR review;
+B. add a small CLI/report command to regenerate the preview;
+C. edit SOP source documents in prompts_and_reports if more specificity is desired.
 ```
 
 Do not proceed automatically.

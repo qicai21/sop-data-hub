@@ -4,7 +4,7 @@
 |---|---|
 | Audit 日期 | 2026-05-25 |
 | Branch | codex/sop-real-sop-topology-audit-20260525 |
-| Current commit | __PENDING_CODE_COMMIT__ |
+| Current commit | 2c87ac3 |
 | PR | none |
 
 ## 1. branch

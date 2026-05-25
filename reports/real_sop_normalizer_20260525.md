@@ -8,7 +8,7 @@
 | 仓库 | qicai21/ops-data-hub |
 | 分支 | codex/sop-real-sop-topology-audit-20260525 |
 | 当前目录 | /Users/qicai21/projects/repos/sop-data-hub |
-| 当前 commit | __PENDING_CODE_COMMIT__ |
+| 当前 commit | 2c87ac3 |
 
 ## 1. 结论
 

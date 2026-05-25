@@ -8,7 +8,7 @@
    - codex/sop-real-sop-topology-audit-20260525
 
 2. commit链（最近5个）
-   - 698424e feat: add monitoring plan message matcher
+   - e1cdafa docs: add message lifecycle matcher report
    - 2608b69 docs: accept real sop monitoring plan baseline
    - 279854c docs: update real sop fixture order for R7 acceptance note
    - 2f39591 docs: add real sop monitoring plan preview report

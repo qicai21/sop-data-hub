@@ -8,11 +8,11 @@
 | 仓库 | qicai21/ops-data-hub |
 | 分支 | codex/sop-real-sop-topology-audit-20260525 |
 | 当前目录 | /Users/qicai21/projects/repos/sop-data-hub |
-| 当前 commit | 698424e |
+| 当前 commit | e1cdafa |
 
 ## 1. 结论
 
-R8 实现了一个纯本地的 `MessageEvent -> monitoring plan matcher`，只覆盖中唐特钢、朝阳钢铁、吉林金钢 / 吉林金刚相关的普通货运消息匹配。
+R8 实现了一个纯本地的 `MessageEvent -> monitoring plan matcher`，只覆盖中唐特钢、朝阳钢铁、吉林金钢 / 吉林金刚相关的普通货运消息匹配；本次复核在已有实现上重新验证，未扩展到任何禁区。
 
 它使用 R6/R7 已生成并接受的 `wechat_monitoring_plan` 作为输入，按 group_id 先过滤，再按 message/document 文本匹配 watch item，返回 candidate projects 与 target SOP node 映射。
 

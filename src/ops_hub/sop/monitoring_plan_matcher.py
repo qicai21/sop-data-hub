@@ -14,17 +14,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ops_hub.sop.raw_asset_bundle import RawAssetBundle
+
 
 @dataclass(frozen=True)
 class MessageEvent:
     message_id: str
     channel: str
     group_id: str | None = None
+    source_agent: str = ""
+    received_at: str | None = None
     message_type: str = "text"
     text: str = ""
-    image_path: str | Path | None = None
-    json_path: str | Path | None = None
-    received_at: str | None = None
+    raw_asset_bundle: RawAssetBundle | None = None
 
 
 @dataclass(frozen=True)
@@ -50,10 +52,16 @@ TEXT_MESSAGE_TYPES = {"text"}
 def _normalized_text(event: MessageEvent) -> str:
     if event.text:
         return event.text
-    if event.image_path:
-        return Path(event.image_path).stem
-    if event.json_path:
-        return Path(event.json_path).stem
+    if event.raw_asset_bundle:
+        if event.raw_asset_bundle.text:
+            return event.raw_asset_bundle.text
+        for asset_path in (
+            event.raw_asset_bundle.raw_image_path,
+            event.raw_asset_bundle.ocr_json_path,
+            event.raw_asset_bundle.message_metadata_path,
+        ):
+            if asset_path:
+                return Path(asset_path).stem
     return ""
 
 
@@ -123,11 +131,11 @@ def result_to_dict(result: MessageMatchResult) -> dict[str, Any]:
             "message_id": result.event.message_id,
             "channel": result.event.channel,
             "group_id": result.event.group_id,
+            "source_agent": result.event.source_agent,
+            "received_at": result.event.received_at,
             "message_type": result.event.message_type,
             "text": result.event.text,
-            "image_path": str(result.event.image_path) if result.event.image_path is not None else None,
-            "json_path": str(result.event.json_path) if result.event.json_path is not None else None,
-            "received_at": result.event.received_at,
+            "raw_asset_bundle": result.event.raw_asset_bundle.to_dict() if result.event.raw_asset_bundle else None,
         },
         "matches": [
             {

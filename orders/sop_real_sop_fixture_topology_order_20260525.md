@@ -4,7 +4,7 @@ Date: 2026-05-25
 Repository: `qicai21/ops-data-hub`
 Branch: `codex/sop-real-sop-topology-audit-20260525`
 Order mode: incremental
-Current round: `R8`
+Current round: `R9`
 
 ## 0. Standing workflow rule
 
@@ -376,20 +376,203 @@ Do not:
 - over-test exact final business correctness;
 - merge this branch.
 
-## 9. R9 preview
+## 9. Current round: R9 raw asset bundle registration protocol
 
-Do not implement R9 in this round.
+R9 should define and test a raw asset bundle registration protocol that answers:
 
-R9 should define and test a raw asset bundle registration protocol:
+```text
+Where is the raw image path registered?
+Where is the OCR JSON path registered?
+Where is the message metadata path registered?
+How does MessageEvent bind to these assets?
+```
+
+### 9.1 Purpose
+
+Keep this round local and functional-test based. Do not add runtime, database writes, WeChat integration, 95306, OCR execution, report sending, or asset moving/copying.
+
+### 9.2 Required data structures
+
+Use minimal dataclasses:
 
 ```text
 MessageEvent
-  ↓
 RawAssetBundle
-  - original image path
-  - OCR/json path
-  - message metadata json path
-  - source group/message id
 ```
 
-R9 should still be local and functional-test based, not production runtime.
+Suggested fields:
+
+```text
+MessageEvent
+- message_id
+- group_id
+- source_agent
+- received_at
+- message_type
+- text
+- raw_asset_bundle
+
+RawAssetBundle
+- message_id
+- group_id
+- source_agent
+- received_at
+- raw_image_path
+- ocr_json_path
+- message_metadata_path
+- text
+- extraction_kind
+- registration_status
+- warnings
+```
+
+The registration protocol should make incomplete asset sets explicit instead of crashing.
+
+### 9.3 Required behavior
+
+1. Register a raw image path, OCR JSON path, and message metadata path on the bundle.
+2. Bind the bundle to the message event.
+3. Preserve text-only events with metadata only.
+4. Return a clear warning / incomplete status when required paths are missing.
+5. Keep everything in local Python objects; no persistent storage.
+
+### 9.4 Test scenarios
+
+At minimum, add functional tests for:
+
+#### Scenario A: image message with raw image + OCR JSON + metadata
+
+Expected:
+
+- bundle carries all three paths;
+- event is bound to the bundle;
+- status is complete;
+- no crash.
+
+#### Scenario B: text message with metadata path only
+
+Expected:
+
+- bundle carries metadata path only;
+- event is bound to the bundle;
+- text remains available;
+- status is complete or explicitly acceptable for text-only registration.
+
+#### Scenario C: missing asset path
+
+Expected:
+
+- no crash;
+- clear warning;
+- incomplete status.
+
+### 9.5 Allowed files
+
+Implementation should be limited to:
+
+```text
+src/ops_hub/sop/monitoring_plan_matcher.py
+src/ops_hub/sop/raw_asset_bundle.py
+```
+
+Tests:
+
+```text
+tests/functional/test_raw_asset_bundle_registration.py
+```
+
+Reports:
+
+```text
+reports/raw_asset_bundle_r9_20260525.md
+reports/github_audit_raw_asset_bundle_r9_20260525.md
+```
+
+### 9.6 Tests to run
+
+Run:
+
+```bash
+pytest tests/functional -v
+```
+
+Expected result:
+
+```text
+all functional tests pass except the intentional source supervision skip
+```
+
+### 9.7 Report requirement
+
+Add report:
+
+```text
+reports/raw_asset_bundle_r9_20260525.md
+```
+
+The report must include:
+
+- what was implemented;
+- the three test scenarios;
+- how the bundle binds to MessageEvent;
+- explicit note that no real wx-ops-agent, DB, runtime, asset movement, OCR, or report sending was added;
+- next planned round R10.
+
+### 9.8 Commit requirements
+
+Commit message:
+
+```text
+feat: add raw asset bundle registration protocol
+```
+
+Push to:
+
+```text
+origin codex/sop-real-sop-topology-audit-20260525
+```
+
+### 9.9 Hermes response format
+
+After completion, reply:
+
+```text
+Execution Result
+
+branch: codex/sop-real-sop-topology-audit-20260525
+commit: <commit sha>
+PR: none
+order: orders/sop_real_sop_fixture_topology_order_20260525.md
+report: reports/raw_asset_bundle_r9_20260525.md
+modified_files:
+- <file>
+new_files:
+- <file>
+git_status: <clean or summary>
+
+tests:
+- <command -> result>
+
+summary:
+- <what was implemented>
+- <ordinary freight scope impact>
+- <what was not implemented>
+- <next recommended order/update>
+```
+
+## 10. Forbidden actions
+
+Do not:
+
+- modify `prompts_and_reports`;
+- modify `wx-ops-agent`;
+- modify `rail95306-sync`;
+- implement runtime/publisher/source supervision;
+- modify database schema;
+- alter production/server deployment;
+- call external services;
+- use OCR or AI extraction;
+- move/copy raw assets;
+- send reports;
+- over-test exact final business correctness;
+- merge this branch.

@@ -205,7 +205,6 @@ def test_sop_monitoring_plan_compiler_functional():
             assert item.get("target_sop_nodes")
 
 
-@pytest.mark.xfail(reason="SopMonitoringPlanCompiler is not implemented in this planning branch")
 def test_sop_monitoring_plan_compiler_import_contract_exists():
     """Compiler class should become a stable public import contract."""
     assert SopMonitoringPlanCompiler is not None

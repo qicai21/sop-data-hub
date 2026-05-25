@@ -4,7 +4,7 @@ Date: 2026-05-25
 Repository: `qicai21/ops-data-hub`
 Branch: `codex/sop-real-sop-topology-audit-20260525`
 Order mode: incremental
-Current round: `R2`
+Current round: `R3`
 
 ## 0. Standing workflow rule
 
@@ -366,7 +366,7 @@ R2: copy confirmed real SOP files from prompts_and_reports into tests/fixtures/s
 
 Only proceed after review.
 
-## 14. Current round task: R2 real SOP fixture copy and loader contract
+## 14. Previous round task: R2 real SOP fixture copy and loader contract
 
 ### 14.1 Scope
 
@@ -386,4 +386,36 @@ pytest tests/functional -v
 
 - modifying `prompts_and_reports`
 - modifying runtime / publisher / wx-ops-agent / rail95306-sync
+- expanding into database schema or production deployment
+
+## 15. Current round task: R3 minimal markdown loader contract
+
+### 15.1 Scope
+
+- Add a minimal markdown loader contract for the copied real SOP fixture files.
+- The contract must only verify markdown fixture identity and first-heading metadata.
+- Do not parse full SOP business semantics or expand into compiler/runtime/publisher.
+- Keep any implementation change limited to `src/ops_hub/models/project_sop.py` if needed.
+
+### 15.2 Required test focus
+
+- The loader contract should confirm each fixture is a markdown document.
+- The loader contract should confirm the loader returns the raw file path, title, and raw content.
+- The loader contract should not depend on structured SOP nodes, monitoring rules, or cross-module runtime behavior.
+
+### 15.3 Required tests
+
+If any code or test file changes, run:
+
+```bash
+pytest tests/functional/test_real_sop_fixture_contract.py -v
+pytest tests/functional -v
+```
+
+### 15.4 Forbidden in R3
+
+- modifying `prompts_and_reports`
+- modifying compiler/runtime/publisher behavior
+- modifying `wx-ops-agent`
+- modifying `rail95306-sync`
 - expanding into database schema or production deployment

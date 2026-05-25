@@ -31,6 +31,12 @@ class ProjectSOP:
     listening_tasks: List[ListeningTask] = field(default_factory=list)
 
 @dataclass
+class MarkdownSOPFixture:
+    file_path: Path
+    title: str
+    content: str
+
+@dataclass
 class TrackingTask:
     project_id: str
     group_id: str
@@ -40,6 +46,17 @@ class TrackingTask:
     pull_image: bool
     group_lookup_id: Optional[str]
     routing: List[RoutingRule]
+
+def load_markdown_sop_fixture(file_path: str | Path) -> MarkdownSOPFixture:
+    path = Path(file_path)
+    content = path.read_text(encoding='utf-8')
+    title = ''
+    for line in content.splitlines():
+        if line.startswith('# '):
+            title = line[2:].strip()
+            break
+    return MarkdownSOPFixture(file_path=path, title=title, content=content)
+
 
 def load_project_sop(file_path: str | Path) -> ProjectSOP:
     with open(file_path, 'r', encoding='utf-8') as f:

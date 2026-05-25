@@ -1,10 +1,10 @@
-# Order: Real SOP Fixtures and System Topology Audit
+# Order: Real SOP Fixtures and System Lifecycle Closeout
 
 Date: 2026-05-25
 Repository: `qicai21/ops-data-hub`
 Branch: `codex/sop-real-sop-topology-audit-20260525`
 Order mode: incremental
-Current round: `R11`
+Current round: `R12`
 
 ## 0. Standing workflow rule
 
@@ -20,9 +20,9 @@ Every work round must:
 4. commit and push;
 5. reply with the required Execution Result format.
 
-## 1. Remaining rounds plan: R10-R12
+## 1. Current lifecycle state
 
-The branch now has:
+The branch now has a local, functional-test based chain:
 
 ```text
 real SOP fixtures
@@ -36,51 +36,13 @@ wechat_monitoring_plan
 MessageEvent matcher
   ↓
 RawAssetBundle registration
+  ↓
+WorkflowTask / TodoItem planner
+  ↓
+ReportIntent resolver
 ```
 
-Three rounds remain in the current planning window.
-
-### R10: WorkflowTask / TodoQueue
-
-Convert matched or unmatched message events into local workflow tasks or todo items.
-
-Goal:
-
-```text
-MessageEvent + RawAssetBundle + MessageMatchResult
-  ↓
-WorkflowTask / TodoItem
-```
-
-### R11: Report template and recipient resolver
-
-Resolve which report template and recipient belong to a project/node/task.
-
-Goal:
-
-```text
-WorkflowTask
-  ↓
-ReportIntent
-  ↓
-template path + recipient target + required fields
-```
-
-### R12: Delivery result and lifecycle closeout
-
-Simulate delivery result confirmation and failure routing.
-
-Goal:
-
-```text
-ReportIntent
-  ↓
-DeliveryResult
-  ↓
-closed task or todo item
-```
-
-Do not implement R11 or R12 during R10.
+R12 is the final planned round in this five-round window. It should close the lifecycle locally by adding delivery result simulation and a complete lifecycle test/report.
 
 ## 2. Ordinary freight scope
 
@@ -93,7 +55,7 @@ Primary scope:
 - 吉林金钢 / 吉林金刚
 ```
 
-九三大豆 remains out of the current workflow design. Keep existing fixtures/tests intact, but do not let 九三 drive R10-R12.
+九三大豆 remains out of the current workflow design.
 
 ## 3. Scope boundary
 
@@ -114,17 +76,16 @@ production/server deployment
 prompts_and_reports
 ```
 
-Do not implement in R10:
+Do not implement in R12:
 
 ```text
+real WeChat sending
+real wx-ops-agent adapter
+DB writes
 runtime daemon
-source publisher
-real cross-module supervision
-DB migration
-actual WeChat/95306 integration
-report sending
-asset file copy/move
+95306 integration
 OCR execution
+asset file copy/move
 ```
 
 ## 4. Required reading before work
@@ -133,12 +94,14 @@ Read current branch context:
 
 ```text
 orders/sop_real_sop_fixture_topology_order_20260525.md
-reports/message_lifecycle_matcher_r8_20260525.md
-reports/raw_asset_bundle_r9_20260525.md
+reports/workflow_task_queue_r10_20260525.md
+reports/report_intent_r11_20260525.md
+src/ops_hub/sop/workflow_task.py
+src/ops_hub/sop/report_intent.py
 src/ops_hub/sop/monitoring_plan_matcher.py
 src/ops_hub/sop/raw_asset_bundle.py
-tests/functional/test_monitoring_plan_matcher.py
-tests/functional/test_raw_asset_bundle_registration.py
+tests/functional/test_workflow_task_queue.py
+tests/functional/test_report_intent_resolver.py
 ```
 
 ## 5. Git round protocol
@@ -155,7 +118,7 @@ git branch --show-current
 
 Then execute only the current round task.
 
-## 6. Previous completed rounds
+## 6. Completed rounds
 
 - R1: found real SOPs and audited topology.
 - R2: copied four real SOPs into `tests/fixtures/sops/`.
@@ -166,131 +129,162 @@ Then execute only the current round task.
 - R7: accepted R6 plan as SOP-faithful baseline.
 - R8: implemented local `MessageEvent -> monitoring plan matcher`.
 - R9: implemented local `RawAssetBundle` registration and binding protocol.
+- R10: implemented local `WorkflowTask / TodoItem` planner.
+- R11: implemented local `WorkflowTask -> ReportIntent` resolver.
 
-## 7. Current round task: R11 Report template and recipient resolver
+## 7. Current round task: R12 DeliveryResult and lifecycle closeout
 
 ### 7.1 Purpose
 
-R11 should resolve a `ReportIntent` from a `WorkflowTask`.
+R12 should close the local lifecycle loop.
 
 It should answer:
 
 ```text
-Given a WorkflowTask, what report template, recipient, report type,
-required fields, and missing fields should SOP Data Hub produce?
+Given a ReportIntent, how does SOP Data Hub record a simulated send result,
+close a successful workflow task, or create a todo item for failure?
 ```
 
-This is still local and functional-test based. No runtime daemon, no DB writes,
-no real wx-ops-agent integration, and no real delivery.
+It should also provide one full local lifecycle test from message event to closeout.
 
 ### 7.2 Required concepts
 
-Add minimal dataclass or dictionary fields:
+Add minimal dataclasses or dictionaries:
 
 ```text
-ReportIntent
-- template_path
-- recipient_target
-- required_fields
-- missing_fields
+DeliveryResult
+- delivery_id
+- message_id
+- project_id
+- target_sop_node
 - report_type
+- recipient_target
 - status
+- confirmation_ref
+- error
+
+LifecycleCloseout
+- workflow_task
+- report_intent
+- delivery_result
+- status
+- todo_items
+- reason
 ```
 
 Recommended statuses:
 
 ```text
-ready
-incomplete
-unknown_project
+DeliveryResult.status:
+- sent
+- failed
+- skipped
+
+LifecycleCloseout.status:
+- closed
+- delivery_failed
+- report_intent_incomplete
 ```
 
 Keep these as local Python objects. Do not add DB models.
 
 ### 7.3 Required behavior
 
-Implement a thin local resolver that can:
+Implement a thin local closeout function that can:
 
-1. Resolve report intent for ordinary freight projects (中唐、朝阳、吉林金钢).
-2. Populate `template_path`, `recipient_target`, `report_type`, and `required_fields` for known tasks.
-3. Return explicit `missing_fields` when a `WorkflowTask` lacks information needed to resolve the intent.
-4. Preserve links to `message_id`, `group_id`, `project_id`, and `target_sop_node` through the input task.
-5. Stay single-task only; do not add delivery or closeout behavior.
+1. Accept a `WorkflowTask` and `ReportIntent`.
+2. If `ReportIntent.status == ready` and simulated delivery succeeds, return closeout status `closed`.
+3. If delivery fails, return closeout status `delivery_failed` and create a todo item.
+4. If `ReportIntent.status != ready`, do not simulate delivery; create a todo item for incomplete report intent.
+5. Preserve links to message_id, project_id, target_sop_node, report_type, recipient_target, and confirmation/error.
 
-### 7.4 Test scenarios
+### 7.4 Full lifecycle test
+
+Add one functional test that proves the ordinary freight local chain can run:
+
+```text
+MessageEvent
+  ↓
+RawAssetBundle
+  ↓
+monitoring plan match
+  ↓
+WorkflowTask
+  ↓
+ReportIntent
+  ↓
+DeliveryResult
+  ↓
+LifecycleCloseout(status=closed)
+```
+
+Use one simple ordinary freight case, for example:
+
+```text
+GROUP001 image message
+text: 出港计划通知单
+project candidate: chaoyang_steel or zhongtang_special_steel
+```
+
+This is still simulated; do not send anything.
+
+### 7.5 Additional test scenarios
 
 At minimum, add functional tests for:
 
-#### Scenario A: ordinary freight task resolves to report intent
-
-Input:
-
-```text
-WorkflowTask for 中唐 / 朝阳 / 吉林金钢 with project_id and target_sop_node
-```
+#### Scenario A: successful delivery closes task
 
 Expected:
 
-- `ReportIntent` contains report type;
-- `template_path` and `recipient_target` are resolved when available;
-- `required_fields` are explicit;
-- `missing_fields` is empty for complete tasks.
+- `DeliveryResult.status = sent`
+- `LifecycleCloseout.status = closed`
+- no todo item
 
-#### Scenario B: insufficient task information returns missing_fields
-
-Input:
-
-```text
-WorkflowTask with missing project_id or target_sop_node
-```
+#### Scenario B: failed delivery creates todo item
 
 Expected:
 
-- no crash;
-- `missing_fields` explicitly lists missing values;
-- status is incomplete.
+- `DeliveryResult.status = failed`
+- `LifecycleCloseout.status = delivery_failed`
+- todo item exists with clear reason
 
-#### Scenario C: ordinary freight scope only
-
-Input:
-
-```text
-Tasks for 中唐、朝阳、吉林金钢 only
-```
+#### Scenario C: incomplete report intent creates todo item without delivery
 
 Expected:
 
-- no runtime / delivery / DB behavior;
-- no R12 logic.
+- no fake successful delivery
+- closeout status `report_intent_incomplete`
+- todo item references missing fields
 
-### 7.5 Allowed files
+### 7.6 Allowed files
 
 Implementation should be limited to:
 
 ```text
-src/ops_hub/sop/report_intent.py
+src/ops_hub/sop/delivery_result.py
 src/ops_hub/sop/workflow_task.py
+src/ops_hub/sop/report_intent.py
 ```
 
 Tests:
 
 ```text
-tests/functional/test_report_intent_resolver.py
+tests/functional/test_lifecycle_closeout.py
 ```
 
 Reports:
 
 ```text
-reports/report_intent_r11_20260525.md
-reports/github_audit_report_intent_r11_20260525.md
+reports/lifecycle_closeout_r12_20260525.md
+reports/github_audit_lifecycle_closeout_r12_20260525.md
 ```
 
-### 7.6 Tests to run
+### 7.7 Tests to run
 
 Run:
 
 ```bash
-pytest tests/functional/test_report_intent_resolver.py -v
+pytest tests/functional/test_lifecycle_closeout.py -v
 pytest tests/functional -v
 ```
 
@@ -300,29 +294,28 @@ Expected result:
 all functional tests pass except the intentional source supervision skip
 ```
 
-### 7.7 Report requirement
+### 7.8 Report requirement
 
 Add report:
 
 ```text
-reports/report_intent_r11_20260525.md
+reports/lifecycle_closeout_r12_20260525.md
 ```
 
 The report must include:
 
 - what was implemented;
-- how `WorkflowTask` becomes `ReportIntent`;
-- how missing fields are reported explicitly;
-- the three test scenarios;
-- explicit note that no runtime, delivery, DB, wx-ops-agent, or R12 logic was added;
-- next planned round R12.
+- the full local lifecycle chain;
+- the three closeout test scenarios;
+- explicit note that no real sending, wx-ops-agent integration, DB, runtime, asset movement, OCR, or 95306 was added;
+- remaining gaps before real `wx-ops-agent` integration.
 
-### 7.8 Commit requirements
+### 7.9 Commit requirements
 
 Commit message:
 
 ```text
-feat: add report intent resolver
+feat: add lifecycle delivery closeout
 ```
 
 Push to:
@@ -330,6 +323,7 @@ Push to:
 ```text
 origin codex/sop-real-sop-topology-audit-20260525
 ```
+
 ## 8. Hermes response format
 
 After completion, reply:
@@ -341,7 +335,7 @@ branch: codex/sop-real-sop-topology-audit-20260525
 commit: <commit sha>
 PR: none
 order: orders/sop_real_sop_fixture_topology_order_20260525.md
-report: reports/workflow_task_queue_r10_20260525.md
+report: reports/lifecycle_closeout_r12_20260525.md
 modified_files:
 - <file>
 new_files:
@@ -352,10 +346,10 @@ tests:
 - <command -> result>
 
 summary:
-- <what task/todo behavior was implemented>
-- <ordinary freight scenarios covered>
+- <what delivery/closeout behavior was implemented>
+- <whether the full local lifecycle test passes>
 - <what was not implemented>
-- <next recommended order/update>
+- <remaining gaps before wx-ops-agent integration>
 ```
 
 ## 9. Forbidden actions
@@ -365,31 +359,11 @@ Do not:
 - modify `prompts_and_reports`;
 - modify `wx-ops-agent`;
 - modify `rail95306-sync`;
-- implement runtime/publisher/source supervision;
+- implement real runtime/publisher/source supervision;
 - modify database schema;
 - alter production/server deployment;
 - call external services;
 - use OCR or AI extraction;
 - move/copy raw assets;
-- send reports;
-- implement report template resolver;
-- implement delivery confirmation;
+- send real reports;
 - merge this branch.
-
-## 10. R11 preview
-
-Do not implement R11 in this round.
-
-R11 should resolve report template and recipient targets for workflow tasks:
-
-```text
-WorkflowTask
-  ↓
-ReportIntent
-  - template path
-  - report type
-  - recipient target
-  - required fields
-```
-
-R11 should still be local and functional-test based.

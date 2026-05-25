@@ -4,6 +4,7 @@ Date: 2026-05-25
 Repository: `qicai21/ops-data-hub`
 Branch: `codex/sop-data-hub-runtime-plan-20260525`
 Order mode: incremental
+Current round: `R1-2`
 
 ## 0. Standing workflow rule
 
@@ -143,34 +144,60 @@ Do not report completion based only on chat. Completion must be proven by git co
 
 ## 6. Current round task
 
-### Round 1: test hygiene and path correction
+### R1-2: correct R1-1 bootstrap artifacts and test hygiene
 
-Current task only fixes test/report hygiene. Do not implement business logic.
+R1-1 has already completed the initial local bootstrap and produced two report files. This round fixes issues discovered after reviewing R1-1.
 
-#### 6.1 Correct local path references
+Current task only fixes path/report/test hygiene. Do not implement business logic.
 
-The correct local path is:
+#### 6.1 Pull the latest branch first
 
-```text
-~/projects/repos/sop-data-hub
+The remote branch already contains this updated order. Start with:
+
+```bash
+cd ~/projects/repos/sop-data-hub
+git fetch origin
+git pull --ff-only origin codex/sop-data-hub-runtime-plan-20260525
 ```
 
-If previous reports mention:
+If the local clone currently exists only at the old path:
 
 ```text
 ~/projects/sop-data-hub-test/ops-data-hub
 ```
 
-update them to the correct path.
+then create or move to the correct local working path:
 
-Files to update if present:
+```text
+~/projects/repos/sop-data-hub
+```
+
+Do not keep using the old path for this branch.
+
+#### 6.2 Correct local path references in R1-1 reports
+
+Correct path:
+
+```text
+~/projects/repos/sop-data-hub
+```
+
+Old incorrect path:
+
+```text
+~/projects/sop-data-hub-test/ops-data-hub
+```
+
+Update any old-path references in:
 
 ```text
 reports/local_sop_data_hub_branch_bootstrap_20260525.md
 reports/github_audit_local_sop_data_hub_branch_bootstrap_20260525.md
 ```
 
-#### 6.2 Fix xpass in compiler functional test
+If these reports are not yet committed to this branch, add them now with corrected path content.
+
+#### 6.3 Fix XPASS in compiler functional test
 
 File:
 
@@ -178,7 +205,13 @@ File:
 tests/functional/test_sop_monitoring_plan_compiler.py
 ```
 
-Problem:
+Problem discovered in R1-1:
+
+```text
+pytest tests/functional/test_sop_monitoring_plan_compiler.py -v -> 1 failed, 1 xpassed
+```
+
+Root cause:
 
 `test_sop_monitoring_plan_compiler_import_contract_exists()` is marked `xfail`, but `SopMonitoringPlanCompiler` already exists.
 
@@ -198,7 +231,7 @@ tests/functional -> 1 failed, 1 passed, 1 skipped
 
 The remaining failure must be `NotImplementedError` from `SopMonitoringPlanCompiler.compile()`.
 
-#### 6.3 Add report
+#### 6.4 Add R1-2 report
 
 Add a report:
 
@@ -208,8 +241,10 @@ reports/test_hygiene_fix_20260525.md
 
 The report must include:
 
+- acknowledgement that R1-1 bootstrap was completed;
 - local path correction;
-- test xpass root cause;
+- whether R1-1 report files were newly added or updated;
+- test XPASS root cause;
 - files changed;
 - test commands and results;
 - confirmation that `compile()` was not implemented;
@@ -257,10 +292,10 @@ Do not:
 
 ## 10. Next planned order update
 
-After Round 1 is complete and reviewed through GitHub, the next order update should be:
+After R1-2 is complete and reviewed through GitHub, the next order update should be:
 
 ```text
-Round 2: Implement SopMonitoringPlanCompiler.compile() to satisfy the functional test.
+R2: Implement SopMonitoringPlanCompiler.compile() to satisfy the functional test.
 ```
 
-Round 2 should still be limited to `ops-data-hub` and should not touch `wx-ops-agent` or `rail95306-sync`.
+R2 should still be limited to `ops-data-hub` and should not touch `wx-ops-agent` or `rail95306-sync`.

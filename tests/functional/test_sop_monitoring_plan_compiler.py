@@ -205,6 +205,155 @@ def test_sop_monitoring_plan_compiler_functional():
             assert item.get("target_sop_nodes")
 
 
+def test_sop_monitoring_plan_compiler_returns_empty_wechat_plan_for_empty_input():
+    assert SopMonitoringPlanCompiler().compile([]) == {"wechat_monitoring_plan": {}}
+
+
+@pytest.mark.parametrize(
+    "project_sops",
+    [
+        [
+            {
+                "project_id": "sample_project",
+                "project_name": "示例项目",
+                "sop_nodes": [
+                    {
+                        "node_id": "email_notice",
+                        "node_name": "邮件通知",
+                        "monitoring": [
+                            {
+                                "channel": "email",
+                                "group_id": "email_group",
+                                "group_name": "邮件组",
+                                "input_type": "document",
+                                "document_type": "邮件通知单",
+                            },
+                            {
+                                "channel": "rail95306",
+                                "group_id": "rail_group",
+                                "group_name": "95306组",
+                                "input_type": "text",
+                                "message_type": "铁路消息",
+                            },
+                        ],
+                    }
+                ],
+            }
+        ]
+    ],
+)
+def test_sop_monitoring_plan_compiler_skips_non_wechat_channels(project_sops):
+    assert SopMonitoringPlanCompiler().compile(project_sops) == {"wechat_monitoring_plan": {}}
+
+
+@pytest.mark.parametrize(
+    "project_sops",
+    [
+        [
+            {
+                "project_id": "sample_project",
+                "project_name": "示例项目",
+                "sop_nodes": [
+                    {
+                        "node_id": "unbound_notice",
+                        "node_name": "无群通知",
+                        "monitoring": [
+                            {
+                                "channel": "wechat",
+                                "input_type": "document",
+                                "document_type": "无群通知单",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    ],
+)
+def test_sop_monitoring_plan_compiler_skips_wechat_requirements_without_group_id(project_sops):
+    assert SopMonitoringPlanCompiler().compile(project_sops) == {"wechat_monitoring_plan": {}}
+
+
+def test_sop_monitoring_plan_compiler_deduplicates_text_patterns_in_first_seen_order():
+    project_sops = [
+        {
+            "project_id": "chaoyang_steel",
+            "project_name": "朝阳钢铁",
+            "sop_nodes": [
+                {
+                    "node_id": "text_release_message",
+                    "node_name": "文字放货消息",
+                    "monitoring": [
+                        {
+                            "channel": "wechat",
+                            "group_id": "group_3",
+                            "group_name": "微信3号群",
+                            "input_type": "text",
+                            "message_type": "文字放货消息",
+                            "text_patterns": ["放货", "发运", "放货", "到港"],
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+
+    plan = SopMonitoringPlanCompiler().compile(project_sops)
+    group_3_items = plan["wechat_monitoring_plan"]["group_3"]["watch_items"]
+    text_item = find_watch_item(group_3_items, input_type="text", message_type="文字放货消息")
+
+    assert text_item["text_patterns"] == ["放货", "发运", "到港"]
+
+
+def test_sop_monitoring_plan_compiler_deduplicates_target_sop_nodes_per_project_and_node():
+    project_sops = [
+        {
+            "project_id": "chaoyang_steel",
+            "project_name": "朝阳钢铁",
+            "sop_nodes": [
+                {
+                    "node_id": "departure_plan_notice",
+                    "node_name": "出港计划通知单",
+                    "monitoring": [
+                        {
+                            "channel": "wechat",
+                            "group_id": "group_1",
+                            "group_name": "微信1号群",
+                            "input_type": "document",
+                            "document_type": "出港计划通知单",
+                        }
+                    ],
+                },
+                {
+                    "node_id": "departure_plan_notice",
+                    "node_name": "出港计划通知单",
+                    "monitoring": [
+                        {
+                            "channel": "wechat",
+                            "group_id": "group_1",
+                            "group_name": "微信1号群",
+                            "input_type": "document",
+                            "document_type": "出港计划通知单",
+                        }
+                    ],
+                },
+            ],
+        }
+    ]
+
+    plan = SopMonitoringPlanCompiler().compile(project_sops)
+    group_1_items = plan["wechat_monitoring_plan"]["group_1"]["watch_items"]
+    departure_item = find_watch_item(
+        group_1_items,
+        input_type="document",
+        document_type="出港计划通知单",
+    )
+
+    assert departure_item["target_sop_nodes"] == {
+        "chaoyang_steel": ["departure_plan_notice"]
+    }
+
+
 def test_sop_monitoring_plan_compiler_import_contract_exists():
     """Compiler class should become a stable public import contract."""
     assert SopMonitoringPlanCompiler is not None

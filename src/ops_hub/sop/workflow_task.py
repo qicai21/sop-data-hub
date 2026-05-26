@@ -86,6 +86,7 @@ class WorkflowTaskQueue:
                 "message_type": self.event.message_type,
                 "text": self.event.text,
                 "raw_asset_bundle": self.event.raw_asset_bundle.to_dict() if self.event.raw_asset_bundle else None,
+                "metadata": dict(self.event.metadata),
             },
             "raw_asset_bundle": self.raw_asset_bundle.to_dict() if self.raw_asset_bundle else None,
             "match_result": {

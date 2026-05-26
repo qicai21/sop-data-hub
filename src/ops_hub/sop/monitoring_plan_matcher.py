@@ -27,6 +27,7 @@ class MessageEvent:
     message_type: str = "text"
     text: str = ""
     raw_asset_bundle: RawAssetBundle | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -136,6 +137,7 @@ def result_to_dict(result: MessageMatchResult) -> dict[str, Any]:
             "message_type": result.event.message_type,
             "text": result.event.text,
             "raw_asset_bundle": result.event.raw_asset_bundle.to_dict() if result.event.raw_asset_bundle else None,
+            "metadata": dict(result.event.metadata),
         },
         "matches": [
             {

@@ -1,49 +1,60 @@
-"""Placeholder functional test for SOP Data Hub source supervision.
+"""Functional test for read-only wx-ops-agent source supervision.
 
-This file reserves the future acceptance contract: SOP data hub must be able to
-supervise, drive, or monitor source modules such as wx-ops-agent and
-rail95306-sync.
-
-The test is intentionally skipped until runtime adapter contracts are designed.
+Scope:
+- read chat records from `data/chat_records/**/*.jsonl`
+- resolve images from `~/Documents/bussiness-artifacts/wechat_images`
+- read daemon logs from `data/runtime-logs/daemon-auto.log`
+- preserve stable metadata without touching runtime, DB, or wx-ops-agent
 """
 
-import pytest
+from pathlib import Path
+
+from ops_hub.sop.source_watcher import WxOpsSourceWatcher
 
 
-@pytest.mark.skip(reason="SOP runtime source supervision adapters are not designed yet")
-def test_sop_data_hub_can_supervise_wx_ops_agent_and_rail95306_sync():
-    """Future acceptance test placeholder.
+WX_OPS_AGENT_ROOT = Path(__file__).resolve().parents[2].parent / "wx-ops-agent"
+CHAT_RECORDS_ROOT = WX_OPS_AGENT_ROOT / "data" / "chat_records"
+IMAGE_ROOT = Path.home() / "Documents" / "bussiness-artifacts" / "wechat_images"
+DAEMON_LOG_PATH = WX_OPS_AGENT_ROOT / "data" / "runtime-logs" / "daemon-auto.log"
 
-    Intended behavior:
 
-    1. SOP data hub loads all project SOPs.
-    2. SOP data hub compiles a WeChat monitoring plan.
-    3. SOP data hub publishes or exposes that plan to wx-ops-agent.
-    4. SOP data hub reads/observes rail95306-sync health and railway facts.
-    5. SOP data hub receives source events and routes them back to project SOP nodes.
-    6. SOP data hub emits a runtime cycle audit showing both source modules are
-       monitored.
-    """
-    expected_runtime_audit = {
-        "sources": {
-            "wx_ops_agent": {
-                "role": "wechat_capture",
-                "required": True,
-                "plan_published": True,
-                "health_observed": True,
-            },
-            "rail95306_sync": {
-                "role": "railway_fact_source",
-                "required": True,
-                "health_observed": True,
-                "facts_observed": True,
-            },
-        },
-        "runtime_cycle": {
-            "monitoring_plan_compiled": True,
-            "source_modules_supervised": ["wx-ops-agent", "rail95306-sync"],
-        },
-    }
+def test_wx_ops_source_watcher_emits_message_events_with_metadata_and_image_paths():
+    watcher = WxOpsSourceWatcher(
+        chat_records_root=CHAT_RECORDS_ROOT,
+        image_root=IMAGE_ROOT,
+        daemon_log_path=DAEMON_LOG_PATH,
+    )
 
-    assert expected_runtime_audit["sources"]["wx_ops_agent"]["plan_published"]
-    assert expected_runtime_audit["sources"]["rail95306_sync"]["facts_observed"]
+    snapshot = watcher.snapshot()
+    assert snapshot["chat_records_root"] == str(CHAT_RECORDS_ROOT)
+    assert snapshot["image_root"] == str(IMAGE_ROOT)
+    assert snapshot["daemon_log"]["path"] == str(DAEMON_LOG_PATH)
+    assert snapshot["daemon_log"]["exists"] is True
+
+    events = list(
+        watcher.iter_message_events(
+            group_name="铁晟业务工作群",
+            source_file_path=CHAT_RECORDS_ROOT / "铁晟业务工作群" / "2026-05.jsonl",
+            limit=20,
+        )
+    )
+    assert events
+
+    first = events[0]
+    assert first.message_id == "wx_1"
+    assert first.channel == "wechat"
+    assert first.source_agent == "wx-ops-agent"
+    assert first.group_id == "铁晟业务工作群"
+    assert first.metadata["local_id"] == 1
+    assert "server_id" in first.metadata
+    assert "message_key" in first.metadata
+    assert "image_md5" in first.metadata
+
+    image_event = next(event for event in events if event.message_id == "wx_13")
+    assert image_event.metadata["local_id"] == 13
+    assert image_event.metadata["image_md5"] == "5f120e462f4d46a6362f9a39fa19ebfc"
+    assert image_event.raw_asset_bundle is not None
+    assert image_event.raw_asset_bundle.asset_paths["raw_image_path"] is None or image_event.raw_asset_bundle.asset_paths["raw_image_path"].startswith(str(IMAGE_ROOT))
+    assert image_event.raw_asset_bundle.message_metadata_path == str(
+        CHAT_RECORDS_ROOT / "铁晟业务工作群" / "2026-05.jsonl"
+    )

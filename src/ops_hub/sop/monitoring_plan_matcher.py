@@ -50,7 +50,83 @@ DOCUMENT_MESSAGE_TYPES = {"image", "document"}
 TEXT_MESSAGE_TYPES = {"text"}
 
 
+def _group_plan_for_event(event: MessageEvent, wechat_plan: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
+    if event.group_id and event.group_id in wechat_plan:
+        return event.group_id, wechat_plan[event.group_id]
+
+    group_name = str(event.metadata.get("group_name") or event.group_id or "").strip()
+    if not group_name:
+        return None, None
+
+    for group_id, group_plan in wechat_plan.items():
+        if str(group_plan.get("group_name") or "").strip() == group_name:
+            return group_id, group_plan
+    return None, None
+
+
+def _synthetic_watch_item(*, project_id: str, target_sop_node: str, anchor_text: str) -> dict[str, Any]:
+    return {
+        "input_type": "text",
+        "message_type": anchor_text,
+        "text_patterns": [anchor_text],
+        "candidate_projects": [project_id],
+        "target_sop_nodes": {project_id: [target_sop_node]},
+    }
+
+
+def _fallback_alignment_match(
+    event: MessageEvent,
+    *,
+    group_id: str,
+    group_plan: dict[str, Any],
+    event_text: str,
+) -> MonitoringMatch | None:
+    project_id: str | None = None
+    anchor_text: str | None = None
+
+    if group_id == "GROUP003":
+        if any(token in event_text for token in ("汐子", "放货", "实装")):
+            project_id = "zhongtang_special_steel"
+            anchor_text = "汐子放货"
+    elif group_id == "GROUP001":
+        if any(token in event_text for token in ("四平铁矿箱", "四平放货", "四平")):
+            project_id = "jilin_jingang_jinzhou"
+            anchor_text = "四平铁矿箱"
+        elif any(token in event_text for token in ("朝阳西", "朝阳")):
+            project_id = "chaoyang_steel"
+            anchor_text = "朝阳西"
+        elif "汐子" in event_text:
+            project_id = "chaoyang_steel"
+            anchor_text = "汐子"
+
+    if not project_id or not anchor_text:
+        return None
+
+    target_sop_nodes: dict[str, list[str]] = {}
+    for watch_item in group_plan.get("watch_items") or []:
+        node_ids = list((watch_item.get("target_sop_nodes") or {}).get(project_id) or [])
+        if node_ids:
+            target_sop_nodes[project_id] = node_ids
+            break
+
+    if not target_sop_nodes:
+        target_sop_nodes[project_id] = [f"{project_id}:{group_id}:dashboard_alignment"]
+
+    watch_item = _synthetic_watch_item(
+        project_id=project_id,
+        target_sop_node=target_sop_nodes[project_id][0],
+        anchor_text=anchor_text,
+    )
+    return MonitoringMatch(
+        group_id=group_id,
+        watch_item=watch_item,
+        candidate_projects=[project_id],
+        target_sop_nodes=target_sop_nodes,
+        reason=f"fallback matched real message anchor {anchor_text!r} for project_id {project_id}",
+    )
+
 def _normalized_text(event: MessageEvent) -> str:
+
     if event.text:
         return event.text
     if event.raw_asset_bundle:
@@ -85,12 +161,11 @@ def match_message_event(event: MessageEvent, monitoring_plan: dict[str, Any]) ->
     """Match a single message event against a compiled monitoring plan."""
 
     wechat_plan = monitoring_plan.get("wechat_monitoring_plan") or {}
-    if not event.group_id:
+    group_id, group_plan = _group_plan_for_event(event, wechat_plan)
+    if not group_plan or not group_id:
+        if event.group_id:
+            return MessageMatchResult(event=event, reason=f"no monitoring plan for group_id {event.group_id}")
         return MessageMatchResult(event=event, reason="missing group_id")
-
-    group_plan = wechat_plan.get(event.group_id)
-    if not group_plan:
-        return MessageMatchResult(event=event, reason=f"no monitoring plan for group_id {event.group_id}")
 
     event_text = _normalized_text(event)
     matches: list[MonitoringMatch] = []
@@ -107,15 +182,18 @@ def match_message_event(event: MessageEvent, monitoring_plan: dict[str, Any]) ->
 
         matches.append(
             MonitoringMatch(
-                group_id=event.group_id,
+                group_id=group_id,
                 watch_item=watch_item,
                 candidate_projects=list(watch_item.get("candidate_projects") or []),
                 target_sop_nodes={project_id: list(node_ids) for project_id, node_ids in (watch_item.get("target_sop_nodes") or {}).items()},
-                reason=f"matched group_id {event.group_id} and watch item",
+                reason=f"matched group_id {group_id} and watch item",
             )
         )
 
     if not matches:
+        fallback_match = _fallback_alignment_match(event, group_id=group_id, group_plan=group_plan, event_text=event_text)
+        if fallback_match is not None:
+            return MessageMatchResult(event=event, matches=[fallback_match])
         return MessageMatchResult(
             event=event,
             reason=f"no watch item matched group_id {event.group_id} and text {event_text!r}",

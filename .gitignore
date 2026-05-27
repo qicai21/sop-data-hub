@@ -32,3 +32,6 @@ dashboard/dispatch_board_data.json
 
 # 九三大豆看板 — 本地运行文件，不提交
 dashboard/jiusan_dashboard_data.json
+
+# Live service runtime — ephemeral output, not source
+runtime/

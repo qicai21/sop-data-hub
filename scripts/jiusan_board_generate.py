@@ -23,7 +23,7 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 JIUSAN_DB = REPO_ROOT / "data" / "jiusan_cycle.db"
-AGENT_DB = REPO_ROOT / "data" / "agent.db"
+AGENT_DB = REPO_ROOT / "data" / "sop_agent.db"
 DASHBOARD_DIR = REPO_ROOT / "dashboard"
 RAIL95306_DB = Path("/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3")
 VESSEL_LOT_CONFIG_PATH = REPO_ROOT / "samples" / "jiusan_current_vessel_lot_config.example.json"
@@ -46,7 +46,7 @@ def get_conn():
 # ── Vessel / Lot 配置（旧版逻辑恢复） ──
 
 def _load_vessel_lot_config() -> dict:
-    """读取船/lot配置 — 优先 agent.db release_batches，退回到 config 文件"""
+    """读取船/lot配置 — 优先 sop_agent.db release_batches，退回到 config 文件"""
     config = {}
     if VESSEL_LOT_CONFIG_PATH.exists():
         try:
@@ -67,14 +67,14 @@ def _load_vessel_lot_config() -> dict:
                     val = db_data.get(lot_key, {}).get(field)
                     if val is not None:
                         config[lot_key][field] = val
-        config["_data_source"] = "agent.db.release_batches + config_file"
+        config["_data_source"] = "sop_agent.db.release_batches + config_file"
     else:
         config["_data_source"] = "config_file_only"
     return config
 
 
 def _load_vessel_lot_from_db():
-    """从 agent.db release_batches 读取九三大豆项目船/lot"""
+    """从 sop_agent.db release_batches 读取九三大豆项目船/lot"""
     if not AGENT_DB.exists():
         return None
     try:

@@ -37,9 +37,9 @@ class Settings:
     extraction_output_dir: str = "data/extractions"
 
     # 放货批次数据库路径
-    agent_db_path: str = "data/agent.db"
-    # 测试专用数据库路径（龙虾测试群专用）
-    test_agent_db_path: str = "data/agent_test.db"
+    agent_db_path: str = "data/sop_agent.db"
+    # 测试专用数据库路径
+    test_agent_db_path: str = "data/test_sop_agent.db"
 
     # ── VLM 服务 ─────────────────────────────────────
     vlm_service_url: str = "http://127.0.0.1:8018/generate"

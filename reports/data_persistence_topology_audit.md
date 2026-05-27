@@ -14,12 +14,9 @@
 | `agent.db` | `ops-data-hub/data/agent.db` | SQLite | 1.1 MB | ops-data-hub |
 | `95306_collection.sqlite3` | `rail95306-sync/runtime/95306_collection.sqlite3` | SQLite | 75.7 GB | rail95306-sync |
 | `jiusan_cycle.db` | `ops-data-hub/data/jiusan_cycle.db` | SQLite | 320 KB | 九三大豆 |
-| `ops_data_hub.db` | `ops-data-hub/data/ops_data_hub.db` | SQLite | 0 bytes (**空文件**) | stale |
-| `rail95306.db` | `ops-data-hub/data/rail95306.db` | SQLite | 0 bytes (**空文件**) | stale |
-| `message_store.db` | `wx-ops-agent/data/message_store.db` | SQLite | 0 bytes (**空文件**) | stale |
 
 - **活跃DB**: `wx-ops-agent/agent.db`, `ops-data-hub/agent.db`, `95306_collection.sqlite3`, `jiusan_cycle.db` — 共 4 个
-- **空/僵尸DB**: `ops_data_hub.db`, `rail95306.db`, `message_store.db` — 空文件，未被任何代码引用
+- **已清理僵尸DB**: `ops_data_hub.db`, `rail95306.db`, `message_store.db` — R21 已删除
 - **备份**: `wx-ops-agent/data/` 下有 4 个 `.bak` 文件和 `cleanup_backups/` 目录（约 48GB）
 
 ---
@@ -400,8 +397,7 @@ ops-data-hub/data/jiusan_cycle.db    (320 KB)
 │   └── data/
 │       ├── agent.db                📊 派生 — 带 wagon_shipments + contracts
 │       ├── jiusan_cycle.db         📊 派生 — 九三大豆
-│       ├── contracts/              🏛 事实源 — 合同文件
-│       └── ops_data_hub.db         🗑 zombie (0 bytes)
+│   ├── contracts/              🏛 事实源 — 合同文件
 │
 ├── sop-data-hub/  (canonical checkout)
 │   ├── runtime/                    🔄 运行态 (.gitignore 排除)
@@ -439,4 +435,4 @@ ops-data-hub/data/jiusan_cycle.db    (320 KB)
 | **事实源 (Source of Truth)** | 8 个关键路径 | ~2 GB (不含图片) |
 | **派生/缓存 (Cache)** | 4 个 SQLite + JSONL 目录 | ~80 GB (主要是 95306_collection) |
 | **运行态 (Runtime)** | 5 个目录 | ~500 MB |
-| **僵尸 DB** | 3 个空文件 | 0 bytes |
+| **已清理僵尸 DB** | 3 个已删除 (R21) | 0 bytes |

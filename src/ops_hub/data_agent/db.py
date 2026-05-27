@@ -1,6 +1,22 @@
 import os
+import shutil
 from pathlib import Path
 import sqlite3
+
+
+def _migrate_legacy_db(sop_db_path: Path) -> None:
+    """R21: Auto-migrate legacy agent.db to sop_agent.db on first startup."""
+    legacy_path = sop_db_path.parent / "agent.db"
+    if not legacy_path.exists():
+        return
+    if sop_db_path.exists():
+        # New DB already exists — don't overwrite
+        return
+    shutil.copy2(str(legacy_path), str(sop_db_path))
+    import logging
+    logging.getLogger("ops_hub.data_agent").info(
+        "migrated legacy agent.db → %s (%s bytes)", sop_db_path, legacy_path.stat().st_size
+    )
 
 
 def get_db_path() -> Path:
@@ -12,12 +28,15 @@ def get_db_path() -> Path:
 
         return Path(load_settings().agent_db_path)
     except Exception:
-        return Path.cwd() / "data" / "agent.db"
+        return Path.cwd() / "data" / "sop_agent.db"
 
 
 def open_db() -> sqlite3.Connection:
     db_path = get_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # R21: auto-migrate legacy agent.db on first access
+    _migrate_legacy_db(db_path)
 
     connection = sqlite3.connect(db_path)
     connection.row_factory = sqlite3.Row

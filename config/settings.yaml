@@ -18,8 +18,8 @@ extraction_output_dir: /Users/qicai21/Documents/bussiness-artifacts/wechat_image
 db_95306_path: "/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3"
 
 # 放货批次数据库路径
-# 本机唯一 canonical 业务库：禁止在 ops-data-hub 当前工作目录下再生成 data/agent.db，避免 agent 搜索到多份 release_batches。
-agent_db_path: /Users/qicai21/projects/repos/wx-ops-agent/data/agent.db
+# R21: canonical path → sop-data-hub/data/sop_agent.db
+agent_db_path: /Users/qicai21/projects/repos/sop-data-hub/data/sop_agent.db
 
 # ── VLM 服务 ─────────────────────────────────────────
 

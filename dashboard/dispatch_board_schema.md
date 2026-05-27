@@ -20,7 +20,7 @@
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `generated_at` | string | 生成时间 (ISO 8601 / `YYYY-MM-DD HH:MM:SS`) |
-| `source_db` | string | 业务库绝对路径 (`ops-data-hub/data/agent.db`) |
+| `source_db` | string | 业务库绝对路径 (`sop-data-hub/data/sop_agent.db`) |
 | `rail95306_db` | string | 95306 只读库绝对路径 |
 | `generator_version` | string | 生成器版本标识 |
 | `refresh_reason` | string | 本次刷新原因 (如 `manual_refresh`、`release_batch_updated`) |

@@ -39,7 +39,7 @@ def mock_vlm_response():
 def tmp_db(tmp_path: Path):
     """Create a temporary database for testing."""
     import os
-    db_path = tmp_path / "test_agent.db"
+    db_path = tmp_path / "test_sop_agent.db"
     os.environ["BUSINESS_DATA_AGENT_DB_PATH"] = str(db_path)
     yield db_path
     os.environ.pop("BUSINESS_DATA_AGENT_DB_PATH", None)

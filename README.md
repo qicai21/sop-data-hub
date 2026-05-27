@@ -244,7 +244,7 @@ result = response.json()  # {"ok": true, "text": "...", "took_ms": 9078}
 
 ### 数据库模型
 
-SQLite 数据库 `data/agent.db`，包含两张核心表：
+SQLite 数据库 `data/sop_agent.db`，包含两张核心表：
 
 - `contracts`：合同信息（甲方、乙方、到站、运输方式、价格等）
 - `release_batches`：放货批次（船名、货名、批次日期、批次量、过磅状态、尾货等）

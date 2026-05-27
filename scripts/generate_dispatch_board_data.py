@@ -3,7 +3,7 @@
 
 Usage:
     python scripts/generate_dispatch_board_data.py \\
-        --db data/agent.db \\
+        --db data/sop_agent.db \\
         --rail-db /path/to/95306_collection.sqlite3 \\
         --out dashboard/dispatch_board_data.json \\
         --reason manual_refresh
@@ -29,7 +29,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate dispatch board JSON data from business & 95306 databases."
     )
-    parser.add_argument("--db", required=True, help="Path to agent.db (business database)")
+    parser.add_argument("--db", required=True, help="Path to sop_agent.db (business database)")
     parser.add_argument(
         "--rail-db",
         required=True,

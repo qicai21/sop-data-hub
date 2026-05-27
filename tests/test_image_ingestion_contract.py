@@ -27,7 +27,7 @@ def _count(db_path: Path, sql: str, params: tuple = ()) -> int:
 
 
 def test_lobster_group_departure_plan_lands_files_audit_and_test_db(tmp_path: Path, monkeypatch) -> None:
-    prod_db = tmp_path / "prod_agent.db"
+    prod_db = tmp_path / "prod_sop_agent.db"
     test_db = tmp_path / "agent_test.db"
     img = _make_image(tmp_path / "departure.jpg")
     settings = Settings(

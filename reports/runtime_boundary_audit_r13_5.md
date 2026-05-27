@@ -78,8 +78,6 @@
 `data/` 目录当前存在，内容包括：
 
 - `data/agent.db`
-- `data/ops_data_hub.db`
-- `data/rail95306.db`
 - `data/jiusan_cycle.db`
 - `data/jiusan_cycle.db-wal`
 - `data/jiusan_cycle.db-shm`
@@ -99,8 +97,6 @@
   - `*.db-wal`
   - `*.db-shm`
   - `data/agent.db`
-  - `data/ops_data_hub.db`
-  - `data/rail95306.db`
   - `data/jiusan_cycle.db*`
 - 运行垃圾：
   - `data/.DS_Store`

@@ -59,7 +59,7 @@ def test_sop_artifacts_move_to_project_archive_and_reconcile_plan_is_recorded(tm
     img = Image.new("RGB", (32, 32), color="white")
     image_path = tmp_path / "inspection_plan.jpg"
     img.save(image_path)
-    agent_db = tmp_path / "agent.db"
+    agent_db = tmp_path / "sop_agent.db"
     rail_db = tmp_path / "rail.sqlite3"
     settings = Settings(
         classified_output_dir=str(tmp_path / "artifacts"),
@@ -154,7 +154,7 @@ def test_single_lot_departure_plan_archive_uses_lot01(tmp_path):
     img = Image.new("RGB", (32, 32), color="white")
     image_path = tmp_path / "baotenghai_plan.jpg"
     img.save(image_path)
-    agent_db = tmp_path / "agent.db"
+    agent_db = tmp_path / "sop_agent.db"
     settings = Settings(
         classified_output_dir=str(tmp_path / "artifacts"),
         extraction_output_dir=str(tmp_path / "legacy_extractions"),
@@ -209,7 +209,7 @@ def test_non_sop_artifacts_go_to_unmatched_without_second_extraction(tmp_path):
     settings = Settings(
         classified_output_dir=str(tmp_path / "artifacts"),
         extraction_output_dir=str(tmp_path / "legacy_extractions"),
-        agent_db_path=str(tmp_path / "agent.db"),
+        agent_db_path=str(tmp_path / "sop_agent.db"),
         auto_extract_categories=["检装车通知单"],
     )
     classifier = MagicMock()
@@ -239,7 +239,7 @@ def test_ambiguous_inspection_artifacts_move_to_pending_lot_not_candidate_lot(tm
     img = Image.new("RGB", (32, 32), color="white")
     image_path = tmp_path / "malan_inspection.jpg"
     img.save(image_path)
-    agent_db = tmp_path / "agent.db"
+    agent_db = tmp_path / "sop_agent.db"
     settings = Settings(
         classified_output_dir=str(tmp_path / "artifacts"),
         extraction_output_dir=str(tmp_path / "legacy_extractions"),

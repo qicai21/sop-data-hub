@@ -146,11 +146,11 @@ Interpretation:
 ## 6) Repository evidence for database / store separation
 
 Facts found in `ops-data-hub`:
-- Ordinary freight / dispatch board uses `data/agent.db` as the business DB source.
+- Ordinary freight / dispatch board uses `data/sop_agent.db` as the business DB source.
 - Nine-three cycle board uses `data/jiusan_cycle.db` as its own working DB.
 - `scripts/jiusan_board_generate.py` also reads the read-only 95306 store from `rail95306-sync/runtime/95306_collection.sqlite3`.
 - `schema/jiusan_cycle_v3_migration.sql` explicitly says: `不修改生产库，只扩展 jiusan_cycle.db`.
-- `dashboard/dispatch_board_schema.md` names `ops-data-hub/data/agent.db` as the source DB for the dispatch board.
+- `dashboard/dispatch_board_schema.md` names `sop-data-hub/data/sop_agent.db` as the source DB for the dispatch board.
 
 Interpretation:
 - `ops-data-hub` documents a separation between the dispatch-board store and the jiusan cycle store.

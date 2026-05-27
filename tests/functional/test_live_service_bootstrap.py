@@ -306,3 +306,214 @@ def test_source_watcher_default_resolves_correctly():
     repo_root = Path(__file__).resolve().parents[2]  # ops-data-hub/
     expected = repo_root.parent / "wx-ops-agent"  # repos/wx-ops-agent
     assert root == expected, f"Expected {expected}, got {root}"
+
+
+# ── R26: Live SOP Runtime Compiler ────────────────────────────────────
+
+
+def test_status_includes_sop_runtime(tmp_path):
+    """R26: --status includes sop_runtime with loaded_projects, sop_hash, file_hashes."""
+    repo_root = Path(__file__).resolve().parents[2]
+    script_path = repo_root / "scripts" / "run_live_service.py"
+    runtime_root = tmp_path / "runtime"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script_path),
+            "--status",
+            "--runtime-root",
+            str(runtime_root),
+        ],
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + "\n" + result.stderr
+    status = json.loads(result.stdout)
+    assert "sop_runtime" in status, f"Expected sop_runtime in status: {status}"
+    sr = status["sop_runtime"]
+    assert "loaded_projects" in sr
+    assert "sop_hash" in sr
+    assert "last_reload" in sr
+    assert "file_hashes" in sr
+    assert "sop_dir" in sr
+    # The default fixture dir should have at least 3 projects
+    assert len(sr["loaded_projects"]) >= 3, f"Expected >=3 projects, got {sr['loaded_projects']}"
+    assert sr["sop_hash"], "sop_hash must not be empty"
+
+
+def test_sop_watcher_hot_reload_detects_mtime_change(tmp_path):
+    """R26: SopWatcher detects mtime changes and returns updated plan."""
+    from ops_hub.sop.sop_watcher import SopWatcher
+    import time
+
+    sop_dir = tmp_path / "sops"
+    sop_dir.mkdir()
+
+    # Copy a real fixture to get valid content
+    import shutil
+    real_fixture = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "sops"
+    for f in real_fixture.glob("*.md"):
+        shutil.copy(f, sop_dir / f.name)
+
+    watcher = SopWatcher(sop_dir)
+    initial_hash = watcher.runtime.sop_hash
+    assert initial_hash, "Initial hash must not be empty"
+    assert len(watcher.runtime.loaded_projects) >= 3
+
+    # No change → check_and_reload returns False
+    assert watcher.check_and_reload() is False
+
+    # Modify a file
+    jljg_sop = sop_dir / "jilin_jingang_sop.md"
+    original_content = jljg_sop.read_text()
+    jljg_sop.write_text(original_content + "\n## WAIT_DELIVERED\n新增节点：收货确认\n")
+
+    # wait for mtime to tick
+    time.sleep(0.01)
+    # Ensure mtime actually changed (on macOS HFS+, mtime has 1s resolution)
+    import os
+    os.utime(jljg_sop, None)
+
+    # Now check_and_reload should return True
+    assert watcher.check_and_reload() is True, "Should detect mtime change"
+    new_hash = watcher.runtime.sop_hash
+    assert new_hash != initial_hash, f"Hash should change: {initial_hash} → {new_hash}"
+    assert "jilin_jingang_jinzhou" in watcher.runtime.loaded_projects
+
+    # Restore original content
+    jljg_sop.write_text(original_content)
+
+
+def test_sop_change_reflected_in_next_poll_without_restart(tmp_path):
+    """R26: New messages use updated SOP after file change, no restart needed."""
+    repo_root = Path(__file__).resolve().parents[2]
+    script_path = repo_root / "scripts" / "run_live_service.py"
+    sop_dir = tmp_path / "fixture_sops"
+    chat_records_root = tmp_path / "chat_records"
+    runtime_root = tmp_path / "runtime"
+
+    import shutil
+    sop_dir.mkdir()
+    real_fixture = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "sops"
+    for f in real_fixture.glob("*.md"):
+        shutil.copy(f, sop_dir / f.name)
+
+    # ── First poll: with original SOP ──
+    source_file_path = chat_records_root / "铁晟业务工作群" / "2026-05.jsonl"
+    _write_chat_record(
+        source_file_path,
+        {
+            "local_id": 101,
+            "group_name": "铁晟业务工作群",
+            "group_wxid": "GROUP001",
+            "msg-type": "text",
+            "msg-content": "四平 装箱通知 8节 吉林金钢",
+            "time": "2026-05-27 14:00:00",
+            "sender": "测试发送者",
+            "sender_wxid": "wxid_test_sender",
+        },
+    )
+
+    result1 = subprocess.run(
+        [
+            sys.executable,
+            str(script_path),
+            "--once",
+            "--chat-records-root", str(chat_records_root),
+            "--runtime-root", str(runtime_root),
+            "--fixture-dir", str(sop_dir),
+            "--poll-interval", "0",
+        ],
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result1.returncode == 0, result1.stdout + "\n" + result1.stderr
+
+    intent1 = runtime_root / "dashboard_intents" / "wx_101.json"
+    assert intent1.exists(), f"First poll should produce intent: {intent1}"
+    payload1 = json.loads(intent1.read_text(encoding="utf-8"))
+    initial_target_node = payload1.get("target_sop_node", "")
+
+    # ── Modify SOP: add a WAIT_DELIVERED node ──
+    jljg_sop = sop_dir / "jilin_jingang_sop.md"
+    original_content = jljg_sop.read_text()
+    # Append a new section at the end
+    modified_content = original_content + "\n\n## WAIT_DELIVERED\n- 状态：收货确认等待\n- 触发：95306 已发车\n"
+    jljg_sop.write_text(modified_content)
+    import os, time
+    os.utime(jljg_sop, None)
+    time.sleep(0.01)
+
+    # ── Second poll: new message, no restart ──
+    _write_chat_record(
+        source_file_path,
+        {
+            "local_id": 102,
+            "group_name": "铁晟业务工作群",
+            "group_wxid": "GROUP001",
+            "msg-type": "text",
+            "msg-content": "四平 装箱完成 10节 吉林金钢",
+            "time": "2026-05-27 14:30:00",
+            "sender": "测试发送者",
+            "sender_wxid": "wxid_test_sender",
+        },
+    )
+
+    result2 = subprocess.run(
+        [
+            sys.executable,
+            str(script_path),
+            "--once",
+            "--chat-records-root", str(chat_records_root),
+            "--runtime-root", str(runtime_root),
+            "--fixture-dir", str(sop_dir),
+            "--poll-interval", "0",
+        ],
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result2.returncode == 0, result2.stdout + "\n" + result2.stderr
+
+    # Verify second message was processed
+    intent2 = runtime_root / "dashboard_intents" / "wx_102.json"
+    assert intent2.exists(), f"Second poll should produce intent: {intent2}"
+
+    # Verify sop watcher log indicates reload
+    output = result2.stdout
+    assert "sop watcher" in output.lower(), f"SOP watcher log missing: {output}"
+
+    # Restore original
+    jljg_sop.write_text(original_content)
+
+
+def test_sop_watcher_status_reflects_file_hashes(tmp_path):
+    """R26: SopRuntime status dict includes per-file hashes."""
+    from ops_hub.sop.sop_watcher import SopWatcher
+    import shutil
+
+    sop_dir = tmp_path / "sops"
+    sop_dir.mkdir()
+    real_fixture = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "sops"
+    for f in real_fixture.glob("*.md"):
+        shutil.copy(f, sop_dir / f.name)
+
+    watcher = SopWatcher(sop_dir)
+    status = watcher.status
+    assert "file_hashes" in status
+    assert "loaded_projects" in status
+    assert "sop_hash" in status
+    assert "last_reload" in status
+
+    # Each file should have a hash
+    file_hashes = status["file_hashes"]
+    for f in real_fixture.glob("*.md"):
+        assert f.name in file_hashes, f"Missing hash for {f.name}"
+        assert len(file_hashes[f.name]) == 16, f"Hash should be 16 chars: {file_hashes[f.name]}"

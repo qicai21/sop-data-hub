@@ -34,6 +34,7 @@ from ops_hub.sop.dashboard_payload_queue import build_dashboard_payload_queue, w
 from ops_hub.sop.dashboard_state_preview import build_dashboard_state_preview, write_dashboard_state_preview
 from ops_hub.sop.monitoring_plan_matcher import match_message_event
 from ops_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
+from ops_hub.sop.sop_watcher import SopWatcher
 from ops_hub.sop.source_watcher import WxOpsSourceWatcher
 from ops_hub.sop.workflow_task import build_workflow_task_queue
 
@@ -116,6 +117,17 @@ def _seen_key(event) -> tuple[str, str]:
 
 def _load_monitoring_plan(fixture_dir: Path) -> dict[str, Any]:
     return build_real_sop_monitoring_plan_preview(fixture_dir).plan
+
+
+_SOP_WATCHER_CACHE: dict[str, SopWatcher] = {}
+
+
+def _get_sop_watcher(fixture_dir: Path) -> SopWatcher:
+    """Get or create a SopWatcher keyed by the fixture directory."""
+    key = str(fixture_dir.resolve())
+    if key not in _SOP_WATCHER_CACHE:
+        _SOP_WATCHER_CACHE[key] = SopWatcher(fixture_dir)
+    return _SOP_WATCHER_CACHE[key]
 
 
 def _write_pid_file(runtime_root: Path, pid: int) -> Path:
@@ -239,9 +251,15 @@ def run_once(
     logger: logging.Logger,
     seen: set[tuple[str, str]] | None = None,
     sync_start_id: int | None = None,
+    sop_watcher: SopWatcher | None = None,
 ) -> int:
     watcher = WxOpsSourceWatcher(chat_records_root=chat_records_root)
-    monitoring_plan = _load_monitoring_plan(fixture_dir)
+    sop_watcher = sop_watcher or _get_sop_watcher(fixture_dir)
+    # Check for SOP changes before this poll
+    sop_changed = sop_watcher.check_and_reload()
+    if sop_changed:
+        logger.info("sop watcher: plan updated hash=%s projects=%s", sop_watcher.runtime.sop_hash, sop_watcher.runtime.loaded_projects)
+    monitoring_plan = sop_watcher.monitoring_plan
     seen = seen if seen is not None else set()
     processed = 0
 
@@ -299,6 +317,10 @@ def run_live_service(
     (runtime_root / "dashboard_intents").mkdir(parents=True, exist_ok=True)
     (runtime_root / "dashboard_state").mkdir(parents=True, exist_ok=True)
 
+    # ── R26: initialize SOP watcher ──────────────────────────────────────
+    sop_watcher = _get_sop_watcher(fixture_dir)
+    logger.info("sop watcher: initialized hash=%s projects=%s", sop_watcher.runtime.sop_hash, sop_watcher.runtime.loaded_projects)
+
     seen: set[tuple[str, str]] = set()
     iterations = 0
 
@@ -311,6 +333,7 @@ def run_live_service(
             logger=logger,
             seen=seen,
             sync_start_id=sync_start_id,
+            sop_watcher=sop_watcher,
         )
         logger.info("poll complete processed=%s seen=%s", processed, len(seen))
         if once:
@@ -321,7 +344,7 @@ def run_live_service(
 
 
 # ── R18: --status command ───────────────────────────────────────────────
-def status_command(runtime_root: Path) -> None:
+def status_command(runtime_root: Path, fixture_dir: Path | None = None) -> None:
     """Print live service status as JSON to stdout."""
     pid = _read_pid_file(runtime_root)
     alive = _is_process_alive(pid) if pid is not None else False
@@ -336,6 +359,16 @@ def status_command(runtime_root: Path) -> None:
         "chat_records_root": chat_records_root,
         "last_log_line": last_log_line,
     }
+
+    # ── R26: sop_runtime section ────────────────────────────────────
+    if fixture_dir:
+        try:
+            sop_watcher = _get_sop_watcher(fixture_dir)
+            sop_watcher.check_and_reload()
+            status["sop_runtime"] = sop_watcher.status
+        except Exception as exc:
+            status["sop_runtime"] = {"error": str(exc)}
+
     print(json.dumps(status, ensure_ascii=False, indent=2))
 
 
@@ -394,7 +427,7 @@ def main() -> None:
     args = build_arg_parser().parse_args()
 
     if args.status:
-        status_command(runtime_root=args.runtime_root)
+        status_command(runtime_root=args.runtime_root, fixture_dir=args.fixture_dir)
         return
 
     # Resolve chat_records_root: explicit arg > env var > canonical default

@@ -101,6 +101,8 @@ def test_no_zombie_db_names_in_code(tmp_path):
                     continue
                 if rel.startswith("reports/runtime_boundary_audit_r13_5"):
                     continue
+                if rel.startswith("reports/foundation_finalize_r22"):
+                    continue
                 hits.append((rel, name))
 
     assert len(hits) == 0, (

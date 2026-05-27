@@ -1,0 +1,161 @@
+project_id: "jilin_jingang_jinzhou"
+project_name: "吉林金钢-锦州港铁矿发运项目"
+status: "active"
+
+# 吉林金钢-锦州港铁矿发运项目 SOP 基线
+#
+# 关键特征:
+# - 普通货运项目，进入 normal_freight 看板（与中唐、朝阳共享，不与九三混）
+# - 发站只允许: 高桥镇（禁止芦家屯、鲅鱼圈北）
+# - 到站: 四平
+# - 货物: 红土镍矿/镍矿/铁矿粉
+# - 没有检装车通知单，装车确认来自手写箱号表 + 文字报告
+# - 装车后进入 pending_departure_candidate (WAIT_95306_CONFIRM)，不得直接入库
+# - Excel: 一车一行，箱号1/箱号2 两列
+# - JSON 上传: 一箱一条，wagonNumber + boxNumber 一条
+# - 工厂系统: POST 到 http://111.26.178.96:88，当前仅 SOP 记录，不自动上传
+#
+# 业务系统 1.0 定位:
+#   normal_freight_core
+#     ├── 中唐特钢
+#     ├── 朝阳钢铁
+#     └── 吉林金钢
+#   operation_dispatch_core
+#     └── 九三大豆
+
+project_meta:
+  category: "normal_freight"
+  dashboard: "normal_freight"
+  origin_station: "高桥镇"
+  blocked_origin_stations:
+    - "芦家屯"
+    - "鲅鱼圈北"
+  destination_station: "四平"
+  cargo_names:
+    - "红土镍矿"
+    - "镍矿"
+    - "铁矿粉"
+  has_inspection_slip: false
+  departure_confirmation_source: "handwritten_list_or_text_report"
+  departure_flow:
+    pre_95306_status: "WAIT_95306_CONFIRM"
+    pending_node: "pending_departure_candidate"
+
+# 95306 配置
+rail95306:
+  account: "sjys"
+  origin_station: "高桥镇"
+  destination_station: "四平"
+  cargo_names:
+    - "红土镍矿"
+    - "镍矿"
+    - "铁矿粉"
+
+listening_tasks:
+  # 主来源: 铁晟业务工作群
+  - group_id: "GROUP001"
+    group_lookup_id: "[GROUP001]"
+    group_name: "铁晟业务工作群"
+    wxid: "18919596289@chatroom"
+    listen_options:
+      image: true
+      text: true
+    pull_image: true
+    routing:
+      - message_type: "image"
+        trigger_condition: "category_in:[出港计划通知单]"
+        target_node: "create_release_batch"
+      - message_type: "image"
+        trigger_condition: "category_in:[手写箱号车号表]"
+        target_node: "create_pending_departure_candidate"
+      - message_type: "text"
+        trigger_condition: "match_departure_text_template"
+        target_node: "create_pending_departure_candidate"
+
+  # 补充来源: 数据单发群
+  - group_id: "GROUP013"
+    group_lookup_id: "[GROUP013]"
+    group_name: "数据单发群"
+    wxid: "56327225598@chatroom"
+    source_role: "supplemental"
+    listen_options:
+      image: true
+      text: true
+      file: true
+    pull_image: true
+    routing:
+      - message_type: "image"
+        trigger_condition: "category_in:[出港计划通知单]"
+        target_node: "create_release_batch"
+        supplemental: true
+      - message_type: "image"
+        trigger_condition: "category_in:[手写箱号车号表]"
+        target_node: "create_pending_departure_candidate"
+        supplemental: true
+      - message_type: "text"
+        trigger_condition: "match_departure_text_template"
+        target_node: "create_pending_departure_candidate"
+        supplemental: true
+
+  # 预留: 金钢铁矿发运群 (GROUP005)
+  - group_id: "GROUP005"
+    group_lookup_id: "[GROUP005]"
+    group_name: "金钢铁矿发运群"
+    wxid: ""
+    source_role: "future"
+    listen_options:
+      image: true
+      text: true
+    pull_image: false
+    routing:
+      - message_type: "image"
+        trigger_condition: "category_in:[出港计划通知单]"
+        target_node: "create_release_batch"
+      - message_type: "text"
+        trigger_condition: "match_departure_text_template"
+        target_node: "create_pending_departure_candidate"
+
+# Excel 报表格式（一车一行）
+report_artifact:
+  type: "departure_report"
+  filename_pattern: "吉林金钢_发运数据_{date}_{time}.xlsx"
+  columns:
+    - "合同号"
+    - "订单标识"
+    - "货名"
+    - "车号"
+    - "箱号"
+    - "件数"
+    - "装车日期"
+    - "进厂日期"
+    - "船名"
+  header_style:
+    background: "#D9EAD3"
+    bold: true
+    align: "center"
+  box_split_rule: "double_box_split_to_rows"
+
+# 工厂系统上传（预留，不自动执行）
+factory_upload:
+  endpoint: "http://111.26.178.96:88/prod-api"
+  login_path: "/auth/login"
+  upload_path: "/sales/transportOrder/insert"
+  credentials:
+    username: "saibin"
+    password: "Xts@95306"
+  mode: "one_wagon_per_request"
+  enabled: false
+  fixed_fields:
+    numberTime: "单次"
+    formId: "MR07"
+    first: "高桥镇装车发运明细"
+
+# 报送对象
+report_targets:
+  dev:
+    type: "contact"
+    name: "郭东北"
+  production:
+    type: "group"
+    group_id: "[GROUP005]"
+    group_name: "金钢铁矿发运群"

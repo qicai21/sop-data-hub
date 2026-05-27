@@ -1,0 +1,74 @@
+project_id: "zhongtang_special_steel"
+project_name: "中唐特钢铁矿发运项目"
+status: "active"
+
+# 该项目需要的监听任务清单
+listening_tasks:
+  - group_id: "GROUP003"
+    group_lookup_id: "[GROUP003]"
+    group_name: "中唐特钢发运群"
+    wxid: "38739555499@chatroom"
+    listen_options:
+      image: true
+      text: true
+    pull_image: true
+    # 触发后进入的业务流
+    routing:
+      - message_type: "text"
+        trigger_condition: "match_text_template"
+        target_node: "create_release_batch"
+      - message_type: "image"
+        trigger_condition: "category_in:[出港计划通知单, 检装车通知单]"
+        target_node: "process_business_image"
+
+  - group_id: "GROUP001"
+    group_lookup_id: "[GROUP001]"
+    group_name: "铁晟业务工作群"
+    wxid: "18919596289@chatroom"
+    listen_options:
+      image: true
+    pull_image: true
+    routing:
+      - message_type: "image"
+        trigger_condition: "category_in:[检装车通知单]"
+        target_node: "process_inspection_slip"
+        report_targets:
+          dev:
+            type: "contact"
+            name: "郭东北"
+          production:
+            type: "group"
+            group_id: "[GROUP003]"
+            group_name: "中唐特钢发运群"
+
+  - group_id: "GROUP013"
+    group_lookup_id: "[GROUP013]"
+    group_name: "数据单发群"
+    wxid: "56327225598@chatroom"
+    source_role: "supplemental"
+    listen_options:
+      image: true
+      text: true
+      file: true
+    pull_image: true
+    routing:
+      - message_type: "text"
+        trigger_condition: "match_text_template"
+        target_node: "create_release_batch"
+        supplemental: true
+      - message_type: "image"
+        trigger_condition: "category_in:[出港计划通知单]"
+        target_node: "create_release_batch"
+        supplemental: true
+      - message_type: "image"
+        trigger_condition: "category_in:[检装车通知单]"
+        target_node: "process_inspection_slip"
+        supplemental: true
+        report_targets:
+          dev:
+            type: "contact"
+            name: "郭东北"
+          production:
+            type: "group"
+            group_id: "[GROUP003]"
+            group_name: "中唐特钢发运群"

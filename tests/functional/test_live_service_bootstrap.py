@@ -312,11 +312,13 @@ def test_source_watcher_default_resolves_correctly():
 
 
 def test_status_includes_sop_runtime(tmp_path):
-    """R26: --status includes sop_runtime with loaded_projects, sop_hash, file_hashes."""
+    """R26: --status includes sop_runtime with loaded_projects, sop_hash, file_hashes, source_of_truth."""
     repo_root = Path(__file__).resolve().parents[2]
     script_path = repo_root / "scripts" / "run_live_service.py"
     runtime_root = tmp_path / "runtime"
 
+    # R27: Use explicit fixture-dir pointing to config/project_sops/
+    fixture_dir = repo_root / "config" / "project_sops"
     result = subprocess.run(
         [
             sys.executable,
@@ -324,6 +326,8 @@ def test_status_includes_sop_runtime(tmp_path):
             "--status",
             "--runtime-root",
             str(runtime_root),
+            "--fixture-dir",
+            str(fixture_dir),
         ],
         cwd=str(repo_root),
         capture_output=True,
@@ -340,7 +344,8 @@ def test_status_includes_sop_runtime(tmp_path):
     assert "last_reload" in sr
     assert "file_hashes" in sr
     assert "sop_dir" in sr
-    # The default fixture dir should have at least 3 projects
+    # R27: source_of_truth should show git
+    assert sr.get("source_of_truth") == "git", f"Expected git, got {sr.get('source_of_truth')}"
     assert len(sr["loaded_projects"]) >= 3, f"Expected >=3 projects, got {sr['loaded_projects']}"
     assert sr["sop_hash"], "sop_hash must not be empty"
 
@@ -348,15 +353,14 @@ def test_status_includes_sop_runtime(tmp_path):
 def test_sop_watcher_hot_reload_detects_mtime_change(tmp_path):
     """R26: SopWatcher detects mtime changes and returns updated plan."""
     from ops_hub.sop.sop_watcher import SopWatcher
-    import time
+    import time, shutil
 
     sop_dir = tmp_path / "sops"
     sop_dir.mkdir()
 
-    # Copy a real fixture to get valid content
-    import shutil
-    real_fixture = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "sops"
-    for f in real_fixture.glob("*.md"):
+    # R27: Copy YAML fixtures from config/project_sops/
+    real_fixture = Path(__file__).resolve().parents[2] / "config" / "project_sops"
+    for f in real_fixture.glob("*.yaml"):
         shutil.copy(f, sop_dir / f.name)
 
     watcher = SopWatcher(sop_dir)
@@ -368,9 +372,9 @@ def test_sop_watcher_hot_reload_detects_mtime_change(tmp_path):
     assert watcher.check_and_reload() is False
 
     # Modify a file
-    jljg_sop = sop_dir / "jilin_jingang_sop.md"
+    jljg_sop = sop_dir / "jilin_jingang.yaml"
     original_content = jljg_sop.read_text()
-    jljg_sop.write_text(original_content + "\n## WAIT_DELIVERED\n新增节点：收货确认\n")
+    jljg_sop.write_text(original_content + "\n# WAIT_DELIVERED: 收货确认等待\n")
 
     # wait for mtime to tick
     time.sleep(0.01)
@@ -398,8 +402,9 @@ def test_sop_change_reflected_in_next_poll_without_restart(tmp_path):
 
     import shutil
     sop_dir.mkdir()
-    real_fixture = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "sops"
-    for f in real_fixture.glob("*.md"):
+    # R27: Copy YAML fixtures from config/project_sops/
+    real_fixture = Path(__file__).resolve().parents[2] / "config" / "project_sops"
+    for f in real_fixture.glob("*.yaml"):
         shutil.copy(f, sop_dir / f.name)
 
     # ── First poll: with original SOP ──
@@ -441,10 +446,10 @@ def test_sop_change_reflected_in_next_poll_without_restart(tmp_path):
     initial_target_node = payload1.get("target_sop_node", "")
 
     # ── Modify SOP: add a WAIT_DELIVERED node ──
-    jljg_sop = sop_dir / "jilin_jingang_sop.md"
+    jljg_sop = sop_dir / "jilin_jingang.yaml"
     original_content = jljg_sop.read_text()
     # Append a new section at the end
-    modified_content = original_content + "\n\n## WAIT_DELIVERED\n- 状态：收货确认等待\n- 触发：95306 已发车\n"
+    modified_content = original_content + "\n# WAIT_DELIVERED: 收货确认等待\n"
     jljg_sop.write_text(modified_content)
     import os, time
     os.utime(jljg_sop, None)
@@ -501,8 +506,9 @@ def test_sop_watcher_status_reflects_file_hashes(tmp_path):
 
     sop_dir = tmp_path / "sops"
     sop_dir.mkdir()
-    real_fixture = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "sops"
-    for f in real_fixture.glob("*.md"):
+    # R27: Use YAML fixtures
+    real_fixture = Path(__file__).resolve().parents[2] / "config" / "project_sops"
+    for f in real_fixture.glob("*.yaml"):
         shutil.copy(f, sop_dir / f.name)
 
     watcher = SopWatcher(sop_dir)
@@ -514,6 +520,6 @@ def test_sop_watcher_status_reflects_file_hashes(tmp_path):
 
     # Each file should have a hash
     file_hashes = status["file_hashes"]
-    for f in real_fixture.glob("*.md"):
+    for f in real_fixture.glob("*.yaml"):
         assert f.name in file_hashes, f"Missing hash for {f.name}"
         assert len(file_hashes[f.name]) == 16, f"Hash should be 16 chars: {file_hashes[f.name]}"

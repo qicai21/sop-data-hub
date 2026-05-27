@@ -1,0 +1,74 @@
+project_id: "jiusan"
+project_name: "九三大豆铁路发运项目"
+status: "active"
+
+# 九三大豆项目初始化 SOP
+# 当前边界:
+# - 不自动跟踪检装车通知单.
+# - 不自动识别或跟踪放货单.
+# - 放货单由用户发送后手动指认项目、路线和发运信息.
+# - 系统后续从 xts 账号 95306 数据查询每日发车动态.
+rail95306:
+  account: "xts"
+  cargo_name: "大豆"
+  origin_station: "高桥镇"
+  primary_routes:
+    - mode: "container"
+      destination_station: "新台子"
+      private_line: "三三〇处专用线"
+      final_destination: "九三集团铁岭大豆科技有限公司工厂院内"
+      note: "集装箱常规路线, 三三〇处专用线卸车后汽运短倒至工厂"
+    - mode: "bulk_grain_wagon"
+      wagon_alias: "K车"
+      destination_station: "新台子"
+      private_line: "九三集团铁岭大豆科技有限公司专用线"
+      final_destination: "九三集团铁岭大豆科技有限公司工厂院内"
+      note: "散粮车/K车常规路线, 厂内专用线直接卸货, 一次约容纳20车"
+  supplemental_routes:
+    - mode: "open_top_container"
+      destination_station: "得胜台"
+      final_destination: "九三集团铁岭大豆科技有限公司工厂院内"
+      note: "新台子接卸能力不足时启用, 平时不发"
+
+contract:
+  contract_no: "JGWL-JZTS-DD-202601"
+  party_a: "锦州港物流发展有限公司"
+  party_b: "锦州新铁晟港口物流有限公司"
+  cargo_name: "大豆"
+  trade_type: "外贸进口"
+  valid_from: "2026-01-01"
+  valid_to: "2026-12-31"
+  doc_path: "/Users/qicai21/projects/repos/ops-data-hub/data/contracts/jiusan_soybean/物流发展-铁盛2026大豆合同.docx"
+  pricing_routes:
+    - code: "A"
+      mode: "集装箱"
+      route: "锦州港仓库 -> 新台子/三三〇处专用线 -> 汽运短倒至九三工厂"
+      tax_included_price: 65.43
+      unit: "元/吨"
+    - code: "B"
+      mode: "铁路敞顶箱"
+      route: "锦州港仓库 -> 得胜台 -> 汽运倒运至九三工厂"
+      tax_included_price: 65.60
+      unit: "元/吨"
+      route_role: "supplemental"
+    - code: "C"
+      mode: "散粮车/K车"
+      route: "锦州港仓库 -> 新台子/九三集团铁岭大豆科技有限公司专用线 -> 直接入厂"
+      tax_included_price: 65.13
+      unit: "元/吨"
+
+listening_tasks:
+  - group_id: "GROUP013"
+    group_lookup_id: "[GROUP013]"
+    group_name: "数据单发群"
+    wxid: "56327225598@chatroom"
+    listen_options:
+      image: true
+      text: true
+      file: true
+    pull_image: true
+    routing:
+      - message_type: "*"
+        trigger_condition: "manual_designation_required"
+        target_node: "archive_for_manual_release_setup"
+        save_db: true

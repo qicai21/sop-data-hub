@@ -42,7 +42,8 @@ from ops_hub.sop.workflow_task import build_workflow_task_queue
 CANONICAL_REPO_ROOT = Path.home() / "projects" / "repos" / "sop-data-hub"
 DEFAULT_RUNTIME_ROOT = CANONICAL_REPO_ROOT / "runtime"
 DEFAULT_CHAT_RECORDS_ROOT = Path.home() / "projects" / "repos" / "wx-ops-agent" / "data" / "chat_records"
-DEFAULT_FIXTURE_DIR = REPO_ROOT / "tests" / "fixtures" / "sops"
+# ── R27: canonical SOP source → config/project_sops/ (YAML, git-tracked) ──
+DEFAULT_FIXTURE_DIR = CANONICAL_REPO_ROOT / "config" / "project_sops"
 DEFAULT_POLL_INTERVAL = 1.0
 PID_FILE_NAME = "live_service.pid"
 

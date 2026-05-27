@@ -238,6 +238,7 @@ def run_once(
     fixture_dir: Path,
     logger: logging.Logger,
     seen: set[tuple[str, str]] | None = None,
+    sync_start_id: int | None = None,
 ) -> int:
     watcher = WxOpsSourceWatcher(chat_records_root=chat_records_root)
     monitoring_plan = _load_monitoring_plan(fixture_dir)
@@ -245,6 +246,9 @@ def run_once(
     processed = 0
 
     for event in watcher.iter_message_events():
+        local_id = event.metadata.get("local_id")
+        if sync_start_id is not None and isinstance(local_id, int) and local_id < sync_start_id:
+            continue
         key = _seen_key(event)
         if key in seen:
             continue
@@ -263,6 +267,7 @@ def run_live_service(
     poll_interval: float,
     once: bool,
     max_iterations: int | None = None,
+    sync_start_id: int | None = None,
 ) -> None:
     log_path = runtime_root / "live_service.log"
     logger = _configure_logging(log_path)
@@ -305,6 +310,7 @@ def run_live_service(
             fixture_dir=fixture_dir,
             logger=logger,
             seen=seen,
+            sync_start_id=sync_start_id,
         )
         logger.info("poll complete processed=%s seen=%s", processed, len(seen))
         if once:
@@ -371,6 +377,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Stop after N polling iterations",
     )
     parser.add_argument(
+        "--sync-start-id",
+        type=int,
+        default=None,
+        help="Minimum local_id/seq to process; skip events with lower IDs (R19: catch-up after path fix)",
+    )
+    parser.add_argument(
         "--status",
         action="store_true",
         help="Print live service status (pid, alive, runtime_root, chat_records_root, last_log_line) and exit",
@@ -400,6 +412,7 @@ def main() -> None:
         poll_interval=args.poll_interval,
         once=args.once,
         max_iterations=args.max_iterations,
+        sync_start_id=args.sync_start_id,
     )
 
 

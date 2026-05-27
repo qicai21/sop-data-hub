@@ -59,7 +59,12 @@ def _group_plan_for_event(event: MessageEvent, wechat_plan: dict[str, Any]) -> t
         return None, None
 
     for group_id, group_plan in wechat_plan.items():
-        if str(group_plan.get("group_name") or "").strip() == group_name:
+        plan_group_name = str(group_plan.get("group_name") or "").strip()
+        # Exact match
+        if plan_group_name == group_name:
+            return group_id, group_plan
+        # Substring match (dir name often has -GROUPxxx suffix, plan has clean name)
+        if plan_group_name and plan_group_name in group_name:
             return group_id, group_plan
     return None, None
 
@@ -98,6 +103,11 @@ def _fallback_alignment_match(
         elif "汐子" in event_text:
             project_id = "chaoyang_steel"
             anchor_text = "汐子"
+    elif group_id == "GROUP013":
+        # R19: 朝阳西/木森17 messages in 数据单发群 align to chaoyang_steel
+        if any(token in event_text for token in ("朝阳西", "木森17")):
+            project_id = "chaoyang_steel"
+            anchor_text = "朝阳西木森17"
 
     if not project_id or not anchor_text:
         return None

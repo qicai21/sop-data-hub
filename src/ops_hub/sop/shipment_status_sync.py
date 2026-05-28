@@ -44,6 +44,14 @@ STAGE_TO_DISPATCH_STATUS: dict[str, str] = {
     "已发车": "dispatched",
 }
 
+# R39: Default rule — if SOP does not declare additional manual confirmation,
+# 95306 "交付" status implies confirmed_received.
+# This can be overridden by SOP YAML in the future.
+DEFAULT_CONFIRMED_RECEIVED_RULE = (
+    "If all wagons are delivered per 95306 and SOP does not require "
+    "manual confirmation, auto-set confirmed_received_at = delivered_at."
+)
+
 
 @dataclass
 class WagonRow:
@@ -321,7 +329,7 @@ class ShipmentStatusSync:
                     destination_name=row["destination_name"] or "",
                     departed_at=row["departed_at"] or "",
                     arrived_at=row["arrived_at"] or "",
-                    delivered_at="",
+                    delivered_at=ShipmentStatusSync._safe_col(row, "delivered_at"),
                     status_name=row["status_name"] or "",
                     dispatch_status=row["dispatch_status"] or "",
                 )
@@ -338,6 +346,15 @@ class ShipmentStatusSync:
             return {row[1] for row in rows}
         finally:
             conn.close()
+
+    @staticmethod
+    def _release_batch_columns(conn: sqlite3.Connection) -> set[str]:
+        """Get release_batches column names."""
+        try:
+            rows = conn.execute("PRAGMA table_info(release_batches)").fetchall()
+            return {row[1] for row in rows}
+        except Exception:
+            return set()
 
     def _find_snapshot(self, wagon: WagonRow) -> ShipmentSnapshot | None:
         """Find the matching 95306 shipment snapshot.
@@ -399,6 +416,14 @@ class ShipmentStatusSync:
             latest_stage_name=row["latest_stage_name"] or "",
         )
 
+    @staticmethod
+    def _safe_col(row: sqlite3.Row, column: str) -> str:
+        """Read a column safely — returns '' if column doesn't exist."""
+        try:
+            return row[column] or ""
+        except (IndexError, KeyError):
+            return ""
+
     def _apply_updates(
         self,
         updates: list[UpdatePlan],
@@ -408,23 +433,35 @@ class ShipmentStatusSync:
     ) -> None:
         """Write updates to sop_agent.db.
 
-        Skips columns that don't exist in wagon_shipments (e.g. delivered_at).
+        Writes time fields (departed_at, arrived_at, delivered_at) and
+        dispatch_status.  Also applies the default confirmed_received rule:
+        if all wagons are delivered per 95306 and the SOP does not require
+        manual confirmation, auto-sets confirmed_received_at on each wagon
+        and on the release_batch.
         """
         conn = sqlite3.connect(str(self.sop_db_path))
         try:
             # Get existing columns to skip missing ones
             existing_cols = self._sop_wagon_columns()
+            existing_rb_cols = self._release_batch_columns(conn)
 
             # Group time-field updates by db_id
             time_updates: dict[str, dict[str, str]] = {}
             dispatch_updates: dict[str, str] = {}
+            delivered_wagon_ids: set[str] = set()
+            last_delivered_at: str = ""
+
             for u in updates:
                 if u.field in ("departed_at", "arrived_at", "delivered_at"):
                     if u.field in existing_cols:
                         time_updates.setdefault(u.db_id, {})[u.field] = u.new_value
+                    if u.field == "delivered_at":
+                        delivered_wagon_ids.add(u.db_id)
+                        last_delivered_at = u.new_value
                 elif u.field == "dispatch_status":
                     dispatch_updates[u.db_id] = u.new_value
 
+            # ── Write time-field updates ────────────────────────────
             for db_id, fields in time_updates.items():
                 sets = ", ".join(f"{k} = ?" for k in fields)
                 vals = list(fields.values()) + [db_id]
@@ -432,7 +469,41 @@ class ShipmentStatusSync:
                     f"UPDATE wagon_shipments SET {sets} WHERE id = ?", vals
                 )
 
-            # For dispatch_status, update release_batches
+            # ── R39: Default confirmed_received rule ─────────────────
+            # If ALL wagons have delivered_at updates, auto-set
+            # confirmed_received_at on each wagon AND on the release_batch.
+            total_wagons = len(time_updates)
+            if (
+                "confirmed_received_at" in existing_cols
+                and delivered_wagon_ids
+                and len(delivered_wagon_ids) >= total_wagons
+                and total_wagons > 0
+            ):
+                for db_id in delivered_wagon_ids:
+                    conn.execute(
+                        "UPDATE wagon_shipments SET confirmed_received_at = ? "
+                        "WHERE id = ? AND confirmed_received_at IS NULL",
+                        (last_delivered_at, db_id),
+                    )
+                # Also update release_batches
+                if "confirmed_received_at" in existing_rb_cols:
+                    batch_ids = set()
+                    for db_id in delivered_wagon_ids:
+                        row = conn.execute(
+                            "SELECT batch_id FROM wagon_shipments WHERE id = ?",
+                            (db_id,),
+                        ).fetchone()
+                        if row:
+                            batch_ids.add(row[0])
+                    for batch_id in batch_ids:
+                        conn.execute(
+                            "UPDATE release_batches "
+                            "SET confirmed_received_at = ? "
+                            "WHERE id = ? AND confirmed_received_at IS NULL",
+                            (last_delivered_at, batch_id),
+                        )
+
+            # ── Update dispatch_status on release_batches ──────────
             if dispatch_updates:
                 batch_ids = set()
                 for u in updates:

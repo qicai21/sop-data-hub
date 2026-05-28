@@ -393,6 +393,22 @@ def status_command(runtime_root: Path, fixture_dir: Path | None = None) -> None:
         except Exception as exc:
             status["sop_task_runtime"] = {"error": str(exc)}
 
+    # ── R35: sop_task_trace_runtime section ──────────────────────────
+    if fixture_dir:
+        trace_dir = DEFAULT_RUNTIME_ROOT / "task_traces"
+        try:
+            trace_files = sorted(trace_dir.glob("*.json")) if trace_dir.exists() else []
+            last_trace_count = len(trace_files)
+            last_trace_id = trace_files[-1].stem if trace_files else ""
+            status["sop_task_trace_runtime"] = {
+                "enabled": True,
+                "trace_dir": str(trace_dir.resolve()),
+                "last_trace_count": last_trace_count,
+                "last_trace_id": last_trace_id,
+            }
+        except Exception as exc:
+            status["sop_task_trace_runtime"] = {"error": str(exc)}
+
     print(json.dumps(status, ensure_ascii=False, indent=2))
 
 

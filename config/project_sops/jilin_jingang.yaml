@@ -1,161 +1,369 @@
-project_id: "jilin_jingang_jinzhou"
-project_name: "吉林金钢-锦州港铁矿发运项目"
-status: "active"
+project:
+  id: jilin_jingang_jinzhou
+  name: 吉林金钢（锦州港→四平）铁矿发运项目
+  version: v0.2
+  status: active
+  source_of_truth: git
+  sop_type: ordinary_freight
 
-# 吉林金钢-锦州港铁矿发运项目 SOP 基线
-#
-# 关键特征:
-# - 普通货运项目，进入 normal_freight 看板（与中唐、朝阳共享，不与九三混）
-# - 发站只允许: 高桥镇（禁止芦家屯、鲅鱼圈北）
-# - 到站: 四平
-# - 货物: 红土镍矿/镍矿/铁矿粉
-# - 没有检装车通知单，装车确认来自手写箱号表 + 文字报告
-# - 装车后进入 pending_departure_candidate (WAIT_95306_CONFIRM)，不得直接入库
-# - Excel: 一车一行，箱号1/箱号2 两列
-# - JSON 上传: 一箱一条，wagonNumber + boxNumber 一条
-# - 工厂系统: POST 到 http://111.26.178.96:88，当前仅 SOP 记录，不自动上传
-#
-# 业务系统 1.0 定位:
-#   normal_freight_core
-#     ├── 中唐特钢
-#     ├── 朝阳钢铁
-#     └── 吉林金钢
-#   operation_dispatch_core
-#     └── 九三大豆
+scope:
+  description:
+    - 从微信群接收放货信息、货运信息、装车发运通知
+    - 建立放货批次与车辆发运关系
+    - 查询95306获取运单与车号
+    - 生成发运excel与工厂系统json
+    - 持续跟踪95306状态直至确认收货
+  excludes:
+    - 不定义python脚本文件名
+    - 不定义telegram联系人
+    - 不定义HTTP实现细节
+    - 不定义数据库schema
+    - 不定义OCR/VLM模型实现
 
-project_meta:
-  category: "normal_freight"
-  dashboard: "normal_freight"
-  origin_station: "高桥镇"
-  blocked_origin_stations:
-    - "芦家屯"
-    - "鲅鱼圈北"
-  destination_station: "四平"
-  cargo_names:
-    - "红土镍矿"
-    - "镍矿"
-    - "铁矿粉"
-  has_inspection_slip: false
-  departure_confirmation_source: "handwritten_list_or_text_report"
+groups:
+  - id: GROUP001
+    name: 铁晟业务工作群-[GROUP001]
+    role:
+      - 接收出港计划通知单
+      - 接收装车发运通知
+    message_types:
+      - release_notice_image
+      - departure_text
+  - id: GROUP005
+    name: 金钢铁矿发运群-[GROUP005]
+    role:
+      - 接收出港计划通知单
+      - 接收货运信息
+      - 报送发运excel
+    message_types:
+      - release_notice_image
+      - freight_detail_text
+      - departure_excel
+  - id: GROUP013
+    name: 数据单发群-[GROUP013]
+    role:
+      - 补充放货信息
+      - 补充货运信息
+      - 补充装车发运信息
+      - 测试阶段发送发运excel
+    message_types:
+      - release_notice_image
+      - freight_detail_text
+      - departure_text
+      - departure_excel_test
+
+sources:
+  wechat_chat_records:
+    type: jsonl
+    path: wx-ops-agent/data/chat_records/**/*.jsonl
+    role: 微信消息事实源
+  wechat_images:
+    type: image_directory
+    path: ~/Documents/bussiness-artifacts/wechat_images
+    role: 原始通知单图片保存
+  sop_agent_db:
+    type: sqlite
+    path: sop-data-hub/data/sop_agent.db
+    role: 普通货运业务数据库
+  railway_95306:
+    type: sqlite
+    path: 95306_collection.sqlite3
+    role: 95306运输状态数据库
+
+entities:
+  release_batch:
+    description: 放货批次
+    uniqueness:
+      - order_identifier
+      - contract_no
+    rules:
+      - 不同标识号不得合并
+      - 不同合同号不得合并
+      - 同船名允许多个release_batch
+    fields:
+      - ship_name
+      - destination
+      - quantity
+      - cargo_name
+      - order_identifier
+      - contract_no
+      - cargo_name_detail
+  wagon_shipment:
+    description: 发运车辆记录
+    uniqueness:
+      - wagon_no
+      - waybill_no
+      - release_batch_id
+
+states:
+  release_batch:
+    - pending_release_notice
+    - release_batch_created
+    - freight_detail_enriched
+    - waiting_departure
+    - departure_in_progress
+    - arrived_destination
+    - delivered
+    - confirmed_received
+    - closed
+  wagon_shipment:
+    - pending_match
+    - waiting_95306
+    - dispatched
+    - arrived
+    - delivered
+    - confirmed_received
+
+flows:
+  release_notice_flow:
+    trigger:
+      groups:
+        - GROUP001
+        - GROUP005
+        - GROUP013
+      message_types:
+        - release_notice_image
+        - release_notice_text
+    steps:
+      - node: detect_release_notice
+        action:
+          - classify_message
+          - extract_release_notice_json
+        outputs:
+          - release_notice_json
+      - node: identify_project
+        conditions:
+          any_keywords:
+            - 四平
+            - 吉林金钢
+        outputs:
+          - project_candidate
+      - node: find_existing_release_batch
+        action:
+          - query_release_batches
+        match_fields:
+          - order_identifier
+          - contract_no
+          - ship_name
+          - destination
+      - node: create_or_update_release_batch
+        conditions:
+          existing_batch_found: false
+        action:
+          - create_release_batch
+        outputs:
+          - release_batch_created
+      - node: update_existing_release_batch
+        conditions:
+          existing_batch_found: true
+        action:
+          - update_release_batch_fields
+  freight_detail_flow:
+    trigger:
+      groups:
+        - GROUP005
+        - GROUP013
+      message_types:
+        - freight_detail_text
+    extract_fields:
+      - order_identifier
+      - contract_no
+      - cargo_name_detail
+    action:
+      - enrich_release_batch
   departure_flow:
-    pre_95306_status: "WAIT_95306_CONFIRM"
-    pending_node: "pending_departure_candidate"
+    trigger:
+      groups:
+        - GROUP001
+        - GROUP013
+      message_patterns:
+        - ".*46车.*"
+        - ".*55车.*"
+        - ".*53车.*"
+    examples:
+      - "6道，四平铁，46车"
+    steps:
+      - node: detect_departure_message
+        action:
+          - parse_departure_text
+        extract_fields:
+          - message_time
+          - destination
+          - car_count
+          - optional_ship_name
+      - node: build_95306_query_window
+        action:
+          - build_time_window
+        query_window:
+          start: message_time - 60m
+          end: message_time + 60m
+      - node: query_95306
+        action:
+          - query_95306_waybills
+        outputs:
+          - waybill_candidates
+      - node: query_result_found
+        conditions:
+          waybill_candidates_found: false
+        action:
+          - create_pending_task
+        outputs:
+          - pending_departure_candidate
+      - node: extract_wagons_and_waybills
+        conditions:
+          waybill_candidates_found: true
+        action:
+          - extract_wagon_no
+          - extract_container_no
+          - extract_waybill_no
+      - node: deduplicate_departure_records
+        action:
+          - check_existing_wagon_shipments
+        duplicate_policy:
+          existing_record: ignore
+          partial_record: enrich_only
+      - node: match_release_batch
+        action:
+          - bind_wagons_to_release_batch
+      - node: write_departure_records
+        action:
+          - create_wagon_shipments
+        outputs:
+          - departure_records_written
+      - node: generate_departure_excel
+        action:
+          - generate_departure_excel_task
+        outputs:
+          - departure_excel
+      - node: generate_factory_json
+        action:
+          - generate_factory_transport_json_task
+        outputs:
+          - factory_transport_json
+      - node: delivery_target_test
+        action:
+          - dry_run_receiver_system
+        expected:
+          response_code: 200
+      - node: send_test_excel
+        runtime_rules:
+          test_mode:
+            receiver: 郭东北
+        action:
+          - send_excel_task
+      - node: telegram_json_delivery
+        runtime_rules:
+          test_mode: true
+        action:
+          - telegram_json_delivery_task
+      - node: enter_tracking_phase
+        next:
+          - track_95306_status
+  tracking_flow:
+    trigger:
+      - dispatched_wagon_exists
+    steps:
+      - node: track_95306_status
+        action:
+          - poll_shipment_snapshots
+        tracked_status:
+          - 发车
+          - 到站
+          - 交付
+      - node: arrived_destination
+        conditions:
+          95306_status: 到站
+        action:
+          - update_dashboard_state
+          - update_wagon_arrival_status
+      - node: delivered
+        conditions:
+          95306_status: 交付
+        action:
+          - update_dispatch_status
+      - node: confirmed_received
+        conditions:
+          any:
+            - 95306_delivered_stable
+            - receiver_system_confirmed
+            - manual_confirmation
+        action:
+          - mark_confirmed_received
+          - close_dashboard_state
 
-# 95306 配置
-rail95306:
-  account: "sjys"
-  origin_station: "高桥镇"
-  destination_station: "四平"
-  cargo_names:
-    - "红土镍矿"
-    - "镍矿"
-    - "铁矿粉"
+runtime:
+  watcher:
+    enabled: true
+    hot_reload: true
+  sop_reload:
+    source_of_truth: git
+    watch_directory: config/project_sops/
+  idempotency:
+    message:
+      unique_key:
+        - group_id
+        - seq
+    wagon_shipment:
+      unique_key:
+        - wagon_no
+        - waybill_no
+        - release_batch_id
+  task_resolver:
+    departure_excel:
+      task_type: excel_generation
+    factory_json:
+      task_type: json_generation
+    telegram_delivery:
+      task_type: telegram_delivery
+    receiver_upload:
+      task_type: http_delivery
 
-listening_tasks:
-  # 主来源: 铁晟业务工作群
-  - group_id: "GROUP001"
-    group_lookup_id: "[GROUP001]"
-    group_name: "铁晟业务工作群"
-    wxid: "18919596289@chatroom"
-    listen_options:
-      image: true
-      text: true
-    pull_image: true
-    routing:
-      - message_type: "image"
-        trigger_condition: "category_in:[出港计划通知单]"
-        target_node: "create_release_batch"
-      - message_type: "image"
-        trigger_condition: "category_in:[手写箱号车号表]"
-        target_node: "create_pending_departure_candidate"
-      - message_type: "text"
-        trigger_condition: "match_departure_text_template"
-        target_node: "create_pending_departure_candidate"
+exceptions:
+  - name: ocr_incomplete
+    action:
+      - create_todo
+      - preserve_original_image
+  - name: unmatched_release_batch
+    action:
+      - create_manual_review_task
+  - name: 95306_query_empty
+    action:
+      - create_pending_departure_candidate
+  - name: shipment_count_mismatch
+    action:
+      - require_manual_confirmation
+  - name: duplicate_message
+    action:
+      - enrich_only
+      - no_duplicate_insert
+  - name: receiver_system_not_200
+    action:
+      - mark_delivery_failed
+      - create_retry_task
 
-  # 补充来源: 数据单发群
-  - group_id: "GROUP013"
-    group_lookup_id: "[GROUP013]"
-    group_name: "数据单发群"
-    wxid: "56327225598@chatroom"
-    source_role: "supplemental"
-    listen_options:
-      image: true
-      text: true
-      file: true
-    pull_image: true
-    routing:
-      - message_type: "image"
-        trigger_condition: "category_in:[出港计划通知单]"
-        target_node: "create_release_batch"
-        supplemental: true
-      - message_type: "image"
-        trigger_condition: "category_in:[手写箱号车号表]"
-        target_node: "create_pending_departure_candidate"
-        supplemental: true
-      - message_type: "text"
-        trigger_condition: "match_departure_text_template"
-        target_node: "create_pending_departure_candidate"
-        supplemental: true
+archive:
+  matched:
+    images:
+      path: >
+        projects/jilin_jingang_jinzhou/
+        <destination>/<ship_name>/lot<order_identifier>/images/
+    json:
+      path: >
+        projects/jilin_jingang_jinzhou/
+        <destination>/<ship_name>/lot<order_identifier>/json/
+  unmatched:
+    images:
+      path: unmatched/<YYYY-MM>/images/
+    json:
+      path: unmatched/<YYYY-MM>/json/
 
-  # 预留: 金钢铁矿发运群 (GROUP005)
-  - group_id: "GROUP005"
-    group_lookup_id: "[GROUP005]"
-    group_name: "金钢铁矿发运群"
-    wxid: ""
-    source_role: "future"
-    listen_options:
-      image: true
-      text: true
-    pull_image: false
-    routing:
-      - message_type: "image"
-        trigger_condition: "category_in:[出港计划通知单]"
-        target_node: "create_release_batch"
-      - message_type: "text"
-        trigger_condition: "match_departure_text_template"
-        target_node: "create_pending_departure_candidate"
-
-# Excel 报表格式（一车一行）
-report_artifact:
-  type: "departure_report"
-  filename_pattern: "吉林金钢_发运数据_{date}_{time}.xlsx"
-  columns:
-    - "合同号"
-    - "订单标识"
-    - "货名"
-    - "车号"
-    - "箱号"
-    - "件数"
-    - "装车日期"
-    - "进厂日期"
-    - "船名"
-  header_style:
-    background: "#D9EAD3"
-    bold: true
-    align: "center"
-  box_split_rule: "double_box_split_to_rows"
-
-# 工厂系统上传（预留，不自动执行）
-factory_upload:
-  endpoint: "http://111.26.178.96:88/prod-api"
-  login_path: "/auth/login"
-  upload_path: "/sales/transportOrder/insert"
-  credentials:
-    username: "saibin"
-    password: "Xts@95306"
-  mode: "one_wagon_per_request"
-  enabled: false
-  fixed_fields:
-    numberTime: "单次"
-    formId: "MR07"
-    first: "高桥镇装车发运明细"
-
-# 报送对象
-report_targets:
-  dev:
-    type: "contact"
-    name: "郭东北"
-  production:
-    type: "group"
-    group_id: "[GROUP005]"
-    group_name: "金钢铁矿发运群"
+acceptance:
+  - 不同标识号不得合并为同一release_batch
+  - 发运文字必须触发95306查询
+  - 查询窗口必须使用消息时间±60分钟
+  - 车号与运单必须落库
+  - 发运excel不得硬编码船名
+  - 发运json必须可生成
+  - 95306状态必须持续跟踪
+  - 已交付车辆不得长期停留in_progress
+  - confirmed_received后dashboard必须closed

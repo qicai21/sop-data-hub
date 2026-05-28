@@ -1,10 +1,26 @@
-project:
-  id: jilin_jingang_jinzhou
-  name: 吉林金钢（锦州港→四平）铁矿发运项目
-  version: v0.2
-  status: active
-  source_of_truth: git
-  sop_type: ordinary_freight
+project_id: "jilin_jingang_jinzhou"
+project_name: "吉林金钢（锦州港→四平）铁矿发运项目"
+status: "active"
+version: "v0.2"
+source_of_truth: "git"
+sop_type: "ordinary_freight"
+
+# 吉林金钢（锦州港→四平）铁矿发运项目 SOP v0.2
+# 兼容当前 SOPWatcher / load_project_sop 解析器：顶层保留 project_id / project_name / status。
+# 业务内容保留完整 canonical SOP 结构，供后续实现对照。
+
+project_meta:
+  category: "normal_freight"
+  dashboard: "normal_freight"
+  origin_station: "高桥镇"
+  destination_station: "四平"
+  cargo_names:
+    - "红土镍矿"
+    - "镍矿"
+    - "铁矿粉"
+  has_inspection_slip: false
+  departure_confirmation_source: "handwritten_list_or_text_report"
+  source_of_truth: "git"
 
 scope:
   description:
@@ -21,161 +37,224 @@ scope:
     - 不定义OCR/VLM模型实现
 
 groups:
-  - id: GROUP001
-    name: 铁晟业务工作群-[GROUP001]
+  - id: "GROUP001"
+    name: "铁晟业务工作群-[GROUP001]"
     role:
-      - 接收出港计划通知单
-      - 接收装车发运通知
+      - "接收出港计划通知单"
+      - "接收装车发运通知"
     message_types:
-      - release_notice_image
-      - departure_text
-  - id: GROUP005
-    name: 金钢铁矿发运群-[GROUP005]
+      - "release_notice_image"
+      - "departure_text"
+  - id: "GROUP005"
+    name: "金钢铁矿发运群-[GROUP005]"
     role:
-      - 接收出港计划通知单
-      - 接收货运信息
-      - 报送发运excel
+      - "接收出港计划通知单"
+      - "接收货运信息"
+      - "报送发运excel"
     message_types:
-      - release_notice_image
-      - freight_detail_text
-      - departure_excel
-  - id: GROUP013
-    name: 数据单发群-[GROUP013]
+      - "release_notice_image"
+      - "freight_detail_text"
+      - "departure_excel"
+  - id: "GROUP013"
+    name: "数据单发群-[GROUP013]"
     role:
-      - 补充放货信息
-      - 补充货运信息
-      - 补充装车发运信息
-      - 测试阶段发送发运excel
+      - "补充放货信息"
+      - "补充货运信息"
+      - "补充装车发运信息"
+      - "测试阶段发送发运excel"
     message_types:
-      - release_notice_image
-      - freight_detail_text
-      - departure_text
-      - departure_excel_test
+      - "release_notice_image"
+      - "freight_detail_text"
+      - "departure_text"
+      - "departure_excel_test"
+
+# 兼容当前 monitoring plan compiler 的监听任务结构。
+listening_tasks:
+  - group_id: "GROUP001"
+    group_lookup_id: "[GROUP001]"
+    group_name: "铁晟业务工作群"
+    source_role: "primary"
+    listen_options:
+      image: true
+      text: true
+    pull_image: true
+    routing:
+      - message_type: "image"
+        trigger_condition: "category_in:[出港计划通知单]"
+        target_node: "detect_release_notice"
+      - message_type: "text"
+        trigger_condition: "match_departure_text_template"
+        target_node: "detect_departure_message"
+  - group_id: "GROUP005"
+    group_lookup_id: "[GROUP005]"
+    group_name: "金钢铁矿发运群"
+    source_role: "primary"
+    listen_options:
+      image: true
+      text: true
+      file: true
+    pull_image: true
+    routing:
+      - message_type: "image"
+        trigger_condition: "category_in:[出港计划通知单]"
+        target_node: "detect_release_notice"
+      - message_type: "text"
+        trigger_condition: "freight_detail_text"
+        target_node: "enrich_release_batch"
+      - message_type: "file"
+        trigger_condition: "departure_excel"
+        target_node: "submit_or_hold_delivery"
+  - group_id: "GROUP013"
+    group_lookup_id: "[GROUP013]"
+    group_name: "数据单发群"
+    source_role: "supplemental"
+    listen_options:
+      image: true
+      text: true
+      file: true
+    pull_image: true
+    routing:
+      - message_type: "image"
+        trigger_condition: "category_in:[出港计划通知单]"
+        target_node: "detect_release_notice"
+        supplemental: true
+      - message_type: "text"
+        trigger_condition: "freight_detail_text"
+        target_node: "enrich_release_batch"
+        supplemental: true
+      - message_type: "text"
+        trigger_condition: "match_departure_text_template"
+        target_node: "detect_departure_message"
+        supplemental: true
+      - message_type: "file"
+        trigger_condition: "departure_excel_test"
+        target_node: "submit_or_hold_delivery"
+        supplemental: true
 
 sources:
   wechat_chat_records:
-    type: jsonl
-    path: wx-ops-agent/data/chat_records/**/*.jsonl
-    role: 微信消息事实源
+    type: "jsonl"
+    path: "wx-ops-agent/data/chat_records/**/*.jsonl"
+    role: "微信消息事实源"
   wechat_images:
-    type: image_directory
-    path: ~/Documents/bussiness-artifacts/wechat_images
-    role: 原始通知单图片保存
+    type: "image_directory"
+    path: "~/Documents/bussiness-artifacts/wechat_images"
+    role: "原始通知单图片保存"
   sop_agent_db:
-    type: sqlite
-    path: sop-data-hub/data/sop_agent.db
-    role: 普通货运业务数据库
+    type: "sqlite"
+    path: "sop-data-hub/data/sop_agent.db"
+    role: "普通货运业务数据库"
   railway_95306:
-    type: sqlite
-    path: 95306_collection.sqlite3
-    role: 95306运输状态数据库
+    type: "sqlite"
+    path: "95306_collection.sqlite3"
+    role: "95306运输状态数据库"
 
 entities:
   release_batch:
-    description: 放货批次
+    description: "放货批次"
     uniqueness:
-      - order_identifier
-      - contract_no
+      - "order_identifier"
+      - "contract_no"
     rules:
-      - 不同标识号不得合并
-      - 不同合同号不得合并
-      - 同船名允许多个release_batch
+      - "不同标识号不得合并"
+      - "不同合同号不得合并"
+      - "同船名允许多个release_batch"
     fields:
-      - ship_name
-      - destination
-      - quantity
-      - cargo_name
-      - order_identifier
-      - contract_no
-      - cargo_name_detail
+      - "ship_name"
+      - "destination"
+      - "quantity"
+      - "cargo_name"
+      - "order_identifier"
+      - "contract_no"
+      - "cargo_name_detail"
   wagon_shipment:
-    description: 发运车辆记录
+    description: "发运车辆记录"
     uniqueness:
-      - wagon_no
-      - waybill_no
-      - release_batch_id
+      - "wagon_no"
+      - "waybill_no"
+      - "release_batch_id"
 
 states:
   release_batch:
-    - pending_release_notice
-    - release_batch_created
-    - freight_detail_enriched
-    - waiting_departure
-    - departure_in_progress
-    - arrived_destination
-    - delivered
-    - confirmed_received
-    - closed
+    - "pending_release_notice"
+    - "release_batch_created"
+    - "freight_detail_enriched"
+    - "waiting_departure"
+    - "departure_in_progress"
+    - "arrived_destination"
+    - "delivered"
+    - "confirmed_received"
+    - "closed"
   wagon_shipment:
-    - pending_match
-    - waiting_95306
-    - dispatched
-    - arrived
-    - delivered
-    - confirmed_received
+    - "pending_match"
+    - "waiting_95306"
+    - "dispatched"
+    - "arrived"
+    - "delivered"
+    - "confirmed_received"
 
 flows:
   release_notice_flow:
     trigger:
       groups:
-        - GROUP001
-        - GROUP005
-        - GROUP013
+        - "GROUP001"
+        - "GROUP005"
+        - "GROUP013"
       message_types:
-        - release_notice_image
-        - release_notice_text
+        - "release_notice_image"
+        - "release_notice_text"
     steps:
-      - node: detect_release_notice
+      - node: "detect_release_notice"
         action:
-          - classify_message
-          - extract_release_notice_json
+          - "classify_message"
+          - "extract_release_notice_json"
         outputs:
-          - release_notice_json
-      - node: identify_project
+          - "release_notice_json"
+      - node: "identify_project"
         conditions:
           any_keywords:
-            - 四平
-            - 吉林金钢
+            - "四平"
+            - "吉林金钢"
         outputs:
-          - project_candidate
-      - node: find_existing_release_batch
+          - "project_candidate"
+      - node: "find_existing_release_batch"
         action:
-          - query_release_batches
+          - "query_release_batches"
         match_fields:
-          - order_identifier
-          - contract_no
-          - ship_name
-          - destination
-      - node: create_or_update_release_batch
+          - "order_identifier"
+          - "contract_no"
+          - "ship_name"
+          - "destination"
+      - node: "create_or_update_release_batch"
         conditions:
           existing_batch_found: false
         action:
-          - create_release_batch
+          - "create_release_batch"
         outputs:
-          - release_batch_created
-      - node: update_existing_release_batch
+          - "release_batch_created"
+      - node: "update_existing_release_batch"
         conditions:
           existing_batch_found: true
         action:
-          - update_release_batch_fields
+          - "update_release_batch_fields"
   freight_detail_flow:
     trigger:
       groups:
-        - GROUP005
-        - GROUP013
+        - "GROUP005"
+        - "GROUP013"
       message_types:
-        - freight_detail_text
+        - "freight_detail_text"
     extract_fields:
-      - order_identifier
-      - contract_no
-      - cargo_name_detail
+      - "order_identifier"
+      - "contract_no"
+      - "cargo_name_detail"
     action:
-      - enrich_release_batch
+      - "enrich_release_batch"
   departure_flow:
     trigger:
       groups:
-        - GROUP001
-        - GROUP013
+        - "GROUP001"
+        - "GROUP013"
       message_patterns:
         - ".*46车.*"
         - ".*55车.*"
@@ -183,163 +262,163 @@ flows:
     examples:
       - "6道，四平铁，46车"
     steps:
-      - node: detect_departure_message
+      - node: "detect_departure_message"
         action:
-          - parse_departure_text
+          - "parse_departure_text"
         extract_fields:
-          - message_time
-          - destination
-          - car_count
-          - optional_ship_name
-      - node: build_95306_query_window
+          - "message_time"
+          - "destination"
+          - "car_count"
+          - "optional_ship_name"
+      - node: "build_95306_query_window"
         action:
-          - build_time_window
+          - "build_time_window"
         query_window:
-          start: message_time - 60m
-          end: message_time + 60m
-      - node: query_95306
+          start: "message_time - 60m"
+          end: "message_time + 60m"
+      - node: "query_95306"
         action:
-          - query_95306_waybills
+          - "query_95306_waybills"
         outputs:
-          - waybill_candidates
-      - node: query_result_found
+          - "waybill_candidates"
+      - node: "query_result_found"
         conditions:
           waybill_candidates_found: false
         action:
-          - create_pending_task
+          - "create_pending_task"
         outputs:
-          - pending_departure_candidate
-      - node: extract_wagons_and_waybills
+          - "pending_departure_candidate"
+      - node: "extract_wagons_and_waybills"
         conditions:
           waybill_candidates_found: true
         action:
-          - extract_wagon_no
-          - extract_container_no
-          - extract_waybill_no
-      - node: deduplicate_departure_records
+          - "extract_wagon_no"
+          - "extract_container_no"
+          - "extract_waybill_no"
+      - node: "deduplicate_departure_records"
         action:
-          - check_existing_wagon_shipments
+          - "check_existing_wagon_shipments"
         duplicate_policy:
-          existing_record: ignore
-          partial_record: enrich_only
-      - node: match_release_batch
+          existing_record: "ignore"
+          partial_record: "enrich_only"
+      - node: "match_release_batch"
         action:
-          - bind_wagons_to_release_batch
-      - node: write_departure_records
+          - "bind_wagons_to_release_batch"
+      - node: "write_departure_records"
         action:
-          - create_wagon_shipments
+          - "create_wagon_shipments"
         outputs:
-          - departure_records_written
-      - node: generate_departure_excel
+          - "departure_records_written"
+      - node: "generate_departure_excel"
         action:
-          - generate_departure_excel_task
+          - "generate_departure_excel_task"
         outputs:
-          - departure_excel
-      - node: generate_factory_json
+          - "departure_excel"
+      - node: "generate_factory_json"
         action:
-          - generate_factory_transport_json_task
+          - "generate_factory_transport_json_task"
         outputs:
-          - factory_transport_json
-      - node: delivery_target_test
+          - "factory_transport_json"
+      - node: "delivery_target_test"
         action:
-          - dry_run_receiver_system
+          - "dry_run_receiver_system"
         expected:
           response_code: 200
-      - node: send_test_excel
+      - node: "send_test_excel"
         runtime_rules:
           test_mode:
-            receiver: 郭东北
+            receiver: "郭东北"
         action:
-          - send_excel_task
-      - node: telegram_json_delivery
+          - "send_excel_task"
+      - node: "telegram_json_delivery"
         runtime_rules:
           test_mode: true
         action:
-          - telegram_json_delivery_task
-      - node: enter_tracking_phase
+          - "telegram_json_delivery_task"
+      - node: "enter_tracking_phase"
         next:
-          - track_95306_status
+          - "track_95306_status"
   tracking_flow:
     trigger:
-      - dispatched_wagon_exists
+      - "dispatched_wagon_exists"
     steps:
-      - node: track_95306_status
+      - node: "track_95306_status"
         action:
-          - poll_shipment_snapshots
+          - "poll_shipment_snapshots"
         tracked_status:
-          - 发车
-          - 到站
-          - 交付
-      - node: arrived_destination
+          - "发车"
+          - "到站"
+          - "交付"
+      - node: "arrived_destination"
         conditions:
-          95306_status: 到站
+          95306_status: "到站"
         action:
-          - update_dashboard_state
-          - update_wagon_arrival_status
-      - node: delivered
+          - "update_dashboard_state"
+          - "update_wagon_arrival_status"
+      - node: "delivered"
         conditions:
-          95306_status: 交付
+          95306_status: "交付"
         action:
-          - update_dispatch_status
-      - node: confirmed_received
+          - "update_dispatch_status"
+      - node: "confirmed_received"
         conditions:
           any:
-            - 95306_delivered_stable
-            - receiver_system_confirmed
-            - manual_confirmation
+            - "95306_delivered_stable"
+            - "receiver_system_confirmed"
+            - "manual_confirmation"
         action:
-          - mark_confirmed_received
-          - close_dashboard_state
+          - "mark_confirmed_received"
+          - "close_dashboard_state"
 
 runtime:
   watcher:
     enabled: true
     hot_reload: true
   sop_reload:
-    source_of_truth: git
-    watch_directory: config/project_sops/
+    source_of_truth: "git"
+    watch_directory: "config/project_sops/"
   idempotency:
     message:
       unique_key:
-        - group_id
-        - seq
+        - "group_id"
+        - "seq"
     wagon_shipment:
       unique_key:
-        - wagon_no
-        - waybill_no
-        - release_batch_id
+        - "wagon_no"
+        - "waybill_no"
+        - "release_batch_id"
   task_resolver:
     departure_excel:
-      task_type: excel_generation
+      task_type: "excel_generation"
     factory_json:
-      task_type: json_generation
+      task_type: "json_generation"
     telegram_delivery:
-      task_type: telegram_delivery
+      task_type: "telegram_delivery"
     receiver_upload:
-      task_type: http_delivery
+      task_type: "http_delivery"
 
 exceptions:
-  - name: ocr_incomplete
+  - name: "ocr_incomplete"
     action:
-      - create_todo
-      - preserve_original_image
-  - name: unmatched_release_batch
+      - "create_todo"
+      - "preserve_original_image"
+  - name: "unmatched_release_batch"
     action:
-      - create_manual_review_task
-  - name: 95306_query_empty
+      - "create_manual_review_task"
+  - name: "95306_query_empty"
     action:
-      - create_pending_departure_candidate
-  - name: shipment_count_mismatch
+      - "create_pending_departure_candidate"
+  - name: "shipment_count_mismatch"
     action:
-      - require_manual_confirmation
-  - name: duplicate_message
+      - "require_manual_confirmation"
+  - name: "duplicate_message"
     action:
-      - enrich_only
-      - no_duplicate_insert
-  - name: receiver_system_not_200
+      - "enrich_only"
+      - "no_duplicate_insert"
+  - name: "receiver_system_not_200"
     action:
-      - mark_delivery_failed
-      - create_retry_task
+      - "mark_delivery_failed"
+      - "create_retry_task"
 
 archive:
   matched:
@@ -353,17 +432,17 @@ archive:
         <destination>/<ship_name>/lot<order_identifier>/json/
   unmatched:
     images:
-      path: unmatched/<YYYY-MM>/images/
+      path: "unmatched/<YYYY-MM>/images/"
     json:
-      path: unmatched/<YYYY-MM>/json/
+      path: "unmatched/<YYYY-MM>/json/"
 
 acceptance:
-  - 不同标识号不得合并为同一release_batch
-  - 发运文字必须触发95306查询
-  - 查询窗口必须使用消息时间±60分钟
-  - 车号与运单必须落库
-  - 发运excel不得硬编码船名
-  - 发运json必须可生成
-  - 95306状态必须持续跟踪
-  - 已交付车辆不得长期停留in_progress
-  - confirmed_received后dashboard必须closed
+  - "不同标识号不得合并为同一release_batch"
+  - "发运文字必须触发95306查询"
+  - "查询窗口必须使用消息时间±60分钟"
+  - "车号与运单必须落库"
+  - "发运excel不得硬编码船名"
+  - "发运json必须可生成"
+  - "95306状态必须持续跟踪"
+  - "已交付车辆不得长期停留in_progress"
+  - "confirmed_received后dashboard必须closed"

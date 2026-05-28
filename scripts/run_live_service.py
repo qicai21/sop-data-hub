@@ -370,6 +370,29 @@ def status_command(runtime_root: Path, fixture_dir: Path | None = None) -> None:
         except Exception as exc:
             status["sop_runtime"] = {"error": str(exc)}
 
+    # ── R34: sop_task_runtime section ───────────────────────────────
+    if fixture_dir:
+        try:
+            from ops_hub.sop.sop_task_compiler import compile_project_sop
+
+            task_plans = []
+            for yaml_file in sorted(fixture_dir.glob("*.yaml")):
+                plan = compile_project_sop(yaml_file)
+                if plan.project_id:
+                    task_plans.append(plan.summary())
+            loaded_ids = [p["project_id"] for p in task_plans]
+            total_missing = sum(p["missing"] for p in task_plans)
+            total_implemented = sum(p["implemented"] for p in task_plans)
+            status["sop_task_runtime"] = {
+                "loaded_task_plans": len(task_plans),
+                "project_ids": loaded_ids,
+                "missing_task_count": total_missing,
+                "implemented_task_count": total_implemented,
+                "plans": task_plans,
+            }
+        except Exception as exc:
+            status["sop_task_runtime"] = {"error": str(exc)}
+
     print(json.dumps(status, ensure_ascii=False, indent=2))
 
 

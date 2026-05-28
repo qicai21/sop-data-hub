@@ -144,6 +144,14 @@ pytest tests/functional -v: 123 passed, 0 failed
 
 **结论：report-sender 全部缺失。** 有 `report_intent` 和 `delivery_result` 的本地模拟框架，但无任何真实发送能力。
 
+> **⚠️ R38 correction (2026-05-28):** 上述"全部缺失"指 sop-data-hub 内部能力，但外部发送能力实际存在且经过生产验证：
+> - **wx-ui-bridge** (`/Users/qicai21/projects/ai-tools/mcp/wx-ui-bridge`) 提供 `build_send_text_workflow` / `build_send_file_workflow` / `build_send_image_workflow`，可驱动微信桌面客户端发送文本、文件、图片
+> - **Hermes skill** `wx-ui-bridge-group-image-send` 已验证发送至 GROUP001/GROUP003/GROUP102 及联系人郭东北
+> - **wx-ops-agent** 的 `send_image_via_bridge()` 封装了图片发送（仅图片，不含文件/文本）
+> - **Hermes `send_message`** 工具可直接用于 Telegram 发送
+>
+> **修正评级：** report-sender → **🟡 外部能力存在，sop-data-hub 未集成**（优先级从 P0 降至 P1）。详见 `reports/wx_ops_report_sender_audit_r38.md`。
+
 ---
 
 ### 7. contract intelligence（合同智能）

@@ -14,6 +14,7 @@ class RoutingRule:
     save_db: bool = False
     send_report_to: Optional[str] = None
     report_targets: Optional[Dict[str, Any]] = None
+    text_patterns: Optional[List[str]] = None
 
 @dataclass
 class ListeningTask:
@@ -323,7 +324,8 @@ def load_project_sop(file_path: str | Path) -> ProjectSOP:
                 target_node=r_data.get("target_node", ""),
                 save_db=r_data.get("save_db", False),
                 send_report_to=r_data.get("send_report_to", None),
-                report_targets=r_data.get("report_targets", None)
+                report_targets=r_data.get("report_targets", None),
+                text_patterns=r_data.get("text_patterns") or None,
             ))
         tasks.append(ListeningTask(
             group_id=t_data.get("group_id", ""),

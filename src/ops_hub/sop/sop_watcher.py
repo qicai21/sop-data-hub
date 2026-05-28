@@ -223,6 +223,9 @@ def _project_sop_yaml_to_compiler_input(
                     continue  # skip — let fallback matcher handle it
                 entry["input_type"] = "text"
                 entry["message_type"] = rule.trigger_condition or ""
+                # R32: propagate text_patterns from RoutingRule into compiler input
+                if rule.text_patterns:
+                    entry["text_patterns"] = list(rule.text_patterns)
             else:
                 entry["input_type"] = rule.message_type or "*"
 

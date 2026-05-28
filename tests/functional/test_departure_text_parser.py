@@ -197,3 +197,62 @@ def test_py_ship_name_without_cars_incomplete():
     """Ship name alone does not make it a departure text → needs car count or destination"""
     c = parse_departure_text("长航滨海")
     assert c.status == "no_match"
+
+
+# ── R40: New departure text patterns ──────────────────────────────────
+
+def test_py_28jie_siping_lanqi():
+    """'28节四平铁，蓝鳍（26-60位）' — car before dest, ship, paren range"""
+    c = parse_departure_text("28节四平铁，蓝鳍（26-60位）")
+    assert c.status == "complete"
+    assert c.destination == "四平"
+    assert c.car_count == 28
+    assert c.optional_ship_name == "蓝鳍"
+    assert c.project_id == "jilin_jingang_jinzhou"
+
+
+def test_py_mei6_siping_lanqi_18jie():
+    """'煤六   四平铁"蓝鳍"18节' — lane, Chinese-quoted ship, 节"""
+    text = "煤六   四平铁\u201c蓝鳍\u201d18节"
+    c = parse_departure_text(text)
+    assert c.status == "complete"
+    assert c.destination == "四平"
+    assert c.car_count == 18
+    assert c.optional_ship_name == "蓝鳍"
+    assert "煤六" in c.lane_or_track
+    assert c.project_id == "jilin_jingang_jinzhou"
+
+
+def test_py_9dao_sipingnie_changhang_46jie():
+    """'九道   四平镍"长航滨海"46节' — 四平镍, Chinese-quoted ship"""
+    text = "九道   四平镍\u201c长航滨海\u201d46节"
+    c = parse_departure_text(text)
+    assert c.status == "complete"
+    assert c.destination == "四平"
+    assert c.car_count == 46
+    assert c.optional_ship_name == "长航滨海"
+    assert "九道" in c.lane_or_track
+    assert c.project_id == "jilin_jingang_jinzhou"
+
+
+def test_py_14dao_41jie_siping_xiamenshiji():
+    """'十四道 41节 四平铁 厦门世纪' — lane, car, dest, unknown ship"""
+    c = parse_departure_text("十四道 41节 四平铁 厦门世纪")
+    assert c.status == "complete"
+    assert c.destination == "四平"
+    assert c.car_count == 41
+    assert c.optional_ship_name == "厦门世纪"
+    assert "十四道" in c.lane_or_track
+    assert c.project_id == "jilin_jingang_jinzhou"
+
+
+def test_py_mei6_39jie_siping_zhihui():
+    """'煤六 39节 四平铁 智慧' — lane, car, dest, unknown ship"""
+    c = parse_departure_text("煤六 39节 四平铁 智慧")
+    assert c.status == "complete"
+    assert c.destination == "四平"
+    assert c.car_count == 39
+    assert c.optional_ship_name == "智慧"
+    assert "煤六" in c.lane_or_track
+    assert c.project_id == "jilin_jingang_jinzhou"
+

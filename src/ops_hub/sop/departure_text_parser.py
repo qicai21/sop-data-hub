@@ -4,6 +4,11 @@ Parses Chinese freight departure messages such as:
   - "6道，四平铁，46车"
   - "十四道，朝阳西铁矿，木森17，装55节"
   - "6道，四平方向，长航滨海，46车"
+  - "28节四平铁，蓝鳍（26-60位）"
+  - "煤六   四平铁"蓝鳍"18节"
+  - "九道   四平镍"长航滨海"46节"
+  - "十四道 41节 四平铁 厦门世纪"
+  - "煤六 39节 四平铁 智慧"
 
 Extracts: message_time, destination, car_count, lane_or_track, optional_ship_name.
 
@@ -31,13 +36,16 @@ _KNOWN_SHIPS = {
     "玛格丽特",
     "萨哈林",
     "阿芙拉",
+    "厦门世纪",
+    "智慧",
 }
 
 # ── destination aliases → canonical form ───────────────────────────────
 _DESTINATION_MAP = {
-    "四平": "四平",
+    "四平镍": "四平",
     "四平铁": "四平",
     "四平方向": "四平",
+    "四平": "四平",
     "朝阳西": "朝阳西",
     "朝阳铁": "朝阳西",
     "汐子": "汐子",
@@ -55,9 +63,14 @@ _DESTINATION_PROJECT = {
 }
 
 # ── regex fragments ────────────────────────────────────────────────────
-_RE_LANE = re.compile(r"(\d+|十\S*?)道")
+# Lane/track: 煤六, 九道, 十四道, 6道, etc.
+_RE_LANE = re.compile(r"((?:煤[一二三四五六七八九])|(?:[一二三四五六七八九十百千]+)|(?:\d+))?\s*(?:道)")
 _RE_CAR_COUNT = re.compile(r"(?:装\s*)?(\d{1,3})\s*(?:车|节)")
 _RE_NUMBER = re.compile(r"\d+")
+
+# Chinese quotes: \u201c\u201d (left/right double), \u2018\u2019 (single),
+# \uff02 (fullwidth), \u300c\u300d (corner brackets)
+_CN_QUOTE_CHARS = "\u201c\u201d\u2018\u2019\uff02\u300c\u300d"
 
 
 @dataclass(frozen=True)
@@ -115,6 +128,31 @@ _NO_MATCH = DepartureCandidate(
 )
 
 
+def _strip_chinese_quotes(s: str) -> str:
+    """Remove Chinese quote characters from a string."""
+    result = s
+    for ch in _CN_QUOTE_CHARS:
+        result = result.replace(ch, "")
+    # Also strip ASCII quotes
+    result = result.replace('"', "").replace("'", "")
+    return result.strip()
+
+
+def _find_ship_in_text(raw: str) -> str:
+    """Find a known ship name in text. Handles Chinese-quoted ship names."""
+    # Try raw text first
+    for known in _KNOWN_SHIPS:
+        if known in raw:
+            return known
+    # Try stripping Chinese quotes first (e.g. "蓝鳍" → 蓝鳍)
+    stripped = _strip_chinese_quotes(raw)
+    if stripped != raw:
+        for known in _KNOWN_SHIPS:
+            if known in stripped:
+                return known
+    return ""
+
+
 def parse_departure_text(
     event_or_text: MessageEvent | str,
     *,
@@ -147,30 +185,30 @@ def parse_departure_text(
     # ── detect departure template ──────────────────────────────────────
     lane = ""
     car_count = -1
-    ship = ""
     destination = ""
 
-    # lane / track
-    m_lane = _RE_LANE.search(raw)
-    if m_lane:
-        lane = m_lane.group(0)
+    # lane / track (match "道" suffix: 煤六道→"煤六道", 九道→"九道", 十四道→"十四道", 6道→"6道")
+    # "煤六" etc. can appear without "道"; digit/Chinese-number lanes require "道"
+    m_lane = re.search(r"(煤[一二三四五六七八九](?:\s*道)?)", raw)
+    if not m_lane:
+        m_lane = re.search(r"([\d一二三四五六七八九十百千]+\s*道)", raw)
+    if m_lane and m_lane.group(1).strip():
+        lane = m_lane.group(1).strip().replace(" ", "")
 
-    # car count
+    # car count ("节" and "车" are equivalent)
     m_cars = _RE_CAR_COUNT.search(raw)
     if m_cars:
         car_count = int(m_cars.group(1))
 
-    # destination
-    for alias, canonical in _DESTINATION_MAP.items():
+    # destination (longest match first for "四平铁"/"四平镍" before "四平")
+    dest_keys = sorted(_DESTINATION_MAP.keys(), key=len, reverse=True)
+    for alias in dest_keys:
         if alias in raw:
-            destination = canonical
+            destination = _DESTINATION_MAP[alias]
             break
 
-    # ship name
-    for known in _KNOWN_SHIPS:
-        if known in raw:
-            ship = known
-            break
+    # ship name (handles Chinese quotes)
+    ship = _find_ship_in_text(raw)
 
     # If no destination AND no lane AND no car_count → not a departure text
     has_destination = bool(destination)

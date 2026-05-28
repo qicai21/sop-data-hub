@@ -1,63 +1,36 @@
-# R30: 吉林金钢 canonical SOP implementation gap audit
+# R30: 吉林金钢 canonical SOP v0.2 implementation gap audit
 
 **Date:** 2026-05-28
 **Branch:** `codex/sop-real-sop-topology-audit-20260525`
-**SOP Commit:** `734b800`
 **SOP File:** `config/project_sops/jilin_jingang.yaml`
+**SOP Commit:** `734b800`
 **SOP Version:** `v0.2`
-**Audit Type:** Read-only, no code changes
+**SOP SHA256:** `34e4828fb38448c51de18569626228eadef88a5cc72b60d521895ba7ae397fe8`
+**Audit Type:** 只读，不改代码
 
 ---
 
-## Git Log
+## 一、Git Log
 
 ```
+63741fb R30: add GitHub audit summary
+117ba10 R30: 吉林金钢 canonical SOP v0.2 implementation gap audit
 734b800 docs: update canonical jilin jingang SOP yaml
 094da92 R28: 吉林金钢 SOP 制单后链路核查 — WAIT_95306_CONFIRM is the SOP endpoint
-5f9ab7b R27: canonical SOP source migration — config/project_sops/
-23fd8c1 R26: live SOP runtime compiler — SopWatcher with hot-reload
-a2d8f07 R24: real ordinary freight acceptance audit
+5f9ab7b R27: canonical SOP source migration — config/project_sops/ (YAML, git-tracked)
 ```
-
-**SOP SHA256:** `34e4828fb38448c51de18569626228eadef88a5cc72b60d521895ba7ae397fe8`
 
 ---
 
-## 0. Critical Discovery: YAML Parsing Incompatibility
-
-The new SOP v0.2 uses a **nested structure**:
-
-```yaml
-project:
-  id: jilin_jingang_jinzhou
-  name: ...
-```
-
-But `load_project_sop()` in `models/project_sop.py` reads **flat keys**:
-
-```python
-project_id=data.get("project_id", "")    # reads '', not 'jilin_jingang_jinzhou'
-project_name=data.get("project_name", "")  # reads ''
-```
-
-**Result:** `jilin_jingang_jinzhou` does NOT appear in `sop_runtime.loaded_projects`. Instead, an empty-string project `""` appears.
-
-This means the SOP is **loaded structurally but functionally invisible** — the YAML exists, the watcher hot-reloads it, but the project_id is lost during parsing. All downstream monitoring plan compilation, message routing, and workflow tasks will not carry the correct project identity.
-
-**Severity: P0 — blocks all automation.**
-
----
-
-## Live Service Status
+## 二、live_service --status
 
 ```json
 {
   "sop_runtime": {
-    "loaded_projects": ["chaoyang_steel", "", "jiusan", "zhongtang_special_steel"],
-    "last_reload": "2026-05-28T06:06:21Z",
-    "sop_hash": "12d10ac88920bf70",
-    "sop_dir": "/Users/qicai21/projects/repos/sop-data-hub/config/project_sops",
     "source_of_truth": "git",
+    "sop_dir": ".../config/project_sops",
+    "loaded_projects": ["chaoyang_steel", "", "jiusan", "zhongtang_special_steel"],
+    "sop_hash": "12d10ac88920bf70",
     "file_hashes": {
       "jilin_jingang.yaml": "34e4828fb38448c5"
     }
@@ -65,272 +38,269 @@ This means the SOP is **loaded structurally but functionally invisible** — the
 }
 ```
 
-**Verification results:**
-- `sop_runtime.source_of_truth` = `"git"` ✅
-- `sop_dir` = `config/project_sops` ✅
-- `loaded_projects` contains `jilin_jingang_jinzhou`? **NO** ❌ — instead contains empty string `""`
+| 检查项 | 预期 | 实际 | 结果 |
+|--------|------|------|:--:|
+| `source_of_truth` | `git` | `git` | ✅ |
+| `sop_dir` | `config/project_sops` | `config/project_sops` | ✅ |
+| `loaded_projects` contains `jilin_jingang_jinzhou` | yes | **NO** — 显示为空字符串 `""` | ❌ |
+
+空字符串 `""` 就是 `jilin_jingang.yaml` 被解析后的 project_id。YAML 文件本身被 hot-reload 跟踪（hash `34e4828fb38448c5` 存在于 `file_hashes`），但 project_id 丢失。
 
 ---
 
-## 1. release_notice_flow Audit
+## 三、核心问题：YAML 结构不兼容
 
-| SOP Node | Status | File | Function | Table |
-|----------|--------|------|----------|-------|
-| `detect_release_notice` | 部分实现 | `monitoring_plan_matcher.py` | `match_message_event()`, `_fallback_alignment_match()` | — |
-| `identify_project` | 部分实现 | `monitoring_plan_matcher.py` | `_fallback_alignment_match()` (GROUP001 + "四平" → jilin_jingang_jinzhou) | — |
-| `find_existing_release_batch` | 部分实现 | `agent.py:315` | `ingest_release_batch()` — implicit via `ON CONFLICT(batch_key)` upsert | `release_batches` |
-| `create_or_update_release_batch` | 已实现 | `agent.py:315` | `ingest_release_batch()` | `release_batches` |
-| `update_existing_release_batch` | 已实现 | `agent.py:315` | `ingest_release_batch()` — `ON CONFLICT` DO UPDATE | `release_batches` |
+### 3.1 证据
 
-### Details
+```
+YAML 顶层键: project, scope, groups, sources, entities, states, flows, runtime, exceptions, archive, acceptance
 
-- **detect_release_notice / classify_message:** `monitoring_plan_matcher` handles message matching via `match_message_event()` with document_type matching for images and text_pattern matching for text. Image messages (release_notice_image) route through `_match_document_item`. The `_fallback_alignment_match` provides keyword-based routing ("四平" → jilin_jingang_jinzhou).
+load_project_sop() 读取:
+  data.get("project_id", "")     → None  → ""
+  data.get("project_name", "")   → None  → ""
+  data.get("listening_tasks", []) → None  → []
 
-- **identify_project:** The fallback matcher identifies `jilin_jingang_jinzhou` when GROUP001 messages contain "四平" tokens. No keyword matching for GROUP005/GROUP013 in current code.
+SOP 实际结构:
+  project.id        → "jilin_jingang_jinzhou"
+  project.name      → "吉林金钢（锦州港→四平）铁矿发运项目"
+  groups (array)    → 3 groups with roles + message_types
+  flows (dict)      → release_notice_flow, freight_detail_flow, departure_flow, tracking_flow
+```
 
-- **find_existing_release_batch:** The SOP specifies matching by `order_identifier` + `contract_no` + `ship_name` + `destination`. Current implementation uses `batch_key` (computed hash) for uniqueness. The `order_identifier` field does NOT exist in the `release_batches` table schema.
+### 3.2 根因
 
-- **Missing:** No `extract_release_notice_json` function exists. The release notice JSON extraction happens through OCR → `runner.py` pipeline, but there is no dedicated `release_notice_json` output node.
+`load_project_sop()` (line 339) 期望**扁平 YAML 结构**：
 
-### Gap
-The `release_batches` table lacks `order_identifier` field — SOP requires matching on this field.
+```python
+project_id=data.get("project_id", "")  # 顶层键
+```
 
----
+但新版 SOP v0.2 使用**嵌套结构**：
 
-## 2. freight_detail_flow Audit
+```yaml
+project:
+  id: jilin_jingang_jinzhou
+  name: ...
+```
 
-| SOP Node | Status | File | Function | Table |
-|----------|--------|------|----------|-------|
-| 从 GROUP005 / GROUP013 识别货运信息 | 未实现 | — | — | — |
-| 提取 order_identifier | 未实现 | — | — | — |
-| 提取 contract_no | 未实现 | — | — | — |
-| 提取 cargo_name_detail | 未实现 | — | — | — |
-| enrich_release_batch | 未实现 | — | — | — |
+同理，`listening_tasks` 不存在 — SOP 用 `groups` + `flows` 替代。`load_project_sop()` 返回 `listening_tasks=[]`，下游 `_project_sop_yaml_to_compiler_input` 无数据可迭代。
 
-### Details
-
-The SOP defines GROUP005 and GROUP013 as sources for `freight_detail_text` messages. Current code has:
-
-- **No GROUP005/GROUP013 routing** in `monitoring_plan_matcher._fallback_alignment_match`. Only GROUP001 is handled for jilin_jingang_jinzhou.
-- **No freight_detail_text message type** defined in the monitoring plan compiler.
-- **No field extraction** pipeline for `order_identifier`, `contract_no`, or `cargo_name_detail`.
-- **No `enrich_release_batch`** function exists. The `release_batches` table lacks `order_identifier` and `cargo_name_detail` columns.
-
-### Gap
-Entire freight_detail_flow is unimplemented. The `release_batches` table cannot store `order_identifier` or `cargo_name_detail`.
+**结果：SOP 文件被 watcher 跟踪，但解析后 project_id 为空，listening_tasks 为空，不产生任何 monitoring plan 节点。**
 
 ---
 
-## 3. departure_flow Audit
+## 四、实现缺口矩阵
 
-| SOP Node | Status | File | Function | Table |
-|----------|--------|------|----------|-------|
-| 识别"6道，四平铁，46车"发运文本 | 未实现 | — | — | — |
-| 提取 message_time | 未实现 | — | — | — |
-| 提取 destination | 未实现 | — | — | — |
-| 提取 car_count | 未实现 | — | — | — |
-| 构造 95306 查询窗口 (msg_time ±60m) | 未实现 | — | — | — |
-| 查询 95306 | 未实现 | — | — | — |
-| 提取 wagon_no | 未实现 | — | `gen_jljg_excel.py` reads `wagon_shipments.car_no` (pre-loaded) | `wagon_shipments` |
-| 提取 container_no | 未实现 | — | — | — |
-| 提取 waybill_no | 未实现 | — | — | — |
-| 去重 | 未实现 | — | — | — |
-| 绑定 release_batch | 未实现 | — | `gen_jljg_excel.py` reads via `departure_id` FK | `wagon_shipments` |
-| 写 wagon_shipments | 部分实现 | `gen_jljg_excel.py:27` | Reads from existing `wagon_shipments` table | `wagon_shipments` |
-| 生成 departure_excel | 部分实现 | `gen_jljg_excel.py` | Standalone script, hardcoded contract/order/ship values | — |
-| 生成 factory_transport_json | 未实现 | `gen_jljg_excel.py:68-83` | Print-only preview, hardcoded | — |
-| dry-run receiver system (HTTP 200) | 未实现 | — | — | — |
-| 测试阶段 Excel 发送给郭东北 | 未实现 | — | — | — |
-| JSON 通过 Telegram dry-run 发送 | 未实现 | — | — | — |
+### Q1: 新版 jilin_jingang.yaml 是否能被当前 SOPWatcher 正确读取？
 
-### Details
+**不能。** YAML 文件被跟踪（`file_hashes` 中有记录），hash 变化会触发 reload。但 `load_project_sop()` 解析后 `project_id=""`，`listening_tasks=[]`。下游编译器和匹配器拿不到任何有效数据。
 
-- **`gen_jljg_excel.py`**: Standalone script with hardcoded values:
-  ```python
-  contract_no = 'JGCG-SFY-HTNK20260501'    # hardcoded
-  order_identifier = 'CGR20260518174420'     # hardcoded
-  ship_name = '长航滨海'                      # hardcoded
-  container_no = '待补-需从95306API提取箱号'    # placeholder
-  ```
-  No departure text parsing. No 95306 query. Reads from pre-existing `wagon_shipments` rows.
+### Q2: loaded_projects 是否包含 jilin_jingang_jinzhou？
 
-- **`departure_records` table** exists with `batch_id`, `ship_name`, `cargo_name`, `plan_id`, `contract_no`, `departure_date`, `wagon_count`, `car_nos`, `doc_time`. But no `destination`, `car_count` from message text.
-
-- **`wagon_shipments` table** exists with `car_no`, `cargo_name`, `ticketed_at`, `departed_at`, `arrived_at`, but **lacks**: `container_no`, `waybill_no`.
-
-- **No 95306 query integration** — the current reconciler (`inspection_95306_reconciler.py`) queries from `shipments` table in a separate 95306 DB by `car_no` + destination + cargo aliases, not from message_time window.
-
-### Gap
-Almost the entire departure_flow is unimplemented. The existing `gen_jljg_excel.py` is a prototype with hardcoded values and no automation.
+**不包含。** 显示 `""` 空字符串。
 
 ---
 
-## 4. tracking_flow Audit
+### A. release_notice_flow
 
-| SOP Node | Status | File | Function | Table |
-|----------|--------|------|----------|-------|
-| poll_shipment_snapshots | 未实现 | — | — | — |
-| 识别 95306 状态：发车/到站/交付 | 未实现 | — | — | — |
-| update_dashboard_state | 未实现 | — | `dispatch_board.py` renders static HTML, no state write-back | — |
-| update_wagon_arrival_status | 未实现 | — | — | — |
-| update_dispatch_status | 已实现(部分) | `agent.py` | `update_release_dispatch_status()` — manual CLI only | `release_batches` |
-| mark_confirmed_received | 未实现 | — | — | — |
-| close_dashboard_state | 未实现 | — | — | — |
+| SOP 节点 | 状态 | 文件 | 函数 | 表 | 缺口 |
+|----------|:----:|------|------|-----|------|
+| detect_release_notice | 部分实现 | `monitoring_plan_matcher.py` | `match_message_event()` | — | image 消息走 `_match_document_item`，但 jilin_jingang 的 monitoring plan 为空（YAML 解析失败），无法触发匹配 |
+| identify_project | 部分实现 | `monitoring_plan_matcher.py` | `_fallback_alignment_match()` | — | GROUP001+"四平"→jilin_jingang_jinzhou 硬编码 fallback，但不走 monitoring plan |
+| find_existing_release_batch | 部分实现 | `agent.py:315` | `ingest_release_batch()` → `ON CONFLICT(batch_key)` | `release_batches` | 按 `batch_key` hash 去重，SOP 要求按 `order_identifier`+`contract_no`+`ship_name`+`destination` 匹配；`order_identifier` 字段不存在 |
+| create_or_update_release_batch | 已实现 | `agent.py:315` | `ingest_release_batch()` | `release_batches` | — |
+| update_existing_release_batch | 已实现 | `agent.py:315` | `ON CONFLICT DO UPDATE` | `release_batches` | — |
 
-### Why 长航滨海 remains in_progress
+### B. freight_detail_flow
 
-**Root cause:** The SOP v0.2 now defines `tracking_flow` with explicit states: 发车 → 到站 → 交付 → confirmed_received → closed. However:
+| SOP 节点 | 状态 | 文件 | 函数 | 表 | 缺口 |
+|----------|:----:|------|------|-----|------|
+| GROUP005/GROUP013 识别 | 未实现 | — | — | — | `_fallback_alignment_match` 只有 GROUP001/003 分支，无 GROUP005/013 |
+| order_identifier 提取 | 未实现 | — | — | — | 字段不存在于 `release_batches` |
+| contract_no 提取 | 未实现 | — | — | `release_batches` | 字段存在但无提取逻辑 |
+| cargo_name_detail 提取 | 未实现 | — | — | — | 字段不存在 |
+| enrich_release_batch | 未实现 | — | — | — | 无 `enrich_release_batch()` 函数 |
 
-1. **No polling mechanism exists.** There is no process that periodically queries 95306 for shipment status updates. The current live service (`run_live_service.py`) only polls `wx-ops-agent/data/chat_records` for new messages — it does not poll 95306.
+### C. departure_flow
 
-2. **No status tracking pipeline.** Even if 95306 data is available, there is no code that:
-   - Reads `shipment_release_batch_matches` to find tracked wagons
-   - Checks `latest_stage_name` for 发车/到站/交付
-   - Updates `wagon_shipments` (arrived_at, departed_at)
-   - Updates `release_batches.dispatch_status`
+| SOP 节点 | 状态 | 文件 | 函数 | 表 | 缺口 |
+|----------|:----:|------|------|-----|------|
+| parse_departure_text | 未实现 | — | — | — | 无 regex/parser 处理"6道，四平铁，46车" |
+| message_time 提取 | 未实现 | — | — | — | — |
+| destination 提取 | 未实现 | — | — | — | — |
+| car_count 提取 | 未实现 | — | — | — | — |
+| build_time_window(±60m) | 未实现 | — | — | — | 当前 window 基于 `ticketed_at`(reconciler)，非 `message_time` |
+| query_95306_waybills | 未实现 | — | — | — | 无比 message_time 驱动的查询 |
+| extract_wagon_no | 部分实现 | `gen_jljg_excel.py:27` | 只读已有 `wagon_shipments` | `wagon_shipments` | 从 95306 自动提取不存在 |
+| extract_container_no | 未实现 | — | — | — | 表无此字段；`gen_jljg_excel.py` 硬编码"待补" |
+| extract_waybill_no | 未实现 | — | — | — | 表无此字段 |
+| check_existing_wagon_shipments | 部分实现 | `inspection_95306_reconciler.py` | `_dedupe_planned_rows()` | `shipment_release_batch_matches` | 只在 reconciler 的去重逻辑中，非独立步骤 |
+| bind_wagons_to_release_batch | 部分实现 | `inspection_95306_reconciler.py` | `_formal_row_from_shipment()` | `shipment_release_batch_matches` | 通过 reconciler，非 SOP departure_flow 路径 |
+| create_wagon_shipments | 未实现 | — | — | `wagon_shipments` | 表存在但无代码写入（当前数据为手动导入） |
+| generate_departure_excel_task | 部分实现 | `gen_jljg_excel.py` | 独立脚本 | `wagon_shipments` | 硬编码 ship_name/contract_no/order_id；非 task 驱动 |
+| generate_factory_transport_json_task | 未实现 | `gen_jljg_excel.py:68-83` | print-only preview | — | 硬编码，非生产级 |
+| dry_run_receiver_system | 未实现 | — | — | — | 无 HTTP client |
+| send_excel_task (郭东北) | 未实现 | — | — | `report_tasks` | 表存在但无代码写入 jilin_jingang 记录 |
+| telegram_json_delivery_task | 未实现 | — | — | — | — |
 
-3. **Missing DB fields:** The `release_batches` table has `dispatch_status` (in_progress/completed/suspended/cancelled) but **lacks** intermediate states: `arrival_status`, `delivered_at`, `confirmed_received_at`. The `wagon_shipments` table has `departed_at` and `arrived_at` but no `delivered_at` or `confirmed_received`.
+### D. tracking_flow
 
-### What's needed to reach confirmed_received
+| SOP 节点 | 状态 | 文件 | 函数 | 表 | 缺口 |
+|----------|:----:|------|------|-----|------|
+| poll_shipment_snapshots | 未实现 | — | — | — | 无 95306 定时轮询机制 |
+| 发车/到站/交付 识别 | 未实现 | — | — | `shipments` | 95306 DB 有 `latest_stage_name` 字段，但无代码读取状态变化 |
+| update_dashboard_state | 未实现 | `dispatch_board.py` | `render_dispatch_board()` | — | 只生成静态 HTML，无反写 |
+| update_wagon_arrival_status | 未实现 | — | — | `wagon_shipments` | 表有 `arrived_at` 但无代码更新 |
+| update_dispatch_status | 部分实现 | `agent.py` | `update_release_dispatch_status()` | `release_batches` | 仅 CLI 手动调用，非自动 |
+| mark_confirmed_received | 未实现 | — | — | — | 无此函数 |
+| close_dashboard_state | 未实现 | — | — | — | — |
 
-1. **P0:** A `ShipmentSnapshotPoller` that queries 95306 periodically
-2. **P0:** Status mapping logic: 95306 `latest_stage_name` → SOP states
-3. **P0:** Database columns: `wagon_shipments.delivered_at`, `release_batches.arrival_status`, `release_batches.confirmed_received_at`
-4. **P1:** `update_dashboard_state` / `close_dashboard_state` logic
-5. **P1:** `mark_confirmed_received` — trigger mechanism (auto or manual)
+### E. runtime.task_resolver
 
----
+| Task Type | 状态 | 文件 | 缺口 |
+|-----------|:----:|------|------|
+| `excel_generation` | 未实现 | — | 无统一 TaskResolver；`gen_jljg_excel.py` 是独立硬编码脚本 |
+| `json_generation` | 未实现 | — | 无实现 |
+| `telegram_delivery` | 未实现 | — | 无实现；`delivery_result.py` 只有 `simulate_delivery_result()` |
+| `http_delivery` | 未实现 | — | 无实现 |
 
-## 5. runtime.task_resolver Audit
+**散落脚本：**
+- `gen_jljg_excel.py` — 独立 Excel 生成，硬编码 ship_name/contract_no/order_id/container_no
+- `report_intent.py` — 本地 report 意图解析，不实际生成/发送
+- `delivery_result.py` — 模拟交付结果，不执行真实发送
 
-| Task Type | Status | File | Function |
-|-----------|--------|------|----------|
-| `excel_generation` | 未实现 | — | — |
-| `json_generation` | 未实现 | — | — |
-| `telegram_delivery` | 未实现 | — | — |
-| `http_delivery` | 未实现 | — | — |
+### F. 数据库支撑
 
-### Details
+#### release_batches
 
-- **No unified TaskResolver exists.** The SOP YAML (lines 311-319) defines a `runtime.task_resolver` section with 4 task types, but no implementation exists.
-- **Scattered implementations:**
-  - `report_intent.py` — Resolves report intent (template path, recipient) for workflow tasks. Local-only, does not actually generate or deliver.
-  - `delivery_result.py` — Simulates delivery results. Uses `simulate_delivery_result()` — explicitly "local functional tests".
-  - `gen_jljg_excel.py` — Standalone Excel generation script with hardcoded values.
-  - `report_tasks` table — Exists in DB with `release_batch_id`, `project_id`, `report_path`, `wagon_count`, `target_type`, `target_name`, `status`. But no code writes to it for jilin_jingang.
-- **Missing:** No actual Excel generation service, no JSON generation service, no Telegram sender, no HTTP client for receiver system.
-
----
-
-## 6. Database Mapping Audit
-
-### release_batches table
-
-| SOP Entity | DB Column | Exists? | Notes |
-|------------|-----------|:------:|-------|
+| SOP 字段 | DB 列 | 存在 | 备注 |
+|----------|-------|:---:|------|
 | id | id | ✅ | |
 | ship_name | ship_name | ✅ | |
 | destination | destination_station | ✅ | |
 | quantity | batch_quantity | ✅ | |
 | cargo_name | cargo_name | ✅ | |
-| order_identifier | — | ❌ | Missing entirely |
+| order_identifier | — | ❌ | 不存在 |
 | contract_no | contract_no | ✅ | |
-| cargo_name_detail | — | ❌ | Missing entirely |
-| confirmed_received | — | ❌ | No tracking state fields |
-| dispatch_status | dispatch_status | 部分 | Only in_progress/completed/suspended/cancelled |
-| arrival_status | — | ❌ | |
-| delivered_at | — | ❌ | |
-| confirmed_received_at | — | ❌ | |
+| cargo_name_detail | — | ❌ | 不存在 |
+| dispatch_status | dispatch_status | 部分 | 仅 in_progress/completed/suspended/cancelled |
+| arrival_status | — | ❌ | 不存在 |
+| delivered_at | — | ❌ | 不存在 |
+| confirmed_received_at | — | ❌ | 不存在 |
 
-### wagon_shipments table
+#### wagon_shipments
 
-| SOP Entity | DB Column | Exists? | Notes |
-|------------|-----------|:------:|-------|
+| SOP 字段 | DB 列 | 存在 | 备注 |
+|----------|-------|:---:|------|
 | wagon_no | car_no | ✅ | |
-| waybill_no | — | ❌ | Missing |
-| container_no | — | ❌ | Missing |
-| release_batch_id | batch_id | ✅ | FK to release_batches |
+| waybill_no | — | ❌ | 不存在 |
+| container_no | — | ❌ | 不存在 |
+| release_batch_id | batch_id | ✅ | FK |
 | departed_at | departed_at | ✅ | |
 | arrived_at | arrived_at | ✅ | |
-| delivered_at | — | ❌ | |
-| confirmed_received | — | ❌ | |
+| delivered_at | — | ❌ | 不存在 |
+| confirmed_received | — | ❌ | 不存在 |
 
-### shipment_release_batch_matches table
+#### shipment_release_batch_matches
 
-Created and managed by `inspection_95306_reconciler.py` in the **95306 SQLite DB** (not in `sop_agent.db`). Schema: `id`, `release_batch_id`, `shipment_ydid`, `shipment_car_no`, `ticketed_at`, `status_code`, `status_name`, `latest_stage_name`, `latest_event_time`, etc. This table is the formal linkage between release batches and 95306 shipments.
-
----
-
-## 7. Gap Matrix
-
-### P0 — Main chain blocked
-
-| # | SOP Node | Gap | Suggested Fix |
-|---|----------|-----|---------------|
-| P0-1 | YAML parser | `load_project_sop()` reads flat `project_id` key; SOP v0.2 uses nested `project.id` | Fix parser to support nested structure, or add flat aliases to YAML |
-| P0-2 | freight_detail_flow (entire) | No GROUP005/GROUP013 routing, no field extraction, no enrich_release_batch | Implement freight_detail_text message handler with field extraction |
-| P0-3 | departure_flow — 95306 query | No message_time-based 95306 query window; no wagon_no/container_no/waybill_no extraction | Implement departure text parser → 95306 query → field extraction pipeline |
-| P0-4 | departure_flow — write | No automated wagon_shipments write from 95306 data; no dedup | Implement write pipeline with (wagon_no, waybill_no, release_batch_id) uniqueness |
-| P0-5 | tracking_flow — polling | No 95306 status polling mechanism | Implement ShipmentSnapshotPoller |
-| P0-6 | DB — missing columns | `release_batches` lacks `order_identifier`, `cargo_name_detail`; `wagon_shipments` lacks `container_no`, `waybill_no`, `delivered_at` | Add columns via migration |
-| P0-7 | DB — tracking columns | No `arrival_status`, `delivered_at`, `confirmed_received_at` in `release_batches` | Add columns via migration |
-| P0-8 | task_resolver (entire) | No excel_generation, json_generation, telegram_delivery, http_delivery | Implement TaskResolver service |
-
-### P1 — Automation gap, manual fallback available
-
-| # | SOP Node | Gap | Suggested Fix |
-|---|----------|-----|---------------|
-| P1-1 | release_notice — order_identifier matching | `find_existing_release_batch` uses `batch_key` hash, not `order_identifier` + `contract_no` | Add `order_identifier` index and use composite match |
-| P1-2 | departure_flow — Excel generation | `gen_jljg_excel.py` has hardcoded values | Make data-driven from DB |
-| P1-3 | departure_flow — factory JSON | No JSON generation pipeline | Implement from wagon_shipments data |
-| P1-4 | departure_flow — dry-run | No HTTP receiver dry-run | Implement HTTP client with configurable endpoint |
-| P1-5 | departure_flow — delivery | No Telegram/Excel delivery | Implement delivery service (report_tasks table ready) |
-| P1-6 | tracking_flow — status mapping | No 95306 status → SOP state mapping | Implement status mapper: 发车→dispatched, 到站→arrived, 交付→delivered |
-| P1-7 | tracking_flow — dashboard update | `dispatch_board.py` renders static HTML only | Add state write-back to release_batches |
-| P1-8 | tracking_flow — confirmed_received | No mark_confirmed_received logic | Implement auto/manual confirmation trigger |
-
-### P2 — Report / UX optimization
-
-| # | SOP Node | Gap | Suggested Fix |
-|---|----------|-----|---------------|
-| P2-1 | release_notice — extract_release_notice_json | No dedicated extraction function | Formalize OCR→JSON pipeline output |
-| P2-2 | departure_flow — optional_ship_name | Not extracted from departure text | Add ship_name extraction for multi-batch matching |
-| P2-3 | tracking_flow — close_dashboard_state | Dashboard lifecycle closeout not implemented | Add close transition when all wagons confirmed_received |
-| P2-4 | exceptions — ocr_incomplete | Exception handling exists in `runner.py` but not SOP-aware | Add SOP exception routing |
-| P2-5 | exceptions — shipment_count_mismatch | No manual confirmation flow for count mismatches | Add confirmation prompt |
+存在于 95306 SQLite DB（非 sop_agent.db）。由 `inspection_95306_reconciler.py` 创建和管理。Schema：`id`, `release_batch_id`, `shipment_ydid`, `shipment_car_no`, `ticketed_at`, `status_code`, `status_name`, `latest_stage_name`, `latest_event_time`。
 
 ---
 
-## 8. Architecture Observations
+## 五、P0/P1/P2 缺口清单
 
-### What works well
-- **Release batch ingestion:** `BusinessDataAgent.ingest_release_batch()` handles OCR→JSON→DB with idempotent upsert.
-- **Inspection reconciler:** `reconcile_inspection_shipments()` provides formal plan/commit workflow for 95306 matching.
-- **Message matching:** `monitoring_plan_matcher` + `fallback_alignment_match` provide keyword-based project routing.
-- **Live service:** `run_live_service.py` correctly polls chat_records, emits events, and hot-reloads SOPs.
-- **Database foundation:** Core tables (`release_batches`, `wagon_shipments`, `departure_records`) exist with proper FKs.
+### P0 — 主链无法跑通
 
-### Critical architecture gaps
-1. **SOP v0.2 is structurally incompatible** with the YAML parser — blocks everything downstream.
-2. **No message-text parser** for departure text ("6道，四平铁，46车") — blocks the entire departure_flow.
-3. **No 95306 integration** beyond the inspection reconciler — tracking, polling, and status updates are entirely missing.
-4. **No TaskResolver** — the SOP defines 4 task types but zero implementation exists.
-5. **No delivery infrastructure** — Excel, JSON, Telegram, HTTP delivery are all stubs or hardcoded scripts.
+| # | 节点 | 缺口 |
+|---|------|------|
+| P0-1 | YAML 解析器 | `load_project_sop()` 读取扁平 `project_id`，SOP v0.2 使用嵌套 `project.id`；`listening_tasks` 不存在。**阻塞所有下游。** |
+| P0-2 | freight_detail_flow (全部) | GROUP005/013 无路由，无字段提取，无 `enrich_release_batch` |
+| P0-3 | departure_flow — parse_departure_text | 无发运文本解析器（"6道，四平铁，46车"） |
+| P0-4 | departure_flow — 95306 查询 | 无 message_time 驱动的 ±60m 查询窗口 |
+| P0-5 | departure_flow — create_wagon_shipments | 表存在但无代码写入 |
+| P0-6 | tracking_flow — poll_shipment_snapshots | 无 95306 定时轮询 |
+| P0-7 | DB — 缺失字段 | `release_batches`: order_identifier, cargo_name_detail；`wagon_shipments`: container_no, waybill_no |
+| P0-8 | DB — tracking 字段 | `release_batches`: arrival_status, delivered_at, confirmed_received_at；`wagon_shipments`: delivered_at |
+| P0-9 | task_resolver (全部) | excel_generation, json_generation, telegram_delivery, http_delivery 无实现 |
+
+### P1 — 可人工兜底
+
+| # | 节点 | 缺口 |
+|---|------|------|
+| P1-1 | find_existing_release_batch | 按 batch_key hash 去重，非 order_identifier+contract_no 复合匹配 |
+| P1-2 | departure — Excel 生成 | `gen_jljg_excel.py` 硬编码，需数据驱动 |
+| P1-3 | departure — factory JSON | 无生产级 JSON 生成 |
+| P1-4 | departure — dry-run / delivery | 无 HTTP/TG 发送 |
+| P1-5 | tracking — 状态映射 | 无 95306 latest_stage_name → SOP 状态 映射 |
+| P1-6 | tracking — update_dashboard_state | dispatch_board 只读，无反写 |
+| P1-7 | tracking — mark_confirmed_received | 无自动/手动确认机制 |
+| P1-8 | departure — send_excel_task | `report_tasks` 表存在但无代码写入 |
+
+### P2 — 体验优化
+
+| # | 节点 | 缺口 |
+|---|------|------|
+| P2-1 | release_notice — extract_release_notice_json | 无独立 JSON 输出节点 |
+| P2-2 | departure — optional_ship_name | 未从发运文本提取船名 |
+| P2-3 | tracking — close_dashboard_state | 无闭环 |
+| P2-4 | exceptions — ocr_incomplete | runner.py 有异常处理但非 SOP 感知 |
+| P2-5 | exceptions — shipment_count_mismatch | 无 count 不匹配手动确认 |
 
 ---
 
-## 9. Next Round Recommendations (Do Not Execute)
+## 六、回答问题
 
-1. **Fix YAML parser** to handle nested `project.id` structure — unblocks everything.
-2. **Implement freight_detail_flow** — simplest flow to add, enables data enrichment.
-3. **Add DB columns** — `order_identifier`, `cargo_name_detail`, `container_no`, `waybill_no`, tracking fields.
-4. **Implement departure text parser** — regex-based extraction of message_time/destination/car_count.
-5. **Implement 95306 query window** — build from message_time ±60m.
-6. **Implement TaskResolver** — start with `excel_generation` (refactor `gen_jljg_excel.py`) and `json_generation`.
-7. **Implement tracking polling** — periodic 95306 status query with state mapping.
+### Q3: 为什么长航滨海仍然 in_progress？
 
-**Priority order:** P0-1 (YAML parser) → P0-6 (DB columns) → P0-2 (freight_detail) → P0-3/P0-4 (departure_flow) → P0-5 (tracking) → P0-8 (TaskResolver) → P1 items → P2 items.
+1. `release_batches.dispatch_status` 创建时默认 `"in_progress"`。
+2. 无 95306 轮询机制读取 `shipment_release_batch_matches.status_name` 变化。
+3. 无代码将 95306 的"发车/到站/交付"映射到 `dispatch_status`。
+4. `confirmed_received` 状态不存在于任何表中。
+
+### Q4: 推进到 confirmed_received 最少需要哪些 P0 功能？
+
+最少 3 个 P0：
+
+1. **P0-1** YAML 解析器修复 — 否则没有任何 SOP 指令生效
+2. **P0-6** `poll_shipment_snapshots` — 定时查询 95306 状态
+3. **P0-8** DB tracking 字段 — `confirmed_received_at`, `delivered_at`
+
+加上 P1-5（状态映射）、P1-7（mark_confirmed_received）可完成自动化确认。
+
+### Q5: 哪些已有脚本可以复用？
+
+1. **`inspection_95306_reconciler.py`** — `_query_all_shipments_in_window()` 可复用于 departure_flow 的 95306 查询窗口
+2. **`release_match_spec.py`** — `build_match_spec()` / `row_matches_spec()` 可复用于识别 release_batch
+3. **`agent.py`** — `ingest_release_batch()` 可复用 create_or_update
+4. **`gen_jljg_excel.py`** — Excel 格式可作模板参考（需拆除硬编码）
+5. **`dispatch_board.py`** — HTML 渲染可复用 dashboard 展示
+6. **`monitoring_plan_matcher.py`** — `_fallback_alignment_match()` 的 keyword routing 模式可扩展
+
+### Q6: 哪些硬编码必须拆除？
+
+| 文件 | 硬编码 | 应替换为 |
+|------|--------|---------|
+| `gen_jljg_excel.py:50` | `'JGCG-SFY-HTNK20260501'` | 从 `release_batches.contract_no` 读取 |
+| `gen_jljg_excel.py:51` | `'CGR20260518174420'` | 从 `release_batches` 读取（需新增 order_identifier 列） |
+| `gen_jljg_excel.py:54` | `'待补-需从95306API提取箱号'` | 95306 自动提取 |
+| `gen_jljg_excel.py:58` | `'长航滨海'` | 从 `release_batches.ship_name` 读取 |
+| `gen_jljg_excel.py:74` | 整个 factory JSON 结构硬编码 | 数据驱动模板 |
+| `monitoring_plan_matcher.py:96-99` | `'四平铁矿箱', '四平放货', '四平'` | 应从 compiled monitoring plan 读取 |
 
 ---
 
-**Audit complete. No code changed. No SOP modified. No live service restarted.**
+## 七、下一轮建议（不执行）
+
+1. **修复 `load_project_sop()`** — 支持嵌套 `project.id` 结构，或迁移 YAML 为扁平格式
+2. **编译 SOP groups → listening_tasks** — 将 SOP 的 `groups` + `flows` 结构转换为 runtime 可用的 `listening_tasks`
+3. **添加 DB 列** — `order_identifier`, `cargo_name_detail`, `container_no`, `waybill_no`, tracking 字段
+4. **实现 departure text parser** — regex 提取 message_time/destination/car_count
+5. **实现 tracking poller** — 周期性 95306 状态查询
+6. **实现 TaskResolver** — 从 `gen_jljg_excel.py` 重构为 `excel_generation` 服务
+7. **拆除 gen_jljg_excel.py 硬编码** — 数据驱动
+
+**优先级顺序：** P0-1 → P0-7(P0-8 并列) → P0-3/P0-4 → P0-5 → P0-6 → P0-9 → P1 items → P2 items
+
+---
+
+**审计完成。零代码变更。零 SOP 修改。**

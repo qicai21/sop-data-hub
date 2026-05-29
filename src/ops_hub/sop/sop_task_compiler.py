@@ -89,8 +89,8 @@ _EXECUTOR_STATUS: dict[str, tuple[str, str]] = {
     ),
     # ── prototype / dry_run_only ──
     "generate_departure_excel_task": (
-        "prototype",
-        "scripts/gen_jljg_excel.py (hardcoded values, data-driven not complete)",
+        "implemented",
+        "src/ops_hub/sop/departure_excel.py (generate_departure_excel → .xlsx from SOP template)",
     ),
     "generate_factory_transport_json_task": (
         "implemented",

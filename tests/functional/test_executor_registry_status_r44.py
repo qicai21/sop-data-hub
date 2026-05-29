@@ -84,10 +84,10 @@ def test_report_sender_adapter_still_missing():
 # ── Prototype not mislabeled ────────────────────────────────────────────
 
 def test_prototype_not_implemented():
-    """generate_departure_excel_task is prototype — must not be 'implemented'."""
+    """generate_departure_excel_task is now implemented (R54) — verify status."""
     status, _ = _action_status("generate_departure_excel_task")
-    assert status == "prototype", (
-        f"generate_departure_excel_task should be prototype, got '{status}'"
+    assert status == "implemented", (
+        f"generate_departure_excel_task should be implemented, got '{status}'"
     )
 
 

@@ -483,6 +483,51 @@ flows:
             apply_border_to_header: true
             apply_border_to_body: true
             body_main_structure_has_border: true
+    factory_upload_config:
+      endpoint: "http://111.26.178.96:88/prod-api"
+      login_path: "/auth/login"
+      upload_path: "/sales/transportOrder/insert"
+      auth:
+        username: "saibin"
+        token_header: "Admin-Token"
+      payload_fields:
+        wagonNumber:
+          source: "95306_confirm"
+          description: "车号"
+        boxNumber:
+          source: "95306_confirm"
+          description: "箱号，双箱拆成两条独立记录"
+        goodName:
+          source: "release_batch.cargo_name"
+          description: "货名，严格按放货批次货物品名原文"
+        boatName:
+          source: "release_batch.ship_name"
+          description: "船名"
+        contractNumber:
+          source: "release_batch.factory_contract_no"
+          description: "工厂采购合同号，非运输合同号"
+        orderId:
+          source: "release_batch.order_identifier"
+          description: "订单标识"
+        numberTime:
+          source: "fixed"
+          value: "单次"
+          description: "工厂系统协议固定值"
+        formId:
+          source: "fixed"
+          value: "MR07"
+          description: "工厂系统协议固定值"
+        first:
+          source: "fixed"
+          value: "高桥镇装车发运明细"
+          description: "发站名+装车发运明细，固定值"
+      excel_to_factory_mapping:
+        "合同号": "contractNumber"
+        "订单标识": "orderId"
+        "货名": "goodName"
+        "车号": "wagonNumber"
+        "箱号": "boxNumber"
+        "船名": "boatName"
   tracking_flow:
     trigger:
       - "dispatched_wagon_exists"

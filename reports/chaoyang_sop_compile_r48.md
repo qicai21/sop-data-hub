@@ -193,12 +193,45 @@ Compiler misses:    inspection_notice_flow, business_text_flow, report_delivery_
 - `inspection_notice_flow` 与 `departure_flow` 不同：前者基于 OCR 图片字段提取（字段在图片上），后者基于文字解析（字段在文本消息中）。不能直接复用 departure_text_parser。
 - 已有木森17的 47 车 wagon_shipments 在 sop_agent.db 中，可作为检装车 OCR 提取的验收测试数据。
 
-## 8. 改动文件
+## 8. R49 修复：Compiler 动态化
 
-- 无代码改动（纯验证任务）
+**改动：** `src/ops_hub/sop/sop_task_compiler.py` 第 330 行
 
-## 9. Git
+```diff
+- for flow_name in ("release_notice_flow", "freight_detail_flow", "departure_flow", "tracking_flow"):
++ for flow_name in yaml_flows:
+```
+
+**结果：**
+
+| 项目 | pre-R49 | post-R49 | 
+|------|---------|----------|
+| chaoyang flows | 2/5 | **5/5** ✅ |
+| chaoyang total_tasks | 15 | **26** |
+| chaoyang implemented | 5 | **6** |
+| chaoyang missing | 8 | **13** |
+| jilin_jingang | 28 (4 flows) | 28 (4 flows) ✅ 无回归 |
+
+**live_service --status 验证：**
+
+```json
+chaoyang_steel: total=26 impl=6 miss=13 proto=4 dry=2
+jilin_jingang_jinzhou: total=28 impl=12 miss=9 proto=4 dry=3  ← 不变
+aggregate: impl=18 miss=22
+```
+
+**测试：** 55/55 passed（SOP compiler + task registry + executor registry）
+
+## 9. 改动文件
+
+- `src/ops_hub/sop/sop_task_compiler.py`：1 行改动（L330）
+- `sop-data-hub/src/ops_hub/sop/sop_task_compiler.py`：同步 patch
+- `sop-data-hub/config/project_sops/chaoyang.yaml`：同步最新版本
+
+## 10. Git
 
 - branch: codex/sop-real-sop-topology-audit-20260525
 - commit (baseline): 9ea2b4e
-- PR: 无（验证任务，不涉及代码变更）
+- commit (R48): 6173d7e
+- commit (R49): [this commit]
+- PR: 无

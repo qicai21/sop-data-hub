@@ -327,7 +327,7 @@ class SOPTaskCompiler:
         flows: dict[str, list[ExecutableTask]] = {}
         yaml_flows = data.get("flows", {}) or {}
 
-        for flow_name in ("release_notice_flow", "freight_detail_flow", "departure_flow", "tracking_flow"):
+        for flow_name in yaml_flows:
             flow_data = yaml_flows.get(flow_name)
             if not flow_data:
                 continue

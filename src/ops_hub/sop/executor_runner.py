@@ -71,6 +71,16 @@ class ExecutionPreview:
     factory_login: bool = False
     factory_login_error: str = ""
 
+    # Step 5b: factory_verify (R55)
+    factory_verified: bool = False
+    factory_verify_total_match: bool = False
+    factory_verify_boxes_ok: bool = False
+    factory_verify_api_total: int = 0
+
+    # Step 6: send_excel via wx-ui-bridge (R55)
+    excel_sent: bool = False
+    excel_target: str = ""
+
     # Overall
     apply_mode: bool = False
     error: str = ""
@@ -110,6 +120,16 @@ class ExecutionPreview:
                     "payloads": self.factory_payloads,
                     "success": self.factory_success,
                     "failure": self.factory_failure,
+                },
+                "5b_factory_verify": {
+                    "verified": self.factory_verified,
+                    "total_match": self.factory_verify_total_match,
+                    "boxes_ok": self.factory_verify_boxes_ok,
+                    "api_total": self.factory_verify_api_total,
+                },
+                "6_send_excel": {
+                    "sent": self.excel_sent,
+                    "target": self.excel_target,
                 },
             },
             "release_batch": {
@@ -205,7 +225,8 @@ def run_departure_executor_chain(
     rt = Path(runtime_root)
     chain_str = (
         "departure_text → query_95306 → create_wagon_shipments → "
-        "departure_excel → factory_upload"
+        "departure_excel → factory_upload → factory_verify → "
+        "send_excel (wx-ui-bridge)"
     )
     preview = ExecutionPreview(
         message_id=event.message_id,
@@ -291,7 +312,10 @@ def run_departure_executor_chain(
             preview.wagon_actual_insert = wagon_result.inserted_count
 
             # ── Step 5: departure_excel + factory_upload (apply only) ─
-            if apply_mode and wagon_result.inserted_count > 0:
+            if apply_mode and wagon_result.status == "safe_to_apply":
+                # Trigger Excel + factory even if all wagons already exist
+                # (idempotent: create_wagon_shipments skips existing, but we
+                #  still want to re-generate Excel and re-upload)
                 try:
                     from ops_hub.sop.departure_excel import generate_departure_excel
                     excel_result = generate_departure_excel(
@@ -317,6 +341,45 @@ def run_departure_executor_chain(
                     preview.factory_failure = factory_result.failure_count
                 except Exception as exc:
                     preview.error += f"factory_upload: {exc}; "
+
+                # ── Step 5b: verify factory upload (R55) ──────────────
+                try:
+                    from ops_hub.sop.factory_verify import verify_factory_upload
+                    batch_ord = preview.release_batch_id
+                    verify = verify_factory_upload(
+                        order_id="",
+                        release_batch_id=batch_ord,
+                    )
+                    preview.factory_verified = True
+                    preview.factory_verify_total_match = verify.total_match
+                    preview.factory_verify_boxes_ok = verify.all_boxes_found
+                    preview.factory_verify_api_total = verify.api_total
+                    if not verify.all_boxes_found:
+                        preview.error += (
+                            f"verify: total_match={verify.total_match} "
+                            f"missing={len(verify.missing_boxes)} "
+                            f"extra={len(verify.extra_boxes)}; "
+                        )
+                except Exception as exc:
+                    preview.error += f"factory_verify: {exc}; "
+
+                # ── Step 6: send Excel to contact (R55) ──────────────
+                try:
+                    from ops_hub.sop.send_excel import send_to_wechat
+                    target = "郭东北"
+                    batch_ship = preview.release_batch_ship
+                    msg = f"吉林金钢发运数据 {batch_ship} lot02 {excel_result.wagon_count}车"
+                    send_result = send_to_wechat(
+                        target=target,
+                        message=msg,
+                        file_path=excel_result.output_path,
+                    )
+                    preview.excel_sent = send_result.success
+                    preview.excel_target = target
+                    if not send_result.success:
+                        preview.error += f"send_excel: {send_result.error}; "
+                except Exception as exc:
+                    preview.error += f"send_excel: {exc}; "
 
     # ── Write execution preview (all code paths) ──────────────────────
     previews_dir = rt / "execution_previews"

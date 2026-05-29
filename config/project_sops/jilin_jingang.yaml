@@ -528,6 +528,23 @@ flows:
         "车号": "wagonNumber"
         "箱号": "boxNumber"
         "船名": "boatName"
+      verify:
+        endpoint: "http://111.26.178.96:88/prod-api/sales/transportOrder/list"
+        method: "GET"
+        params:
+          pageNum: 1
+          pageSize: 100
+          orderId: "{order_identifier}"
+          formId: "MR07"
+        check:
+          - "total == expected_count"
+          - "all boxNumber values match"
+    delivery_targets:
+      dev:
+        type: "wechat_contact"
+        name: "郭东北"
+        bridge: "wx-ui-bridge"
+        send_via: "src/ops_hub/sop/send_excel.py"
   tracking_flow:
     trigger:
       - "dispatched_wagon_exists"

@@ -306,13 +306,20 @@ def upload_one_wagon(
     try:
         resp = requests.post(
             config.upload_url,
-            json=w.payload,
+            json=[w.payload],  # factory expects array, even for single wagon
             headers=headers,
             timeout=30,
         )
+        # Check business-level code, not just HTTP 200
+        try:
+            body = resp.json()
+            biz_code = body.get("code")
+            biz_ok = (resp.status_code == 200 and biz_code == 200)
+        except Exception:
+            biz_ok = (resp.status_code == 200)
         return UploadResult(
             wagon_no=w.wagon_no,
-            success=resp.status_code == 200,
+            success=biz_ok,
             http_status=resp.status_code,
             response_body=resp.text[:500],
         )

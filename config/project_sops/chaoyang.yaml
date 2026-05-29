@@ -1,35 +1,238 @@
 project_id: "chaoyang_steel"
 project_name: "朝阳钢铁铁矿发运项目"
 status: "active"
+version: "v0.1"
+source_of_truth: "git"
+sop_type: "ordinary_freight"
 
-# 朝阳钢铁项目 SOP 基线
-# 关键约束：不包含文字放货链路，不使用计划号/合同号/进口船名字段做自动建批。
+project_meta:
+  category: "normal_freight"
+  dashboard: "normal_freight"
+  destination_station: "朝阳西"
+  cargo_names: ["铁矿", "铁矿粉", "朝阳西铁", "朝阳西铁矿"]
+  has_inspection_notice: true
+  confirmed_received_rule:
+    default: "95306_delivered_equals_confirmed_received"
+  release_batch_policy:
+    separate_notice_means_separate_release_batch: true
+    same_ship_can_have_multiple_release_batches: true
+    do_not_merge_release_batches: true
+
+groups:
+  primary:
+    group_id: "GROUP001"
+    group_lookup_id: "[GROUP001]"
+    group_name: "铁晟业务工作群"
+    wxid: "18919596289@chatroom"
+  test:
+    group_id: "GROUP013"
+    group_lookup_id: "[GROUP013]"
+    group_name: "数据单发群"
+  production_report:
+    group_id: "GROUP004"
+    group_lookup_id: "[GROUP004]"
+    group_name: "朝钢铁矿发运群"
+
 listening_tasks:
   - group_id: "GROUP001"
     group_lookup_id: "[GROUP001]"
     group_name: "铁晟业务工作群"
     wxid: "18919596289@chatroom"
+    source_role: "primary"
     listen_options:
       image: true
+      text: true
     pull_image: true
     routing:
       - message_type: "image"
         trigger_condition: "category_in:[出港计划通知单]"
-        target_node: "create_release_batch"
+        target_node: "detect_release_notice"
       - message_type: "image"
         trigger_condition: "category_in:[检装车通知单]"
-        target_node: "process_inspection_slip"
-        report_targets:
-          dev:
-            type: "contact"
-            name: "郭东北"
-          production:
-            type: "group"
-            group_id: "[待确认]"
-            group_name: "朝钢铁矿发运群"
+        target_node: "detect_inspection_notice"
+      - message_type: "text"
+        trigger_condition: "business_text_context"
+        target_node: "capture_business_context"
+  - group_id: "GROUP013"
+    group_lookup_id: "[GROUP013]"
+    group_name: "数据单发群"
+    source_role: "supplemental"
+    listen_options:
+      image: true
+      text: true
+      file: true
+    pull_image: true
+    routing:
+      - message_type: "image"
+        trigger_condition: "category_in:[出港计划通知单]"
+        target_node: "detect_release_notice"
+        supplemental: true
+      - message_type: "image"
+        trigger_condition: "category_in:[检装车通知单]"
+        target_node: "detect_inspection_notice"
+        supplemental: true
+      - message_type: "text"
+        trigger_condition: "business_text_context"
+        target_node: "capture_business_context"
+        supplemental: true
+
+flows:
+  release_notice_flow:
+    description: "release notice image to release_batch"
+    trigger:
+      groups: ["GROUP001", "GROUP013"]
+      message_types: ["image"]
+      image_category: ["出港计划通知单"]
+    steps:
+      - node: "detect_release_notice"
+        action: ["classify_message", "extract_release_notice_json"]
+        outputs: ["release_notice_json"]
+      - node: "identify_project"
+        action: ["match_project_by_destination_and_cargo"]
+        conditions:
+          any_keywords: ["朝阳西", "朝钢", "朝阳钢铁"]
+      - node: "find_existing_release_batch"
+        action: ["query_release_batches"]
+        match_fields: ["ship_name", "notice_date", "cargo_name", "quantity_tons", "destination_station"]
+      - node: "create_or_update_release_batch"
+        action: ["create_release_batch", "update_release_batch_fields"]
+        rule:
+          same_ship_new_notice_create_new_batch: true
+          do_not_merge_release_batches: true
+        outputs: ["release_batch"]
+
+  inspection_notice_flow:
+    description: "inspection notice image to 95306 query and wagon_shipments"
+    trigger:
+      groups: ["GROUP001", "GROUP013"]
+      message_types: ["image"]
+      image_category: ["检装车通知单"]
+    steps:
+      - node: "detect_inspection_notice"
+        action: ["classify_message", "extract_inspection_notice_json"]
+        outputs: ["inspection_notice_json"]
+      - node: "extract_inspection_notice_fields"
+        action: ["extract_ship_name", "extract_destination_station", "extract_cargo_name", "extract_car_count", "extract_wagon_numbers", "extract_notice_time"]
+        expected_fields: ["ship_name", "destination_station", "car_count", "wagon_numbers"]
+      - node: "match_release_batch"
+        action: ["match_release_batch_by_ship_destination_cargo"]
+        rule:
+          prefer_open_batch_same_ship_destination_cargo: true
+          multiple_candidates: "pending_review"
+          do_not_merge_release_batches: true
+      - node: "query_95306_by_inspection_notice"
+        action: ["query_95306_shipments_by_window_or_wagon_numbers"]
+        rule:
+          prefer_wagon_numbers: true
+          fallback_window_minutes: 60
+          rail_db_read_only: true
+      - node: "create_wagon_shipments"
+        action: ["create_wagon_shipments", "bind_wagons_to_release_batch", "check_existing_wagon_shipments"]
+        rule:
+          auto_apply_when_count_matches_and_no_conflict: true
+          duplicate_same_batch: "skip_existing"
+          duplicate_other_batch: "conflict"
+          do_not_merge_release_batches: true
+      - node: "enter_tracking_phase"
+        next: ["track_95306_status"]
+
+  business_text_flow:
+    description: "business text context only; not main trigger"
+    trigger:
+      groups: ["GROUP001", "GROUP013"]
+      message_types: ["text"]
+    steps:
+      - node: "capture_business_context"
+        action: ["store_message_context"]
+        rule:
+          text_is_context_only: true
+          inspection_notice_is_primary: true
+
+  tracking_flow:
+    description: "95306 tracking until confirmed received"
+    trigger: ["wagon_shipments_exists"]
+    steps:
+      - node: "track_95306_status"
+        action: ["poll_shipment_snapshots"]
+      - node: "arrived_destination"
+        conditions:
+          95306_status: "到站"
+        action: ["update_wagon_arrival_status", "update_dashboard_state"]
+      - node: "delivered"
+        conditions:
+          95306_status: ["交付", "货物已交付", "已交付"]
+        action: ["update_dispatch_status", "mark_confirmed_received"]
+      - node: "close_batch_if_all_confirmed"
+        conditions:
+          all_wagons_confirmed_received: true
+        action: ["close_dashboard_state", "mark_release_batch_completed"]
+
+  report_delivery_flow:
+    description: "departure report delivery"
+    steps:
+      - node: "generate_departure_excel"
+        action: ["generate_departure_excel_task"]
         report_artifact:
           type: "departure_report"
-          template_path: "/Users/qicai21/projects/repos/ops-data-hub/config/report_templates/cysteel_departure_report_template.xlsx"
+          template_path: "config/report_templates/cysteel_departure_report_template.xlsx"
           filename_pattern: "锦州港铁矿发运表_{wagon_count}_{date}.xlsx"
           generate_after: "departure_records_committed"
-          send_after_generate: true
+      - node: "generate_factory_json"
+        action: ["generate_factory_transport_json_task"]
+      - node: "send_test_report"
+        conditions:
+          runtime_mode: "test"
+        target_group: ["GROUP013"]
+        target_contact: ["郭东北"]
+        action: ["send_excel_task"]
+      - node: "send_production_report"
+        conditions:
+          runtime_mode: "production"
+        target_group: ["GROUP004"]
+        action: ["send_excel_task"]
+
+runtime:
+  watcher:
+    enabled: true
+    hot_reload: true
+  idempotency:
+    message:
+      unique_key: ["group_id", "seq"]
+    release_batch:
+      unique_key: ["project_id", "ship_name", "notice_date", "cargo_name", "quantity_tons"]
+    wagon_shipment:
+      unique_key: ["wagon_no", "waybill_no", "release_batch_id"]
+  task_resolver:
+    release_notice_image:
+      task_type: "ocr_extraction"
+    inspection_notice_image:
+      task_type: "ocr_extraction"
+    create_wagon_shipments:
+      task_type: "db_write"
+    shipment_status_sync:
+      task_type: "95306_tracking"
+    departure_excel:
+      task_type: "excel_generation"
+    factory_json:
+      task_type: "json_generation"
+    report_delivery:
+      task_type: "wx_delivery"
+
+exceptions:
+  release_notice_ocr_incomplete: ["create_manual_review_task", "preserve_original_image"]
+  inspection_notice_ocr_incomplete: ["create_manual_review_task", "preserve_original_image"]
+  multiple_release_batch_candidates: ["pending_review"]
+  wagon_count_mismatch: ["pending_review"]
+  duplicate_wagon_same_batch: ["skip_existing"]
+  duplicate_wagon_other_batch: ["conflict_review"]
+
+acceptance:
+  - "出港计划通知单图片可创建或更新 release_batch。"
+  - "检装车通知单图片可解析为 inspection_notice_json。"
+  - "检装车通知单中的车号可用于95306只读查询。"
+  - "车数一致且无冲突时自动创建 wagon_shipments。"
+  - "不同放货批次不得合并。"
+  - "业务文字只作上下文，不替代检装车通知单。"
+  - "95306已交付默认视为 confirmed_received。"
+  - "测试环境发送到 GROUP013 或郭东北。"
+  - "生产环境发送到 GROUP004 朝钢铁矿发运群。"

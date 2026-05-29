@@ -232,6 +232,9 @@ function renderDashboard(data) {
   renderSummary(data.summary || {});
   renderPendingItems(data.pending_items || []);
   renderReleaseBatches(data.release_batches || []);
+  // Collapse all car details panels after data loads
+  var details = document.querySelectorAll('details[open]');
+  for (var i = 0; i < details.length; i++) { details[i].open = false; }
 }
 
 function loadDashboardData() {

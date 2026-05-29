@@ -410,6 +410,79 @@ flows:
       - node: "enter_tracking_phase"
         next:
           - "track_95306_status"
+    output_templates:
+      departure_excel:
+        business_name: "发运 Excel"
+        file_naming:
+          pattern: "吉林金钢_发运数据_{yyyymmdd}_{car_count}车.xlsx"
+          date_source_priority:
+            - "waybill_made_date"
+            - "bill_created_date"
+            - "shipment_document_date"
+            - "message_date"
+          car_count_source: "export_row_count"
+        workbook:
+          sheet_name: "sheet1"
+          title:
+            row: 1
+            range: "A1:N1"
+            text: "高桥镇装车发运明细"
+            merge_cells: true
+          header_row: 2
+          data_start_row: 3
+        columns:
+          - key: "seq"
+            header: "序号"
+            fill_rule: "从1开始自增"
+          - key: "supplier_name"
+            header: "供应商名称"
+            fill_rule: "留空"
+          - key: "detail_account"
+            header: "明细户"
+            fill_rule: "留空"
+          - key: "wagon_no"
+            header: "车皮号"
+            fill_rule: "车号"
+          - key: "container_no_1"
+            header: "箱号1"
+            fill_rule: "该车第一个箱号"
+          - key: "container_no_2"
+            header: "箱号2"
+            fill_rule: "该车第二个箱号"
+          - key: "loading_date"
+            header: "装车日期"
+            fill_rule: "制单日期，yyyy-mm-dd"
+          - key: "entry_date"
+            header: "进场日期"
+            fill_rule: "装车日期+30天，yyyy-mm-dd"
+          - key: "cargo_name"
+            header: "货名"
+            fill_rule: "严格按放货批次货物品名原文填写，不得自行泛化为铁矿"
+          - key: "ship_name"
+            header: "船名"
+            fill_rule: "船名"
+          - key: "entry_contract_no"
+            header: "入场合同号"
+            fill_rule: "按放货批次货运信息填写"
+          - key: "order_identifier"
+            header: "订单标识号"
+            fill_rule: "按放货批次货运信息填写"
+          - key: "original_departure_weight"
+            header: "原发重量"
+            fill_rule: "留空"
+          - key: "shipment_count_type"
+            header: "次数"
+            fill_rule: "固定填写：单次"
+        style:
+          title:
+            merge_cells: true
+            horizontal_alignment: "center"
+          table:
+            bordered_range: "A2:N{last_data_row}"
+            border_style: "thin"
+            apply_border_to_header: true
+            apply_border_to_body: true
+            body_main_structure_has_border: true
   tracking_flow:
     trigger:
       - "dispatched_wagon_exists"

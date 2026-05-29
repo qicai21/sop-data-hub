@@ -51,6 +51,29 @@ _EXECUTOR_STATUS: dict[str, tuple[str, str]] = {
         "implemented",
         "src/ops_hub/data_agent/agent.py (batch_key lookup)",
     ),
+    # ── freight detail ──
+    "extract_freight_detail": (
+        "implemented",
+        "src/ops_hub/sop/freight_detail_extractor.py",
+    ),
+    "enrich_release_batch": (
+        "implemented",
+        "src/ops_hub/sop/enrich_release_batch.py",
+    ),
+    # ── departure → 95306 query ──
+    "build_time_window": (
+        "implemented",
+        "src/ops_hub/sop/shipment_query_window.py (QueryWindow.from_reference)",
+    ),
+    "query_95306_waybills": (
+        "implemented",
+        "src/ops_hub/sop/query_95306_shipments.py (query_95306_shipments_by_window)",
+    ),
+    # ── tracking / shipment status sync ──
+    "poll_shipment_snapshots": (
+        "implemented",
+        "src/ops_hub/sop/shipment_status_sync.py (ShipmentStatusSync.sync)",
+    ),
     # ── prototype / dry_run_only ──
     "generate_departure_excel_task": (
         "prototype",

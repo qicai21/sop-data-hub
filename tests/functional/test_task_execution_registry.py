@@ -87,41 +87,46 @@ def test_build_time_window_is_missing_in_trace():
         (a for a in trace.actions if a.action == "build_time_window"), None
     )
     assert build_action is not None, f"Actions: {[a.action for a in trace.actions]}"
-    assert build_action.executor_status == "missing"
+    assert build_action.executor_status == "implemented"
 
 
 # ── 5. next_missing_task = build_95306_query_window ────────────────────
 
 
 def test_next_missing_task_is_build_95306_query_window():
+    """After R44: build_time_window is now implemented.
+    The next missing should be query_result_found (first node after implemented query_95306).
+    """
     reg = _registry()
     trace = reg.generate_trace(_departure_event())
-    assert trace.next_missing_task == "build_95306_query_window"
+    assert trace.next_missing_task == "query_result_found"
 
 
 # ── 6. Freight detail trace ───────────────────────────────────────────
 
 
 def test_freight_detail_text_generates_trace():
+    """R41+R44: freight_detail_flow is now fully implemented."""
     reg = _registry()
     event = _freight_detail_event()
     trace = reg.generate_trace(event)
     assert trace.matched_flow == "freight_detail_flow"
     assert trace.matched_node == "enrich_release_batch"
     assert trace.project_id == PROJECT_ID
-    # enrich_release_batch executor is missing (no implementation yet)
-    assert trace.status == "blocked_missing_executor"
-    assert trace.missing_tasks >= 1
+    # enrich_release_batch executor is now implemented (R41+R44)
+    assert trace.status == "ready"
+    assert trace.missing_tasks == 0
 
 
-# ── 7. Freight detail → next_missing_task == enrich_release_batch ─────
+# ── 7. Freight detail → no next_missing_task ──────────────────────────
 
 
 def test_freight_detail_next_missing_is_enrich_release_batch():
+    """R41+R44: freight_detail_flow has no missing tasks anymore."""
     reg = _registry()
     event = _freight_detail_event()
     trace = reg.generate_trace(event)
-    assert trace.next_missing_task == "enrich_release_batch"
+    assert trace.next_missing_task == ""
 
 
 # ── 8. Irrelevant text → no_matching_flow ─────────────────────────────
@@ -173,7 +178,7 @@ def test_trace_write_to_task_traces(tmp_path):
     content = json.loads(files[0].read_text(encoding="utf-8"))
     assert content["matched_flow"] == "departure_flow"
     assert content["status"] == "blocked_missing_executor"
-    assert content["next_missing_task"] == "build_95306_query_window"
+    assert content["next_missing_task"] == "query_result_found"
 
 
 # ── 11. Freight detail avoids departure double-match ──────────────────

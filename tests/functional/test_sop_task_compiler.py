@@ -122,20 +122,22 @@ def test_parse_departure_text_is_implemented():
 # ── 7. Executor status: missing ────────────────────────────────────────
 
 
-def test_query_95306_waybills_is_missing():
+def test_query_95306_waybills_is_implemented():
+    """R42: query_95306_waybills now implemented via query_95306_shipments_by_window."""
     plan = _plan()
     tasks = plan.flows["departure_flow"]
     node = next((t for t in tasks if t.node == "query_95306"), None)
     assert node is not None
-    assert node.executor_status == "missing"
+    assert node.executor_status == "implemented"
 
 
-def test_poll_shipment_snapshots_is_missing():
+def test_poll_shipment_snapshots_is_implemented():
+    """R36: shipment_status_sync now registered as implemented."""
     plan = _plan()
     tasks = plan.flows["tracking_flow"]
     node = next((t for t in tasks if t.node == "track_95306_status"), None)
     assert node is not None
-    assert node.executor_status == "missing"
+    assert node.executor_status == "implemented"
 
 
 def test_create_wagon_shipments_is_missing():

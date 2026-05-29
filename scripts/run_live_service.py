@@ -38,6 +38,9 @@ from ops_hub.sop.sop_watcher import SopWatcher
 from ops_hub.sop.source_watcher import WxOpsSourceWatcher
 from ops_hub.sop.workflow_task import build_workflow_task_queue
 
+# ── R52: executor runner ─────────────────────────────────────────────
+from ops_hub.sop.executor_runner import run_departure_executor_chain_if_applicable
+
 # ── R18: canonical paths ────────────────────────────────────────────────
 CANONICAL_REPO_ROOT = Path.home() / "projects" / "repos" / "sop-data-hub"
 DEFAULT_RUNTIME_ROOT = CANONICAL_REPO_ROOT / "runtime"
@@ -232,6 +235,30 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
         len(state_paths),
         event_path,
     )
+
+    # ── R52: run departure executor chain (dry-run only) ─────────────
+    try:
+        exec_preview = run_departure_executor_chain_if_applicable(
+            event, runtime_root=runtime_root
+        )
+        if exec_preview is not None and not exec_preview.skipped_reason:
+            logger.info(
+                "executor_runner message_id=%s status=%s depart=%s query=%d wagons=%s/%d",
+                event.message_id,
+                exec_preview.departure_status,
+                exec_preview.departure_candidate.get("destination", "") if exec_preview.departure_candidate else "",
+                exec_preview.query_total_candidates,
+                exec_preview.wagon_status,
+                exec_preview.wagon_planned_insert,
+            )
+        elif exec_preview is not None:
+            logger.info(
+                "executor_runner skipped message_id=%s reason=%s",
+                event.message_id,
+                exec_preview.skipped_reason,
+            )
+    except Exception as exc:
+        logger.error("executor_runner failed message_id=%s: %s", event.message_id, exc)
 
     return {
         "event_path": event_path,

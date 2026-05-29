@@ -111,6 +111,8 @@ def open_db() -> sqlite3.Connection:
     
     migrate_release_batches_schema(connection)
 
+    migrate_wagon_shipments_schema(connection)
+
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_release_batches_notice_date ON release_batches(notice_date)"
     )
@@ -323,4 +325,53 @@ def migrate_release_batches_schema(connection: sqlite3.Connection) -> None:
         if field not in columns:
             connection.execute(f"ALTER TABLE release_batches ADD COLUMN {field} {type_def}")
 
+    connection.commit()
+
+
+def migrate_wagon_shipments_schema(connection: sqlite3.Connection) -> None:
+    """R45: Ensure wagon_shipments has extended columns for create_wagon_shipments."""
+    try:
+        connection.execute("SELECT 1 FROM wagon_shipments LIMIT 0")
+    except sqlite3.OperationalError:
+        # Table doesn't exist yet — create minimal schema
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS wagon_shipments (
+                id TEXT PRIMARY KEY,
+                departure_id TEXT NOT NULL,
+                batch_id TEXT NOT NULL,
+                car_no TEXT,
+                car_model TEXT NOT NULL DEFAULT '',
+                cargo_name TEXT NOT NULL DEFAULT '',
+                shipper_name TEXT NOT NULL DEFAULT '',
+                consignee_name TEXT NOT NULL DEFAULT '',
+                origin_name TEXT NOT NULL DEFAULT '',
+                destination_name TEXT NOT NULL DEFAULT '',
+                ticketed_at TEXT NOT NULL DEFAULT '',
+                departed_at TEXT NOT NULL DEFAULT '',
+                arrived_at TEXT NOT NULL DEFAULT '',
+                status_name TEXT NOT NULL DEFAULT '',
+                freight_fee REAL NOT NULL DEFAULT 0,
+                detail_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(wagon_shipments)").fetchall()
+    }
+    new_fields: dict[str, str] = {
+        "delivered_at": "TEXT",
+        "confirmed_received_at": "TEXT",
+        "container_no": "TEXT",
+        "waybill_no": "TEXT",
+        "project_id": "TEXT",
+        "ship_name": "TEXT",
+        "dispatch_status": "TEXT NOT NULL DEFAULT 'in_progress'",
+        "source_message_id": "TEXT",
+        "source_group_id": "TEXT",
+    }
+    for field, type_def in new_fields.items():
+        if field not in columns:
+            connection.execute(f"ALTER TABLE wagon_shipments ADD COLUMN {field} {type_def}")
     connection.commit()

@@ -74,6 +74,19 @@ _EXECUTOR_STATUS: dict[str, tuple[str, str]] = {
         "implemented",
         "src/ops_hub/sop/shipment_status_sync.py (ShipmentStatusSync.sync)",
     ),
+    # ── departure → 95306 query → create wagons ──
+    "create_wagon_shipments": (
+        "implemented",
+        "src/ops_hub/sop/create_wagon_shipments.py",
+    ),
+    "bind_wagons_to_release_batch": (
+        "implemented",
+        "src/ops_hub/sop/create_wagon_shipments.py (create_wagon_shipments_from_candidates)",
+    ),
+    "check_existing_wagon_shipments": (
+        "implemented",
+        "src/ops_hub/sop/create_wagon_shipments.py (idempotent skip + conflict check)",
+    ),
     # ── prototype / dry_run_only ──
     "generate_departure_excel_task": (
         "prototype",

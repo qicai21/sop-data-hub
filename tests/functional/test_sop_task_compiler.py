@@ -140,12 +140,13 @@ def test_poll_shipment_snapshots_is_implemented():
     assert node.executor_status == "implemented"
 
 
-def test_create_wagon_shipments_is_missing():
+def test_create_wagon_shipments_is_implemented():
+    """R45: create_wagon_shipments is now implemented."""
     plan = _plan()
     tasks = plan.flows["departure_flow"]
     node = next((t for t in tasks if t.node == "write_departure_records"), None)
     assert node is not None
-    assert node.executor_status == "missing"
+    assert node.executor_status == "implemented"
 
 
 # ── 8. task_resolver ───────────────────────────────────────────────────
@@ -178,7 +179,7 @@ def test_summary_is_positive():
     s = plan.summary()
     assert s["total_tasks"] >= 20
     assert s["implemented"] >= 5
-    assert s["missing"] >= 10
+    assert s["missing"] >= 7  # R45: create_wagon_shipments now implemented
     assert s["project_id"] == PROJECT_ID
 
 

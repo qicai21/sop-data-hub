@@ -59,21 +59,18 @@ def test_build_time_window_is_implemented():
 
 # ── Still-missing tests ─────────────────────────────────────────────────
 
-def test_create_wagon_shipments_still_missing():
-    """create_wagon_shipments is NOT yet implemented — must remain missing."""
-    status, _ = _action_status("create_wagon_shipments")
-    assert status == "missing", (
-        f"create_wagon_shipments should be missing, got '{status}'. "
-        "Not implemented yet."
-    )
+def test_create_wagon_shipments_is_implemented():
+    """R45: create_wagon_shipments now implemented."""
+    status, evidence = _action_status("create_wagon_shipments")
+    assert status == "implemented", f"Expected 'implemented', got '{status}'"
+    assert "create_wagon_shipments" in evidence
 
 
-def test_bind_wagons_to_release_batch_still_missing():
-    """bind_wagons_to_release_batch is NOT yet implemented."""
-    status, _ = _action_status("bind_wagons_to_release_batch")
-    assert status == "missing", (
-        f"bind_wagons_to_release_batch should be missing, got '{status}'."
-    )
+def test_bind_wagons_to_release_batch_is_implemented():
+    """R45: bind_wagons_to_release_batch now implemented."""
+    status, evidence = _action_status("bind_wagons_to_release_batch")
+    assert status == "implemented", f"Expected 'implemented', got '{status}'"
+    assert "create_wagon_shipments" in evidence
 
 
 def test_report_sender_adapter_still_missing():
@@ -141,16 +138,16 @@ def test_departure_flow_query_nodes_are_implemented():
     )
 
 
-def test_write_departure_records_still_missing():
-    """write_departure_records (create_wagon_shipments) must still be missing."""
+def test_write_departure_records_is_implemented():
+    """R45: write_departure_records (create_wagon_shipments) now implemented."""
     plan = compile_project_sop("config/project_sops/jilin_jingang.yaml")
     tasks = plan.flows.get("departure_flow", [])
     task_map = {t.node: t for t in tasks}
 
     write = task_map.get("write_departure_records")
     assert write is not None, "write_departure_records node missing"
-    assert write.executor_status == "missing", (
-        f"write_departure_records should be missing, got '{write.executor_status}'"
+    assert write.executor_status == "implemented", (
+        f"write_departure_records should be implemented, got '{write.executor_status}'"
     )
 
 

@@ -312,6 +312,11 @@ def migrate_release_batches_schema(connection: sqlite3.Connection) -> None:
         "plan_id": "TEXT",
         "order_id": "TEXT",
         "cargo_product_name": "TEXT",
+        "order_identifier": "TEXT",
+        "cargo_name_detail": "TEXT",
+        "quantity_tons": "REAL",
+        "source_message_id": "TEXT",
+        "source_group_id": "TEXT",
     }
     
     for field, type_def in new_fields.items():

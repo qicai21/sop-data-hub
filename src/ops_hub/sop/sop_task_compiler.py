@@ -93,8 +93,17 @@ _EXECUTOR_STATUS: dict[str, tuple[str, str]] = {
         "scripts/gen_jljg_excel.py (hardcoded values, data-driven not complete)",
     ),
     "generate_factory_transport_json_task": (
-        "prototype",
-        "scripts/gen_jljg_excel.py (print-only preview, hardcoded)",
+        "implemented",
+        "src/ops_hub/sop/factory_upload.py (build_upload_payloads → JSON payload)",
+    ),
+    # ── factory upload ──
+    "dry_run_receiver_system": (
+        "implemented",
+        "src/ops_hub/sop/factory_upload.py (upload_release_batch with dry_run=True)",
+    ),
+    "factory_upload": (
+        "implemented",
+        "src/ops_hub/sop/factory_upload.py (upload_release_batch with dry_run=False)",
     ),
     # ── dry_run_only (simulated delivery, no real send) ──
     "send_excel_task": (

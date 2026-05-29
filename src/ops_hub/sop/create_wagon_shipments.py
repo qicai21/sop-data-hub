@@ -12,8 +12,9 @@ This module:
 - reads sop_agent.db (release_batches + wagon_shipments)
 - reads 95306_collection.sqlite3 (shipment_release_batch_matches, read-only)
 - writes sop_agent.db (INSERT wagon_shipments) ONLY with dry_run=False
-- writes 95306 DB (INSERT shipment_release_batch_matches) if table exists
+- writes sop_agent.db (INSERT shipment_release_batch_matches) — local table
 - updates release_batches.actual_wagon_count + dispatch_status
+- does NOT write to 95306 DB — 95306 is read-only
 - does NOT modify 95306 shipments table
 - does NOT send messages, generate Excel/JSON, or modify SOP YAML
 """
@@ -246,7 +247,6 @@ def create_wagon_shipments_from_candidates(
       CreateWagonShipmentsResult.
     """
     sop_path = _resolve_sop_db_path(db_path)
-    rail_path = _resolve_rail_db_path(rail_db_path)
 
     result = CreateWagonShipmentsResult(
         status="no_candidates",
@@ -474,60 +474,42 @@ def create_wagon_shipments_from_candidates(
             sop_conn.execute(sql, params)
             sop_conn.commit()
 
-        # ── 11. Write to 95306 shipment_release_batch_matches ────────
-        if rail_path.exists():
+        # ── 11. Write shipment_release_batch_matches to sop_agent.db ─
+        # Ensure the table exists
+        sop_conn.execute("""
+            CREATE TABLE IF NOT EXISTS shipment_release_batch_matches (
+                id TEXT PRIMARY KEY,
+                release_batch_id TEXT NOT NULL,
+                wagon_shipment_id TEXT NOT NULL,
+                ydid TEXT NOT NULL,
+                waybill_no TEXT DEFAULT '',
+                wagon_no TEXT NOT NULL,
+                container_no TEXT DEFAULT '',
+                match_source TEXT DEFAULT 'departure_text_match',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        for plan in insert_plans:
+            match_id = hashlib.sha1(
+                f"{release_batch_id}|{plan.ydid}".encode()
+            ).hexdigest()[:24]
+            wagon_id = _gen_wagon_id(plan.ydid, release_batch_id)
             try:
-                rail_conn = sqlite3.connect(f"file:{rail_path}?mode=ro", uri=True)
-                rail_conn.row_factory = sqlite3.Row
-                try:
-                    has_table = rail_conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' "
-                        "AND name='shipment_release_batch_matches'"
-                    ).fetchone()
-                    if has_table:
-                        rail_conn.close()
-                        # Re-open in write mode
-                        rail_w = sqlite3.connect(str(rail_path))
-                        rail_w.row_factory = sqlite3.Row
-                        try:
-                            for plan in insert_plans:
-                                match_id = hashlib.sha1(
-                                    f"{release_batch_id}|{plan.ydid}".encode()
-                                ).hexdigest()[:24]
-                                try:
-                                    rail_w.execute(
-                                        """INSERT INTO shipment_release_batch_matches (
-                                            id, release_batch_id, release_batch_sequence,
-                                            inspection_file, inspection_row,
-                                            shipment_ydid, shipment_car_no,
-                                            origin_name, destination_name,
-                                            cargo_name, status_name,
-                                            ticketed_at, match_rule
-                                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                                        (
-                                            match_id, release_batch_id, "auto",
-                                            "auto_created_from_departure_text", 0,
-                                            plan.ydid, plan.wagon_no,
-                                            plan.origin_station, plan.destination_station,
-                                            plan.cargo_name, plan.current_status,
-                                            plan.ticketed_at, "departure_text_match",
-                                        ),
-                                    )
-                                except sqlite3.IntegrityError:
-                                    pass  # already exists — idempotent
-                            rail_w.commit()
-                        finally:
-                            rail_w.close()
-                    else:
-                        result.schema_missing_fields.append(
-                            "table:95306.shipment_release_batch_matches"
-                        )
-                finally:
-                    rail_conn.close()
-            except Exception as e:
-                result.warnings.append(
-                    f"Failed to write shipment_release_batch_matches: {e}"
+                sop_conn.execute(
+                    """INSERT INTO shipment_release_batch_matches (
+                        id, release_batch_id, wagon_shipment_id,
+                        ydid, waybill_no, wagon_no, container_no,
+                        match_source
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        match_id, release_batch_id, wagon_id,
+                        plan.ydid, plan.waybill_no, plan.wagon_no,
+                        plan.container_no, "departure_text_match",
+                    ),
                 )
+            except sqlite3.IntegrityError:
+                pass  # already exists — idempotent
+        sop_conn.commit()
 
         return result
 

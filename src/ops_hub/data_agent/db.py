@@ -113,6 +113,8 @@ def open_db() -> sqlite3.Connection:
 
     migrate_wagon_shipments_schema(connection)
 
+    migrate_shipment_release_batch_matches_schema(connection)
+
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_release_batches_notice_date ON release_batches(notice_date)"
     )
@@ -374,4 +376,34 @@ def migrate_wagon_shipments_schema(connection: sqlite3.Connection) -> None:
     for field, type_def in new_fields.items():
         if field not in columns:
             connection.execute(f"ALTER TABLE wagon_shipments ADD COLUMN {field} {type_def}")
+    connection.commit()
+
+
+def migrate_shipment_release_batch_matches_schema(connection: sqlite3.Connection) -> None:
+    """R45.1: Create shipment_release_batch_matches in sop_agent.db.
+
+    This is a local table linking wagon_shipments to their 95306 source records.
+    NOT the same table as the 95306 DB's shipment_release_batch_matches.
+    """
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS shipment_release_batch_matches (
+            id TEXT PRIMARY KEY,
+            release_batch_id TEXT NOT NULL,
+            wagon_shipment_id TEXT NOT NULL,
+            ydid TEXT NOT NULL,
+            waybill_no TEXT DEFAULT '',
+            wagon_no TEXT NOT NULL,
+            container_no TEXT DEFAULT '',
+            match_source TEXT DEFAULT 'departure_text_match',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sop_matches_batch "
+        "ON shipment_release_batch_matches(release_batch_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sop_matches_wagon "
+        "ON shipment_release_batch_matches(wagon_shipment_id)"
+    )
     connection.commit()

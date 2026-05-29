@@ -34,6 +34,7 @@ from ops_hub.sop.dashboard_payload_queue import build_dashboard_payload_queue, w
 from ops_hub.sop.dashboard_state_preview import build_dashboard_state_preview, write_dashboard_state_preview
 from ops_hub.sop.monitoring_plan_matcher import match_message_event
 from ops_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
+from ops_hub.sop.executor_runner import run_departure_executor_chain_if_applicable
 from ops_hub.sop.sop_watcher import SopWatcher
 from ops_hub.sop.source_watcher import WxOpsSourceWatcher
 from ops_hub.sop.workflow_task import build_workflow_task_queue

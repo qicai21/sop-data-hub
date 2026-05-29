@@ -1,11 +1,11 @@
 """Executor runner: bridge live_service monitor → SOP executor chain.
 
-R52: Connects the match/preview layer (live_service) to the execution layer
-(departure_text_parser → query_95306 → create_wagon_shipments).
+R52/R55: Connects the match/preview layer (live_service) to the execution layer
+(departure_text_parser → query_95306 → create_wagon_shipments →
+ departure_excel → factory_upload).
 
 Scope:
 - Only jilin_jingang_jinzhou departure_flow.
-- Always dry_run=True — never writes to sop_agent.db.
 - Writes execution_preview JSON to runtime/execution_previews/.
 - Does NOT refresh dispatch_board, send messages, or modify SOP YAML.
 """
@@ -33,12 +33,12 @@ from ops_hub.sop.shipment_query_window import ShipmentQueryResult
 
 @dataclass
 class ExecutionPreview:
-    """Complete dry-run preview of a departure executor chain."""
+    """Complete dry-run or apply preview of a departure executor chain."""
 
     message_id: str
     group_id: str
     project_id: str
-    chain: str = "departure_text → query_95306 → create_wagon_shipments (dry_run)"
+    chain: str = "departure_text → query_95306 → create_wagon_shipments"
     parsed_at: str = ""
 
     # Step 1: parse_departure_text
@@ -49,16 +49,30 @@ class ExecutionPreview:
     query_result: dict[str, Any] | None = None
     query_total_candidates: int = 0
 
-    # Step 3: create_wagon_shipments (dry_run)
+    # Step 3: create_wagon_shipments
     wagon_result: dict[str, Any] | None = None
     wagon_status: str = ""
     wagon_planned_insert: int = 0
+    wagon_actual_insert: int = 0
 
     # Release batch lookup
     release_batch_id: str = ""
     release_batch_ship: str = ""
 
+    # Step 4: departure_excel (R55)
+    excel_path: str = ""
+    excel_rows: int = 0
+    excel_wagons: int = 0
+
+    # Step 5: factory_upload (R55)
+    factory_payloads: int = 0
+    factory_success: int = 0
+    factory_failure: int = 0
+    factory_login: bool = False
+    factory_login_error: str = ""
+
     # Overall
+    apply_mode: bool = False
     error: str = ""
     skipped_reason: str = ""
 
@@ -69,6 +83,7 @@ class ExecutionPreview:
             "project_id": self.project_id,
             "chain": self.chain,
             "parsed_at": self.parsed_at,
+            "apply_mode": self.apply_mode,
             "steps": {
                 "1_parse_departure_text": {
                     "status": self.departure_status,
@@ -81,7 +96,20 @@ class ExecutionPreview:
                 "3_create_wagon_shipments": {
                     "status": self.wagon_status,
                     "planned_insert": self.wagon_planned_insert,
+                    "actual_insert": self.wagon_actual_insert,
                     "result": self.wagon_result,
+                },
+                "4_departure_excel": {
+                    "path": self.excel_path,
+                    "rows": self.excel_rows,
+                    "wagons": self.excel_wagons,
+                },
+                "5_factory_upload": {
+                    "login_success": self.factory_login,
+                    "login_error": self.factory_login_error,
+                    "payloads": self.factory_payloads,
+                    "success": self.factory_success,
+                    "failure": self.factory_failure,
                 },
             },
             "release_batch": {
@@ -101,7 +129,6 @@ def _resolve_sop_db_path() -> Path:
     env = os.environ.get("BUSINESS_DATA_AGENT_DB_PATH")
     if env:
         return Path(env)
-    # Canonical sop-data-hub path
     return Path.home() / "projects" / "repos" / "sop-data-hub" / "data" / "sop_agent.db"
 
 
@@ -114,7 +141,6 @@ def _find_release_batch(
     """Find a release_batch matching ship_name + destination.
 
     Prefers 'in_progress' over 'completed' batches.
-    Returns {'id': ..., 'ship_name': ...} or None.
     """
     sop_path = _resolve_sop_db_path() if db_path is None else Path(db_path)
     if not sop_path.exists():
@@ -123,7 +149,6 @@ def _find_release_batch(
     conn = sqlite3.connect(str(sop_path))
     conn.row_factory = sqlite3.Row
     try:
-        # Try in_progress first
         rows = conn.execute(
             """SELECT id, ship_name, dispatch_status, destination_station, project
                FROM release_batches
@@ -141,7 +166,6 @@ def _find_release_batch(
             r = rows[0]
             return {"id": r["id"], "ship_name": r["ship_name"] or ship_name}
 
-        # Try broader match: ship_name only
         rows2 = conn.execute(
             """SELECT id, ship_name, dispatch_status, destination_station, project
                FROM release_batches
@@ -166,59 +190,51 @@ def run_departure_executor_chain(
     *,
     runtime_root: str | Path,
     db_path: str | Path | None = None,
+    apply_mode: bool = False,
 ) -> ExecutionPreview:
-    """Execute the full departure executor chain (dry-run only).
+    """Execute the full departure executor chain.
 
-    Chain: parse_departure_text → query_95306 → create_wagon_shipments(dry_run=True)
+    Chain: parse_departure_text → query_95306 → create_wagon_shipments
+           → departure_excel → factory_upload
 
-    Only processes jilin_jingang_jinzhou departures with status="complete".
-
-    Args:
-      event: MessageEvent from live_service.
-      runtime_root: runtime directory root (for execution_previews/).
-      db_path: optional sop_agent.db path.
-
-    Returns:
-      ExecutionPreview with all step results.
+    In apply_mode:
+      - Writes wagon_shipments to DB
+      - Generates real Excel
+      - Performs real factory upload
     """
     rt = Path(runtime_root)
+    chain_str = (
+        "departure_text → query_95306 → create_wagon_shipments → "
+        "departure_excel → factory_upload"
+    )
     preview = ExecutionPreview(
         message_id=event.message_id,
         group_id=event.group_id or "",
         project_id="",
+        chain=chain_str,
         parsed_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        apply_mode=apply_mode,
     )
 
     # ── Step 1: parse departure text ──────────────────────────────────
     candidate = parse_departure_text(event)
-
     preview.departure_candidate = candidate.to_dict()
     preview.departure_status = candidate.status
     preview.project_id = candidate.project_id
 
     if candidate.status == "no_match":
-        preview.skipped_reason = "departure_text_parser: no_match (not a departure message)"
-
+        preview.skipped_reason = "departure_text_parser: no_match"
     elif candidate.project_id != "jilin_jingang_jinzhou":
-        preview.skipped_reason = (
-            f"not jilin_jingang (project_id={candidate.project_id})"
-        )
-
+        preview.skipped_reason = f"not jilin_jingang (project_id={candidate.project_id})"
     elif candidate.status == "incomplete":
-        preview.skipped_reason = (
-            f"departure incomplete: car_count={candidate.car_count}"
-        )
-
+        preview.skipped_reason = f"departure incomplete: car_count={candidate.car_count}"
     else:
         # ── Step 2: find matching release_batch ───────────────────────
         rb = None
         if candidate.optional_ship_name:
             rb = _find_release_batch(
-                candidate.optional_ship_name,
-                candidate.destination,
-                db_path=db_path,
+                candidate.optional_ship_name, candidate.destination, db_path=db_path
             )
-
         if rb is None:
             preview.skipped_reason = (
                 f"no release_batch found for ship={candidate.optional_ship_name} "
@@ -234,7 +250,6 @@ def run_departure_executor_chain(
             ref_time = candidate.message_time or datetime.now(timezone.utc).strftime(
                 "%Y-%m-%d %H:%M:%S"
             )
-
             query_result = query_95306_shipments_by_window(
                 origin_station=origin,
                 destination_station=dest,
@@ -244,7 +259,6 @@ def run_departure_executor_chain(
                 expected_car_count=candidate.car_count,
                 project_id=candidate.project_id,
             )
-
             query_dict = {
                 "origin_station": origin,
                 "destination_station": dest,
@@ -261,19 +275,48 @@ def run_departure_executor_chain(
             preview.query_result = query_dict
             preview.query_total_candidates = query_result.total_candidates
 
-            # ── Step 4: create_wagon_shipments (dry_run) ──────────────
+            # ── Step 4: create_wagon_shipments ────────────────────────
+            dry_run_wagons = not apply_mode
             wagon_result = create_wagon_shipments_from_candidates(
                 release_batch_id=preview.release_batch_id,
                 departure_candidate=candidate,
                 shipment_query_result=query_result,
-                dry_run=True,
+                dry_run=dry_run_wagons,
                 db_path=db_path,
             )
-
             wr_dict = wagon_result.to_dict()
             preview.wagon_result = wr_dict
             preview.wagon_status = wagon_result.status
             preview.wagon_planned_insert = wagon_result.planned_insert_count
+            preview.wagon_actual_insert = wagon_result.inserted_count
+
+            # ── Step 5: departure_excel + factory_upload (apply only) ─
+            if apply_mode and wagon_result.inserted_count > 0:
+                try:
+                    from ops_hub.sop.departure_excel import generate_departure_excel
+                    excel_result = generate_departure_excel(
+                        preview.release_batch_id, db_path=db_path
+                    )
+                    preview.excel_path = excel_result.output_path
+                    preview.excel_rows = excel_result.row_count
+                    preview.excel_wagons = excel_result.wagon_count
+                except Exception as exc:
+                    preview.error += f"excel: {exc}; "
+
+                try:
+                    from ops_hub.sop.factory_upload import upload_release_batch
+                    factory_result = upload_release_batch(
+                        preview.release_batch_id,
+                        dry_run=False,
+                        db_path=db_path,
+                    )
+                    preview.factory_login = factory_result.login_success
+                    preview.factory_login_error = factory_result.login_error
+                    preview.factory_payloads = factory_result.total_wagons
+                    preview.factory_success = factory_result.success_count
+                    preview.factory_failure = factory_result.failure_count
+                except Exception as exc:
+                    preview.error += f"factory_upload: {exc}; "
 
     # ── Write execution preview (all code paths) ──────────────────────
     previews_dir = rt / "execution_previews"
@@ -283,7 +326,6 @@ def run_departure_executor_chain(
         json.dumps(preview.to_dict(), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-
     return preview
 
 
@@ -292,20 +334,16 @@ def run_departure_executor_chain_if_applicable(
     *,
     runtime_root: str | Path,
     db_path: str | Path | None = None,
+    apply_mode: bool = False,
 ) -> ExecutionPreview | None:
     """Convenience: run chain only if departure text matches jilin_jingang.
 
-    Returns None if the message is not applicable (no departure match or
-    not jilin_jingang). Use this as a fire-and-forget hook in live_service.
+    Returns None if the message is not applicable.
     """
-    # Quick pre-check: must have text content
     if not event.text or not event.text.strip():
         return None
-
-    # Quick pre-check: must contain 四平 keyword
     if "四平" not in event.text:
         return None
-
     return run_departure_executor_chain(
-        event, runtime_root=runtime_root, db_path=db_path
+        event, runtime_root=runtime_root, db_path=db_path, apply_mode=apply_mode,
     )

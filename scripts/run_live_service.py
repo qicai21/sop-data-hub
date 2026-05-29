@@ -209,7 +209,7 @@ def _validate_startup(
     logger.info("startup validation passed runtime_root=%s chat_records_root=%s", runtime_root, chat_records_root)
 
 
-def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: Path, logger: logging.Logger) -> dict[str, Any]:
+def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: Path, logger: logging.Logger, apply_mode: bool = False) -> dict[str, Any]:
     event_path = _write_event_snapshot(event, runtime_root=runtime_root)
     match_result = match_message_event(event, monitoring_plan)
     workflow_queue = build_workflow_task_queue(event, event.raw_asset_bundle, match_result)
@@ -237,10 +237,10 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
         event_path,
     )
 
-    # ── R52: run departure executor chain (dry-run only) ─────────────
+    # ── R52: run departure executor chain ─────────────────────────────
     try:
         exec_preview = run_departure_executor_chain_if_applicable(
-            event, runtime_root=runtime_root
+            event, runtime_root=runtime_root, apply_mode=apply_mode
         )
         if exec_preview is not None and not exec_preview.skipped_reason:
             logger.info(
@@ -281,6 +281,7 @@ def run_once(
     seen: set[tuple[str, str]] | None = None,
     sync_start_id: int | None = None,
     sop_watcher: SopWatcher | None = None,
+    apply_mode: bool = False,
 ) -> int:
     watcher = WxOpsSourceWatcher(chat_records_root=chat_records_root)
     sop_watcher = sop_watcher or _get_sop_watcher(fixture_dir)
@@ -300,7 +301,7 @@ def run_once(
         if key in seen:
             continue
         seen.add(key)
-        process_event_once(event=event, monitoring_plan=monitoring_plan, runtime_root=runtime_root, logger=logger)
+        process_event_once(event=event, monitoring_plan=monitoring_plan, runtime_root=runtime_root, logger=logger, apply_mode=apply_mode)
         processed += 1
 
     return processed
@@ -315,6 +316,7 @@ def run_live_service(
     once: bool,
     max_iterations: int | None = None,
     sync_start_id: int | None = None,
+    apply_mode: bool = False,
 ) -> None:
     log_path = runtime_root / "live_service.log"
     logger = _configure_logging(log_path)
@@ -363,6 +365,7 @@ def run_live_service(
             seen=seen,
             sync_start_id=sync_start_id,
             sop_watcher=sop_watcher,
+            apply_mode=apply_mode,
         )
         logger.info("poll complete processed=%s seen=%s", processed, len(seen))
         if once:
@@ -488,6 +491,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print live service status (pid, alive, runtime_root, chat_records_root, last_log_line) and exit",
     )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply mode: write wagon_shipments to DB, generate Excel, upload to factory",
+    )
     return parser
 
 
@@ -514,6 +522,7 @@ def main() -> None:
         once=args.once,
         max_iterations=args.max_iterations,
         sync_start_id=args.sync_start_id,
+        apply_mode=args.apply,
     )
 
 

@@ -576,7 +576,7 @@ def _active_project_sop_tokens() -> set[str]:
     try:
         from ops_hub.models.project_sop import load_project_sop
 
-        sops_dir = Path(__file__).resolve().parents[3] / "business-system-docs" / "test-plan" / "fixtures" / "project_sops"
+        sops_dir = Path(__file__).resolve().parents[2] / "config" / "project_sops"
         for sop_file in sorted(sops_dir.glob("*.yaml")):
             sop = load_project_sop(sop_file)
             if sop.status == "active":
@@ -621,6 +621,8 @@ def _infer_sop_project_token(payload: dict[str, Any], *, category: str) -> str:
             return "朝阳钢铁铁矿发运项目"
         if any(token in text for token in ("汐子", "鞍子河", "丰收散运", "丰收", "沱子", "中唐", "赤峰中唐", "ZLZT")):
             return "中唐特钢铁矿发运项目"
+        if any(token in text for token in ("四平",)):
+            return "jilin_jingang_jinzhou"
         return ""
     if category == "检装车通知单":
         if any(token in text for token in ("合远9", "朝阳西", "朝阳铁", "朝阳钢铁", "朝钢")):

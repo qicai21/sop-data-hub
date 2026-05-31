@@ -56,7 +56,7 @@ groups:
       - "freight_detail_text"
       - "departure_excel"
   - id: "GROUP013"
-    name: "数据单发群-[GROUP013]"
+    name: "数据单发群"
     role:
       - "补充放货信息"
       - "补充货运信息"

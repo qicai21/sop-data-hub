@@ -319,14 +319,42 @@ class BusinessDataAgent:
         contract_id: Optional[str] = None,
         contract_no: Optional[str] = None,
     ) -> List[ReleaseBatchRecord]:
-        # Try to find a default contract if not provided
+        # ── Query existing batches for dedup ─────────────────────────────────
+        # Parse payload early to get ship/cargo/destination so we can query DB
+        payload_dict = read_json(payload)
+        biz = payload_dict.get("business_info", {}) if isinstance(payload_dict, dict) else {}
+        cargo = payload_dict.get("cargo_info", {}) if isinstance(payload_dict, dict) else {}
+        ship_name = biz.get("进口船名") or biz.get("船名", "")
+        cargo_name = cargo.get("货物品类") or cargo.get("货物名称", "")
+        spec = payload_dict.get("special_matter", "") if isinstance(payload_dict, dict) else ""
+        dest = parse_destination_station(spec) or ""
+
+        existing_batches = None
+        if ship_name and cargo_name and dest:
+            existing_batches = self._query_existing_batches_like(ship_name, cargo_name, dest)
+        # ── End query existing batches ──────────────────────────────────────
+
         normalized_rows = self.normalize_release_batch_payloads(
             payload=payload,
             source_file_name=source_file_name,
             contract_id=contract_id,
             contract_no=contract_no,
+            existing_batches=existing_batches,
         )
+        inserted: List[ReleaseBatchRecord] = []
         for normalized in normalized_rows:
+            # If the remark was flagged as review_needed, override dispatch_status
+            is_review_needed = bool(normalized.pop("_review_needed", False))
+            if is_review_needed:
+                normalized["dispatch_status"] = "review_needed"
+                normalized["dispatch_status_note"] = "OCR序列号匹配但日期/重量不一致，需人工核实"
+
+            batch_key = normalized["batch_key"]
+            existing = self.get_by_batch_key(batch_key)
+            if existing is not None:
+                # Already exists — skip.
+                inserted.append(existing)
+                continue
             self.db.execute(
                 """
                 INSERT INTO release_batches (
@@ -472,16 +500,14 @@ class BusinessDataAgent:
                 """,
                 normalized,
             )
+            new_record = self.get_by_batch_key(batch_key)
+            if new_record:
+                inserted.append(new_record)
         self.db.commit()
-        records = [
-            self.get_by_batch_key(normalized["batch_key"])
-            for normalized in normalized_rows
-            if self.get_by_batch_key(normalized["batch_key"]) is not None
-        ]
-        for record in records:
+        for record in inserted:
             self.upsert_release_dispatch_match_rule(record)
         self.db.commit()
-        return records
+        return inserted
 
     def ingest_business_text(self, text: str) -> List[ReleaseBatchRecord]:
         """Parse a ProjectSOP-authorized text release instruction and create/update release_batches.
@@ -1103,12 +1129,40 @@ class BusinessDataAgent:
         )
         self.db.commit()
 
+    def _query_existing_batches_like(
+        self, ship_name: str, cargo_name: str, destination_station: str
+    ) -> List[Dict[str, Any]]:
+        """Query existing release_batches matching ship + cargo + destination (fuzzy).
+
+        Uses LIKE matching on destination_station so that minor OCR differences
+        (e.g. '四平' vs '四平 ') don't cause misses.
+        """
+        dest_pattern = f"%{destination_station.strip()}%"
+        rows = self.db.execute(
+            """SELECT batch_sequence, batch_date, batch_quantity, dispatch_status
+               FROM release_batches
+               WHERE ship_name = ? AND cargo_name = ?
+                 AND (destination_station LIKE ? OR destination_station = ?)
+               ORDER BY batch_sequence""",
+            (ship_name, cargo_name, dest_pattern, destination_station),
+        ).fetchall()
+        return [
+            {
+                "batch_sequence": r[0],
+                "batch_date": r[1],
+                "batch_quantity": r[2],
+                "dispatch_status": r[3],
+            }
+            for r in rows
+        ]
+
     def normalize_release_batch_payloads(
         self,
         payload: Any,
         source_file_name: Optional[str],
         contract_id: Optional[str],
         contract_no: Optional[str],
+        existing_batches: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Dict[str, Any]]:
         normalized_payload = extract_single_record(read_json(payload))
         notice_date = normalize_chinese_date(
@@ -1164,6 +1218,70 @@ class BusinessDataAgent:
         customer_name = contract.party_b if contract else consignee
         # For agent, we might need a better way, but for now let's use a heuristic or party_a
         agent_name = contract.party_a if contract else None 
+
+        # ── Dedup against existing batches ──────────────────────────────────
+        # If caller didn't supply existing_batches, query the DB now.
+        if existing_batches is None and ship_name and cargo_name and default_destination_station:
+            existing_batches = self._query_existing_batches_like(
+                ship_name=ship_name,
+                cargo_name=cargo_name,
+                destination_station=default_destination_station,
+            )
+
+        review_needed_remarks: list[dict[str, Any]] = []
+        filtered_remarks: list[dict[str, Any]] = []
+        if existing_batches:
+            # Build lookup: sequence -> (batch_date, batch_quantity)
+            existing_map: dict[str, tuple[str | None, float | None]] = {}
+            for eb in existing_batches:
+                seq = eb.get("batch_sequence") or eb.get("sequence", "")
+                if not seq:
+                    continue
+                existing_map[seq] = (eb.get("batch_date"), eb.get("batch_quantity"))
+
+            for remark in remarks:
+                seq = str(remark.get("sequence") or "")
+                if not seq:
+                    filtered_remarks.append(remark)
+                    continue
+                if seq not in existing_map:
+                    # Sequence not in DB — new batch, proceed normally
+                    filtered_remarks.append(remark)
+                    continue
+
+                # Sequence exists in DB — compare weight and date
+                db_date, db_qty = existing_map[seq]
+                remark_date = str(remark.get("date") or "")
+                remark_qty = remark.get("quantity")
+
+                # Normalize dates for comparison (strip leading "0" from month/day)
+                def _norm_date(d: str) -> str:
+                    parts = d.replace("年", "-").replace("月", "-").replace("日", "").split("-")
+                    return "-".join(p.lstrip("0") for p in parts)
+
+                date_match = _norm_date(remark_date) == _norm_date(str(db_date or "")) if remark_date and db_date else (remark_date == str(db_date or ""))
+                qty_match = (float(remark_qty) if remark_qty else None) == (float(db_qty) if db_qty else None) if remark_qty and db_qty else True
+
+                if date_match and qty_match:
+                    # Fully matched — skip (already in DB)
+                    continue
+                else:
+                    # Conflict: same sequence but different date/weight → mark review_needed
+                    remark["_review_needed"] = True
+                    review_needed_remarks.append(remark)
+                    filtered_remarks.append(remark)
+        else:
+            filtered_remarks = remarks[:]
+        # ── End dedup ───────────────────────────────────────────────────────
+
+        # If all remarks were skipped, and some are review_needed, still return those
+        if not filtered_remarks and review_needed_remarks:
+            filtered_remarks = review_needed_remarks
+
+        # Use filtered remarks for the rest of the method
+        remarks = filtered_remarks
+        if not remarks:
+            return []
 
         base_key = "|".join(
             str(item).strip()
@@ -1234,6 +1352,7 @@ class BusinessDataAgent:
                     "searchable_text": to_searchable_text(normalized_payload),
                     "plan_id": plan_id,
                     "order_id": order_id,
+                    "_review_needed": remark.get("_review_needed", False),
                 }
             )
 

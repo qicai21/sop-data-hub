@@ -107,10 +107,14 @@ def build_monitored_groups(tasks: list[Any]) -> list[dict[str, Any]]:
                 }
             }
         else:
-            existing_opts = group_map[t.group_id]["listen_options"]
+            entry = group_map[t.group_id]
+            # 如果已有条目 wxid 为空，后续任务带了有效 wxid，则覆盖
+            if not entry.get("wxid") and t.wxid:
+                entry["wxid"] = t.wxid
+            existing_opts = entry["listen_options"]
             for k in ["image", "text", "file", "voice"]:
                 existing_opts[k] = existing_opts[k] or t.listen_options.get(k, False)
-            group_map[t.group_id]["auto_pull_image"] = group_map[t.group_id]["auto_pull_image"] or t.pull_image
+            entry["auto_pull_image"] = entry["auto_pull_image"] or t.pull_image
             
     return list(group_map.values())
 
@@ -182,7 +186,7 @@ def load_settings(config_path: str | Path | None = None) -> Settings:
     try:
         from ops_hub.models.project_sop import load_all_tracking_tasks
         # Default fixtures dir
-        sops_dir = Path(__file__).resolve().parents[3] / "business-system-docs" / "test-plan" / "fixtures" / "project_sops"
+        sops_dir = Path(__file__).resolve().parents[2] / "config" / "project_sops"
         tasks = load_all_tracking_tasks(sops_dir)
         settings.tracking_tasks = tasks
         

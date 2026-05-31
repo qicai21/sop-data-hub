@@ -76,9 +76,8 @@ class BusinessGroupImageClassifier:
         self.category_cards = dict(category_cards or DEFAULT_CATEGORY_CARDS)
 
     def _prepare_preview(self, image_path: Path) -> Path:
-        preview_dir = image_path.parent / "_previews"
-        preview_dir.mkdir(parents=True, exist_ok=True)
-        preview_path = preview_dir / image_path.name
+        # VLM-optimised resized copy saved alongside the original (no _previews/ subdirectory)
+        preview_path = image_path.parent / f"{image_path.stem}_vlm.jpg"
         if preview_path.exists():
             return preview_path
         with Image.open(image_path) as img:

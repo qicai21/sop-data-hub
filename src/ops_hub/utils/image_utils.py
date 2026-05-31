@@ -26,15 +26,16 @@ def prepare_preview(
         image_path: 原始图片路径
         max_edge: 最长边上限
         max_short_edge: 最短边上限
-        preview_dir: 预览图存放目录，默认为原图同级 _previews/
+        preview_dir: 预览图存放目录，默认为原图同级文件（_vlm 后缀）
 
     Returns:
         预览图路径
     """
     if preview_dir is None:
-        preview_dir = image_path.parent / "_previews"
-    preview_dir.mkdir(parents=True, exist_ok=True)
-    preview_path = preview_dir / image_path.name
+        preview_path = image_path.parent / f"{image_path.stem}_vlm.jpg"
+    else:
+        preview_dir.mkdir(parents=True, exist_ok=True)
+        preview_path = preview_dir / image_path.name
 
     if preview_path.exists():
         return preview_path

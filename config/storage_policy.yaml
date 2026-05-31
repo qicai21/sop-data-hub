@@ -84,7 +84,7 @@ legacy_directories:
     - "extractions/"
     - "_status/"
     - "_raw/"
-    - "_previews/"
+    - "{image_stem}_vlm.jpg"     # VLM-optimised sibling (was _previews/)
     - "other/"
     - "unknown/"
     - "unmatched/"

@@ -31,6 +31,7 @@ _EXCLUDED_SUBDIRS: set[str] = {
     "tmp",
     "_status",
     "_previews",
+    "{stem}_vlm.jpg",
     "extractions",
 }
 
@@ -61,7 +62,7 @@ def _classify_source_file_type(jsonl_path: Path, chat_records_root: Path) -> str
             return "archive"
         if part in ("temp", "tmp"):
             return "temp"
-        if part in ("_status", "_previews"):
+        if part in ("_status",) or part.endswith("_vlm.jpg"):
             return "temp"
         if part == "extractions":
             return "temp"

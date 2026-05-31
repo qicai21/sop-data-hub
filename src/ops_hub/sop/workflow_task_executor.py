@@ -150,6 +150,8 @@ def run_workflow_task(
     try:
         if task_type == "jljg_departure_text_chain":
             result = _execute_jljg_departure(input_json, message_id, db_path=db, apply=apply, task_id=task_id)
+        elif task_type == "create_release_batch":
+            result = _execute_create_release_batch(input_json, message_id, db_path=db, apply=apply)
         elif task_type in ("chaoyang_dispatch_context", "freight_detail_enrichment", "generic_sop_task"):
             result = {
                 "action": "skipped",
@@ -332,6 +334,61 @@ def _execute_jljg_departure(
             "status": "succeeded",
             "output_json": output,
         }
+
+
+def _execute_create_release_batch(
+    input_json: dict[str, Any],
+    message_id: str,
+    *,
+    db_path: Path,
+    apply: bool,
+) -> dict[str, Any]:
+    """Execute create_release_batch: OCR extraction JSON → release_batches DB."""
+    extraction_path = input_json.get("extraction_json_path")
+    if not extraction_path:
+        return {
+            "action": "failed",
+            "status": "failed",
+            "error_message": "no extraction_json_path in input_json",
+        }
+
+    ext_path = Path(extraction_path)
+    if not ext_path.exists():
+        return {
+            "action": "failed",
+            "status": "failed",
+            "error_message": f"extraction_json_path not found: {extraction_path}",
+        }
+
+    if not apply:
+        # Dry-run: validate extraction JSON is parseable
+        payload = json.loads(ext_path.read_text(encoding="utf-8"))
+        return {
+            "action": "dry_run",
+            "status": "succeeded",
+            "output_json": {
+                "mode": "dry_run",
+                "extraction_path": str(ext_path),
+                "payload_keys": list(payload.keys()) if isinstance(payload, dict) else [],
+                "message": "dry_run: extraction JSON found, apply=True to write DB",
+            },
+        }
+
+    # Apply mode: actually ingest
+    from ops_hub.data_agent.agent import BusinessDataAgent
+    agent = BusinessDataAgent(db_path=str(db_path))
+    records = agent.ingest_release_batch_file(str(ext_path))
+
+    return {
+        "action": "executed",
+        "status": "succeeded",
+        "output_json": {
+            "batch_count": len(records),
+            "batch_ids": [r.id for r in records],
+            "batch_sequences": [r.batch_sequence for r in records],
+            "ship_names": list({r.ship_name for r in records if r.ship_name}),
+        },
+    }
 
 
 def run_pending_workflow_tasks(

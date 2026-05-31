@@ -473,6 +473,75 @@ def _retry_waiting_media(
         _save_waiting_media_index(runtime_root, index)
     return retried
 
+# ── SOP trigger categories for auto-classification ──────────────────────
+_SOP_TRIGGER_CATEGORIES = {"出港计划通知单", "检装车通知单"}
+
+# ── Category → SOP mapping ──────────────────────────────────────────────
+_CATEGORY_SOP_MAP: dict[str, dict[str, str]] = {
+    "出港计划通知单": {
+        "sop_flow": "departure_flow",
+        "sop_node": "create_release_batch",
+    },
+    "检装车通知单": {
+        "sop_flow": "inspection_notice_flow",
+        "sop_node": "create_inspection_candidate",
+    },
+}
+
+
+def _update_inbox_classification(
+    message_id: str,
+    category: str,
+    *,
+    extraction_json_path: str = "",
+    batch_ids: list[str] | None = None,
+    ingested_count: int = 0,
+) -> None:
+    """Update message_inbox with classification results after VLM processing."""
+    import sqlite3
+
+    db_path = CANONICAL_REPO_ROOT / "data" / "sop_agent.db"
+    if not db_path.exists():
+        return
+
+    sop_map = _CATEGORY_SOP_MAP.get(category, {})
+    is_sop = 1 if sop_map else 0
+    sop_flow = sop_map.get("sop_flow", "")
+    sop_node = sop_map.get("sop_node", "")
+
+    processing_status = "task_succeeded" if ingested_count > 0 else "classified"
+    db_action = "release_batch_ingested" if ingested_count > 0 else ""
+
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """UPDATE message_inbox SET
+            classification_label = ?,
+            classification_status = 'classified',
+            extraction_json_path = ?,
+            is_sop_msg = ?,
+            sop_flow = CASE WHEN ? != '' THEN ? ELSE sop_flow END,
+            sop_node = CASE WHEN ? != '' THEN ? ELSE sop_node END,
+            processing_status = ?,
+            db_action = CASE WHEN ? != '' THEN ? ELSE db_action END,
+            db_record_ids = CASE WHEN ? != '' THEN ? ELSE db_record_ids END,
+            updated_at = ?
+        WHERE message_id = ?""",
+        (
+            category,
+            extraction_json_path,
+            is_sop,
+            sop_flow, sop_flow,
+            sop_node, sop_node,
+            processing_status,
+            db_action, db_action,
+            json.dumps(batch_ids or []), json.dumps(batch_ids or []),
+            _utc_now_iso(),
+            message_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+
 
 def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: Path, logger: logging.Logger, apply_mode: bool = False, cursor: dict[str, Any] | None = None, cursor_path_override: Path | None = None, write_message_inbox: bool = True) -> dict[str, Any]:
     # R61: optionally write to message_inbox before any processing
@@ -529,6 +598,64 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
             "skipped_reason": "waiting_media",
         }
 
+    # ── Image auto-processing: VLM classification + OCR extraction + DB ingestion ──
+    # When an image message has media available, run the full pipeline:
+    #   classify → extract → ingest_release_batch (for 出港计划通知单)
+    #   classify → extract → ingest_inspection (for 检装车通知单)
+    image_auto_result: dict[str, Any] | None = None
+    if event.message_type == "image" and event.raw_asset_bundle:
+        _image_path = getattr(event.raw_asset_bundle, "raw_image_path", None)
+        if _image_path and Path(str(_image_path)).exists():
+            try:
+                from ops_hub.config import load_settings
+                from ops_hub.runner import process_new_image
+
+                _settings = load_settings()
+                # Normalize group_name: strip -GROUPxxx suffix (e.g. "数据单发群-GROUP013" → "数据单发群")
+                _raw_group = str(event.metadata.get("group_name") or event.group_id or "")
+                _normalized_group = _raw_group.split("-GROUP")[0] if "-GROUP" in _raw_group else _raw_group
+                _proc_result = process_new_image(
+                    str(_image_path),
+                    _settings,
+                    group_name=_normalized_group,
+                )
+                _category = _proc_result.category or ""
+                # Ingestion results are stored inside the extracted dict
+                _extracted = _proc_result.extracted or {}
+                _ingested = _extracted.get("_agent_ingested", 0)
+                _batch_ids = _extracted.get("_agent_updated_ids", [])
+                _ext_json = _proc_result.extraction_saved_path or ""
+                logger.info(
+                    "image_auto: message_id=%s category=%s ingested=%s batch_ids=%s ext_path=%s",
+                    event.message_id, _category, _ingested, _batch_ids, _ext_json,
+                )
+                image_auto_result = {
+                    "category": _category,
+                    "ingested": _ingested,
+                    "batch_ids": _batch_ids,
+                    "extraction_json_path": _ext_json,
+                }
+                if _proc_result.error:
+                    image_auto_result["error"] = _proc_result.error
+                # Update message_inbox with classification + ingestion results
+                if write_message_inbox and _category:
+                    try:
+                        _update_inbox_classification(
+                            event.message_id,
+                            _category,
+                            extraction_json_path=_ext_json,
+                            batch_ids=_batch_ids,
+                            ingested_count=_ingested or 0,
+                        )
+                    except Exception as _inbox_exc:
+                        logger.warning(
+                            "image_auto: inbox update failed for %s: %s",
+                            event.message_id, _inbox_exc,
+                        )
+            except Exception as exc:
+                logger.warning("image_auto: processing failed for %s: %s", event.message_id, exc)
+                image_auto_result = {"error": str(exc)}
+
     event_path = _write_event_snapshot(event, runtime_root=runtime_root)
     _write_status_state(runtime_root, message_id=event.message_id, processed_at=_utc_now_iso())
     if cursor is not None:
@@ -564,7 +691,7 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
     # is disabled. Tasks are created by workflow_task_store and executed by workflow_task_executor.
     # To execute pending tasks: python -m ops_hub.sop.workflow_task_executor --run-pending
 
-    return {
+    result = {
         "event_path": event_path,
         "payload_paths": payload_paths,
         "state_paths": state_paths,
@@ -573,6 +700,9 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
         "payloads_written": len(payload_paths),
         "states_written": len(state_paths),
     }
+    if image_auto_result:
+        result["image_auto"] = image_auto_result
+    return result
 
 
 def run_once(

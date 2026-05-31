@@ -82,6 +82,8 @@ def _resolve_task_type(project_id: str, flow_name: str, node_name: str) -> str:
             and flow_name == "departure_flow"
             and node_name == "detect_departure_message"):
         return "jljg_departure_text_chain"
+    if node_name == "create_release_batch":
+        return "create_release_batch"
     if project_id == "chaoyang_steel" and flow_name == "dispatch_flow":
         return "chaoyang_dispatch_context"
     if flow_name == "freight_detail_flow":

@@ -1200,7 +1200,7 @@ def _resolved_source_image_path(raw_image_path: Any, classified_image_path: Any 
     if raw:
         raw_path = Path(raw)
         candidates.append(raw_path)
-        candidates.append(raw_path.parent / "_previews" / raw_path.name)
+        candidates.append(raw_path.parent / f"{raw_path.stem}_vlm.jpg")
         candidates.append(raw_path.parent / "_preview" / raw_path.name)
     if classified:
         candidates.append(Path(classified))

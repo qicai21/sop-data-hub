@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ops-data-hub"
+name = "sop-data-hub"
 version = "1.0.0"
 description = "运营数据枢纽 — 图像识别、数据处理与Agent自动化"
 requires-python = ">=3.10"

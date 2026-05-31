@@ -1,4 +1,4 @@
-# ops-data-hub
+# sop-data-hub
 
 运营数据枢纽 — 图像识别、数据处理与 Agent 自动化
 
@@ -75,7 +75,7 @@ python -m ops_hub list-batches
 
 ```
 ┌─────────────────────────────────────────────┐
-│              ops-data-hub                    │
+│              sop-data-hub                    │
 │                                              │
 │  ┌──────────┐   ┌──────────┐   ┌──────────┐ │
 │  │ Classifier│──▶│ Pipeline │──▶│ Storage  │ │
@@ -304,7 +304,7 @@ pytest tests/test_data_agent.py -v
 ## 11. 项目结构
 
 ```
-ops-data-hub/
+sop-data-hub/
 ├── src/ops_hub/
 │   ├── classifier/       # 图片分类器 (classifier.py, prompts.py)
 │   ├── engines/          # 识别引擎 (inspection_slip, departure_plan, handwritten_list, materials_stats)

@@ -225,11 +225,27 @@ def _execute_jljg_departure(
         received_at=received_at,
     )
 
+    # ── R71: check external action idempotency before executing ──────
+    effective_apply = apply
+    if apply:
+        try:
+            import sqlite3 as _sql
+            _conn = _sql.connect(str(db_path))
+            executed_count = _conn.execute(
+                "SELECT COUNT(*) FROM external_action_log WHERE workflow_task_id=? AND action_status='executed'",
+                (task_id,),
+            ).fetchone()[0]
+            _conn.close()
+            if executed_count > 0:
+                effective_apply = False
+        except Exception:
+            pass  # table may not exist yet
+
     preview: ExecutionPreview = run_departure_executor_chain(
         event,
         runtime_root=RUNTIME_ROOT,
         db_path=str(db_path),
-        apply_mode=apply,
+        apply_mode=effective_apply,
     )
 
     output = preview.to_dict()
@@ -239,13 +255,11 @@ def _execute_jljg_departure(
     try:
         release_batch_id = preview.release_batch_id or ""
         wagon_count = 0
-        # Extract wagon count from step 3 result
         step3 = (preview.wagon_result or {})
         if isinstance(step3, dict):
             wagon_count = step3.get("planned_insert_count", 0) or step3.get("expected_car_count", 0) or 0
 
         from ops_hub.sop.external_action_log import plan_jljg_external_actions
-        # Use message_inbox_id from input_json
         mi_id = int(input_json.get("message_inbox_id") or 0)
         external_actions = plan_jljg_external_actions(
             db_path=str(db_path),
@@ -255,15 +269,45 @@ def _execute_jljg_departure(
             release_batch_id=release_batch_id,
             wagon_count=wagon_count,
             ship_name=preview.release_batch_ship or "",
-            apply_mode=apply,
+            apply_mode=effective_apply,
         )
         output["external_actions"] = {
             "planned": len([a for a in external_actions if a.get("action") == "created"]),
             "skipped_duplicate": len([a for a in external_actions if a.get("action") == "skipped"]),
+            "effective_apply": effective_apply,
             "actions": external_actions,
         }
     except Exception as exc:
         output["external_actions_error"] = str(exc)
+
+    # ── R71: mark external actions as executed if chain ran with apply ─
+    if effective_apply and not preview.skipped_reason and not preview.error:
+        try:
+            from ops_hub.sop.external_action_log import mark_external_action_executed
+            steps = preview.to_dict().get("steps", {})
+            # Generate same keys to match
+            rb_id = preview.release_batch_id or ""
+            wc = wagon_count
+            for atype, resp_key, resp_data in [
+                ("generate_shipping_excel", "4_departure_excel",
+                 {"excel_path": steps.get("4_departure_excel", {}).get("path", ""),
+                  "rows": steps.get("4_departure_excel", {}).get("rows", 0)}),
+                ("factory_upload_submit", "5_factory_upload",
+                 {"login_success": steps.get("5_factory_upload", {}).get("login_success", False),
+                  "payloads": steps.get("5_factory_upload", {}).get("payloads", 0),
+                  "success": steps.get("5_factory_upload", {}).get("success", 0),
+                  "failure": steps.get("5_factory_upload", {}).get("failure", 0),
+                  "verified": steps.get("5b_factory_verify", {}).get("verified", False)}),
+                ("send_shipping_excel_wechat", "6_send_excel",
+                 {"sent": steps.get("6_send_excel", {}).get("sent", False),
+                  "target": steps.get("6_send_excel", {}).get("target", "")}),
+            ]:
+                from ops_hub.sop.external_action_log import build_idempotency_key
+                biz = f"{rb_id}:{wc}" if rb_id else f"fallback:{message_id}:{atype}"
+                key = build_idempotency_key("jilin_jingang_jinzhou", atype, biz)
+                mark_external_action_executed(key, db_path=str(db_path), response_json=resp_data)
+        except Exception as exc:
+            output["external_actions_mark_error"] = str(exc)
 
     # Determine status
     if preview.error:

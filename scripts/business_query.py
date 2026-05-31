@@ -120,7 +120,7 @@ def _add_reconcile_args(p: argparse.ArgumentParser, *, legacy_dry_run: bool = Fa
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="OpsDataHub business query/controlled execution CLI")
-    parser.add_argument("--config", default=None, help="ops-data-hub config/settings.yaml path")
+    parser.add_argument("--config", default=None, help="sop-data-hub config/settings.yaml path")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("reconcile-inspection", help="检装车-95306 发运比对：生成发运入库计划或提交正式入库")

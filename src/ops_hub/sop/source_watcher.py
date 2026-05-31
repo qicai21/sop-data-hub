@@ -27,7 +27,7 @@ def _default_wx_ops_agent_root() -> Path:
     env = os.environ.get("WX_OPS_AGENT_ROOT")
     if env:
         return Path(env).expanduser()
-    # __file__ = repos/ops-data-hub/src/ops_hub/sop/source_watcher.py
+    # __file__ = repos/sop-data-hub/src/ops_hub/sop/source_watcher.py
     # parents[4] = repos/ → sibling wx-ops-agent is at repos/wx-ops-agent
     return Path(__file__).resolve().parents[4] / "wx-ops-agent"
 

@@ -7,7 +7,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
 DB = '/Users/qicai21/projects/repos/sop-data-hub/data/sop_agent.db'
-OUT_DIR = Path('/Users/qicai21/projects/repos/ops-data-hub/reports')
+OUT_DIR = Path('/Users/qicai21/projects/repos/sop-data-hub/reports')
 
 now = datetime.now()
 date_str = now.strftime("%Y%m%d")

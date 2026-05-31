@@ -60,7 +60,7 @@ class Settings:
     daemon_interval: int = 60
     # [兼容保留] 跟踪规则文件路径 (tracking_rules.yaml)
     # 用途：在全量替换为 ProjectSOP 前，作为 agent 本地失联或测试时的备用兜底。
-    # 移除条件：当所有旧系统完全弃用 tracking_rules.yaml 且 agent 彻底完成基于 ops-data-hub 通讯的改造后移除。
+    # 移除条件：当所有旧系统完全弃用 tracking_rules.yaml 且 agent 彻底完成基于 sop-data-hub 通讯的改造后移除。
     tracking_rules_path: str = ""
     
     # [权威内存状态] 唯一权威的业务追踪任务集合

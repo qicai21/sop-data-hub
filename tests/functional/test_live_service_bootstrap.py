@@ -300,10 +300,10 @@ def test_source_watcher_default_resolves_correctly():
     from ops_hub.sop.source_watcher import _default_wx_ops_agent_root
 
     root = _default_wx_ops_agent_root()
-    # source_watcher.py is at repos/ops-data-hub/src/ops_hub/sop/source_watcher.py
+    # source_watcher.py is at repos/sop-data-hub/src/ops_hub/sop/source_watcher.py
     # parents[4] of that file = repos/
     # So expected = <repo_root>/../../wx-ops-agent
-    repo_root = Path(__file__).resolve().parents[2]  # ops-data-hub/
+    repo_root = Path(__file__).resolve().parents[2]  # sop-data-hub/
     expected = repo_root.parent / "wx-ops-agent"  # repos/wx-ops-agent
     assert root == expected, f"Expected {expected}, got {root}"
 

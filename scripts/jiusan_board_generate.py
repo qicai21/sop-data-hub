@@ -873,7 +873,7 @@ def generate_html(dashboard: dict) -> str:
     <h2>📜 历史数据与配置</h2>
     <div class="inv-row" style="font-size:0.85em; line-height:1.7;">
         <div>合同编号: <strong>JGWL-JZTS-DD-202601</strong></div>
-        <div>合同路径: <span class="note">ops-data-hub/data/contracts/jiusan_soybean/物流发展-铁盛2026大豆合同.docx</span></div>
+        <div>合同路径: <span class="note">sop-data-hub/data/contracts/jiusan_soybean/物流发展-铁盛2026大豆合同.docx</span></div>
         <div>SOP: <span class="note">prompts_and_reports/SOPs/jiusan_soybean_sop.md</span></div>
         <div>旧 release_batches: <span class="note">已迁移至 jiusan_cycle.db，备份见 samples/legacy_jiusan_release_batches_backup.json</span></div>
         <div>历史报告: <span class="note">prompts_and_reports/reports/ (18 个九三相关报告已归档)</span></div>

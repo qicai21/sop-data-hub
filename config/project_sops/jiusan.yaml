@@ -38,7 +38,7 @@ contract:
   trade_type: "外贸进口"
   valid_from: "2026-01-01"
   valid_to: "2026-12-31"
-  doc_path: "/Users/qicai21/projects/repos/ops-data-hub/data/contracts/jiusan_soybean/物流发展-铁盛2026大豆合同.docx"
+  doc_path: "/Users/qicai21/projects/repos/sop-data-hub/data/contracts/jiusan_soybean/物流发展-铁盛2026大豆合同.docx"
   pricing_routes:
     - code: "A"
       mode: "集装箱"

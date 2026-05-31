@@ -1,6 +1,6 @@
 """核心处理逻辑 — 单图处理 / 批量处理 / wx-ops-agent 钩子
 
-这是 ops-data-hub 的执行引擎，连接 分类器 → 引擎 → 存储 的完整链路。
+这是 sop-data-hub 的执行引擎，连接 分类器 → 引擎 → 存储 的完整链路。
 """
 from __future__ import annotations
 

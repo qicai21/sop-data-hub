@@ -26,15 +26,15 @@ def test_resolve_report_intent_for_ordinary_freight_projects():
     cases = [
         (
             "zhongtang_special_steel",
-            "/Users/qicai21/projects/repos/ops-data-hub/config/report_templates/ztsteel_departure_report_template.xlsx",
+            "/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/ztsteel_departure_report_template.xlsx",
         ),
         (
             "chaoyang_steel",
-            "/Users/qicai21/projects/repos/ops-data-hub/config/report_templates/cysteel_departure_report_template.xlsx",
+            "/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/cysteel_departure_report_template.xlsx",
         ),
         (
             "jilin_jingang_jinzhou",
-            "/Users/qicai21/projects/repos/ops-data-hub/config/report_templates/jilin_jingang_departure_report_template.xlsx",
+            "/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/jilin_jingang_departure_report_template.xlsx",
         ),
     ]
 

@@ -1,4 +1,4 @@
-"""ops-data-hub 命令行工具
+"""sop-data-hub 命令行工具
 
 用法:
     python -m ops_hub process <image>           处理单张图片 (微信新图钩子)

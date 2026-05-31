@@ -20,19 +20,19 @@ DEV_RECIPIENT_TARGET = {"type": "contact", "name": "郭东北"}
 PROJECT_REPORT_CONFIG = {
     "zhongtang_special_steel": {
         "report_type": "departure_report",
-        "template_path": "/Users/qicai21/projects/repos/ops-data-hub/config/report_templates/ztsteel_departure_report_template.xlsx",
+        "template_path": "/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/ztsteel_departure_report_template.xlsx",
         "recipient_target": DEV_RECIPIENT_TARGET,
         "required_fields": ["message_id", "group_id", "project_id", "target_sop_node", "watch_item"],
     },
     "chaoyang_steel": {
         "report_type": "departure_report",
-        "template_path": "/Users/qicai21/projects/repos/ops-data-hub/config/report_templates/cysteel_departure_report_template.xlsx",
+        "template_path": "/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/cysteel_departure_report_template.xlsx",
         "recipient_target": DEV_RECIPIENT_TARGET,
         "required_fields": ["message_id", "group_id", "project_id", "target_sop_node", "watch_item"],
     },
     "jilin_jingang_jinzhou": {
         "report_type": "departure_report",
-        "template_path": "/Users/qicai21/projects/repos/ops-data-hub/config/report_templates/jilin_jingang_departure_report_template.xlsx",
+        "template_path": "/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/jilin_jingang_departure_report_template.xlsx",
         "recipient_target": DEV_RECIPIENT_TARGET,
         "required_fields": ["message_id", "group_id", "project_id", "target_sop_node", "watch_item"],
     },

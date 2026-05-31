@@ -57,13 +57,15 @@ def _write_status_file(
     month_str: str = "",
     group_name: str = "",
 ) -> None:
-    """Write a deterministic per-image state file so _raw is only an inbox, not the source of truth."""
-    status_base = _artifact_base_dir(
-        settings.classified_output_dir,
-        month_str=month_str,
-        group_name=group_name,
-    )
-    status_dir = status_base / "_status"
+    """Write a deterministic per-image state file to runtime/image_status/.
+
+    R65.2: Moved from {wechat_images}/{group}/_status/ to runtime/image_status/.
+    """
+    from pathlib import Path as _Path
+    repo_root = _Path(__file__).resolve().parents[2]
+    yyyy_mm = month_str[:7] if len(month_str) >= 7 else month_str
+    group_safe = _sanitize_component(group_name) if group_name else "unknown"
+    status_dir = repo_root / "runtime" / "image_status" / group_safe / yyyy_mm
     status_dir.mkdir(parents=True, exist_ok=True)
     state = "failed" if result.error else ("extracted" if result.extraction_saved_path else "classified")
     payload = {
@@ -288,13 +290,18 @@ def _move_processed_artifacts(settings: Settings, img: Path, result: "Processing
     root = Path(settings.classified_output_dir)
     if payload.get("_agent_sop_authorized") is True:
         parts = _archive_components(payload, settings)
-        base = root / "projects" / _sanitize_component(parts["project"]) / _sanitize_component(parts["destination"]) / _sanitize_component(parts["ship"]) / parts["lot"]
+        # R65.2: use business/projects/ instead of projects/
+        base = root / "business" / "projects" / _sanitize_component(parts["project"]) / _sanitize_component(parts["destination"]) / _sanitize_component(parts["ship"]) / parts["lot"]
         image_dir = base / "images" / date_text
         json_dir = base / "json" / date_text
     else:
+        # R65.2: unmatched goes to runtime, not wechat_images/unmatched/
+        from pathlib import Path as _Path
+        repo_root = _Path(__file__).resolve().parents[2]
         month = _archive_month_from_date(date_text, month_str=month_str)
-        image_dir = root / "unmatched" / month / "images"
-        json_dir = root / "unmatched" / month / "json"
+        unmatched_base = repo_root / "runtime" / "unmatched"
+        image_dir = unmatched_base / month / "images"
+        json_dir = unmatched_base / month / "json"
     image_dir.mkdir(parents=True, exist_ok=True)
     json_dir.mkdir(parents=True, exist_ok=True)
     image_dest = image_dir / img.name
@@ -408,18 +415,12 @@ def process_new_image(
             pass
         return result
 
-    # ── Step 2: 归档图片到分类目录 ──────────────────
+    # ── Step 2: 分类确认（不写分类副本） ────────────
+    # R65.2: No longer copy2 to {group}/{category}/.
+    # The raw image at its original location is the canonical source.
+    # result.saved_path stays as the raw path.
     try:
-        output_dir = _artifact_base_dir(
-            settings.classified_output_dir,
-            month_str=month_str,
-            group_name=group_name,
-        ) / result.category
-        output_dir.mkdir(parents=True, exist_ok=True)
-        dest = output_dir / img.name
-        if not dest.exists():
-            shutil.copy2(img, dest)
-        result.saved_path = str(dest)
+        result.saved_path = str(img)
     except Exception as e:
         result.error = f"归档失败: {e}"
         try:
@@ -437,17 +438,14 @@ def process_new_image(
             result.elapsed_extract = time.perf_counter() - t0
             result.extracted = extracted
 
-            # 保存识别结果
+            # 保存识别结果 → runtime/extractions/ (R65.2)
             if extracted:
                 _attach_reconcile_plan_if_possible(settings, extracted)
-                if month_str or group_name:
-                    ext_dir = _artifact_base_dir(
-                        settings.classified_output_dir,
-                        month_str=month_str,
-                        group_name=group_name,
-                    ) / "extractions" / result.category
-                else:
-                    ext_dir = Path(settings.extraction_output_dir) / result.category
+                from pathlib import Path as _Path
+                repo_root = _Path(__file__).resolve().parents[2]
+                yyyy_mm = month_str[:7] if len(month_str) >= 7 else month_str
+                group_safe = _sanitize_component(group_name) if group_name else "unknown"
+                ext_dir = repo_root / "runtime" / "extractions" / group_safe / yyyy_mm / result.category
                 ext_dir.mkdir(parents=True, exist_ok=True)
                 json_name = f"{img.stem}_result.json"
                 json_path = ext_dir / json_name

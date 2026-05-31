@@ -1,12 +1,14 @@
 # sop-data-hub Storage Policy Contract
-# Version: 1
+# Version: 2
 # Owner: sop-data-hub
 # Purpose: Defines the global storage contract for images, JSON, documents,
-#   and media files. This is NOT a project SOP. This is NOT wx-ops-agent config.
-#   It constrains how runners, message_inbox, archivers, and cleanup scripts
-#   save and retrieve assets.
+#   and media files. This constrains how runners, message_inbox, archivers,
+#   and cleanup scripts save and retrieve assets.
+# Changelog:
+#   v2 (R65.2): Post-R65.1 clean — forbid old classified dirs, disable
+#     business/general, move runtime outputs out of wechat_images root.
 
-version: 1
+version: 2
 
 # ── Root asset directory ───────────────────────────────────────────────
 asset_root: "/Users/qicai21/Documents/bussiness-artifacts/wechat_assets"
@@ -14,7 +16,7 @@ asset_root: "/Users/qicai21/Documents/bussiness-artifacts/wechat_assets"
 # ── Raw Standard Image (owned by wx-ops-agent) ─────────────────────────
 raw_standard_image:
   owner: "wx-ops-agent"
-  path_pattern: "raw/{group_id}/{yyyy_mm}/{message_id}_{image_md5}.jpg"
+  path_pattern: "{group_name}/{yyyy_mm}/{local_id}_{image_md5}.jpg"
   immutable: true
   chat_records_msg_path_must_exist: true
   delete_after_business_hook: false
@@ -25,10 +27,18 @@ raw_standard_image:
 business_archive:
   owner: "sop-data-hub"
   project_path_pattern: "business/projects/{project_id}/{destination}/{ship_name}/{lot}/{document_stage}/{yyyy_mm_dd}/{message_id}"
-  general_path_pattern: "business/general/{yyyy_mm}/{message_type}/"
+  general_archive_enabled: false   # R65.2: disabled — business/general/ deleted
+  general_path_pattern: "business/general/{yyyy_mm}/{message_type}/"  # reserved, not active
   use_hardlink_first: true
   copy_if_cross_device: true
   do_not_repeat_ocr_for_archive: true
+
+# ── Runtime Outputs (owned by sop-data-hub) ────────────────────────────
+# These are NOT in wechat_images. They live under sop-data-hub/runtime/.
+runtime_outputs:
+  owner: "sop-data-hub"
+  extractions_path_pattern: "runtime/extractions/{group_name}/{yyyy_mm}/{document_type}/"
+  image_status_path_pattern: "runtime/image_status/{group_name}/{yyyy_mm}/"
 
 # ── Canonical Business Documents ────────────────────────────────────────
 canonical_documents:
@@ -50,35 +60,37 @@ canonical_documents:
     require_db_reference: true
     json_owner: "sop-data-hub"
 
-# ── General Documents (non-canonical) ──────────────────────────────────
+# ── General Documents (non-canonical, not actively archived) ───────────
 general_documents:
   - document_type: "现场照片"
-    archive_to_general: true
+    archive_to_general: false
     require_json: false
 
   - document_type: "其他照片"
-    archive_to_general: true
+    archive_to_general: false
     require_json: false
 
   - document_type: "unknown"
-    archive_to_general: true
+    archive_to_general: false
     require_json: false
 
-# ── Legacy Directories (forbidden for new writes) ───────────────────────
+# ── Legacy Directories (FORBIDDEN for new writes) ───────────────────────
+# R65.2: These patterns MUST NOT be written to by any sop-data-hub code.
+# The verify_storage_paths.py script enforces this contract.
 legacy_directories:
   forbidden_new_writes:
     - "{group_name}/{category}/"
     - "{group_name}/extractions/"
     - "extractions/"
-    - "{category}/"
+    - "_status/"
+    - "_raw/"
     - "_previews/"
-  cleanup_candidates:
-    - "{group_name}/{category}/"
-    - "{group_name}/extractions/"
-    - "extractions/"
+    - "other/"
+    - "unknown/"
+    - "unmatched/"
+    - "business/general/"
     - "{category}/"
-    - "_previews/"
-    - "smoke/"
+  cleanup_candidates: []  # R65/R65.1 moved these to quarantine
   cleanup_mode: "quarantine_first"
 
 # ── Manifest ──────────────────────────────────────────────────────────
@@ -129,16 +141,3 @@ project_override_contract:
     - "archive_to_general"
     - "require_json"
     - "allowed_extensions"
-  example:
-    artifact_policy:
-      overrides:
-        document_types:
-          现场照片:
-            archive_to_project: true
-            document_stage: "site_photo"
-            require_json: false
-        media_types:
-          file:
-            save_external_copy: true
-            archive_to_project: true
-            allowed_extensions: [".xlsx", ".pdf", ".docx"]

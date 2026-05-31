@@ -39,8 +39,8 @@ from ops_hub.sop.sop_watcher import SopWatcher
 from ops_hub.sop.source_watcher import WxOpsSourceWatcher
 from ops_hub.sop.workflow_task import build_workflow_task_queue
 
-# ── R52: executor runner ─────────────────────────────────────────────
-from ops_hub.sop.executor_runner import run_departure_executor_chain_if_applicable
+# ── R52: executor runner (disabled R69 — now driven by workflow_task_db) ─
+# from ops_hub.sop.executor_runner import run_departure_executor_chain_if_applicable
 
 # ── R18: canonical paths ────────────────────────────────────────────────
 CANONICAL_REPO_ROOT = Path.home() / "projects" / "repos" / "sop-data-hub"
@@ -559,29 +559,10 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
         event_path,
     )
 
-    # ── R52: run departure executor chain ─────────────────────────────
-    try:
-        exec_preview = run_departure_executor_chain_if_applicable(
-            event, runtime_root=runtime_root, apply_mode=apply_mode
-        )
-        if exec_preview is not None and not exec_preview.skipped_reason:
-            logger.info(
-                "executor_runner message_id=%s status=%s depart=%s query=%d wagons=%s/%d",
-                event.message_id,
-                exec_preview.departure_status,
-                exec_preview.departure_candidate.get("destination", "") if exec_preview.departure_candidate else "",
-                exec_preview.query_total_candidates,
-                exec_preview.wagon_status,
-                exec_preview.wagon_planned_insert,
-            )
-        elif exec_preview is not None:
-            logger.info(
-                "executor_runner skipped message_id=%s reason=%s",
-                event.message_id,
-                exec_preview.skipped_reason,
-            )
-    except Exception as exc:
-        logger.error("executor_runner failed message_id=%s: %s", event.message_id, exc)
+    # ── R69: executor_runner is now driven by workflow_task_db, not direct text matching ──
+    # The old R52 direct trigger (run_departure_executor_chain_if_applicable with "四平" gate)
+    # is disabled. Tasks are created by workflow_task_store and executed by workflow_task_executor.
+    # To execute pending tasks: python -m ops_hub.sop.workflow_task_executor --run-pending
 
     return {
         "event_path": event_path,

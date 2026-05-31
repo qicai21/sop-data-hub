@@ -142,6 +142,7 @@ def _write_status_state(runtime_root: Path, *, message_id: str, processed_at: st
     state = {
         "last_processed_message_id": str(message_id),
         "last_processed_time": processed_at,
+        "alive": True,
     }
     state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     return state_path

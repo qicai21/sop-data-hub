@@ -20,6 +20,58 @@ from ops_hub.sop.monitoring_plan_matcher import MessageEvent
 from ops_hub.sop.raw_asset_bundle import RawAssetBundle
 
 
+_EXCLUDED_SUBDIRS: set[str] = {
+    "image_download_todos",
+    "video_download_todos",
+    "runtime",
+    "runtime-logs",
+    "archive",
+    "archives",
+    "temp",
+    "tmp",
+    "_status",
+    "_previews",
+    "extractions",
+}
+
+
+def _classify_source_file_type(jsonl_path: Path, chat_records_root: Path) -> str:
+    """Classify a JSONL file relative to chat_records_root.
+
+    Returns one of:
+      chat_record / image_download_todo / video_download_todo /
+      runtime_log / archive / temp / unknown
+    """
+    try:
+        relative = jsonl_path.resolve().relative_to(chat_records_root.resolve())
+    except ValueError:
+        return "unknown"
+    parts = relative.parts
+    if len(parts) < 2:
+        return "unknown"
+    # parts[0] = group_name, check subdirectories
+    for part in parts[1:-1]:  # skip group dir and filename
+        if part in ("image_download_todos",):
+            return "image_download_todo"
+        if part in ("video_download_todos",):
+            return "video_download_todo"
+        if part in ("runtime", "runtime-logs"):
+            return "runtime_log"
+        if part in ("archive", "archives"):
+            return "archive"
+        if part in ("temp", "tmp"):
+            return "temp"
+        if part in ("_status", "_previews"):
+            return "temp"
+        if part == "extractions":
+            return "temp"
+    return "chat_record"
+
+
+def _is_chat_record_source(jsonl_path: Path, chat_records_root: Path) -> bool:
+    return _classify_source_file_type(jsonl_path, chat_records_root) == "chat_record"
+
+
 _DEFAULT_WECHAT_IMAGE_ROOT = Path.home() / "Documents" / "bussiness-artifacts" / "wechat_images"
 
 
@@ -116,6 +168,9 @@ class WxOpsSourceWatcher:
         for jsonl_path in sorted(self.chat_records_root.rglob("*.jsonl")):
             if requested_source_file is not None and jsonl_path.resolve() != requested_source_file:
                 continue
+            # R59: only process chat_record sources, skip todos/runtime/archive/temp
+            if not _is_chat_record_source(jsonl_path, self.chat_records_root):
+                continue
             relative_parts = jsonl_path.relative_to(self.chat_records_root).parts
             if not relative_parts:
                 continue
@@ -165,13 +220,42 @@ class WxOpsSourceWatcher:
             "msg_path": msg_path,
             "source_file": str(source_path),
             "source_file_stem": source_path.stem,
+            # R59: media status
+            "media_status": "not_required",
+            "processing_status": "ready",
         }
 
         raw_image_path: str | Path | None = None
-        if msg_path and msg_path != "未下载":
-            path = Path(msg_path).expanduser()
-            if path.exists():
-                raw_image_path = str(path)
+        missing_media_path: str | None = None
+        registration_status: str = "complete"
+
+        if message_type == "image":
+            if not msg_path or msg_path == "未下载":
+                raw_image_path = None
+                registration_status = "pending_download"
+                metadata["media_status"] = "waiting_media"
+                metadata["processing_status"] = "waiting_media"
+            else:
+                path = Path(msg_path).expanduser()
+                if path.exists():
+                    raw_image_path = str(path)
+                    registration_status = "complete"
+                    metadata["media_status"] = "ready"
+                    metadata["processing_status"] = "ready"
+                else:
+                    raw_image_path = None
+                    registration_status = "missing_file"
+                    metadata["media_status"] = "waiting_media"
+                    metadata["processing_status"] = "waiting_media"
+                    metadata["missing_media_path"] = msg_path
+                    missing_media_path = msg_path
+        elif message_type in ("video", "file", "document", "attachment"):
+            metadata["media_status"] = "recorded_only"
+            if msg_path and msg_path != "未下载":
+                path = Path(msg_path).expanduser()
+                if path.exists():
+                    metadata["media_status"] = "ready"
+                    raw_image_path = str(path)
 
         bundle = RawAssetBundle(
             message_id=message_id,
@@ -183,7 +267,7 @@ class WxOpsSourceWatcher:
             message_metadata_path=str(source_path),
             text=text,
             extraction_kind=message_type or "unknown",
-            registration_status="complete",
+            registration_status=registration_status,
             warnings=(),
         )
         return MessageEvent(

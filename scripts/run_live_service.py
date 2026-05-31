@@ -314,6 +314,31 @@ def _validate_startup(
 
 
 def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: Path, logger: logging.Logger, apply_mode: bool = False, cursor: dict[str, Any] | None = None, cursor_path_override: Path | None = None) -> dict[str, Any]:
+    # R59: check for waiting_media — skip OCR/VLM/executor but record event and advance cursor
+    processing_status = event.metadata.get("processing_status", "ready")
+    if processing_status == "waiting_media":
+        event_path = _write_event_snapshot(event, runtime_root=runtime_root)
+        _write_status_state(runtime_root, message_id=event.message_id, processed_at=_utc_now_iso())
+        if cursor is not None:
+            _update_cursor_for_event(runtime_root, cursor, event, cursor_path_override)
+        logger.info(
+            "waiting_media message_id=%s media_status=%s registration=%s event_path=%s",
+            event.message_id,
+            event.metadata.get("media_status"),
+            event.raw_asset_bundle.registration_status if event.raw_asset_bundle else "unknown",
+            event_path,
+        )
+        return {
+            "event_path": event_path,
+            "payload_paths": [],
+            "state_paths": [],
+            "workflow_tasks": 0,
+            "todo_items": 0,
+            "payloads_written": 0,
+            "states_written": 0,
+            "skipped_reason": "waiting_media",
+        }
+
     event_path = _write_event_snapshot(event, runtime_root=runtime_root)
     _write_status_state(runtime_root, message_id=event.message_id, processed_at=_utc_now_iso())
     if cursor is not None:

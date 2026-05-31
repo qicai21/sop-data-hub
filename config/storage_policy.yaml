@@ -1,0 +1,144 @@
+# sop-data-hub Storage Policy Contract
+# Version: 1
+# Owner: sop-data-hub
+# Purpose: Defines the global storage contract for images, JSON, documents,
+#   and media files. This is NOT a project SOP. This is NOT wx-ops-agent config.
+#   It constrains how runners, message_inbox, archivers, and cleanup scripts
+#   save and retrieve assets.
+
+version: 1
+
+# ── Root asset directory ───────────────────────────────────────────────
+asset_root: "/Users/qicai21/Documents/bussiness-artifacts/wechat_assets"
+
+# ── Raw Standard Image (owned by wx-ops-agent) ─────────────────────────
+raw_standard_image:
+  owner: "wx-ops-agent"
+  path_pattern: "raw/{group_id}/{yyyy_mm}/{message_id}_{image_md5}.jpg"
+  immutable: true
+  chat_records_msg_path_must_exist: true
+  delete_after_business_hook: false
+  missing_image_status: "waiting_media"
+  pending_download_status: "pending_download"
+
+# ── Business Archive (owned by sop-data-hub) ────────────────────────────
+business_archive:
+  owner: "sop-data-hub"
+  project_path_pattern: "business/projects/{project_id}/{destination}/{ship_name}/{lot}/{document_stage}/{yyyy_mm_dd}/{message_id}"
+  general_path_pattern: "business/general/{yyyy_mm}/{message_type}/"
+  use_hardlink_first: true
+  copy_if_cross_device: true
+  do_not_repeat_ocr_for_archive: true
+
+# ── Canonical Business Documents ────────────────────────────────────────
+canonical_documents:
+  - document_type: "出港计划通知单"
+    document_stage: "release"
+    priority: "business_critical"
+    archive_to_project: true
+    require_image: true
+    require_json: true
+    require_db_reference: true
+    json_owner: "sop-data-hub"
+
+  - document_type: "检装车通知单"
+    document_stage: "inspection"
+    priority: "business_critical"
+    archive_to_project: true
+    require_image: true
+    require_json: true
+    require_db_reference: true
+    json_owner: "sop-data-hub"
+
+# ── General Documents (non-canonical) ──────────────────────────────────
+general_documents:
+  - document_type: "现场照片"
+    archive_to_general: true
+    require_json: false
+
+  - document_type: "其他照片"
+    archive_to_general: true
+    require_json: false
+
+  - document_type: "unknown"
+    archive_to_general: true
+    require_json: false
+
+# ── Legacy Directories (forbidden for new writes) ───────────────────────
+legacy_directories:
+  forbidden_new_writes:
+    - "{group_name}/{category}/"
+    - "{group_name}/extractions/"
+    - "extractions/"
+    - "{category}/"
+    - "_previews/"
+  cleanup_candidates:
+    - "{group_name}/{category}/"
+    - "{group_name}/extractions/"
+    - "extractions/"
+    - "{category}/"
+    - "_previews/"
+    - "smoke/"
+  cleanup_mode: "quarantine_first"
+
+# ── Manifest ──────────────────────────────────────────────────────────
+manifest:
+  preferred_backend: "message_inbox"
+  pre_message_inbox_fallback: "runtime/storage_manifest"
+  required_fields:
+    - message_id
+    - group_id
+    - received_at
+    - raw_standard_image_path
+    - document_type
+    - classification_status
+    - extraction_json_path
+    - sop_project_id
+    - release_batch_id
+    - inspection_candidate_id
+    - business_archive_image_path
+    - business_archive_json_path
+    - db_action
+    - db_record_ids
+    - processing_status
+    - content_sha256
+
+# ── Media Type Defaults ────────────────────────────────────────────────
+media_types:
+  image:
+    default: "process_by_policy"
+    if_missing: "waiting_media"
+  video:
+    default: "record_only"
+    save_external_copy: false
+    future_project_override_allowed: true
+  file:
+    default: "record_only"
+    save_external_copy: false
+    future_project_override_allowed: true
+
+# ── Project Override Contract ──────────────────────────────────────────
+project_override_contract:
+  location: "config/project_sops/<project>.yaml"
+  key: "artifact_policy"
+  allowed_overrides:
+    - "document_types"
+    - "media_types"
+    - "path_pattern"
+    - "archive_to_project"
+    - "archive_to_general"
+    - "require_json"
+    - "allowed_extensions"
+  example:
+    artifact_policy:
+      overrides:
+        document_types:
+          现场照片:
+            archive_to_project: true
+            document_stage: "site_photo"
+            require_json: false
+        media_types:
+          file:
+            save_external_copy: true
+            archive_to_project: true
+            allowed_extensions: [".xlsx", ".pdf", ".docx"]

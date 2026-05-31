@@ -5,6 +5,9 @@ This module stays local-only:
 - convert no-match or incomplete asset cases into todo items;
 - preserve message / group / project / SOP-node links without touching runtime,
   database, wx-ops-agent, 95306, OCR execution, or report delivery.
+
+R68: Added workflow_task DB table, task generation from matched_sop messages,
+and CLI for managing executable tasks in sop_agent.db.
 """
 
 from __future__ import annotations
@@ -226,3 +229,269 @@ def build_workflow_task_queue(
         todo_items=todo_items,
         reason=reason,
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# R68: workflow_task DB table — executable tasks from matched_sop messages
+# ═══════════════════════════════════════════════════════════════════════════
+
+import json
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+def _get_db_path(db_path: str | Path | None = None) -> Path:
+    if db_path:
+        return Path(db_path)
+    import os
+    env = os.environ.get("BUSINESS_DATA_AGENT_DB_PATH")
+    if env:
+        return Path(env)
+    return Path(__file__).resolve().parents[3] / "data" / "sop_agent.db"
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+WORKFLOW_TASK_DB_SCHEMA = """
+CREATE TABLE IF NOT EXISTS workflow_task_db (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_inbox_id    INTEGER NOT NULL,
+    message_id          TEXT    NOT NULL,
+    project_id          TEXT    NOT NULL,
+    flow_name           TEXT    NOT NULL,
+    node_name           TEXT    NOT NULL,
+    task_type           TEXT    NOT NULL,
+    task_status         TEXT    NOT NULL DEFAULT 'pending',
+    input_json          TEXT,
+    output_json         TEXT,
+    error_message       TEXT,
+    retry_count         INTEGER DEFAULT 0,
+    created_at          TEXT,
+    updated_at          TEXT,
+    last_run_at         TEXT,
+    UNIQUE(message_inbox_id, task_type)
+);
+"""
+
+WORKFLOW_TASK_DB_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_wt_db_project_id ON workflow_task_db(project_id);",
+    "CREATE INDEX IF NOT EXISTS idx_wt_db_flow_name ON workflow_task_db(flow_name);",
+    "CREATE INDEX IF NOT EXISTS idx_wt_db_task_status ON workflow_task_db(task_status);",
+    "CREATE INDEX IF NOT EXISTS idx_wt_db_message_id ON workflow_task_db(message_id);",
+    "CREATE INDEX IF NOT EXISTS idx_wt_db_created_at ON workflow_task_db(created_at);",
+]
+
+
+def ensure_workflow_task_db_schema(db_path: str | Path | None = None) -> None:
+    db = _get_db_path(db_path)
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db))
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute(WORKFLOW_TASK_DB_SCHEMA)
+    for idx_sql in WORKFLOW_TASK_DB_INDEXES:
+        try:
+            conn.execute(idx_sql)
+        except sqlite3.OperationalError:
+            pass
+    conn.commit()
+    conn.close()
+
+
+def _resolve_task_type(project_id: str, flow_name: str, node_name: str) -> str:
+    if (project_id == "jilin_jingang_jinzhou"
+            and flow_name == "departure_flow"
+            and node_name == "detect_departure_message"):
+        return "jljg_departure_text_chain"
+    if project_id == "chaoyang_steel" and flow_name == "dispatch_flow":
+        return "chaoyang_dispatch_context"
+    if flow_name == "freight_detail_flow":
+        return "freight_detail_enrichment"
+    return "generic_sop_task"
+
+
+def _build_input_json(row: dict[str, Any]) -> dict[str, Any]:
+    inp: dict[str, Any] = {
+        "message_inbox_id": row.get("id"),
+        "message_id": row.get("message_id"),
+        "group_name": row.get("group_name"),
+        "received_datetime": row.get("received_datetime"),
+        "text_content": row.get("text_content"),
+        "sop_project_id": row.get("sop_project_id"),
+        "sop_flow": row.get("sop_flow"),
+        "sop_node": row.get("sop_node"),
+        "summary": row.get("summary"),
+        "media_status": row.get("media_status"),
+        "source_file": row.get("source_file"),
+    }
+    return {k: v for k, v in inp.items() if v is not None}
+
+
+def create_task_from_message_inbox(
+    message_inbox_id: int,
+    *,
+    db_path: str | Path | None = None,
+) -> dict[str, Any]:
+    db = _get_db_path(db_path)
+    ensure_workflow_task_db_schema(db)
+    conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
+
+    row = conn.execute("SELECT * FROM message_inbox WHERE id = ?", (message_inbox_id,)).fetchone()
+    if not row:
+        conn.close()
+        return {"error": f"message_inbox_id {message_inbox_id} not found"}
+
+    row_dict = dict(row)
+    project_id = row_dict.get("sop_project_id") or ""
+    flow_name = row_dict.get("sop_flow") or ""
+    node_name = row_dict.get("sop_node") or ""
+    task_type = _resolve_task_type(project_id, flow_name, node_name)
+    input_json = _build_input_json(row_dict)
+    now = _now_iso()
+
+    existing = conn.execute(
+        "SELECT id, task_status, created_at FROM workflow_task_db "
+        "WHERE message_inbox_id = ? AND task_type = ?",
+        (message_inbox_id, task_type),
+    ).fetchone()
+
+    if existing:
+        conn.close()
+        return {
+            "action": "skipped", "reason": "duplicate",
+            "id": existing["id"], "message_inbox_id": message_inbox_id,
+            "task_type": task_type, "task_status": existing["task_status"],
+        }
+
+    conn.execute(
+        """INSERT INTO workflow_task_db
+           (message_inbox_id, message_id, project_id, flow_name, node_name,
+            task_type, task_status, input_json, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
+        (message_inbox_id, row_dict.get("message_id", ""), project_id,
+         flow_name, node_name, task_type,
+         json.dumps(input_json, ensure_ascii=False), now, now),
+    )
+    conn.commit()
+    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {
+        "action": "created", "id": new_id,
+        "message_inbox_id": message_inbox_id,
+        "message_id": row_dict.get("message_id"),
+        "task_type": task_type, "task_status": "pending",
+    }
+
+
+def create_tasks_for_matched_messages(
+    *, db_path: str | Path | None = None, limit: int | None = None,
+) -> dict[str, Any]:
+    db = _get_db_path(db_path)
+    ensure_workflow_task_db_schema(db)
+    conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
+    query = (
+        "SELECT id FROM message_inbox "
+        "WHERE processing_status = 'matched_sop' AND is_sop_msg = 1 ORDER BY id"
+    )
+    if limit:
+        query += f" LIMIT {int(limit)}"
+    rows = conn.execute(query).fetchall()
+    conn.close()
+
+    created, skipped, errors = [], [], []
+    for row in rows:
+        mid = row["id"]
+        try:
+            result = create_task_from_message_inbox(mid, db_path=db)
+            if result.get("action") == "created":
+                created.append(result)
+            else:
+                skipped.append(result)
+        except Exception as exc:
+            errors.append({"message_inbox_id": mid, "error": str(exc)})
+    return {
+        "created_count": len(created), "skipped_count": len(skipped),
+        "error_count": len(errors), "created": created, "skipped": skipped,
+        "errors": errors,
+    }
+
+
+def get_workflow_task_db_by_message_id(
+    message_id: str, *, db_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    db = _get_db_path(db_path)
+    if not db.exists():
+        return []
+    conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT * FROM workflow_task_db WHERE message_id = ? ORDER BY id",
+        (message_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def list_workflow_task_db(
+    *, task_status: str | None = None, limit: int = 20,
+    db_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    db = _get_db_path(db_path)
+    if not db.exists():
+        return []
+    conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
+    if task_status:
+        rows = conn.execute(
+            "SELECT id, message_id, project_id, flow_name, node_name, "
+            "task_type, task_status, created_at "
+            "FROM workflow_task_db WHERE task_status = ? ORDER BY id DESC LIMIT ?",
+            (task_status, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, message_id, project_id, flow_name, node_name, "
+            "task_type, task_status, created_at "
+            "FROM workflow_task_db ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ── CLI ─────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    p = argparse.ArgumentParser(description="workflow_task DB management CLI")
+    p.add_argument("--init-db", action="store_true")
+    p.add_argument("--create-for-matched", action="store_true")
+    p.add_argument("--limit", type=int, default=None)
+    p.add_argument("--get-message", type=str)
+    p.add_argument("--list", action="store_true")
+    p.add_argument("--status", type=str)
+    p.add_argument("--db", type=str, default=None)
+
+    args = p.parse_args()
+    _db = Path(args.db) if args.db else None
+
+    if args.init_db:
+        ensure_workflow_task_db_schema(_db)
+        print(json.dumps({"action": "init_db", "ok": True}, ensure_ascii=False))
+    elif args.create_for_matched:
+        result = create_tasks_for_matched_messages(db_path=_db, limit=args.limit)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.get_message:
+        tasks = get_workflow_task_db_by_message_id(args.get_message, db_path=_db)
+        print(json.dumps(tasks, ensure_ascii=False, indent=2))
+    elif args.list:
+        tasks = list_workflow_task_db(task_status=args.status, limit=args.limit or 20, db_path=_db)
+        print(json.dumps(tasks, ensure_ascii=False, indent=2))
+    else:
+        p.print_help()

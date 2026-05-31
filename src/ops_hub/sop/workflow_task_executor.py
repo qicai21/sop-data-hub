@@ -149,7 +149,7 @@ def run_workflow_task(
     # ── Dispatch by task_type ─────────────────────────────────────────
     try:
         if task_type == "jljg_departure_text_chain":
-            result = _execute_jljg_departure(input_json, message_id, db_path=db, apply=apply)
+            result = _execute_jljg_departure(input_json, message_id, db_path=db, apply=apply, task_id=task_id)
         elif task_type in ("chaoyang_dispatch_context", "freight_detail_enrichment", "generic_sop_task"):
             result = {
                 "action": "skipped",
@@ -204,6 +204,7 @@ def _execute_jljg_departure(
     *,
     db_path: Path,
     apply: bool,
+    task_id: int = 0,
 ) -> dict[str, Any]:
     """Execute the jilin_jingang departure text chain."""
     from ops_hub.sop.executor_runner import (
@@ -232,6 +233,37 @@ def _execute_jljg_departure(
     )
 
     output = preview.to_dict()
+
+    # ── R70: plan external actions with idempotency keys ──────────────
+    external_actions: list[dict[str, Any]] = []
+    try:
+        release_batch_id = preview.release_batch_id or ""
+        wagon_count = 0
+        # Extract wagon count from step 3 result
+        step3 = (preview.wagon_result or {})
+        if isinstance(step3, dict):
+            wagon_count = step3.get("planned_insert_count", 0) or step3.get("expected_car_count", 0) or 0
+
+        from ops_hub.sop.external_action_log import plan_jljg_external_actions
+        # Use message_inbox_id from input_json
+        mi_id = int(input_json.get("message_inbox_id") or 0)
+        external_actions = plan_jljg_external_actions(
+            db_path=str(db_path),
+            workflow_task_id=task_id,
+            message_inbox_id=mi_id,
+            message_id=message_id,
+            release_batch_id=release_batch_id,
+            wagon_count=wagon_count,
+            ship_name=preview.release_batch_ship or "",
+            apply_mode=apply,
+        )
+        output["external_actions"] = {
+            "planned": len([a for a in external_actions if a.get("action") == "created"]),
+            "skipped_duplicate": len([a for a in external_actions if a.get("action") == "skipped"]),
+            "actions": external_actions,
+        }
+    except Exception as exc:
+        output["external_actions_error"] = str(exc)
 
     # Determine status
     if preview.error:

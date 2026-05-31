@@ -473,7 +473,7 @@ def _retry_waiting_media(
     return retried
 
 
-def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: Path, logger: logging.Logger, apply_mode: bool = False, cursor: dict[str, Any] | None = None, cursor_path_override: Path | None = None, write_message_inbox: bool = False) -> dict[str, Any]:
+def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: Path, logger: logging.Logger, apply_mode: bool = False, cursor: dict[str, Any] | None = None, cursor_path_override: Path | None = None, write_message_inbox: bool = True) -> dict[str, Any]:
     # R61: optionally write to message_inbox before any processing
     if write_message_inbox:
         try:
@@ -590,7 +590,7 @@ def run_once(
     replay_one: str | None = None,
     replay_from_id: int | None = None,
     cursor_path_override: Path | None = None,
-    write_message_inbox: bool = False,
+    write_message_inbox: bool = True,
 ) -> int:
     watcher_args: dict[str, Any] = {}
     if replay_one:
@@ -690,7 +690,7 @@ def run_live_service(
     replay_one: str | None = None,
     replay_from_id: int | None = None,
     cursor_path_override: Path | None = None,
-    write_message_inbox: bool = False,
+    write_message_inbox: bool = True,
 ) -> None:
     log_path = runtime_root / "live_service.log"
     logger = _configure_logging(log_path)
@@ -1029,6 +1029,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Write each processed event to message_inbox table in sop_agent.db",
     )
+    # ── R61.1: opt-out (default is now ON) ─────────────────────────────
+    parser.add_argument(
+        "--no-write-message-inbox",
+        action="store_true",
+        help="Disable writing to message_inbox (default: enabled)",
+    )
     return parser
 
 
@@ -1069,7 +1075,7 @@ def main() -> None:
         replay_one=args.replay_one,
         replay_from_id=args.replay_from_id,
         cursor_path_override=args.cursor_path,
-        write_message_inbox=args.write_message_inbox,
+        write_message_inbox=not args.no_write_message_inbox,
     )
 
 

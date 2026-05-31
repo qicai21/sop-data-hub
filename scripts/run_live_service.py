@@ -313,6 +313,166 @@ def _validate_startup(
     logger.info("startup validation passed runtime_root=%s chat_records_root=%s", runtime_root, chat_records_root)
 
 
+# ── R59.1: waiting_media index (retry for images whose download completes later) ──
+
+def _waiting_media_index_path(runtime_root: Path) -> Path:
+    return runtime_root / "waiting_media_index.json"
+
+
+def _load_waiting_media_index(runtime_root: Path) -> dict[str, Any]:
+    path = _waiting_media_index_path(runtime_root)
+    if not path.exists():
+        return {"version": 1, "items": {}}
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"version": 1, "items": {}}
+
+
+def _save_waiting_media_index(runtime_root: Path, index: dict[str, Any]) -> Path:
+    path = _waiting_media_index_path(runtime_root)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(index, f, ensure_ascii=False, indent=2)
+    tmp.replace(path)
+    return path
+
+
+def _add_to_waiting_media_index(runtime_root: Path, event: Any, logger: logging.Logger) -> None:
+    """Record a waiting_media event so it can be retried when the image becomes available."""
+    index = _load_waiting_media_index(runtime_root)
+    mid = event.message_id
+    if mid in index.get("items", {}):
+        entry = index["items"][mid]
+        entry["retries"] = entry.get("retries", 0) + 1
+        entry["last_checked_at"] = _utc_now_iso()
+    else:
+        index["items"][mid] = {
+            "message_id": mid,
+            "source_file": event.metadata.get("source_file", ""),
+            "local_id": event.metadata.get("local_id"),
+            "group_name": event.metadata.get("group_name", ""),
+            "image_md5": event.metadata.get("image_md5", ""),
+            "msg_path": event.metadata.get("msg_path", ""),
+            "media_status": event.metadata.get("media_status", ""),
+            "added_at": _utc_now_iso(),
+            "retries": 0,
+            "status": "waiting",
+        }
+        logger.info("waiting_media_index: added message_id=%s", mid)
+    index["items"][mid]["last_checked_at"] = _utc_now_iso()
+    _save_waiting_media_index(runtime_root, index)
+
+
+def _mark_waiting_media_done(runtime_root: Path, message_id: str, logger: logging.Logger, index: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Mark a waiting_media entry as done in-place, or load/save if no index provided."""
+    if index is None:
+        index = _load_waiting_media_index(runtime_root)
+    if message_id in index.get("items", {}):
+        index["items"][message_id]["status"] = "done"
+        index["items"][message_id]["resolved_at"] = _utc_now_iso()
+        _save_waiting_media_index(runtime_root, index)
+        logger.info("waiting_media_index: marked done message_id=%s", message_id)
+    return index
+
+
+def _retry_waiting_media(
+    *,
+    runtime_root: Path,
+    chat_records_root: Path,
+    monitoring_plan: dict[str, Any],
+    logger: logging.Logger,
+    apply_mode: bool = False,
+    cursor: dict[str, Any] | None = None,
+    cursor_path_override: Path | None = None,
+) -> int:
+    """Check all waiting_media index entries; re-process those whose images have become available."""
+    from ops_hub.sop.source_watcher import WxOpsSourceWatcher
+
+    index = _load_waiting_media_index(runtime_root)
+    items = index.get("items", {})
+    retried = 0
+    watcher = WxOpsSourceWatcher(chat_records_root=chat_records_root)
+
+    for mid, entry in list(items.items()):
+        if entry.get("status") == "done":
+            continue
+
+        source_file = entry.get("source_file", "")
+        local_id = entry.get("local_id")
+        if not source_file:
+            logger.warning("waiting_media_retry: no source_file for message_id=%s, marking done", mid)
+            _mark_waiting_media_done(runtime_root, mid, logger)
+            continue
+
+        # Re-read the payload from the source JSONL
+        src_path = Path(source_file)
+        payload = None
+        if src_path.exists():
+            try:
+                with src_path.open("r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            p = json.loads(line)
+                        except Exception:
+                            continue
+                        lid = p.get("local_id") or p.get("seq")
+                        if lid is not None and int(lid) == local_id:
+                            payload = p
+                            break
+            except Exception:
+                pass
+
+        if payload is None:
+            # Payload not found — skip, keep in index for now
+            entry["retries"] = entry.get("retries", 0) + 1
+            entry["last_checked_at"] = _utc_now_iso()
+            continue
+
+        # Re-build event through source_watcher (re-evaluates image path)
+        new_event = watcher._build_event(source_path=src_path, payload=payload)
+        new_ms = new_event.metadata.get("media_status", "")
+        new_ps = new_event.metadata.get("processing_status", "")
+
+        if new_ps != "waiting_media":
+            # Media is now available — process it
+            logger.info(
+                "waiting_media_retry: media ready message_id=%s media_status=%s -> %s",
+                mid, entry.get("media_status"), new_ms,
+            )
+            process_event_once(
+                event=new_event,
+                monitoring_plan=monitoring_plan,
+                runtime_root=runtime_root,
+                logger=logger,
+                apply_mode=apply_mode,
+                cursor=None,  # do NOT regress cursor
+                cursor_path_override=cursor_path_override,
+            )
+            index = _mark_waiting_media_done(runtime_root, mid, logger, index=index)
+            retried += 1
+        else:
+            entry["retries"] = entry.get("retries", 0) + 1
+            entry["last_checked_at"] = _utc_now_iso()
+            entry["media_status"] = new_ms
+            logger.debug("waiting_media_retry: still waiting message_id=%s retries=%d", mid, entry["retries"])
+
+    if retried:
+        # Reload index to get the latest state (avoid overwriting done marks)
+        index = _load_waiting_media_index(runtime_root)
+        for mid, entry in list(items.items()):
+            if entry.get("retries", 0) > 0 and mid in index.get("items", {}):
+                index["items"][mid]["retries"] = entry["retries"]
+                index["items"][mid]["last_checked_at"] = entry["last_checked_at"]
+        _save_waiting_media_index(runtime_root, index)
+    return retried
+
+
 def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: Path, logger: logging.Logger, apply_mode: bool = False, cursor: dict[str, Any] | None = None, cursor_path_override: Path | None = None) -> dict[str, Any]:
     # R59: check for waiting_media — skip OCR/VLM/executor but record event and advance cursor
     processing_status = event.metadata.get("processing_status", "ready")
@@ -321,6 +481,8 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
         _write_status_state(runtime_root, message_id=event.message_id, processed_at=_utc_now_iso())
         if cursor is not None:
             _update_cursor_for_event(runtime_root, cursor, event, cursor_path_override)
+        # R59.1: record in waiting_media index for later retry
+        _add_to_waiting_media_index(runtime_root, event, logger)
         logger.info(
             "waiting_media message_id=%s media_status=%s registration=%s event_path=%s",
             event.message_id,
@@ -484,6 +646,20 @@ def run_once(
         )
         processed += 1
 
+    # ── R59.1: retry waiting_media whose images may now be available ───
+    retried = _retry_waiting_media(
+        runtime_root=runtime_root,
+        chat_records_root=chat_records_root,
+        monitoring_plan=monitoring_plan,
+        logger=logger,
+        apply_mode=apply_mode,
+        cursor=cursor if not ignore_cursor else None,
+        cursor_path_override=cursor_path_override,
+    )
+    if retried:
+        processed += retried
+        logger.info("waiting_media_retry: retried=%d", retried)
+
     return processed
 
 
@@ -588,6 +764,53 @@ def run_live_service(
         time.sleep(max(poll_interval, 0.1))
 
 
+# ── R59.1: --check-waiting-media command ─────────────────────────────────
+
+def _check_waiting_media_command(
+    *,
+    runtime_root: Path,
+    chat_records_root: Path | None,
+    fixture_dir: Path,
+    apply_mode: bool,
+) -> None:
+    """Standalone command: check waiting_media index and retry ready items."""
+    from ops_hub.sop.source_watcher import WxOpsSourceWatcher
+
+    # Resolve chat_records_root
+    if chat_records_root is None:
+        wr = WxOpsSourceWatcher()
+        chat_records_root = DEFAULT_CHAT_RECORDS_ROOT
+    chat_records_root = Path(chat_records_root)
+
+    log_path = runtime_root / "live_service.log"
+    logger = _configure_logging(log_path)
+
+    sop_watcher = _get_sop_watcher(fixture_dir)
+    sop_watcher.check_and_reload()
+    plan = sop_watcher.monitoring_plan
+
+    index = _load_waiting_media_index(runtime_root)
+    items = index.get("items", {})
+    waiting = {mid: e for mid, e in items.items() if e.get("status") != "done"}
+    logger.info("waiting_media_check: pending=%d total=%d", len(waiting), len(items))
+
+    retried = _retry_waiting_media(
+        runtime_root=runtime_root,
+        chat_records_root=chat_records_root,
+        monitoring_plan=plan,
+        logger=logger,
+        apply_mode=apply_mode,
+        cursor=None,
+    )
+    result = {
+        "action": "check_waiting_media",
+        "retried": retried,
+        "pending_before": len(waiting),
+        "applied": apply_mode,
+    }
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 # ── R18: --status command ───────────────────────────────────────────────
 def status_command(runtime_root: Path, fixture_dir: Path | None = None) -> None:
     """Print live service status as JSON to stdout."""
@@ -633,6 +856,19 @@ def status_command(runtime_root: Path, fixture_dir: Path | None = None) -> None:
     status["cursor_latest_local_id"] = latest_lid
     status["cursor_updated_at"] = cursor_data.get("updated_at", "")
     status["cursor_bootstrap"] = cursor_data.get("bootstrap_cursor", False)
+
+    # ── R59.1: waiting_media_index section ────────────────────────────
+    wm_index = _load_waiting_media_index(runtime_root)
+    wm_items = wm_index.get("items", {})
+    wm_waiting = sum(1 for e in wm_items.values() if e.get("status") != "done")
+    wm_done = sum(1 for e in wm_items.values() if e.get("status") == "done")
+    status["waiting_media_index"] = {
+        "path": str(_waiting_media_index_path(runtime_root)),
+        "exists": _waiting_media_index_path(runtime_root).exists(),
+        "total": len(wm_items),
+        "waiting": wm_waiting,
+        "done": wm_done,
+    }
 
     # ── R26: sop_runtime section ────────────────────────────────────
     if fixture_dir:
@@ -767,6 +1003,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override cursor file path (default: runtime/cursors/live_service_cursor.json)",
     )
+    # ── R59.1: waiting_media retry ─────────────────────────────────────
+    parser.add_argument(
+        "--check-waiting-media",
+        action="store_true",
+        help="Check waiting_media index for newly available images and retry them, then exit",
+    )
     return parser
 
 
@@ -775,6 +1017,15 @@ def main() -> None:
 
     if args.status:
         status_command(runtime_root=args.runtime_root, fixture_dir=args.fixture_dir)
+        return
+
+    if args.check_waiting_media:
+        _check_waiting_media_command(
+            runtime_root=args.runtime_root,
+            chat_records_root=args.chat_records_root,
+            fixture_dir=args.fixture_dir,
+            apply_mode=args.apply,
+        )
         return
 
     # Resolve chat_records_root: explicit arg > env var > canonical default

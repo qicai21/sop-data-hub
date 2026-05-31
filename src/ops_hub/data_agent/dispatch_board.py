@@ -17,6 +17,7 @@ from ops_hub.data_agent.agent import active_business_sop_project_tokens, parse_b
 STATUS_LABELS = {
     "in_progress": "发运中",
     "active": "发运中",
+    "delivered": "已发完",
     "completed": "已发完",
     "suspended": "暂停",
     "cancelled": "不发运",
@@ -87,7 +88,8 @@ def _fetch_release_batches(db: sqlite3.Connection) -> list[dict[str, Any]]:
         SELECT id, project, ship_name, destination_station, batch_sequence,
                batch_quantity, batch_date, cargo_name, cargo_product_name,
                dispatch_status, dispatch_status_note, source_file_name,
-               source_json, updated_at, plan_id, order_id, contract_no
+               source_json, updated_at, plan_id, order_id, order_identifier,
+               contract_no, actual_wagon_count, confirmed_received_at
         FROM release_batches
         ORDER BY
           project ASC,
@@ -447,6 +449,49 @@ def _derive_status_path(raw_image_path: Any, classified_image_path: Any = "") ->
     return ""
 
 
+def _augment_formal_summary_from_sop_db(
+    business_db_path: Path, formal_summary: dict[str, dict[str, Any]]
+) -> None:
+    """Read wagon_shipments from sop_agent.db and merge counts into formal_summary.
+
+    Populates formal_match_count and car_details for batches that have wagons in
+    wagon_shipments but not in the 95306 DB (e.g., wagons created via
+    departure_text → create_wagon_shipments pipeline).
+    """
+    if not business_db_path.exists():
+        return
+    with sqlite3.connect(business_db_path) as db:
+        db.row_factory = sqlite3.Row
+        if not _table_exists(db, "wagon_shipments"):
+            return
+        rows = db.execute(
+            """
+            SELECT ws.batch_id, ws.car_no, ws.departed_at, ws.delivered_at,
+                   COALESCE(ws.confirmed_received_at, '') as confirmed_received_at
+            FROM wagon_shipments ws
+            ORDER BY ws.batch_id, ws.car_no
+            """
+        ).fetchall()
+    for row in rows:
+        batch_id = str(row["batch_id"] or "")
+        if not batch_id:
+            continue
+        item = formal_summary.setdefault(
+            batch_id,
+            {"formal_match_count": 0, "formal_weight": 0.0, "car_details": []},
+        )
+        # Only count if not already in car_details (dedup by car_no)
+        existing_cars = {d.get("car_no", "") for d in item["car_details"]}
+        car_no = str(row["car_no"] or "")
+        if car_no and car_no not in existing_cars:
+            item["car_details"].append({
+                "car_no": car_no,
+                "time": str(row["departed_at"] or row["delivered_at"] or ""),
+                "inspection_file": "",
+            })
+            item["formal_match_count"] = len(item["car_details"])
+
+
 def _fetch_formal_summary_read_only(rail_db_path: Path) -> dict[str, dict[str, Any]]:
     if not rail_db_path.exists():
         return {}
@@ -550,6 +595,9 @@ def generate_dispatch_board_data(
     formal_summary: dict[str, dict[str, Any]] = {}
     if rail_db_path and rail_db_path.exists():
         formal_summary = _fetch_formal_summary_read_only(rail_db_path)
+
+    # Augment formal_summary with wagon_shipments from sop_agent.db
+    _augment_formal_summary_from_sop_db(business_db_path, formal_summary)
 
     visible_release_ids = {str(row.get("id") or "") for row in release_rows}
     release_by_id = {str(row.get("id") or ""): row for row in release_rows}
@@ -903,9 +951,12 @@ def _build_release_batches_json(
             "planned_quantity": _try_float(row.get("batch_quantity")),
             "batch_date": str(row.get("batch_date") or ""),
             "cargo_name": str(row.get("cargo_product_name") or row.get("cargo_name") or ""),
-            "plan_no": str(row.get("plan_id") or row.get("order_id") or ""),
+            "plan_no": str(row.get("plan_id") or row.get("order_id") or row.get("order_identifier") or ""),
             "contract_no": str(row.get("contract_no") or ""),
             "status": status_label,
+            "dispatch_status": str(row.get("dispatch_status") or ""),
+            "actual_wagon_count": int(row.get("actual_wagon_count") or 0),
+            "confirmed_received_at": str(row.get("confirmed_received_at") or ""),
             "matched_candidate_count": candidates.get("matched_candidate_count", 0),
             "manual_candidate_count": candidates.get("manual_pending_candidate_count", 0),
             "candidate_lots": candidate_lots,

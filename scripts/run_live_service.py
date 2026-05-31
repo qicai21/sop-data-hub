@@ -484,6 +484,24 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
         except Exception as exc:
             logger.warning("message_inbox: upsert failed for %s: %s", event.message_id, exc)
 
+    # R67: text routing — classify text messages and write SOP fields back
+    if write_message_inbox and event.message_type == "text" and event.text:
+        try:
+            from ops_hub.sop.text_router import classify_text_message, update_message_inbox_with_route
+            route = classify_text_message(event)
+            update_message_inbox_with_route(event.message_id, route)
+            logger.info(
+                "text_router: message_id=%s is_sop=%s project=%s flow=%s node=%s status=%s",
+                event.message_id,
+                route.is_sop_msg,
+                route.sop_project_id,
+                route.sop_flow,
+                route.sop_node,
+                route.processing_status,
+            )
+        except Exception as exc:
+            logger.warning("text_router: failed for %s: %s", event.message_id, exc)
+
     # R59: check for waiting_media — skip OCR/VLM/executor but record event and advance cursor
     processing_status = event.metadata.get("processing_status", "ready")
     if processing_status == "waiting_media":

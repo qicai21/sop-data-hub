@@ -156,6 +156,89 @@ def _read_status_state(runtime_root: Path) -> dict[str, str]:
         return json.loads(state_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
+
+# ── R58: persistent cursor ─────────────────────────────────────────────
+CURSOR_FILE_NAME = "live_service_cursor.json"
+CURSOR_VERSION = 1
+
+
+def _cursor_path(runtime_root: Path, cursor_path_override: Path | None = None) -> Path:
+    if cursor_path_override:
+        return cursor_path_override
+    return runtime_root / "cursors" / CURSOR_FILE_NAME
+
+
+def _load_cursor(runtime_root: Path, cursor_path_override: Path | None = None) -> dict[str, Any]:
+    path = _cursor_path(runtime_root, cursor_path_override)
+    if not path.exists():
+        return {"version": CURSOR_VERSION, "sources": {}}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and "sources" in data:
+            return data
+    except (json.JSONDecodeError, OSError):
+        pass
+    return {"version": CURSOR_VERSION, "sources": {}}
+
+
+def _save_cursor(runtime_root: Path, cursor: dict[str, Any], cursor_path_override: Path | None = None) -> Path:
+    path = _cursor_path(runtime_root, cursor_path_override)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    cursor["updated_at"] = _utc_now_iso()
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(cursor, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_path.replace(path)
+    return path
+
+
+def _bootstrap_cursor_to_latest(runtime_root: Path, chat_records_root: Path, cursor_path_override: Path | None = None) -> dict[str, Any]:
+    """Scan all chat records, find the max local_id per source, and build a cursor at the latest position."""
+    from collections import defaultdict
+    max_ids: dict[str, dict[str, Any]] = defaultdict(lambda: {"last_local_id": 0})
+
+    watcher = WxOpsSourceWatcher(chat_records_root=chat_records_root)
+    for event in watcher.iter_message_events():
+        source = str(event.metadata.get("source_file") or "")
+        local_id = event.metadata.get("local_id")
+        if not source or local_id is None:
+            continue
+        lid = int(local_id) if not isinstance(local_id, int) else local_id
+        if lid > max_ids[source].get("last_local_id", 0):
+            max_ids[source] = {
+                "last_local_id": lid,
+                "last_message_id": event.message_id,
+                "last_processed_at": _utc_now_iso(),
+                "group_name": str(event.metadata.get("group_name") or ""),
+            }
+
+    cursor = {
+        "version": CURSOR_VERSION,
+        "bootstrap_cursor": True,
+        "sources": dict(max_ids),
+    }
+    _save_cursor(runtime_root, cursor, cursor_path_override)
+    return cursor
+
+
+def _update_cursor_for_event(runtime_root: Path, cursor: dict[str, Any], event, cursor_path_override: Path | None = None) -> None:
+    """Update cursor after processing an event. Saves atomically."""
+    source = str(event.metadata.get("source_file") or "")
+    local_id = event.metadata.get("local_id")
+    if not source or local_id is None:
+        return
+    lid = int(local_id) if not isinstance(local_id, int) else local_id
+    sources = cursor.setdefault("sources", {})
+    current = sources.get(source, {})
+    if lid > current.get("last_local_id", 0):
+        sources[source] = {
+            "last_local_id": lid,
+            "last_message_id": event.message_id,
+            "last_processed_at": _utc_now_iso(),
+            "group_name": str(event.metadata.get("group_name") or ""),
+        }
+        _save_cursor(runtime_root, cursor, cursor_path_override)
+
+
 def _write_pid_file(runtime_root: Path, pid: int) -> Path:
     """Write the current process PID to runtime/live_service.pid."""
     pid_path = runtime_root / PID_FILE_NAME
@@ -230,9 +313,11 @@ def _validate_startup(
     logger.info("startup validation passed runtime_root=%s chat_records_root=%s", runtime_root, chat_records_root)
 
 
-def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: Path, logger: logging.Logger, apply_mode: bool = False) -> dict[str, Any]:
+def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: Path, logger: logging.Logger, apply_mode: bool = False, cursor: dict[str, Any] | None = None, cursor_path_override: Path | None = None) -> dict[str, Any]:
     event_path = _write_event_snapshot(event, runtime_root=runtime_root)
     _write_status_state(runtime_root, message_id=event.message_id, processed_at=_utc_now_iso())
+    if cursor is not None:
+        _update_cursor_for_event(runtime_root, cursor, event, cursor_path_override)
     match_result = match_message_event(event, monitoring_plan)
     workflow_queue = build_workflow_task_queue(event, event.raw_asset_bundle, match_result)
 
@@ -304,26 +389,74 @@ def run_once(
     sync_start_id: int | None = None,
     sop_watcher: SopWatcher | None = None,
     apply_mode: bool = False,
+    cursor: dict[str, Any] | None = None,
+    ignore_cursor: bool = False,
+    replay_one: str | None = None,
+    replay_from_id: int | None = None,
+    cursor_path_override: Path | None = None,
 ) -> int:
-    watcher = WxOpsSourceWatcher(chat_records_root=chat_records_root)
-    sop_watcher = sop_watcher or _get_sop_watcher(fixture_dir)
-    # Check for SOP changes before this poll
-    sop_changed = sop_watcher.check_and_reload()
+    watcher_args: dict[str, Any] = {}
+    if replay_one:
+        # Find the event by message_id
+        watcher = WxOpsSourceWatcher(chat_records_root=chat_records_root)
+        found = False
+        for event in watcher.iter_message_events():
+            if event.message_id == replay_one:
+                found = True
+                sop_watcher_obj = sop_watcher or _get_sop_watcher(fixture_dir)
+                sop_watcher_obj.check_and_reload()
+                plan = sop_watcher_obj.monitoring_plan
+                process_event_once(
+                    event=event, monitoring_plan=plan, runtime_root=runtime_root,
+                    logger=logger, apply_mode=apply_mode,
+                    cursor=None,  # replay-one does not update cursor by default
+                    cursor_path_override=cursor_path_override,
+                )
+                logger.info("replay-one message_id=%s processed", replay_one)
+                break
+        if not found:
+            logger.warning("replay-one message_id=%s not found", replay_one)
+        return 1 if found else 0
+
+    watcher = WxOpsSourceWatcher(chat_records_root=chat_records_root, **watcher_args)
+    sop_watcher_obj = sop_watcher or _get_sop_watcher(fixture_dir)
+    sop_changed = sop_watcher_obj.check_and_reload()
     if sop_changed:
-        logger.info("sop watcher: plan updated hash=%s projects=%s", sop_watcher.runtime.sop_hash, sop_watcher.runtime.loaded_projects)
-    monitoring_plan = sop_watcher.monitoring_plan
+        logger.info("sop watcher: plan updated hash=%s projects=%s", sop_watcher_obj.runtime.sop_hash, sop_watcher_obj.runtime.loaded_projects)
+    monitoring_plan = sop_watcher_obj.monitoring_plan
     seen = seen if seen is not None else set()
     processed = 0
+
+    # Build skip map from cursor (per-source last_local_id)
+    cursor_sources = (cursor or {}).get("sources", {}) if not ignore_cursor else {}
 
     for event in watcher.iter_message_events():
         local_id = event.metadata.get("local_id")
         if sync_start_id is not None and isinstance(local_id, int) and local_id < sync_start_id:
             continue
+
+        # Cursor filtering: skip if local_id <= cursor's last_local_id for this source
+        if not ignore_cursor and cursor_sources:
+            source = str(event.metadata.get("source_file") or "")
+            source_entry = cursor_sources.get(source, {})
+            last_lid = source_entry.get("last_local_id", 0)
+            lid_int = int(local_id) if not isinstance(local_id, int) else local_id
+            if replay_from_id is not None:
+                if isinstance(local_id, int) and local_id < replay_from_id:
+                    continue
+            elif lid_int <= last_lid:
+                continue
+
         key = _seen_key(event)
         if key in seen:
             continue
         seen.add(key)
-        process_event_once(event=event, monitoring_plan=monitoring_plan, runtime_root=runtime_root, logger=logger, apply_mode=apply_mode)
+        process_event_once(
+            event=event, monitoring_plan=monitoring_plan, runtime_root=runtime_root,
+            logger=logger, apply_mode=apply_mode,
+            cursor=cursor if not ignore_cursor else None,
+            cursor_path_override=cursor_path_override,
+        )
         processed += 1
 
     return processed
@@ -339,14 +472,23 @@ def run_live_service(
     max_iterations: int | None = None,
     sync_start_id: int | None = None,
     apply_mode: bool = False,
+    ignore_cursor: bool = False,
+    reset_cursor_to_latest: bool = False,
+    replay_one: str | None = None,
+    replay_from_id: int | None = None,
+    cursor_path_override: Path | None = None,
 ) -> None:
     log_path = runtime_root / "live_service.log"
     logger = _configure_logging(log_path)
 
     # ── R18: write PID file ─────────────────────────────────────────────
     pid = os.getpid()
-    pid_path = _write_pid_file(runtime_root, pid)
-    logger.info("pid=%s pid_file=%s", pid, pid_path)
+    is_transient = bool(reset_cursor_to_latest or replay_one)
+    if not is_transient:
+        pid_path = _write_pid_file(runtime_root, pid)
+        logger.info("pid=%s pid_file=%s", pid, pid_path)
+    else:
+        logger.info("pid=%s (transient mode, skipping pid file)", pid)
 
     # ── R18: startup validation ─────────────────────────────────────────
     _validate_startup(
@@ -364,6 +506,25 @@ def run_live_service(
     logger.info("dashboard_state_output=%s", runtime_root / "dashboard_state")
     logger.info("log_path=%s", log_path)
     logger.info("fixture_dir=%s", fixture_dir)
+
+    # ── R58: cursor management ──────────────────────────────────────────
+    cursor_path = _cursor_path(runtime_root, cursor_path_override)
+    if reset_cursor_to_latest:
+        logger.info("cursor: resetting to latest (bootstrap)")
+        cursor = _bootstrap_cursor_to_latest(runtime_root, chat_records_root, cursor_path_override)
+        logger.info("cursor: reset complete sources=%d path=%s", len(cursor.get("sources", {})), cursor_path)
+        if once:
+            return
+    elif not cursor_path.exists():
+        logger.info("cursor: not found, bootstrapping to latest at=%s", cursor_path)
+        cursor = _bootstrap_cursor_to_latest(runtime_root, chat_records_root, cursor_path_override)
+        logger.info("cursor: bootstrap_cursor=true sources=%d", len(cursor.get("sources", {})))
+    else:
+        cursor = _load_cursor(runtime_root, cursor_path_override)
+        logger.info("cursor: loaded sources=%d updated_at=%s", len(cursor.get("sources", {})), cursor.get("updated_at", ""))
+
+    if ignore_cursor:
+        logger.info("cursor: IGNORE_CURSOR enabled — will scan all messages")
 
     runtime_root.mkdir(parents=True, exist_ok=True)
     (runtime_root / "events").mkdir(parents=True, exist_ok=True)
@@ -388,6 +549,11 @@ def run_live_service(
             sync_start_id=sync_start_id,
             sop_watcher=sop_watcher,
             apply_mode=apply_mode,
+            cursor=cursor if not ignore_cursor else None,
+            ignore_cursor=ignore_cursor,
+            replay_one=replay_one,
+            replay_from_id=replay_from_id,
+            cursor_path_override=cursor_path_override,
         )
         logger.info("poll complete processed=%s seen=%s", processed, len(seen))
         if once:
@@ -423,6 +589,25 @@ def status_command(runtime_root: Path, fixture_dir: Path | None = None) -> None:
     else:
         status["last_processed_message_id"] = ""
         status["last_processed_time"] = ""
+
+    # ── R58: cursor section ──────────────────────────────────────────
+    cursor_data = _load_cursor(runtime_root)
+    cursor_path = _cursor_path(runtime_root)
+    sources = cursor_data.get("sources", {})
+    latest_msg = ""
+    latest_lid = 0
+    for src_entry in sources.values():
+        lid = src_entry.get("last_local_id", 0)
+        if lid > latest_lid:
+            latest_lid = lid
+            latest_msg = src_entry.get("last_message_id", "")
+    status["cursor_path"] = str(cursor_path)
+    status["cursor_exists"] = cursor_path.exists()
+    status["cursor_source_count"] = len(sources)
+    status["cursor_latest_message_id"] = latest_msg
+    status["cursor_latest_local_id"] = latest_lid
+    status["cursor_updated_at"] = cursor_data.get("updated_at", "")
+    status["cursor_bootstrap"] = cursor_data.get("bootstrap_cursor", False)
 
     # ── R26: sop_runtime section ────────────────────────────────────
     if fixture_dir:
@@ -528,6 +713,35 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Apply mode: write wagon_shipments to DB, generate Excel, upload to factory",
     )
+    # ── R58: cursor and replay control ──────────────────────────────────
+    parser.add_argument(
+        "--ignore-cursor",
+        action="store_true",
+        help="Ignore persistent cursor and scan all messages (do not use in launchd)",
+    )
+    parser.add_argument(
+        "--reset-cursor-to-latest",
+        action="store_true",
+        help="Reset cursor to latest message in each source, then exit (no processing)",
+    )
+    parser.add_argument(
+        "--replay-one",
+        type=str,
+        default=None,
+        help="Replay a single message by message_id (e.g. wx_2206); does not modify cursor",
+    )
+    parser.add_argument(
+        "--replay-from-id",
+        type=int,
+        default=None,
+        help="Replay messages from local_id >= N; cursor is still respected per-source",
+    )
+    parser.add_argument(
+        "--cursor-path",
+        type=Path,
+        default=None,
+        help="Override cursor file path (default: runtime/cursors/live_service_cursor.json)",
+    )
     return parser
 
 
@@ -543,7 +757,6 @@ def main() -> None:
         chat_records_root = args.chat_records_root
     else:
         watcher = WxOpsSourceWatcher()
-        # If watcher resolved to the default (parent-chain-derived path), use our canonical default instead
         chat_records_root = DEFAULT_CHAT_RECORDS_ROOT
 
     run_live_service(
@@ -555,6 +768,11 @@ def main() -> None:
         max_iterations=args.max_iterations,
         sync_start_id=args.sync_start_id,
         apply_mode=args.apply,
+        ignore_cursor=args.ignore_cursor,
+        reset_cursor_to_latest=args.reset_cursor_to_latest,
+        replay_one=args.replay_one,
+        replay_from_id=args.replay_from_id,
+        cursor_path_override=args.cursor_path,
     )
 
 

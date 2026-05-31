@@ -135,6 +135,27 @@ def _get_sop_watcher(fixture_dir: Path) -> SopWatcher:
     return _SOP_WATCHER_CACHE[key]
 
 
+def _write_status_state(runtime_root: Path, *, message_id: str, processed_at: str) -> Path:
+    """Write last-processed tracking to runtime/live_service_state.json."""
+    state_path = runtime_root / "live_service_state.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state = {
+        "last_processed_message_id": str(message_id),
+        "last_processed_time": processed_at,
+    }
+    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    return state_path
+
+
+def _read_status_state(runtime_root: Path) -> dict[str, str]:
+    """Read last-processed state from runtime/live_service_state.json."""
+    state_path = runtime_root / "live_service_state.json"
+    if not state_path.exists():
+        return {}
+    try:
+        return json.loads(state_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
 def _write_pid_file(runtime_root: Path, pid: int) -> Path:
     """Write the current process PID to runtime/live_service.pid."""
     pid_path = runtime_root / PID_FILE_NAME
@@ -211,6 +232,7 @@ def _validate_startup(
 
 def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: Path, logger: logging.Logger, apply_mode: bool = False) -> dict[str, Any]:
     event_path = _write_event_snapshot(event, runtime_root=runtime_root)
+    _write_status_state(runtime_root, message_id=event.message_id, processed_at=_utc_now_iso())
     match_result = match_message_event(event, monitoring_plan)
     workflow_queue = build_workflow_task_queue(event, event.raw_asset_bundle, match_result)
 
@@ -389,8 +411,18 @@ def status_command(runtime_root: Path, fixture_dir: Path | None = None) -> None:
         "alive": alive,
         "runtime_root": str(runtime_root.resolve()),
         "chat_records_root": chat_records_root,
+        "fixture_dir": str(fixture_dir.resolve()) if fixture_dir else None,
         "last_log_line": last_log_line,
     }
+
+    # ── R57: last processed tracking ─────────────────────────────────
+    state = _read_status_state(runtime_root)
+    if state:
+        status["last_processed_message_id"] = state.get("last_processed_message_id", "")
+        status["last_processed_time"] = state.get("last_processed_time", "")
+    else:
+        status["last_processed_message_id"] = ""
+        status["last_processed_time"] = ""
 
     # ── R26: sop_runtime section ────────────────────────────────────
     if fixture_dir:

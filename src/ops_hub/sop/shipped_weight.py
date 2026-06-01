@@ -135,22 +135,34 @@ def _compute_inner(release_batch_id: str, conn: sqlite3.Connection,
     shipped = float(result.get("value") or 0)
     unresolved = int(result.get("unresolved") or 0)
     total_items = int(result.get("total_items") or 0)
-    planned = batch.get("total_planned_quantity") or batch.get("batch_quantity") or 0
+    # 剩余可发运 = 本 lot 放货量 - 本 lot 已发运。
+    # 用 batch_quantity(本 lot 计划)优先;total_planned_quantity 是全船总计划
+    # 不属于本 lot 的剩余口径(否则 lot1 的 remaining 会显示 9000-shipped 而非
+    # 3000-shipped)。
+    planned = batch.get("batch_quantity") or batch.get("total_planned_quantity") or 0
     try:
         planned = float(planned)
     except (ValueError, TypeError):
         planned = 0.0
     remaining = planned - shipped if planned else None
 
+    # actual_wagon_count 与已发车数同步(去重 by car_no)。手动 re-link / 回填
+    # 路径下 create_wagon_shipments hook 不会触发,这里兜底刷新。
+    actual_wagons = conn.execute(
+        "SELECT COUNT(DISTINCT car_no) FROM wagon_shipments WHERE batch_id=?",
+        (release_batch_id,),
+    ).fetchone()[0]
+
     conn.execute(
         "UPDATE release_batches SET "
         "  shipped_weight_tons=?, remaining_weight_tons=?, "
         "  unresolved_wagon_count=?, "
+        "  actual_wagon_count=?, "
         "  shipped_weight_last_computed_at=datetime('now'), "
         "  updated_at=datetime('now') "
         "WHERE id=?",
         (round(shipped, 4), round(remaining, 4) if remaining is not None else None,
-         unresolved, release_batch_id),
+         unresolved, int(actual_wagons or 0), release_batch_id),
     )
 
     if write_basis:

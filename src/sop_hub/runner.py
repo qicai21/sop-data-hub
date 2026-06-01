@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -282,26 +283,112 @@ def _archive_components(payload: dict[str, Any], settings: Settings) -> dict[str
     }
 
 
+def _is_pending_component(value: str) -> bool:
+    """Mark "unknown" / "lotunknown" / "pending_lot" as undetermined fields."""
+    v = str(value or "").strip().lower()
+    return v in {"", "unknown", "lotunknown", "lot_unknown", "pending_lot"}
+
+
+def _record_pending_index(
+    pending_root: Path, month: str, image_name: str, json_name: str,
+    payload: dict, reason: str, parts: dict | None,
+) -> None:
+    """Append/update an entry in _pending/<month>/index.json (atomic JSON file).
+
+    Each entry tells a human what the system thinks about the image:
+        classification, extracted project/dest/ship/lot, missing fields,
+        reason for being in pending. This file is the source of truth for
+        the dashboard's "待落实" panel.
+    """
+    index_path = pending_root / month / "index.json"
+    entries: list[dict] = []
+    if index_path.exists():
+        try:
+            entries = json.loads(index_path.read_text(encoding="utf-8"))
+            if not isinstance(entries, list):
+                entries = []
+        except (json.JSONDecodeError, OSError):
+            entries = []
+
+    biz = payload.get("business_info") if isinstance(payload.get("business_info"), dict) else {}
+    cargo = payload.get("cargo_info") if isinstance(payload.get("cargo_info"), dict) else {}
+    classification = (payload.get("title")
+                      or payload.get("_classification_label")
+                      or payload.get("classified_category")
+                      or "")
+    proj = parts.get("project") if parts else (payload.get("project") or "")
+    dest = parts.get("destination") if parts else ""
+    ship = parts.get("ship") if parts else (biz.get("船名") or biz.get("进口船名") or "")
+    lot = parts.get("lot") if parts else ""
+
+    missing: list[str] = []
+    if _is_pending_component(proj):
+        missing.append("project")
+    if _is_pending_component(dest):
+        missing.append("destination")
+    if _is_pending_component(ship):
+        missing.append("ship")
+    if _is_pending_component(lot):
+        missing.append("lot")
+
+    new_entry = {
+        "image": image_name,
+        "json": json_name,
+        "classification": classification,
+        "extracted_project": "" if _is_pending_component(proj) else proj,
+        "extracted_destination": "" if _is_pending_component(dest) else dest,
+        "extracted_ship": "" if _is_pending_component(ship) else ship,
+        "extracted_lot": "" if _is_pending_component(lot) else lot,
+        "extracted_cargo": cargo.get("货物名称", ""),
+        "missing": missing,
+        "reason": reason,
+        "recorded_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+    # Dedup by image filename — overwrite if same image is reprocessed
+    entries = [e for e in entries if e.get("image") != image_name]
+    entries.append(new_entry)
+
+    tmp = index_path.with_suffix(".json.tmp")
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(index_path)
+
+
 def _move_processed_artifacts(settings: Settings, img: Path, result: "ProcessingResult", *, month_str: str = "") -> None:
     if not isinstance(result.extracted, dict) or not result.extraction_saved_path:
         return
     payload = result.extracted
     date_text = _archive_date_from_payload(payload, month_str=month_str)
     root = Path(settings.classified_output_dir)
+    is_pending = False
+    pending_reason = ""
+    parts: dict | None = None
+
     if payload.get("_agent_sop_authorized") is True:
         parts = _archive_components(payload, settings)
-        # R65.2: use business/projects/ instead of projects/
-        base = root / "business" / "projects" / _sanitize_component(parts["project"]) / _sanitize_component(parts["destination"]) / _sanitize_component(parts["ship"]) / parts["lot"]
-        image_dir = base / "images" / date_text
-        json_dir = base / "json" / date_text
+        # "已认 SOP 但字段缺"也是待落实(避免落到 unknown/unknown/lotunknown/)
+        if (_is_pending_component(parts["destination"])
+                or _is_pending_component(parts["ship"])
+                or _is_pending_component(parts["lot"])):
+            is_pending = True
+            pending_reason = "sop_authorized_but_fields_missing"
+        else:
+            base = root / "business" / "projects" / _sanitize_component(parts["project"]) / _sanitize_component(parts["destination"]) / _sanitize_component(parts["ship"]) / parts["lot"]
+            image_dir = base / "images" / date_text
+            json_dir = base / "json" / date_text
     else:
-        # R65.2: unmatched goes to runtime, not wechat_images/unmatched/
-        from pathlib import Path as _Path
-        repo_root = _Path(__file__).resolve().parents[2]
+        is_pending = True
+        pending_reason = "no_sop_project_match"
+
+    if is_pending:
+        # 统一"待落实"区:命中 SOP 但缺字段,或完全没命中 SOP,都进这里。
+        # 路径在 wechat_images/_pending 而不是 runtime/,人能直接翻到。
         month = _archive_month_from_date(date_text, month_str=month_str)
-        unmatched_base = repo_root / "runtime" / "unmatched"
-        image_dir = unmatched_base / month / "images"
-        json_dir = unmatched_base / month / "json"
+        pending_root = root / "_pending"
+        image_dir = pending_root / month / "images"
+        json_dir = pending_root / month / "json"
+
     image_dir.mkdir(parents=True, exist_ok=True)
     json_dir.mkdir(parents=True, exist_ok=True)
     image_dest = image_dir / img.name
@@ -316,6 +403,18 @@ def _move_processed_artifacts(settings: Settings, img: Path, result: "Processing
     result.saved_path = str(image_dest)
     result.extraction_saved_path = str(json_dest)
     result.project_archive_paths = {"image": result.saved_path, "json": result.extraction_saved_path}
+
+    if is_pending:
+        month = _archive_month_from_date(date_text, month_str=month_str)
+        try:
+            _record_pending_index(
+                root / "_pending", month,
+                image_dest.name, json_dest.name,
+                payload, pending_reason, parts,
+            )
+        except Exception as exc:
+            # index.json 写失败不应阻断主流程
+            logging.warning("[_pending] index.json update failed: %s", exc)
 
 
 def _attach_reconcile_plan_if_possible(settings: Settings, payload: dict[str, Any]) -> None:

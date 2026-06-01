@@ -614,12 +614,23 @@ def generate_dispatch_board_data(
     formal_count = sum(item.get("formal_match_count", 0) for key, item in formal_summary.items() if key in visible_release_ids)
     formal_weight = sum(float(item.get("formal_weight") or 0) for key, item in formal_summary.items() if key in visible_release_ids)
 
+    # ── pending_items (existence-filtered) ──
+    pending_items = _build_pending_items_json(unresolved_work_items, release_by_id)
+
+    # Recount by actually-rendered items so cards match the table below.
+    pending_by_type = {"text_release": 0, "departure_plan": 0,
+                       "inspection_assignment": 0, "inspection_validation": 0}
+    for it in pending_items:
+        t = it.get("type", "")
+        if t in pending_by_type:
+            pending_by_type[t] += 1
+
     summary = {
-        "pending_total": _unresolved_total_count(unresolved_work_items),
-        "pending_text_release": len(unresolved_work_items.get("text_release", [])),
-        "pending_release_plan_images": len(unresolved_work_items.get("departure_plan", [])),
-        "pending_inspection_assignment": len(unresolved_work_items.get("inspection_assignment", [])),
-        "pending_95306_check": len(unresolved_work_items.get("inspection_validation", [])),
+        "pending_total": sum(pending_by_type.values()),
+        "pending_text_release": pending_by_type["text_release"],
+        "pending_release_plan_images": pending_by_type["departure_plan"],
+        "pending_inspection_assignment": pending_by_type["inspection_assignment"],
+        "pending_95306_check": pending_by_type["inspection_validation"],
         "active_release_batches": active_count,
         "release_batch_total": len(release_rows),
         "matched_inspection_candidates": matched_candidate_count,
@@ -628,9 +639,6 @@ def generate_dispatch_board_data(
         "formal_wagon_count": formal_count,
         "formal_weight": formal_weight,
     }
-
-    # ── pending_items ──
-    pending_items = _build_pending_items_json(unresolved_work_items, release_by_id)
 
     # ── release_batches ──
     release_batches_json = _build_release_batches_json(
@@ -884,10 +892,46 @@ _DEFAULT_TEMPLATE = """<!doctype html>
 """
 
 
+_PENDING_DIR_ROOT = Path(
+    "/Users/qicai21/Documents/bussiness-artifacts/wechat_images/_pending"
+)
+
+
+def _resolve_pending_path(p: str) -> str:
+    """If a stored path no longer exists but a same-name file lives under
+    _pending/<YYYY-MM>/{images,json}/, return the new path. Else return the
+    original (caller will filter by existence)."""
+    if not p:
+        return p
+    if Path(p).exists():
+        return p
+    name = Path(p).name
+    if not name:
+        return p
+    # Walk _pending months looking for the filename
+    if not _PENDING_DIR_ROOT.exists():
+        return p
+    subdir = "json" if p.endswith(".json") else "images"
+    for month_dir in _PENDING_DIR_ROOT.iterdir():
+        if not month_dir.is_dir():
+            continue
+        cand = month_dir / subdir / name
+        if cand.exists():
+            return str(cand)
+    return p
+
+
 def _build_pending_items_json(
     items: dict[str, list[dict[str, Any]]],
     release_by_id: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    """Build the dashboard's "待落实" panel.
+
+    Filters out entries whose underlying image AND json files are both
+    missing on disk (after the path is rewritten to _pending/ if it migrated).
+    A pending entry without any physical artifact is not actionable for a
+    human — better hidden than shown as a dead link.
+    """
     result: list[dict[str, Any]] = []
     order = [
         ("text_release", "待匹配文字放货消息"),
@@ -899,6 +943,22 @@ def _build_pending_items_json(
         for item in items.get(key, []):
             candidate_lots = _candidate_lot_text(item.get("candidate_ids") or [], release_by_id)
             audit_id = str(item.get("audit_id") or "")
+
+            # Rewrite to _pending if migrated; then check existence.
+            raw_img = str(item.get("source_file") or "")
+            raw_json = str(item.get("json_path") or "")
+            new_img = _resolve_pending_path(raw_img) if raw_img else ""
+            new_json = _resolve_pending_path(raw_json) if raw_json else ""
+
+            # text_release has no image (source is text content); always keep.
+            if key != "text_release":
+                if (raw_img or raw_json) and not (
+                    (new_img and Path(new_img).exists())
+                    or (new_json and Path(new_json).exists())
+                ):
+                    # Both image and json are gone — skip (dead link).
+                    continue
+
             result.append({
                 "type": key,
                 "pending_id": f"audit:{audit_id}" if audit_id else "",
@@ -914,8 +974,8 @@ def _build_pending_items_json(
                 "status": str(item.get("status") or ""),
                 "reason": str(item.get("reason") or ""),
                 "candidate_lots": candidate_lots,
-                "source_image_path": str(item.get("source_file") or ""),
-                "source_json_path": str(item.get("json_path") or ""),
+                "source_image_path": new_img,
+                "source_json_path": new_json,
                 "recorded_at": str(item.get("created_at") or ""),
             })
     return result

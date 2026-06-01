@@ -17,7 +17,7 @@ dev = ["pytest>=7.0"]
 yaml = ["pyyaml>=6.0"]
 
 [project.scripts]
-ops-hub = "ops_hub.cli:main"
+sop-hub = "sop_hub.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

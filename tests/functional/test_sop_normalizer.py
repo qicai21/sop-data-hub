@@ -8,7 +8,7 @@ The normalizer is intentionally narrow:
 
 from pathlib import Path
 
-from ops_hub.models.project_sop import load_normalized_project_sops, normalize_markdown_sop_fixture
+from sop_hub.models.project_sop import load_normalized_project_sops, normalize_markdown_sop_fixture
 
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "sops"

@@ -1,9 +1,9 @@
 """pipeline 策略与路由单元测试"""
 import pytest
 
-from ops_hub.pipeline.models import CategoryRoute, GroupImageStrategy, ClassificationResult, ProcessResult
-from ops_hub.pipeline.strategy import _default_strategy, load_business_group_strategies
-from ops_hub.pipeline.doc_detail_mode import normalize_doc_detail_mode, should_skip_deep_detail
+from sop_hub.pipeline.models import CategoryRoute, GroupImageStrategy, ClassificationResult, ProcessResult
+from sop_hub.pipeline.strategy import _default_strategy, load_business_group_strategies
+from sop_hub.pipeline.doc_detail_mode import normalize_doc_detail_mode, should_skip_deep_detail
 
 
 class TestGroupImageStrategy:

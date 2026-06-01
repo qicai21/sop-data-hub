@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ops_hub.data_agent.agent import (
+from sop_hub.data_agent.agent import (
     BusinessDataAgent,
     normalize_chinese_date,
     parse_destination_station,

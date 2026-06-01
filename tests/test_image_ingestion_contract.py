@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
-from ops_hub.config import Settings
-from ops_hub.data_agent.agent import BusinessDataAgent
-from ops_hub.runner import process_new_image
+from sop_hub.config import Settings
+from sop_hub.data_agent.agent import BusinessDataAgent
+from sop_hub.runner import process_new_image
 
 
 def _make_image(path: Path) -> Path:
@@ -52,8 +52,8 @@ def test_lobster_group_departure_plan_lands_files_audit_and_test_db(tmp_path: Pa
         "remarks": [{"date": "2026-05-12", "sequence": "lot01", "quantity": 1000, "transport_mode": "铁路", "destination": "朝阳西", "raw_line": "第一次铁路朝阳西1000吨"}],
     }
 
-    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-        "ops_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
+    with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+        "sop_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
     ):
         result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
 
@@ -93,8 +93,8 @@ def test_inspection_slip_creates_candidate_when_release_batch_missing(tmp_path: 
         "footer": {"zhuangche_jieshu": 2, "paiche_jieshu": 0},
     }
 
-    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-        "ops_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
+    with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+        "sop_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
     ):
         result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
 
@@ -131,8 +131,8 @@ def test_non_sop_departure_plan_extracts_json_without_db_landing(tmp_path: Path,
         "remarks": [{"date": "2026-05-12", "sequence": "lot01", "quantity": 1000, "destination": "测试站"}],
     }
 
-    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-        "ops_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
+    with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+        "sop_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
     ):
         result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
 
@@ -184,8 +184,8 @@ def test_sop_inspection_slip_with_release_batch_lands_candidate_row(tmp_path: Pa
         "footer": {"zhuangche_jieshu": 2, "paiche_jieshu": 0},
     }
 
-    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-        "ops_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
+    with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+        "sop_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
     ):
         result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
 
@@ -218,8 +218,8 @@ def test_non_sop_inspection_slip_extracts_json_without_candidate(tmp_path: Path,
         "footer": {"zhuangche_jieshu": 1, "paiche_jieshu": 0},
     }
 
-    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-        "ops_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
+    with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+        "sop_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
     ):
         result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
 
@@ -263,8 +263,8 @@ def test_lobster_sandbox_infers_zt_departure_from_business_content_and_dedupes(t
         ],
     }
 
-    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-        "ops_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
+    with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+        "sop_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
     ):
         first = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
         second = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
@@ -302,8 +302,8 @@ def test_lobster_sandbox_infers_zt_departure_from_fengshou_tuozi_ocr(tmp_path: P
         "remarks": [{"date": "5月10日", "sequence": "第一次下达计划", "plan": "10000吨（铁路 沱子）", "raw_line": "5月10日第一次下达计划：10000吨（铁路 沱子）"}],
     }
 
-    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-        "ops_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
+    with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+        "sop_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
     ):
         result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
 
@@ -346,8 +346,8 @@ def test_data_single_group_malan_departure_enters_zt_sop_and_project_archive(tmp
         ],
     }
 
-    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-        "ops_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
+    with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+        "sop_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
     ):
         result = process_new_image(img, settings, month_str="202605", group_name="数据单发群-GROUP013")
 
@@ -388,8 +388,8 @@ def test_lobster_sandbox_infers_chaoyang_departure_without_project_field(tmp_pat
         "remarks": [{"date": "4月29日", "sequence": "", "raw_line": "4月29日货主通知：火运敞车出港，到站：朝阳西，16345吨"}],
     }
 
-    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-        "ops_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
+    with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+        "sop_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
     ):
         result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
 
@@ -415,8 +415,8 @@ def test_lobster_sandbox_inspection_without_project_routes_known_sop_destination
     def run_case(name: str, rows: list[dict], expected_project: str) -> dict:
         img = _make_image(tmp_path / name)
         payload = {"is_inspection": True, "rows_count": len(rows), "rows": rows, "footer": {"zhuangche_jieshu": len(rows), "paiche_jieshu": 0}}
-        with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-            "ops_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=payload
+        with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+            "sop_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=payload
         ):
             result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
         extracted = json.loads(Path(result.extraction_saved_path).read_text(encoding="utf-8"))
@@ -458,8 +458,8 @@ def test_lobster_sandbox_non_sop_lingdong_kadi_stays_json_only(tmp_path: Path, m
         "rows": [{"seq": 1, "car_no": "1705404", "cargo_info_effective": "凌源东铁矿粉 卡迪", "defect": False}],
         "footer": {"zhuangche_jieshu": 64, "paiche_jieshu": 0},
     }
-    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-        "ops_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
+    with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+        "sop_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
     ):
         result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
 
@@ -501,8 +501,8 @@ def test_xizi_inspection_without_ship_anchor_does_not_false_match_anzihe_release
         "rows": [{"seq": 1, "car_no": "1562661", "cargo_info_effective": "汐子铁矿粉", "defect": False}],
         "footer": {"zhuangche_jieshu": 59, "paiche_jieshu": 0},
     }
-    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-        "ops_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
+    with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+        "sop_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
     ):
         result = process_new_image(img, settings, month_str="202605", group_name="龙虾测试群")
 

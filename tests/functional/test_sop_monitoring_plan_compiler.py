@@ -8,7 +8,7 @@ SOP node mappings.
 
 import pytest
 
-from ops_hub.sop.monitoring_plan_compiler import SopMonitoringPlanCompiler
+from sop_hub.sop.monitoring_plan_compiler import SopMonitoringPlanCompiler
 
 
 def find_watch_item(items, **criteria):

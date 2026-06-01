@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ops_hub.models.project_sop import TrackingTask, load_all_tracking_tasks
+from sop_hub.models.project_sop import TrackingTask, load_all_tracking_tasks
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2].parent
 FIXTURES_DIR = WORKSPACE_ROOT / "business-system-docs" / "test-plan" / "fixtures" / "project_sops"
@@ -189,12 +189,12 @@ def test_agent_consumes_tasks_without_business_rules():
     assert merged_listen_options["file"] is False
 
 
-def test_ops_hub_is_sole_authority():
+def test_sop_hub_is_sole_authority():
     """测试 8: 证明权威来源的切换与职责隔离
        - 证明 tracking_tasks 持有业务语义 (target_node)
        - 证明 monitored_groups 只包含派生物理指令 (listen_options)
     """
-    from ops_hub.config import load_settings
+    from sop_hub.config import load_settings
 
     settings = load_settings()
 

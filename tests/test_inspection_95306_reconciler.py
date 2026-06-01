@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from ops_hub.data_agent.agent import BusinessDataAgent
-from ops_hub.matching.inspection_95306_reconciler import reconcile_inspection_shipments
-from ops_hub.matching.shipment_linkage import _ensure_match_table
+from sop_hub.data_agent.agent import BusinessDataAgent
+from sop_hub.matching.inspection_95306_reconciler import reconcile_inspection_shipments
+from sop_hub.matching.shipment_linkage import _ensure_match_table
 
 
 def test_candidate_status_does_not_write_formal_table_until_commit(tmp_path: Path) -> None:

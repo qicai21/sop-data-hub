@@ -8,16 +8,16 @@ from __future__ import annotations
 
 import json
 
-from ops_hub.sop.sop_task_compiler import (
+from sop_hub.sop.sop_task_compiler import (
     _EXECUTOR_STATUS,
     _action_status,
     compile_project_sop,
 )
-from ops_hub.sop.task_execution_registry import (
+from sop_hub.sop.task_execution_registry import (
     TaskExecutionRegistry,
     create_registry_for_project,
 )
-from ops_hub.sop.monitoring_plan_matcher import MessageEvent
+from sop_hub.sop.monitoring_plan_matcher import MessageEvent
 
 
 # ── Registry-level tests ────────────────────────────────────────────────

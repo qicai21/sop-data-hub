@@ -3,8 +3,8 @@ from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
-from ops_hub.config import Settings
-from ops_hub.runner import process_new_image
+from sop_hub.config import Settings
+from sop_hub.runner import process_new_image
 
 
 def test_contextual_artifacts_and_status_file(tmp_path):
@@ -28,8 +28,8 @@ def test_contextual_artifacts_and_status_file(tmp_path):
         "footer": {"zhuangche_jieshu": 53},
         "_agent_updated_ids": ["batch-1"],
     }
-    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-        "ops_hub.runner._run_extraction", return_value=extracted
+    with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+        "sop_hub.runner._run_extraction", return_value=extracted
     ):
         result = process_new_image(
             image_path,
@@ -71,7 +71,7 @@ def test_sop_artifacts_move_to_project_archive_and_reconcile_plan_is_recorded(tm
 
     import os
     os.environ["BUSINESS_DATA_AGENT_DB_PATH"] = str(agent_db)
-    from ops_hub.data_agent.agent import BusinessDataAgent
+    from sop_hub.data_agent.agent import BusinessDataAgent
 
     release = BusinessDataAgent().ingest_release_batch(
         {
@@ -114,8 +114,8 @@ def test_sop_artifacts_move_to_project_archive_and_reconcile_plan_is_recorded(tm
         ],
         "footer": {"zhuangche_jieshu": 2, "paiche_jieshu": 0},
     }
-    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-        "ops_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
+    with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+        "sop_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
     ):
         result = process_new_image(image_path, settings, month_str="202605", group_name="龙虾测试群")
 
@@ -178,8 +178,8 @@ def test_single_lot_departure_plan_archive_uses_lot01(tmp_path):
             "special_matter": "发运“宝腾海”轮所卸货物，火运出港，到站：朝阳西。",
             "remarks": [{"date": "", "sequence": "", "plan": "", "raw_line": ""}],
         }
-        with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-            "ops_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
+        with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+            "sop_hub.engines.departure_plan.DeparturePlanEngine.process_image", return_value=departure_payload
         ):
             result = process_new_image(image_path, settings, month_str="202605", group_name="数据单发群-GROUP013")
 
@@ -218,7 +218,7 @@ def test_non_sop_artifacts_go_to_unmatched_without_second_extraction(tmp_path):
     def fake_extract(*args, **kwargs):
         calls["count"] += 1
         return {"is_inspection": True, "project": "未登记测试项目", "meta": {"date": "2026-05-12"}, "rows": [], "_agent_sop_authorized": False, "_agent_sop_skip_reason": "non_sop_project_json_only"}
-    with patch("ops_hub.runner._get_classifier", return_value=classifier), patch("ops_hub.runner._run_extraction", side_effect=fake_extract):
+    with patch("sop_hub.runner._get_classifier", return_value=classifier), patch("sop_hub.runner._run_extraction", side_effect=fake_extract):
         result = process_new_image(image_path, settings, month_str="202605", group_name="龙虾测试群")
 
     assert calls["count"] == 1
@@ -234,7 +234,7 @@ def test_ambiguous_inspection_artifacts_move_to_pending_lot_not_candidate_lot(tm
     import os
     import sqlite3
 
-    from ops_hub.data_agent.agent import BusinessDataAgent
+    from sop_hub.data_agent.agent import BusinessDataAgent
 
     img = Image.new("RGB", (32, 32), color="white")
     image_path = tmp_path / "malan_inspection.jpg"
@@ -278,8 +278,8 @@ def test_ambiguous_inspection_artifacts_move_to_pending_lot_not_candidate_lot(tm
             "cargo_summary": {"汐子铁矿粉/马兰探险": ["300001"]},
             "footer": {"zhuangche_jieshu": 1, "paiche_jieshu": 0},
         }
-        with patch("ops_hub.runner._get_classifier", return_value=classifier), patch(
-            "ops_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
+        with patch("sop_hub.runner._get_classifier", return_value=classifier), patch(
+            "sop_hub.engines.inspection_slip.InspectionSlipEngine.process_image", return_value=inspection_payload
         ):
             result = process_new_image(image_path, settings, month_str="202605", group_name="数据单发群-GROUP013")
 

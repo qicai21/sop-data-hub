@@ -24,7 +24,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ops_hub.sop.query_95306_shipments import query_95306_shipments_by_window
+from sop_hub.sop.query_95306_shipments import query_95306_shipments_by_window
 
 
 def main() -> None:

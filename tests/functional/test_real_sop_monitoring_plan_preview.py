@@ -6,13 +6,13 @@ real markdown fixtures -> normalizer -> adapter -> compiler -> wechat monitoring
 
 from pathlib import Path
 
-from ops_hub.sop.monitoring_plan_preview import (
+from sop_hub.sop.monitoring_plan_preview import (
     build_real_sop_monitoring_plan_preview,
     normalized_project_sops_to_compiler_input,
     render_real_sop_monitoring_plan_preview_markdown,
     write_real_sop_monitoring_plan_preview_report,
 )
-from ops_hub.models.project_sop import load_normalized_project_sops
+from sop_hub.models.project_sop import load_normalized_project_sops
 
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "sops"

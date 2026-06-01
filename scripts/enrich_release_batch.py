@@ -20,8 +20,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ops_hub.sop.enrich_release_batch import enrich_release_batch_with_freight_detail
-from ops_hub.sop.freight_detail_extractor import extract_freight_detail
+from sop_hub.sop.enrich_release_batch import enrich_release_batch_with_freight_detail
+from sop_hub.sop.freight_detail_extractor import extract_freight_detail
 
 
 def main() -> None:
@@ -57,7 +57,7 @@ def main() -> None:
     # ── Build FreightDetailCandidate ─────────────────────────────────
     if args.candidate_json:
         data = json.loads(args.candidate_json)
-        from ops_hub.sop.freight_detail_extractor import FreightDetailCandidate
+        from sop_hub.sop.freight_detail_extractor import FreightDetailCandidate
         candidate = FreightDetailCandidate(
             message_id=data.get("message_id", "cli"),
             group_id=data.get("group_id", "cli"),

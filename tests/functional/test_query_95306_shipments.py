@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from ops_hub.sop.shipment_query_window import (
+from sop_hub.sop.shipment_query_window import (
     QueryWindow,
     ShipmentCandidate,
     ShipmentQueryResult,
 )
-from ops_hub.sop.query_95306_shipments import query_95306_shipments_by_window
+from sop_hub.sop.query_95306_shipments import query_95306_shipments_by_window
 
 
 # ── Test helpers ────────────────────────────────────────────────────────

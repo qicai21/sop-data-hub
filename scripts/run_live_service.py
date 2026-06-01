@@ -30,17 +30,17 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from ops_hub.sop.dashboard_payload_queue import build_dashboard_payload_queue, write_dashboard_payload_queue
-from ops_hub.sop.dashboard_state_preview import build_dashboard_state_preview, write_dashboard_state_preview
-from ops_hub.sop.monitoring_plan_matcher import match_message_event
-from ops_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
-from ops_hub.sop.executor_runner import run_departure_executor_chain_if_applicable
-from ops_hub.sop.sop_watcher import SopWatcher
-from ops_hub.sop.source_watcher import WxOpsSourceWatcher
-from ops_hub.sop.workflow_task import build_workflow_task_queue
+from sop_hub.sop.dashboard_payload_queue import build_dashboard_payload_queue, write_dashboard_payload_queue
+from sop_hub.sop.dashboard_state_preview import build_dashboard_state_preview, write_dashboard_state_preview
+from sop_hub.sop.monitoring_plan_matcher import match_message_event
+from sop_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
+from sop_hub.sop.executor_runner import run_departure_executor_chain_if_applicable
+from sop_hub.sop.sop_watcher import SopWatcher
+from sop_hub.sop.source_watcher import WxOpsSourceWatcher
+from sop_hub.sop.workflow_task import build_workflow_task_queue
 
 # ── R52: executor runner (disabled R69 — now driven by workflow_task_db) ─
-# from ops_hub.sop.executor_runner import run_departure_executor_chain_if_applicable
+# from sop_hub.sop.executor_runner import run_departure_executor_chain_if_applicable
 
 # ── R18: canonical paths ────────────────────────────────────────────────
 CANONICAL_REPO_ROOT = Path.home() / "projects" / "repos" / "sop-data-hub"
@@ -97,7 +97,7 @@ def _write_event_snapshot(event, *, runtime_root: Path) -> Path:
 
 def _configure_logging(log_path: Path) -> logging.Logger:
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger("ops_hub.live_service")
+    logger = logging.getLogger("sop_hub.live_service")
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
@@ -390,7 +390,7 @@ def _retry_waiting_media(
     cursor_path_override: Path | None = None,
 ) -> int:
     """Check all waiting_media index entries; re-process those whose images have become available."""
-    from ops_hub.sop.source_watcher import WxOpsSourceWatcher
+    from sop_hub.sop.source_watcher import WxOpsSourceWatcher
 
     index = _load_waiting_media_index(runtime_root)
     items = index.get("items", {})
@@ -547,7 +547,7 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
     # R61: optionally write to message_inbox before any processing
     if write_message_inbox:
         try:
-            from ops_hub.sop.message_inbox import ensure_message_inbox_schema, upsert_message_inbox_event
+            from sop_hub.sop.message_inbox import ensure_message_inbox_schema, upsert_message_inbox_event
             ensure_message_inbox_schema()
             upsert_message_inbox_event(event)
         except Exception as exc:
@@ -556,7 +556,7 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
     # R67: text routing — classify text messages and write SOP fields back
     if write_message_inbox and event.message_type == "text" and event.text:
         try:
-            from ops_hub.sop.text_router import classify_text_message, update_message_inbox_with_route
+            from sop_hub.sop.text_router import classify_text_message, update_message_inbox_with_route
             route = classify_text_message(event)
             update_message_inbox_with_route(event.message_id, route)
             logger.info(
@@ -607,8 +607,8 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
         _image_path = getattr(event.raw_asset_bundle, "raw_image_path", None)
         if _image_path and Path(str(_image_path)).exists():
             try:
-                from ops_hub.config import load_settings
-                from ops_hub.runner import process_new_image
+                from sop_hub.config import load_settings
+                from sop_hub.runner import process_new_image
 
                 _settings = load_settings()
                 # Normalize group_name: strip -GROUPxxx suffix (e.g. "数据单发群-GROUP013" → "数据单发群")
@@ -689,7 +689,7 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
     # ── R69: executor_runner is now driven by workflow_task_db, not direct text matching ──
     # The old R52 direct trigger (run_departure_executor_chain_if_applicable with "四平" gate)
     # is disabled. Tasks are created by workflow_task_store and executed by workflow_task_executor.
-    # To execute pending tasks: python -m ops_hub.sop.workflow_task_executor --run-pending
+    # To execute pending tasks: python -m sop_hub.sop.workflow_task_executor --run-pending
 
     result = {
         "event_path": event_path,
@@ -903,7 +903,7 @@ def run_live_service(
         logger.info("poll complete processed=%s seen=%s", processed, len(seen))
         # Refresh dashboard data file after each poll cycle
         try:
-            from ops_hub.data_agent.dispatch_board import ensure_dispatch_board_data
+            from sop_hub.data_agent.dispatch_board import ensure_dispatch_board_data
             ensure_dispatch_board_data(reason="live_service_poll_cycle", max_age_seconds=30)
         except Exception:
             pass
@@ -924,7 +924,7 @@ def _check_waiting_media_command(
     apply_mode: bool,
 ) -> None:
     """Standalone command: check waiting_media index and retry ready items."""
-    from ops_hub.sop.source_watcher import WxOpsSourceWatcher
+    from sop_hub.sop.source_watcher import WxOpsSourceWatcher
 
     # Resolve chat_records_root
     if chat_records_root is None:
@@ -1032,7 +1032,7 @@ def status_command(runtime_root: Path, fixture_dir: Path | None = None) -> None:
     # ── R34: sop_task_runtime section ───────────────────────────────
     if fixture_dir:
         try:
-            from ops_hub.sop.sop_task_compiler import compile_project_sop
+            from sop_hub.sop.sop_task_compiler import compile_project_sop
 
             task_plans = []
             for yaml_file in sorted(fixture_dir.glob("*.yaml")):

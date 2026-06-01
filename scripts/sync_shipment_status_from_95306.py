@@ -27,7 +27,7 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from ops_hub.sop.shipment_status_sync import ShipmentStatusSync
+from sop_hub.sop.shipment_status_sync import ShipmentStatusSync
 
 DEFAULT_SOP_DB = REPO_ROOT / "data" / "sop_agent.db"
 DEFAULT_RAIL_DB = Path.home() / "projects" / "repos" / "rail95306-sync" / "runtime" / "95306_collection.sqlite3"

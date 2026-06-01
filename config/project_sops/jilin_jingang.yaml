@@ -23,7 +23,7 @@ project_meta:
   source_of_truth: "git"
 
   # ── R76: 已发运重量计算规则(集装箱 / 按箱数) ─────────────────
-  # 用 sop-data-hub/src/ops_hub/calc DSL 表达。集装箱业务约定:每箱 32.3 吨,
+  # 用 sop-data-hub/src/sop_hub/calc DSL 表达。集装箱业务约定:每箱 32.3 吨,
   # 不依赖 marked_weight(它是铁路计费重量)。每节车通常 2 个箱(cargo_count=2)。
   # 业务事实见 Hindsight memory doc: biz-rule-marked-weight-vs-loaded-weight-20260601
   shipped_weight_rule:
@@ -554,7 +554,7 @@ flows:
         type: "wechat_contact"
         name: "郭东北"
         bridge: "wx-ui-bridge"
-        send_via: "src/ops_hub/sop/send_excel.py"
+        send_via: "src/sop_hub/sop/send_excel.py"
   tracking_flow:
     trigger:
       - "dispatched_wagon_exists"

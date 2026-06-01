@@ -10,8 +10,8 @@ No runtime, wx-ops-agent, database, 95306, or report sending.
 
 from pathlib import Path
 
-from ops_hub.sop.monitoring_plan_matcher import MessageEvent, match_message_event
-from ops_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
+from sop_hub.sop.monitoring_plan_matcher import MessageEvent, match_message_event
+from sop_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
 
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "sops"

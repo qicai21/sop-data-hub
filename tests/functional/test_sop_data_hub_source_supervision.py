@@ -9,7 +9,7 @@ Scope:
 
 from pathlib import Path
 
-from ops_hub.sop.source_watcher import WxOpsSourceWatcher
+from sop_hub.sop.source_watcher import WxOpsSourceWatcher
 
 
 WX_OPS_AGENT_ROOT = Path(__file__).resolve().parents[2].parent / "wx-ops-agent"

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from ops_hub.data_agent.agent import BusinessDataAgent
-from ops_hub.data_agent.dispatch_board import render_dispatch_board
+from sop_hub.data_agent.agent import BusinessDataAgent
+from sop_hub.data_agent.dispatch_board import render_dispatch_board
 
 
 def _create_rail_db(path: Path, release_batch_id: str = "batch-1") -> None:
@@ -455,7 +455,7 @@ def test_generate_dispatch_board_data_produces_valid_json_with_required_fields(t
     )
     agent.db.commit()
 
-    from ops_hub.data_agent.dispatch_board import generate_dispatch_board_data
+    from sop_hub.data_agent.dispatch_board import generate_dispatch_board_data
 
     data = generate_dispatch_board_data(business_db_path=tmp_db, rail_db_path=None, refresh_reason="test")
 
@@ -505,7 +505,7 @@ def test_generate_dispatch_board_json_contains_chinese_not_escaped(tmp_db, tmp_p
     )
     agent.db.commit()
 
-    from ops_hub.data_agent.dispatch_board import generate_dispatch_board_data
+    from sop_hub.data_agent.dispatch_board import generate_dispatch_board_data
     import json as json_mod
 
     data = generate_dispatch_board_data(business_db_path=tmp_db, rail_db_path=None)
@@ -537,7 +537,7 @@ def test_refresh_dispatch_board_generates_json_file(tmp_db, tmp_path):
     dashboard_dir = tmp_path / "dashboard"
     dashboard_dir.mkdir()
 
-    from ops_hub.data_agent.dispatch_board import refresh_dispatch_board
+    from sop_hub.data_agent.dispatch_board import refresh_dispatch_board
 
     result = refresh_dispatch_board(
         reason="test_refresh",
@@ -560,7 +560,7 @@ def test_refresh_dispatch_board_generates_json_file(tmp_db, tmp_path):
 
 
 def test_write_dispatch_board_template_writes_template(tmp_path):
-    from ops_hub.data_agent.dispatch_board import write_dispatch_board_template
+    from sop_hub.data_agent.dispatch_board import write_dispatch_board_template
 
     out = tmp_path / "dispatch_board.html"
     result = write_dispatch_board_template(output_path=out)
@@ -629,7 +629,7 @@ def test_dispatch_board_html_template_has_js_rendering():
 
 def test_refresh_dispatch_board_is_importable_and_callable():
     """Verify the unified refresh entry point can be imported and called."""
-    from ops_hub.data_agent.dispatch_board import refresh_dispatch_board
+    from sop_hub.data_agent.dispatch_board import refresh_dispatch_board
     assert callable(refresh_dispatch_board)
 
     import inspect
@@ -658,7 +658,7 @@ def test_ensure_dispatch_board_data_generates_when_missing(tmp_db, tmp_path):
     dashboard_dir = tmp_path / "dashboard"
     dashboard_dir.mkdir()
 
-    from ops_hub.data_agent.dispatch_board import ensure_dispatch_board_data
+    from sop_hub.data_agent.dispatch_board import ensure_dispatch_board_data
 
     json_path = dashboard_dir / "dispatch_board_data.json"
     assert not json_path.exists(), "JSON should not exist before ensure"
@@ -692,7 +692,7 @@ def test_ensure_dispatch_board_data_returns_existing_when_fresh(tmp_db, tmp_path
     dashboard_dir = tmp_path / "dashboard"
     dashboard_dir.mkdir()
 
-    from ops_hub.data_agent.dispatch_board import ensure_dispatch_board_data, refresh_dispatch_board
+    from sop_hub.data_agent.dispatch_board import ensure_dispatch_board_data, refresh_dispatch_board
 
     # First generate
     refresh_dispatch_board(reason="first", business_db_path=tmp_db, rail_db_path=None, dashboard_dir=dashboard_dir)
@@ -712,7 +712,7 @@ def test_ensure_dispatch_board_data_writes_error_json_when_db_missing(tmp_path):
     dashboard_dir = tmp_path / "dashboard"
     dashboard_dir.mkdir()
 
-    from ops_hub.data_agent.dispatch_board import ensure_dispatch_board_data
+    from sop_hub.data_agent.dispatch_board import ensure_dispatch_board_data
 
     missing_db = tmp_path / "nonexistent" / "agent.db"
     result = ensure_dispatch_board_data(
@@ -751,7 +751,7 @@ def test_dispatch_board_cli_help_shows_serve():
     """Verify CLI help shows the serve action."""
     import subprocess, sys
     result = subprocess.run(
-        [sys.executable, "-m", "ops_hub", "dispatch-board", "--help"],
+        [sys.executable, "-m", "sop_hub", "dispatch-board", "--help"],
         capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[1]),
     )
     assert "serve" in (result.stdout + result.stderr)
@@ -774,7 +774,7 @@ def test_pending_items_include_pending_id_and_source_id(tmp_db, tmp_path):
     )
     agent.db.commit()
 
-    from ops_hub.data_agent.dispatch_board import generate_dispatch_board_data
+    from sop_hub.data_agent.dispatch_board import generate_dispatch_board_data
 
     data = generate_dispatch_board_data(business_db_path=tmp_db, rail_db_path=None)
     pending = data["pending_items"]
@@ -828,7 +828,7 @@ def test_mark_pending_item_dropped_updates_db_and_refreshes(tmp_db, tmp_path):
     )
     agent.db.commit()
 
-    from ops_hub.data_agent.dispatch_board import generate_dispatch_board_data, mark_pending_item_dropped
+    from sop_hub.data_agent.dispatch_board import generate_dispatch_board_data, mark_pending_item_dropped
 
     # Before drop: should have 1 pending item
     data_before = generate_dispatch_board_data(business_db_path=tmp_db, rail_db_path=None)
@@ -869,6 +869,6 @@ def test_dispatch_board_html_has_cache_busting():
 
 def test_pending_drop_cli_is_callable():
     """Verify the pending drop CLI function exists and is callable."""
-    from ops_hub.cli import cmd_pending_drop
+    from sop_hub.cli import cmd_pending_drop
     assert callable(cmd_pending_drop)
 

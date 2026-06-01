@@ -55,7 +55,7 @@ docs/architecture/sop_data_hub_runtime_rearchitecture_20260525.md
 reports/sop_data_hub_runtime_plan_branch_20260525.md
 tests/functional/test_sop_monitoring_plan_compiler.py
 tests/functional/test_sop_data_hub_source_supervision.py
-src/ops_hub/sop/monitoring_plan_compiler.py
+src/sop_hub/sop/monitoring_plan_compiler.py
 orders/sop_data_hub_runtime_order_20260525.md
 reports/sop_monitoring_plan_compiler_implementation_20260525.md
 ```
@@ -149,7 +149,7 @@ tests/functional/test_sop_monitoring_plan_compiler.py
 If implementation changes are truly required to satisfy these tests, keep them minimal and limited to:
 
 ```text
-src/ops_hub/sop/monitoring_plan_compiler.py
+src/sop_hub/sop/monitoring_plan_compiler.py
 ```
 
 Do not add new modules.

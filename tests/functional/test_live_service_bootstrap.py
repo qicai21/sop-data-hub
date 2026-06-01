@@ -274,8 +274,8 @@ def test_sync_start_id_filters_lower_seqs(tmp_path):
 
 def test_group013_group_name_substring_match(tmp_path):
     """R19: Watcher dir-name group_id ('数据单发群-GROUP013') substring-matches plan group_name ('数据单发群')."""
-    from ops_hub.sop.monitoring_plan_matcher import _group_plan_for_event, MessageEvent
-    from ops_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
+    from sop_hub.sop.monitoring_plan_matcher import _group_plan_for_event, MessageEvent
+    from sop_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
 
     plan = build_real_sop_monitoring_plan_preview(Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "sops").plan
     wechat_plan = plan.get("wechat_monitoring_plan") or {}
@@ -297,10 +297,10 @@ def test_group013_group_name_substring_match(tmp_path):
 
 def test_source_watcher_default_resolves_correctly():
     """R19: _default_wx_ops_agent_root resolves to ~/projects/repos/wx-ops-agent (parents[4], not .parent)."""
-    from ops_hub.sop.source_watcher import _default_wx_ops_agent_root
+    from sop_hub.sop.source_watcher import _default_wx_ops_agent_root
 
     root = _default_wx_ops_agent_root()
-    # source_watcher.py is at repos/sop-data-hub/src/ops_hub/sop/source_watcher.py
+    # source_watcher.py is at repos/sop-data-hub/src/sop_hub/sop/source_watcher.py
     # parents[4] of that file = repos/
     # So expected = <repo_root>/../../wx-ops-agent
     repo_root = Path(__file__).resolve().parents[2]  # sop-data-hub/
@@ -352,7 +352,7 @@ def test_status_includes_sop_runtime(tmp_path):
 
 def test_sop_watcher_hot_reload_detects_mtime_change(tmp_path):
     """R26: SopWatcher detects mtime changes and returns updated plan."""
-    from ops_hub.sop.sop_watcher import SopWatcher
+    from sop_hub.sop.sop_watcher import SopWatcher
     import time, shutil
 
     sop_dir = tmp_path / "sops"
@@ -501,7 +501,7 @@ def test_sop_change_reflected_in_next_poll_without_restart(tmp_path):
 
 def test_sop_watcher_status_reflects_file_hashes(tmp_path):
     """R26: SopRuntime status dict includes per-file hashes."""
-    from ops_hub.sop.sop_watcher import SopWatcher
+    from sop_hub.sop.sop_watcher import SopWatcher
     import shutil
 
     sop_dir = tmp_path / "sops"

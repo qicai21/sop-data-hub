@@ -96,10 +96,10 @@ Read current branch context:
 orders/sop_real_sop_fixture_topology_order_20260525.md
 reports/workflow_task_queue_r10_20260525.md
 reports/report_intent_r11_20260525.md
-src/ops_hub/sop/workflow_task.py
-src/ops_hub/sop/report_intent.py
-src/ops_hub/sop/monitoring_plan_matcher.py
-src/ops_hub/sop/raw_asset_bundle.py
+src/sop_hub/sop/workflow_task.py
+src/sop_hub/sop/report_intent.py
+src/sop_hub/sop/monitoring_plan_matcher.py
+src/sop_hub/sop/raw_asset_bundle.py
 tests/functional/test_workflow_task_queue.py
 tests/functional/test_report_intent_resolver.py
 ```
@@ -261,9 +261,9 @@ Expected:
 Implementation should be limited to:
 
 ```text
-src/ops_hub/sop/delivery_result.py
-src/ops_hub/sop/workflow_task.py
-src/ops_hub/sop/report_intent.py
+src/sop_hub/sop/delivery_result.py
+src/sop_hub/sop/workflow_task.py
+src/sop_hub/sop/report_intent.py
 ```
 
 Tests:

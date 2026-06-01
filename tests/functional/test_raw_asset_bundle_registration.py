@@ -5,8 +5,8 @@ Scope:
 - no runtime, wx-ops-agent, database, 95306, OCR execution, or report sending
 """
 
-from ops_hub.sop.monitoring_plan_matcher import MessageEvent
-from ops_hub.sop.raw_asset_bundle import bind_raw_asset_bundle, register_raw_asset_bundle
+from sop_hub.sop.monitoring_plan_matcher import MessageEvent
+from sop_hub.sop.raw_asset_bundle import bind_raw_asset_bundle, register_raw_asset_bundle
 
 
 def test_register_image_message_with_raw_image_ocr_and_metadata_paths():

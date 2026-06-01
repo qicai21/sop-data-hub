@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ops_hub.models.project_sop import load_project_sop
-from ops_hub.sop.monitoring_plan_compiler import SopMonitoringPlanCompiler
-from ops_hub.sop.monitoring_plan_matcher import MessageEvent, match_message_event
-from ops_hub.sop.sop_watcher import _project_sop_yaml_to_compiler_input
+from sop_hub.models.project_sop import load_project_sop
+from sop_hub.sop.monitoring_plan_compiler import SopMonitoringPlanCompiler
+from sop_hub.sop.monitoring_plan_matcher import MessageEvent, match_message_event
+from sop_hub.sop.sop_watcher import _project_sop_yaml_to_compiler_input
 
 SOP_PATH = Path(__file__).resolve().parents[2] / "config" / "project_sops" / "jilin_jingang.yaml"
 

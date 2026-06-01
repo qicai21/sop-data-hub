@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from ops_hub.sop.create_wagon_shipments import (
+from sop_hub.sop.create_wagon_shipments import (
     create_wagon_shipments_from_candidates,
 )
-from ops_hub.sop.departure_text_parser import DepartureCandidate
-from ops_hub.sop.shipment_query_window import (
+from sop_hub.sop.departure_text_parser import DepartureCandidate
+from sop_hub.sop.shipment_query_window import (
     QueryWindow,
     ShipmentCandidate,
     ShipmentQueryResult,

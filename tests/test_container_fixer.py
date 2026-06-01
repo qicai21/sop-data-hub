@@ -1,7 +1,7 @@
 """container_fixer 单元测试 — 纯逻辑，无需 VLM 服务"""
 import pytest
 
-from ops_hub.utils.container_fixer import (
+from sop_hub.utils.container_fixer import (
     calculate_check_digit,
     complete_container_number,
     get_iso6346_value,

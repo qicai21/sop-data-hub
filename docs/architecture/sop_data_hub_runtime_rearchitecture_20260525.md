@@ -213,7 +213,7 @@ No runtime service should be implemented in this branch.
 Implement:
 
 ```text
-ops_hub.sop.monitoring_plan_compiler.SopMonitoringPlanCompiler
+sop_hub.sop.monitoring_plan_compiler.SopMonitoringPlanCompiler
 ```
 
 Minimum API:
@@ -245,8 +245,8 @@ rail95306_monitoring_plan -> rail95306-sync observation config / query scope
 Add a runtime daemon:
 
 ```bash
-python -m ops_hub.runtime.daemon --once
-python -m ops_hub.runtime.daemon --loop --interval 30
+python -m sop_hub.runtime.daemon --once
+python -m sop_hub.runtime.daemon --loop --interval 30
 ```
 
 First version should be audit-only:

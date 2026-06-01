@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from ops_hub.classifier.classifier import BusinessGroupImageClassifier, _extract_json_fragment
+from sop_hub.classifier.classifier import BusinessGroupImageClassifier, _extract_json_fragment
 
 
 class TestExtractJsonFragment:
@@ -53,7 +53,7 @@ class TestClassifierCategoryRouting:
         # Should have at least 11 categories + other
         assert len(classifier.category_cards) >= 12
 
-    @patch("ops_hub.classifier.classifier.requests.post")
+    @patch("sop_hub.classifier.classifier.requests.post")
     def test_classify_returns_result(self, mock_post, tmp_path):
         # Create a tiny test image
         from PIL import Image
@@ -79,7 +79,7 @@ class TestClassifierCategoryRouting:
         assert result.category == "检装车通知单"
         assert result.confidence == 0.95
 
-    @patch("ops_hub.classifier.classifier.requests.post")
+    @patch("sop_hub.classifier.classifier.requests.post")
     def test_low_confidence_日现场_falls_to_other(self, mock_post, tmp_path):
         from PIL import Image
         img = Image.new("RGB", (100, 100), color="white")

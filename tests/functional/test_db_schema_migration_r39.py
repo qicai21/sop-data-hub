@@ -294,7 +294,7 @@ class TestShipmentStatusSyncAfterMigration:
         """After migration + sync, wagon_shipments.delivered_at is populated."""
         _run_migration(test_db, dry_run=False)
 
-        from ops_hub.sop.shipment_status_sync import ShipmentStatusSync
+        from sop_hub.sop.shipment_status_sync import ShipmentStatusSync
 
         # Use the real 95306 DB but test DB — only works if rail DB exists
         rail_db = Path.home() / "projects" / "repos" / "rail95306-sync" / "runtime" / "95306_collection.sqlite3"

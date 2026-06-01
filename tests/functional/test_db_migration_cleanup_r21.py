@@ -32,9 +32,9 @@ def test_zombie_db_files_deleted():
 
 def test_legacy_agent_db_auto_migrates_to_sop_agent_db(tmp_path):
     """R21: Legacy agent.db at data/agent.db auto-copies to sop_agent.db on open."""
-    from ops_hub.data_agent.db import _migrate_legacy_db, get_db_path
+    from sop_hub.data_agent.db import _migrate_legacy_db, get_db_path
     import importlib
-    import ops_hub.data_agent.db as db_module
+    import sop_hub.data_agent.db as db_module
 
     legacy = tmp_path / "data" / "agent.db"
     legacy.parent.mkdir(parents=True, exist_ok=True)
@@ -130,7 +130,7 @@ def test_data_dir_exists_and_sop_agent_db_present():
 
 def test_default_db_path_uses_sop_agent_db():
     """R21: get_db_path() default resolves to sop_agent.db, not agent.db."""
-    from ops_hub.data_agent.db import get_db_path
+    from sop_hub.data_agent.db import get_db_path
 
     # Clear any env var override
     old_env = os.environ.pop("BUSINESS_DATA_AGENT_DB_PATH", None)

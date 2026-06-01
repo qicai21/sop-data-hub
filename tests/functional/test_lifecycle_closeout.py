@@ -6,12 +6,12 @@ Scope:
 - no real sending, runtime, wx-ops-agent, DB, OCR execution, or 95306
 """
 
-from ops_hub.sop.delivery_result import closeout_lifecycle
-from ops_hub.sop.monitoring_plan_compiler import SopMonitoringPlanCompiler
-from ops_hub.sop.monitoring_plan_matcher import MessageEvent, match_message_event
-from ops_hub.sop.raw_asset_bundle import register_raw_asset_bundle
-from ops_hub.sop.report_intent import resolve_report_intent
-from ops_hub.sop.workflow_task import WorkflowTask, build_workflow_task_queue
+from sop_hub.sop.delivery_result import closeout_lifecycle
+from sop_hub.sop.monitoring_plan_compiler import SopMonitoringPlanCompiler
+from sop_hub.sop.monitoring_plan_matcher import MessageEvent, match_message_event
+from sop_hub.sop.raw_asset_bundle import register_raw_asset_bundle
+from sop_hub.sop.report_intent import resolve_report_intent
+from sop_hub.sop.workflow_task import WorkflowTask, build_workflow_task_queue
 
 
 def _project_sops() -> list[dict[str, object]]:

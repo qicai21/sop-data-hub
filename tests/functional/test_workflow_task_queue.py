@@ -7,10 +7,10 @@ Scope:
 
 from pathlib import Path
 
-from ops_hub.sop.monitoring_plan_matcher import MessageEvent, match_message_event
-from ops_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
-from ops_hub.sop.raw_asset_bundle import bind_raw_asset_bundle, register_raw_asset_bundle
-from ops_hub.sop.workflow_task import build_workflow_task_queue
+from sop_hub.sop.monitoring_plan_matcher import MessageEvent, match_message_event
+from sop_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
+from sop_hub.sop.raw_asset_bundle import bind_raw_asset_bundle, register_raw_asset_bundle
+from sop_hub.sop.workflow_task import build_workflow_task_queue
 
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "sops"

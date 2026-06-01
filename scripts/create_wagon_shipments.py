@@ -29,9 +29,9 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ops_hub.sop.create_wagon_shipments import create_wagon_shipments_from_candidates
-from ops_hub.sop.departure_text_parser import parse_departure_text
-from ops_hub.sop.query_95306_shipments import query_95306_shipments_by_window
+from sop_hub.sop.create_wagon_shipments import create_wagon_shipments_from_candidates
+from sop_hub.sop.departure_text_parser import parse_departure_text
+from sop_hub.sop.query_95306_shipments import query_95306_shipments_by_window
 
 
 def main() -> None:

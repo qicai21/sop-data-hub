@@ -10,7 +10,7 @@ Usage:
 
 Or use the CLI subcommand:
 
-    python -m ops_hub dispatch-board --reason manual_refresh
+    python -m sop_hub dispatch-board --reason manual_refresh
 """
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    from ops_hub.data_agent.dispatch_board import generate_dispatch_board_data
+    from sop_hub.data_agent.dispatch_board import generate_dispatch_board_data
 
     db_path = Path(args.db)
     rail_path = Path(args.rail_db)

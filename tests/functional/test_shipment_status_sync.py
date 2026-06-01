@@ -6,7 +6,7 @@ Uses temporary in-memory SQLite databases — no real DB dependency.
 import sqlite3
 from pathlib import Path
 
-from ops_hub.sop.shipment_status_sync import ShipmentStatusSync
+from sop_hub.sop.shipment_status_sync import ShipmentStatusSync
 
 SHIP_NAME = "蓝鳍"
 PROJECT_ID = "jilin_jingang_jinzhou"

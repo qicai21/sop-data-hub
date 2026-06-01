@@ -7,11 +7,11 @@ Scope:
 
 from pathlib import Path
 
-from ops_hub.sop.dashboard_intent import DashboardIntent, resolve_dashboard_intent
-from ops_hub.sop.monitoring_plan_matcher import match_message_event
-from ops_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
-from ops_hub.sop.source_watcher import WxOpsSourceWatcher
-from ops_hub.sop.workflow_task import build_workflow_task_queue
+from sop_hub.sop.dashboard_intent import DashboardIntent, resolve_dashboard_intent
+from sop_hub.sop.monitoring_plan_matcher import match_message_event
+from sop_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
+from sop_hub.sop.source_watcher import WxOpsSourceWatcher
+from sop_hub.sop.workflow_task import build_workflow_task_queue
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

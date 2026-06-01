@@ -1,7 +1,7 @@
 """Functional tests for departure text parser — R33."""
 
-from ops_hub.sop.departure_text_parser import DepartureCandidate, parse_departure_text
-from ops_hub.sop.monitoring_plan_matcher import MessageEvent
+from sop_hub.sop.departure_text_parser import DepartureCandidate, parse_departure_text
+from sop_hub.sop.monitoring_plan_matcher import MessageEvent
 
 
 # ── Jilin Jingang / 四平 ─────────────────────────────────────────────

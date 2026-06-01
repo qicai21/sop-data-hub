@@ -3,10 +3,17 @@
 R74: SOP Dashboard Server — 常驻运行观察面板
 提供 API 端点 + 自动刷新 HTML 页面
 """
-import json, os, sqlite3, time, threading
+import json, os, sqlite3, sys, time, threading
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
+
+# R77: self-bootstrap sys.path so `python scripts/r74_dashboard_server.py`
+# works without PYTHONPATH=src (Homebrew Python is PEP 668 externally
+# managed; pip install -e . isn't a friendly workflow here).
+_SRC = Path(__file__).resolve().parents[1] / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
 DB_PATH = "/Users/qicai21/projects/repos/sop-data-hub/data/sop_agent.db"
 REPO = "/Users/qicai21/projects/repos/sop-data-hub"
@@ -277,7 +284,7 @@ def api_refresh():
         sys.path.insert(0, src_path)
     out_path = os.path.join(DASHBOARD_DIR, "dispatch_board_data.json")
     try:
-        from ops_hub.data_agent.dispatch_board import generate_dispatch_board_data
+        from sop_hub.data_agent.dispatch_board import generate_dispatch_board_data
         payload = generate_dispatch_board_data(
             business_db_path=DB_PATH,
             rail_db_path=RAIL95306_DB,

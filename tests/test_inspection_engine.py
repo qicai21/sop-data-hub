@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from ops_hub.engines.inspection_slip import InspectionSlipEngine
+from sop_hub.engines.inspection_slip import InspectionSlipEngine
 
 
 class TestNormalizeRows:

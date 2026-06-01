@@ -11,11 +11,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ops_hub.sop.dashboard_payload_queue import build_dashboard_payload_queue, write_dashboard_payload_queue
-from ops_hub.sop.monitoring_plan_matcher import match_message_event
-from ops_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
-from ops_hub.sop.source_watcher import WxOpsSourceWatcher
-from ops_hub.sop.workflow_task import build_workflow_task_queue
+from sop_hub.sop.dashboard_payload_queue import build_dashboard_payload_queue, write_dashboard_payload_queue
+from sop_hub.sop.monitoring_plan_matcher import match_message_event
+from sop_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
+from sop_hub.sop.source_watcher import WxOpsSourceWatcher
+from sop_hub.sop.workflow_task import build_workflow_task_queue
 
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "sops"

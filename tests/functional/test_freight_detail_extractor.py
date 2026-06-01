@@ -1,10 +1,10 @@
 """Functional tests for freight detail extractor — R40."""
 
-from ops_hub.sop.freight_detail_extractor import (
+from sop_hub.sop.freight_detail_extractor import (
     FreightDetailCandidate,
     extract_freight_detail,
 )
-from ops_hub.sop.monitoring_plan_matcher import MessageEvent
+from sop_hub.sop.monitoring_plan_matcher import MessageEvent
 
 
 # ── Complete extractions ───────────────────────────────────────────────

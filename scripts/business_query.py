@@ -12,10 +12,10 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ops_hub.config import load_settings  # noqa: E402
-from ops_hub.data_agent.agent import BusinessDataAgent  # noqa: E402
-from ops_hub.data_agent.dispatch_board import render_dispatch_board  # noqa: E402
-from ops_hub.matching.inspection_95306_reconciler import reconcile_inspection_shipments  # noqa: E402
+from sop_hub.config import load_settings  # noqa: E402
+from sop_hub.data_agent.agent import BusinessDataAgent  # noqa: E402
+from sop_hub.data_agent.dispatch_board import render_dispatch_board  # noqa: E402
+from sop_hub.matching.inspection_95306_reconciler import reconcile_inspection_shipments  # noqa: E402
 
 
 def _agent_for_business_db(db_path: str | Path | None) -> BusinessDataAgent:

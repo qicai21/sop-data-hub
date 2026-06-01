@@ -16,7 +16,7 @@ batch_key = ship | cargo | dest | remark_date | sequence
 - `remark_date`：优先取 remark 中的日期（`normalize_chinese_date(dt)`），fallback 到 `notice_date`
 - `consignor`/`consignee` **不要放进 batch_key** — OCR 识别不稳定，港口出单时也会打错字
 
-**相关代码**：[agent.py L1286-1307](../src/ops_hub/data_agent/agent.py)
+**相关代码**：[agent.py L1286-1307](../src/sop_hub/data_agent/agent.py)
 
 ---
 

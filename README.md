@@ -40,33 +40,33 @@ pip install -e ".[dev]"
 pytest tests/ -v
 
 # 查看 CLI 帮助
-python -m ops_hub --help
+python -m sop_hub --help
 ```
 
 ### CLI 命令速查
 
 ```bash
 # 分类图片
-python -m ops_hub classify path/to/image.jpg
+python -m sop_hub classify path/to/image.jpg
 
 # 识别检装车通知单
-python -m ops_hub inspect path/to/inspection.jpg -o result.json
+python -m sop_hub inspect path/to/inspection.jpg -o result.json
 
 # 识别出港计划通知单
-python -m ops_hub departure path/to/departure.jpg -o result.json
+python -m sop_hub departure path/to/departure.jpg -o result.json
 
 # 识别手写箱号表
-python -m ops_hub handwritten path/to/handwritten.jpg -o result.json
+python -m sop_hub handwritten path/to/handwritten.jpg -o result.json
 
 # 校验/补全箱号
-python -m ops_hub fix-container 0000016
+python -m sop_hub fix-container 0000016
 
 # 检查 VLM 服务状态
-python -m ops_hub health
+python -m sop_hub health
 
 # 导入放货批次
-python -m ops_hub ingest path/to/release.json
-python -m ops_hub list-batches
+python -m sop_hub ingest path/to/release.json
+python -m sop_hub list-batches
 ```
 
 ---
@@ -305,7 +305,7 @@ pytest tests/test_data_agent.py -v
 
 ```
 sop-data-hub/
-├── src/ops_hub/
+├── src/sop_hub/
 │   ├── classifier/       # 图片分类器 (classifier.py, prompts.py)
 │   ├── engines/          # 识别引擎 (inspection_slip, departure_plan, handwritten_list, materials_stats)
 │   ├── pipeline/         # 处理流水线 (pipeline, processors, strategy, models, doc_detail_mode)

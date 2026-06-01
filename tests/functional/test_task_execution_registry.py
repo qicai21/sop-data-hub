@@ -3,9 +3,9 @@
 import json
 from pathlib import Path
 
-from ops_hub.sop.monitoring_plan_matcher import MessageEvent
-from ops_hub.sop.sop_task_compiler import compile_project_sop
-from ops_hub.sop.task_execution_registry import TaskExecutionRegistry, create_registry_for_project
+from sop_hub.sop.monitoring_plan_matcher import MessageEvent
+from sop_hub.sop.sop_task_compiler import compile_project_sop
+from sop_hub.sop.task_execution_registry import TaskExecutionRegistry, create_registry_for_project
 
 SOP_PATH = Path(__file__).resolve().parents[2] / "config" / "project_sops" / "jilin_jingang.yaml"
 PROJECT_ID = "jilin_jingang_jinzhou"

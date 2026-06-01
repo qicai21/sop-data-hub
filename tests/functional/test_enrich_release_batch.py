@@ -9,11 +9,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from ops_hub.sop.enrich_release_batch import (
+from sop_hub.sop.enrich_release_batch import (
     ReleaseBatchEnrichmentResult,
     enrich_release_batch_with_freight_detail,
 )
-from ops_hub.sop.freight_detail_extractor import (
+from sop_hub.sop.freight_detail_extractor import (
     FreightDetailCandidate,
     extract_freight_detail,
 )

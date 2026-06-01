@@ -19,7 +19,7 @@ project_meta:
     do_not_merge_release_batches: true
 
   # ── R76: 已发运重量计算规则(整车 / 按车型) ─────────────────
-  # 用 sop-data-hub/src/ops_hub/calc DSL 表达。整车业务下,先取 95306
+  # 用 sop-data-hub/src/sop_hub/calc DSL 表达。整车业务下,先取 95306
   # marked_weight(标载);为空则按 car_model 前缀回退;最终查表得"实装重量"。
   # 业务事实见 Hindsight memory doc: biz-rule-marked-weight-vs-loaded-weight-20260601
   shipped_weight_rule:

@@ -4,8 +4,8 @@ import json
 import sqlite3
 from pathlib import Path
 
-from ops_hub.matching.release_match_spec import build_match_spec, row_matches_spec
-from ops_hub.matching.shipment_linkage import link_release_batch_to_inspection
+from sop_hub.matching.release_match_spec import build_match_spec, row_matches_spec
+from sop_hub.matching.shipment_linkage import link_release_batch_to_inspection
 
 
 def test_match_spec_expands_chaoyang_steel_alias_patterns() -> None:

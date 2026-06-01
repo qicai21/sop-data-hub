@@ -5,8 +5,8 @@ Scope:
 - no runtime, wx-ops-agent, database, delivery, or report sending
 """
 
-from ops_hub.sop.report_intent import resolve_report_intent
-from ops_hub.sop.workflow_task import WorkflowTask
+from sop_hub.sop.report_intent import resolve_report_intent
+from sop_hub.sop.workflow_task import WorkflowTask
 
 
 def _task(project_id: str, target_sop_node: str = "node-1") -> WorkflowTask:

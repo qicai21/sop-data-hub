@@ -594,6 +594,7 @@ def generate_dispatch_board_data(
         unresolved_work_items = _fetch_unresolved_work_items(business_db)
         candidates = _fetch_inspection_candidates_json(business_db)
         reconcile_plans = _fetch_reconcile_plans_json(business_db)
+        extraction_paths_by_stem = _fetch_extraction_json_paths_by_stem(business_db)
 
     formal_summary: dict[str, dict[str, Any]] = {}
     if rail_db_path and rail_db_path.exists():
@@ -633,7 +634,8 @@ def generate_dispatch_board_data(
 
     # ── release_batches ──
     release_batches_json = _build_release_batches_json(
-        release_rows, release_by_id, candidate_summary, formal_summary, audit_paths
+        release_rows, release_by_id, candidate_summary, formal_summary, audit_paths,
+        extraction_paths_by_stem=extraction_paths_by_stem,
     )
 
     return {
@@ -919,14 +921,47 @@ def _build_pending_items_json(
     return result
 
 
+def _fetch_extraction_json_paths_by_stem(db: sqlite3.Connection) -> dict[str, str]:
+    """Return { source_stem: full extraction_json_path } from message_inbox.
+
+    Used to link release_batches.source_file_name back to the archived JSON
+    that the VLM extraction produced. Old release_batches didn't store the
+    archive json path; this lookup bridges them.
+    """
+    if not _table_exists(db, "message_inbox"):
+        return {}
+    rows = db.execute(
+        "SELECT extraction_json_path FROM message_inbox "
+        "WHERE COALESCE(extraction_json_path,'')<>''"
+    ).fetchall()
+    out: dict[str, str] = {}
+    for row in rows:
+        path = str(row[0] or "")
+        if not path:
+            continue
+        stem = Path(path).stem  # e.g. "69_daf..._result"
+        # Also index by the bare hash part (strip leading "<seq>_" and trailing "_result")
+        out[stem] = path
+        bare = stem
+        if bare.endswith("_result"):
+            bare = bare[:-len("_result")]
+        if "_" in bare:
+            bare_no_seq = bare.split("_", 1)[1]
+            out[bare_no_seq] = path
+        out[bare] = path
+    return out
+
+
 def _build_release_batches_json(
     release_rows: list[dict[str, Any]],
     release_by_id: dict[str, dict[str, Any]],
     candidate_summary: dict[str, dict[str, Any]],
     formal_summary: dict[str, dict[str, Any]],
     audit_paths: dict[str, dict[str, str]],
+    extraction_paths_by_stem: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
+    extraction_paths_by_stem = extraction_paths_by_stem or {}
     for row in release_rows:
         release_id = str(row.get("id") or "")
         candidates = candidate_summary.get(release_id, _empty_candidate_summary())
@@ -949,6 +984,21 @@ def _build_release_batches_json(
         shipped_w = _try_float(row.get("shipped_weight_tons")) or 0.0
         remaining_w = _try_float(row.get("remaining_weight_tons"))
         unresolved_n = int(row.get("unresolved_wagon_count") or 0)
+
+        # Resolve extraction_json_path by source_file_name stem via message_inbox.
+        # release_batches.source_file_name = "<seq>_<sha>_result.json" usually;
+        # message_inbox.extraction_json_path points to the archived JSON.
+        ext_json_path = "待补充"
+        sfn = str(row.get("source_file_name") or "")
+        if sfn and extraction_paths_by_stem:
+            stem = Path(sfn).stem
+            cand = extraction_paths_by_stem.get(stem)
+            if not cand and "_" in stem:
+                bare = stem.split("_", 1)[1]
+                cand = extraction_paths_by_stem.get(bare)
+            if cand and Path(cand).exists():
+                ext_json_path = cand
+
         result.append({
             "release_batch_id": release_id,
             "project": str(row.get("project") or ""),
@@ -969,16 +1019,14 @@ def _build_release_batches_json(
             "manual_candidate_count": candidates.get("manual_pending_candidate_count", 0),
             "candidate_lots": candidate_lots,
             "formal_wagon_count": formal.get("formal_match_count", 0),
-            "formal_weight": formal.get("formal_weight", 0.0),
-            "remaining_quantity": remaining if remaining != "待计算" else None,
-            # R76 — yaml-rule-driven shipped/remaining weight
+            "candidate_lots_count": candidates.get("manual_pending_candidate_count", 0),
+            # R76 — yaml-rule-driven shipped/remaining weight(替代老 formal_weight + remaining_quantity 两列)
             "shipped_weight_tons": shipped_w,
             "remaining_weight_tons": remaining_w,
             "unresolved_wagon_count": unresolved_n,
             "shipped_weight_last_computed_at": str(row.get("shipped_weight_last_computed_at") or ""),
             "source_image_path": paths.get("image_path", "待补充"),
-            "source_json_path": paths.get("json_path", "待补充"),
-            "state_file_path": paths.get("status_path", "待补充"),
+            "extraction_json_path": ext_json_path,
             "formal_shipments": formal_shipments,
         })
     return result
@@ -1487,7 +1535,7 @@ th {{ background: #e0f2fe; position: sticky; top: 0; }}
 def _release_table_html(rows_html: str) -> str:
     return f"""<table>
 <thead><tr>
-<th>项目</th><th>船名</th><th>到站</th><th>lot</th><th>计划吨数</th><th>批次日期</th><th>货物品名</th><th>计划号/订单号</th><th>合同号</th><th>当前状态</th><th>已匹配候选数</th><th>待人工候选数</th><th>候选 lot 列表</th><th>已正式入库车数</th><th>已正式入库重量</th><th>已发运车辆明细</th><th>理论剩余货量/车数</th><th>已发运重量(SOP)</th><th>剩余可发运(SOP)</th><th>未核车数</th><th>原始图片</th><th>JSON</th><th>状态文件</th>
+<th>项目</th><th>船名</th><th>到站</th><th>lot</th><th>计划吨数</th><th>批次日期</th><th>货物品名</th><th>计划号/订单号</th><th>合同号</th><th>当前状态</th><th>已匹配候选数</th><th>待人工候选数</th><th>候选 lot 列表</th><th>已正式入库车数</th><th>已发运车辆明细</th><th>已发运重量(吨)</th><th>剩余可发运(吨)</th><th>待人工核重车数</th><th>原始图片</th><th>JSON</th>
 </tr></thead>
 <tbody>
 {rows_html}
@@ -1530,15 +1578,12 @@ def _release_table_rows_html(
             f"<td>{candidates.get('manual_pending_candidate_count', 0)}</td>"
             f"<td>{_h(candidate_lots)}</td>"
             f"<td>{formal.get('formal_match_count', 0)}</td>"
-            f"<td>{_fmt_num(formal.get('formal_weight'))}</td>"
             f"<td>{car_details_html}</td>"
-            f"<td>{_h(remaining)}</td>"
             f"<td>{_fmt_num(row.get('shipped_weight_tons'))}</td>"
             f"<td>{_fmt_num(row.get('remaining_weight_tons'))}</td>"
             f"<td>{int(row.get('unresolved_wagon_count') or 0)}</td>"
             f"<td class='path'>{_file_link(paths['image_path'], '打开图片')}</td>"
-            f"<td class='path'>{_file_link(paths['json_path'], '打开JSON')}</td>"
-            f"<td class='path'>{_file_link(paths['status_path'], '打开状态')}</td>"
+            f"<td class='path'>{_file_link(paths.get('json_path') or '待补充', '打开JSON')}</td>"
             "</tr>"
         )
     if not row_html:

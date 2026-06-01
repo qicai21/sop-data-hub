@@ -86,10 +86,13 @@ def _fetch_release_batches(db: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = db.execute(
         """
         SELECT id, project, ship_name, destination_station, batch_sequence,
-               batch_quantity, batch_date, cargo_name, cargo_product_name,
+               batch_quantity, total_planned_quantity, batch_date,
+               cargo_name, cargo_product_name,
                dispatch_status, dispatch_status_note, source_file_name,
                source_json, updated_at, plan_id, order_id, order_identifier,
-               contract_no, actual_wagon_count, confirmed_received_at
+               contract_no, actual_wagon_count, confirmed_received_at,
+               shipped_weight_tons, remaining_weight_tons, unresolved_wagon_count,
+               shipped_weight_last_computed_at
         FROM release_batches
         ORDER BY
           project ASC,
@@ -942,6 +945,10 @@ def _build_release_batches_json(
             }
             for item in car_details
         ]
+        # R76: shipped_weight tracking — computed by yaml shipped_weight_rule
+        shipped_w = _try_float(row.get("shipped_weight_tons")) or 0.0
+        remaining_w = _try_float(row.get("remaining_weight_tons"))
+        unresolved_n = int(row.get("unresolved_wagon_count") or 0)
         result.append({
             "release_batch_id": release_id,
             "project": str(row.get("project") or ""),
@@ -949,6 +956,7 @@ def _build_release_batches_json(
             "destination_station": str(row.get("destination_station") or ""),
             "batch_sequence": str(row.get("batch_sequence") or ""),
             "planned_quantity": _try_float(row.get("batch_quantity")),
+            "total_planned_quantity": _try_float(row.get("total_planned_quantity")),
             "batch_date": str(row.get("batch_date") or ""),
             "cargo_name": str(row.get("cargo_product_name") or row.get("cargo_name") or ""),
             "plan_no": str(row.get("plan_id") or row.get("order_id") or row.get("order_identifier") or ""),
@@ -963,6 +971,11 @@ def _build_release_batches_json(
             "formal_wagon_count": formal.get("formal_match_count", 0),
             "formal_weight": formal.get("formal_weight", 0.0),
             "remaining_quantity": remaining if remaining != "待计算" else None,
+            # R76 — yaml-rule-driven shipped/remaining weight
+            "shipped_weight_tons": shipped_w,
+            "remaining_weight_tons": remaining_w,
+            "unresolved_wagon_count": unresolved_n,
+            "shipped_weight_last_computed_at": str(row.get("shipped_weight_last_computed_at") or ""),
             "source_image_path": paths.get("image_path", "待补充"),
             "source_json_path": paths.get("json_path", "待补充"),
             "state_file_path": paths.get("status_path", "待补充"),
@@ -1474,7 +1487,7 @@ th {{ background: #e0f2fe; position: sticky; top: 0; }}
 def _release_table_html(rows_html: str) -> str:
     return f"""<table>
 <thead><tr>
-<th>项目</th><th>船名</th><th>到站</th><th>lot</th><th>计划吨数</th><th>批次日期</th><th>货物品名</th><th>计划号/订单号</th><th>合同号</th><th>当前状态</th><th>已匹配候选数</th><th>待人工候选数</th><th>候选 lot 列表</th><th>已正式入库车数</th><th>已正式入库重量</th><th>已发运车辆明细</th><th>理论剩余货量/车数</th><th>原始图片</th><th>JSON</th><th>状态文件</th>
+<th>项目</th><th>船名</th><th>到站</th><th>lot</th><th>计划吨数</th><th>批次日期</th><th>货物品名</th><th>计划号/订单号</th><th>合同号</th><th>当前状态</th><th>已匹配候选数</th><th>待人工候选数</th><th>候选 lot 列表</th><th>已正式入库车数</th><th>已正式入库重量</th><th>已发运车辆明细</th><th>理论剩余货量/车数</th><th>已发运重量(SOP)</th><th>剩余可发运(SOP)</th><th>未核车数</th><th>原始图片</th><th>JSON</th><th>状态文件</th>
 </tr></thead>
 <tbody>
 {rows_html}
@@ -1520,6 +1533,9 @@ def _release_table_rows_html(
             f"<td>{_fmt_num(formal.get('formal_weight'))}</td>"
             f"<td>{car_details_html}</td>"
             f"<td>{_h(remaining)}</td>"
+            f"<td>{_fmt_num(row.get('shipped_weight_tons'))}</td>"
+            f"<td>{_fmt_num(row.get('remaining_weight_tons'))}</td>"
+            f"<td>{int(row.get('unresolved_wagon_count') or 0)}</td>"
             f"<td class='path'>{_file_link(paths['image_path'], '打开图片')}</td>"
             f"<td class='path'>{_file_link(paths['json_path'], '打开JSON')}</td>"
             f"<td class='path'>{_file_link(paths['status_path'], '打开状态')}</td>"

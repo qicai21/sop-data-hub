@@ -89,6 +89,10 @@ var BATCH_COLUMNS = [
   {key: 'formal_weight',        label: '已正式入库重量'},
   {key: 'formal_shipments',     label: '已发运车辆明细', special: 'carDetail'},
   {key: 'remaining_quantity',   label: '理论剩余货量/车数'},
+  // R76 — yaml shipped_weight_rule
+  {key: 'shipped_weight_tons',    label: '已发运重量(SOP)', special: 'num'},
+  {key: 'remaining_weight_tons',  label: '剩余可发运(SOP)', special: 'num'},
+  {key: 'unresolved_wagon_count', label: '未核车数'},
   {key: 'source_image_path',    label: '原始图片', special: 'fileLink'},
   {key: 'source_json_path',     label: 'JSON', special: 'fileLink'},
   {key: 'state_file_path',      label: '状态文件', special: 'fileLink'}
@@ -126,6 +130,7 @@ function fileLink(path, label) {
 function td(val, special) {
   if (special === 'carDetail') return renderCarDetails(val);
   if (special === 'fileLink') return '<td class="path">' + fileLink(String(val||''), '打开') + '</td>';
+  if (special === 'num') return '<td>' + fmtNum(val) + '</td>';
   return '<td>' + esc(val) + '</td>';
 }
 

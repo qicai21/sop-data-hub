@@ -13,7 +13,7 @@ from ops_hub.data_agent.db import open_db
 from ops_hub.data_agent.json_utils import read_json, to_searchable_text, write_json
 
 WORKSPACE_DOCS_DIR = Path(__file__).resolve().parents[3] / "doc"
-PROJECT_SOPS_DIR = Path(__file__).resolve().parents[4] / "business-system-docs" / "test-plan" / "fixtures" / "project_sops"
+PROJECT_SOPS_DIR = Path(__file__).resolve().parents[3] / "config" / "project_sops"
 NON_BUSINESS_SOP_HINTS = ("archive", "sandbox", "归档", "沙箱")
 ZHONGTANG_PROJECT = "中唐特钢铁矿发运项目"
 WUGANG_PROJECT = "乌兰浩特钢铁铁矿发运项目"
@@ -53,8 +53,22 @@ def active_business_sop_project_tokens() -> set[str]:
             haystack = f"{sop.project_id} {sop.project_name}"
             if any(hint in haystack for hint in NON_BUSINESS_SOP_HINTS):
                 continue
+            # A SOP is considered a business SOP if it routes any message into
+            # a release/inspection/departure flow node. Keep this list aligned
+            # with the node names used in config/project_sops/*.yaml. New node
+            # names should be added here (rare) or — better — yaml authors
+            # should pick names already in the set.
+            _BUSINESS_NODE_NAMES = {
+                "create_release_batch",        # legacy
+                "process_inspection_slip",     # legacy
+                "process_business_image",      # legacy
+                "detect_release_notice",       # current — release flow trigger
+                "detect_inspection_notice",    # current — inspection flow trigger
+                "detect_departure_message",    # current — departure flow trigger
+                "enrich_release_batch",        # current — freight detail enrichment
+            }
             has_release_flow = any(
-                route.target_node in {"create_release_batch", "process_inspection_slip", "process_business_image"}
+                route.target_node in _BUSINESS_NODE_NAMES
                 for task in sop.listening_tasks
                 for route in task.routing
             )

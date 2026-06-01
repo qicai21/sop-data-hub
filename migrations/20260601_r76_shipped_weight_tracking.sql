@@ -1,0 +1,40 @@
+-- R76: shipped_weight tracking + 95306 field sync
+-- Date: 2026-06-01
+-- Purpose:
+--   1. Sync 11 critical fields from 95306 shipments into wagon_shipments,
+--      so the project DB carries enough to compute shipped weight without
+--      a JOIN at every read.  ydid becomes the stable 95306 anchor.
+--   2. Add per-wagon computed loading weight + audit basis.
+--   3. Add release_batches running totals: shipped_weight / remaining_weight
+--      and an unresolved counter for wagons that fail the calc rule.
+--
+-- Idempotent: skips columns that already exist.
+-- Safe: ALTER TABLE ADD COLUMN only.
+
+-- ── 1. wagon_shipments: sync from 95306 + per-wagon weight ──────────────
+-- Table: wagon_shipments
+-- Add:
+--   ydid TEXT                         -- 95306 stable PK; sop side did not carry it
+--   czydid TEXT                       -- 操作运单号 (parent waybill for multi-leg)
+--   transport_mode_code TEXT          -- "1" 整车 / "3" 集装箱
+--   transport_mode_name TEXT          -- 中文名,人读
+--   marked_weight REAL                -- 95306 标载 (billing weight, not actual load)
+--   cargo_count INTEGER               -- 件数/箱数 (集装箱: 通常 2)
+--   container_numbers_json TEXT       -- 已解析的箱号 JSON 数组 (优于 split "/" )
+--   accepted_at TEXT                  -- 受理时间
+--   loaded_at TEXT                    -- 装车时间 (yyyymmdd)
+--   latest_stage_key TEXT             -- 状态机 key (ticketed/loaded/departed/...)
+--   latest_stage_name TEXT            -- 中文状态名
+--   latest_event_time TEXT            -- 最新事件时间
+--   computed_loading_weight REAL      -- 经 SOP shipped_weight_rule 算出的本车重量
+--   weight_rule_basis TEXT            -- 算重量的依据 (策略名 + 关键参数, 审计用)
+
+-- ── 2. release_batches: aggregate weight tracking ──────────────────────
+-- Table: release_batches
+-- Add:
+--   shipped_weight_tons REAL DEFAULT 0       -- 已发运重量 (sum of resolved wagons)
+--   remaining_weight_tons REAL               -- 剩余可发运 (total_planned - shipped)
+--   unresolved_wagon_count INTEGER DEFAULT 0 -- 算不出重量的车数 (pending_review)
+--   shipped_weight_last_computed_at TEXT     -- 上次重算时间
+
+-- Actual ALTERs in scripts/run_r76_migration.py.

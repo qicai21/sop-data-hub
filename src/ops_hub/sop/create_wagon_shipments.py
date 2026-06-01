@@ -511,6 +511,23 @@ def create_wagon_shipments_from_candidates(
                 pass  # already exists — idempotent
         sop_conn.commit()
 
+        # ── 12. R76: recompute shipped_weight for the release_batch ──
+        # SOP-driven via yaml shipped_weight_rule. Failures are surfaced as
+        # warnings, never block ingestion. Uses its own connection so it sees
+        # the just-committed rows.
+        if not dry_run and result.inserted_count > 0:
+            try:
+                from ops_hub.sop.shipped_weight import compute_for_release_batch
+                sw = compute_for_release_batch(release_batch_id, db_path=str(sop_path))
+                if sw.get("ok"):
+                    result.release_batch_progress["shipped_weight_tons"] = sw["shipped_weight_tons"]
+                    result.release_batch_progress["remaining_weight_tons"] = sw.get("remaining_weight_tons")
+                    result.release_batch_progress["unresolved_wagon_count"] = sw["unresolved_wagon_count"]
+                else:
+                    result.warnings.append(f"shipped_weight: {sw.get('error')}")
+            except Exception as exc:
+                result.warnings.append(f"shipped_weight exception: {exc!r}")
+
         return result
 
     finally:

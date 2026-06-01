@@ -18,6 +18,30 @@ project_meta:
     same_ship_can_have_multiple_release_batches: true
     do_not_merge_release_batches: true
 
+  # ── R76: 已发运重量计算规则(整车 / 按车型) ─────────────────
+  # 用 sop-data-hub/src/ops_hub/calc DSL 表达。整车业务下,先取 95306
+  # marked_weight(标载);为空则按 car_model 前缀回退;最终查表得"实装重量"。
+  # 业务事实见 Hindsight memory doc: biz-rule-marked-weight-vs-loaded-weight-20260601
+  shipped_weight_rule:
+    per_wagon:
+      op: lookup
+      key:
+        op: coalesce
+        choices:
+          - op: to_float
+            value: $wagon.marked_weight
+          - op: lookup_by_prefix
+            value: $wagon.car_model
+            prefix_map:
+              C70: 70
+              C64: 61
+              C62: 60
+      table:
+        "70": 69.5
+        "61": 63
+        "60": 62
+      on_miss: pending_review
+
 groups:
   primary:
     group_id: "GROUP001"

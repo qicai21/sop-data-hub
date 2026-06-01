@@ -1,18 +1,22 @@
-"""Generate Jilin Jingang departure Excel from SOP template — R54.
+"""Generate per-project departure Excel from yaml output_templates — R54 + R78.
 
-Reads:
-  - config/project_sops/jilin_jingang.yaml (output_templates.departure_excel)
+完全 yaml 驱动,**不挂任何项目硬编码**:
+  - yaml 给列定义(header/key/可选 constant/可选 cell_format)
+  - yaml 给文件名 pattern(支持 {car_count} {yyyymmdd} 占位)
+  - yaml 给样式 hints(标题合并范围、边框范围)
+
+读:
+  - config/project_sops/<找 project_id 对应的 yaml>
   - data/sop_agent.db (release_batches + wagon_shipments)
 
-Output:
-  - Excel (.xlsx) following the 14-column SOP template
-  - Field sources from release_batch (not hardcoded)
-  - Dual container in same row: container_no_1 / container_no_2
-  - Proper formatting: merged title, borders, alignment
+写:
+  - 默认 output/excel/<yaml 命名 pattern>.xlsx
+
+新项目接入:在 yaml 加 output_templates.departure_excel 即可,不改这里。
 
 Usage:
   PYTHONPATH=src python -m sop_hub.sop.departure_excel \\
-    --release-batch-id <ID> [--output-dir <dir>]
+    --release-batch-id <ID> [--project chaoyang_steel] [--output-dir <dir>]
 """
 
 from __future__ import annotations
@@ -21,32 +25,35 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import openpyxl
 import yaml
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-# ── Canonical paths ──────────────────────────────────────────────────────
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SOP_YAML = REPO_ROOT / "config" / "project_sops" / "jilin_jingang.yaml"
+SOP_DIR = REPO_ROOT / "config" / "project_sops"
 SOP_DB = REPO_ROOT / "data" / "sop_agent.db"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "output" / "excel"
 
 
 # ── Data models ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class ExcelColumn:
     key: str
     header: str
-    fill_rule: str
+    fill_rule: str = ""
+    constant: str | None = None          # yaml: constant: "高桥镇"
+    cell_format: str | None = None       # yaml: cell_format: "@" (text)
 
 
 @dataclass
 class ExcelTemplate:
+    project_id: str
     business_name: str
     sheet_name: str
     file_pattern: str
@@ -56,23 +63,11 @@ class ExcelTemplate:
     title_merge: bool
     header_row: int
     data_start_row: int
+    bordered_range: str       # e.g. "A1:E{last_data_row}" or "A2:N{last_data_row}"
+    border_style: str
+    apply_border_header: bool
+    apply_border_body: bool
     columns: list[ExcelColumn]
-
-
-@dataclass
-class ExcelRow:
-    """One row in the departure Excel."""
-
-    wagon_no: str
-    container_no: str  # container_no_1 (first container)
-    container_no_2: str  # second container (empty if single)
-    cargo_name: str
-    ship_name: str
-    contract_no: str
-    order_identifier: str
-    loading_date: str  # YYYY-MM-DD
-    entry_date: str  # YYYY-MM-DD
-    seq: int = 0
 
 
 @dataclass
@@ -85,179 +80,214 @@ class ExcelGenerationResult:
     error: str = ""
 
 
-# ── Template loading ─────────────────────────────────────────────────────
+# ── Template loading: yaml-driven ───────────────────────────────────────
 
-def _load_template() -> ExcelTemplate:
-    raw = yaml.safe_load(SOP_YAML.read_text())
-    tpl = raw["flows"]["departure_flow"]["output_templates"]["departure_excel"]
 
-    columns = [
-        ExcelColumn(key=c["key"], header=c["header"], fill_rule=c.get("fill_rule", ""))
-        for c in tpl["columns"]
-    ]
+def _find_yaml_for_project(project_id: str) -> Path:
+    for yp in sorted(SOP_DIR.glob("*.yaml")):
+        try:
+            d = yaml.safe_load(yp.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        if d.get("project_id") == project_id:
+            return yp
+    raise FileNotFoundError(f"no yaml found with project_id={project_id!r} in {SOP_DIR}")
 
-    wb = tpl["workbook"]
+
+_FLOW_KEYS_TO_PROBE = ("departure_flow", "report_delivery_flow")
+
+
+def _load_template(project_id: str) -> ExcelTemplate:
+    yp = _find_yaml_for_project(project_id)
+    raw = yaml.safe_load(yp.read_text(encoding="utf-8")) or {}
+    flows = raw.get("flows", {}) or {}
+
+    tpl_dict: dict | None = None
+    for flow_key in _FLOW_KEYS_TO_PROBE:
+        candidate = ((flows.get(flow_key) or {}).get("output_templates") or {}).get("departure_excel")
+        if candidate:
+            tpl_dict = candidate
+            break
+    if tpl_dict is None:
+        raise ValueError(
+            f"no flows.<departure|report_delivery>_flow.output_templates.departure_excel in {yp}"
+        )
+
+    cols: list[ExcelColumn] = []
+    for c in tpl_dict.get("columns") or []:
+        cols.append(ExcelColumn(
+            key=c["key"],
+            header=c["header"],
+            fill_rule=c.get("fill_rule", ""),
+            constant=str(c["constant"]) if c.get("constant") is not None else None,
+            cell_format=c.get("cell_format"),
+        ))
+
+    wb = tpl_dict.get("workbook") or {}
+    title = wb.get("title") or {}
+    fnaming = tpl_dict.get("file_naming") or {}
+    style = (tpl_dict.get("style") or {}).get("table") or {}
+
     return ExcelTemplate(
-        business_name=tpl.get("business_name", ""),
-        sheet_name=wb["sheet_name"],
-        file_pattern=tpl["file_naming"]["pattern"],
-        title_text=wb["title"]["text"],
-        title_row=wb["title"]["row"],
-        title_range=wb["title"]["range"],
-        title_merge=wb["title"].get("merge_cells", False),
-        header_row=wb["header_row"],
-        data_start_row=wb["data_start_row"],
-        columns=columns,
+        project_id=project_id,
+        business_name=tpl_dict.get("business_name", ""),
+        sheet_name=wb.get("sheet_name", "Sheet1"),
+        file_pattern=fnaming.get("pattern", f"{project_id}_{{car_count}}cars.xlsx"),
+        title_text=title.get("text", ""),
+        title_row=int(title.get("row", 0)) if title else 0,
+        title_range=title.get("range", ""),
+        title_merge=bool(title.get("merge_cells", False)),
+        header_row=int(wb.get("header_row", 1)),
+        data_start_row=int(wb.get("data_start_row", 2)),
+        bordered_range=style.get("bordered_range", ""),
+        border_style=style.get("border_style", "thin"),
+        apply_border_header=bool(style.get("apply_border_to_header", True)),
+        apply_border_body=bool(style.get("apply_border_to_body", True)),
+        columns=cols,
     )
 
 
-# ── Data extraction ──────────────────────────────────────────────────────
+# ── Row extraction ──────────────────────────────────────────────────────
+
 
 def _extract_rows(
-    release_batch_id: str, *, db_path: str | Path | None = None
-) -> tuple[list[ExcelRow], dict[str, str], str]:
-    """Extract Excel rows from DB.
+    release_batch_id: str, *, db_path: str | Path | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
+    """Return (per-wagon dicts, batch_context dict, error_str).
 
-    Returns (rows, batch_info, error).
+    Wagon dict keys (lowercased, columns will lookup by key):
+      seq, wagon_no, container_no, container_no_2, cargo_name,
+      ship_name, contract_no, order_identifier, loading_date,
+      entry_date, ticketed_at_raw, marked_weight, car_model,
+      origin_name, destination_name
+    Batch context (computed once, shared across rows):
+      release_batch_id, project, ship_name, cargo_name,
+      destination_station, contract_no, order_identifier,
+      ticketed_at_compact_text (earliest car's ticketed_at as yyyymmddhhmm00 string)
     """
-    sop_path = Path(db_path) if db_path else SOP_DB
-    if not sop_path.exists():
-        return [], {}, f"DB not found: {sop_path}"
-
-    conn = sqlite3.connect(str(sop_path))
+    db = Path(db_path) if db_path else SOP_DB
+    conn = sqlite3.connect(str(db))
     conn.row_factory = sqlite3.Row
     try:
-        batch = conn.execute(
-            "SELECT * FROM release_batches WHERE id = ?", (release_batch_id,)
+        rb = conn.execute(
+            "SELECT * FROM release_batches WHERE id=?", (release_batch_id,)
         ).fetchone()
-        if batch is None:
+        if rb is None:
             return [], {}, f"release_batch not found: {release_batch_id}"
+        batch = dict(rb)
 
-        b = dict(batch)
-        batch_info = {
-            "cargo_name": b.get("cargo_name_detail") or b.get("cargo_name") or "",
-            "ship_name": b.get("ship_name") or "",
-            "contract_no": b.get("contract_no") or "",
-            "order_identifier": b.get("order_identifier") or "",
-        }
-
-        wagons = conn.execute(
-            "SELECT * FROM wagon_shipments WHERE batch_id = ? ORDER BY car_no",
+        ws_rows = conn.execute(
+            "SELECT * FROM wagon_shipments WHERE batch_id=? "
+            "ORDER BY ticketed_at ASC, car_no ASC",
             (release_batch_id,),
         ).fetchall()
 
-        if not wagons:
-            return [], batch_info, (
-                f"no wagon_shipments for release_batch {release_batch_id}"
-            )
-
-        rows: list[ExcelRow] = []
-        for w in wagons:
-            wd = dict(w)
-            wagon_no = wd.get("car_no", "")
-            container_raw = wd.get("container_no", "")
-            ticketed = wd.get("ticketed_at") or ""
-
-            # 双箱: 同车拆在一个 row 的两列
-            containers = (
-                [c.strip() for c in container_raw.split("/") if c.strip()]
-                if container_raw
-                else [""]
-            )
-            container_1 = containers[0] if len(containers) >= 1 else ""
-            container_2 = containers[1] if len(containers) >= 2 else ""
-
-            # loading_date: YYYY-MM-DD
-            loading_str = ticketed[:10] if ticketed else ""
-            # entry_date: loading_date + 30 days
-            entry_str = ""
-            if loading_str:
+        # batch context
+        # 全列共用一个"货票时间":取最早 ticketed_at,format yyyymmddhhmm00
+        ticketed_compact = ""
+        for r in ws_rows:
+            ta = (r["ticketed_at"] or "").strip()
+            if ta:
                 try:
-                    ld = datetime.strptime(loading_str, "%Y-%m-%d")
-                    entry_str = (ld + timedelta(days=30)).strftime("%Y-%m-%d")
+                    dt = datetime.fromisoformat(ta.replace(" ", "T"))
+                    ticketed_compact = dt.strftime("%Y%m%d%H%M") + "00"
+                except ValueError:
+                    # fallback: 取数字部分
+                    digits = "".join(ch for ch in ta if ch.isdigit())[:12]
+                    if len(digits) >= 12:
+                        ticketed_compact = digits + "00"
+                break
+
+        ctx = {
+            "release_batch_id": release_batch_id,
+            "project": batch.get("project", ""),
+            "ship_name": batch.get("ship_name", ""),
+            "cargo_name": batch.get("cargo_product_name") or batch.get("cargo_name", ""),
+            "destination_station": batch.get("destination_station", ""),
+            "contract_no": batch.get("contract_no", ""),
+            "order_identifier": batch.get("order_identifier", ""),
+            "ticketed_at_compact_text": ticketed_compact,
+        }
+
+        rows: list[dict[str, Any]] = []
+        for i, r in enumerate(ws_rows, start=1):
+            containers = (r["container_no"] or "").split("/") if r["container_no"] else []
+            cont1 = containers[0].strip() if len(containers) >= 1 else ""
+            cont2 = containers[1].strip() if len(containers) >= 2 else ""
+            ta = (r["ticketed_at"] or "").strip()
+            loading_date = ta[:10] if ta and len(ta) >= 10 else ""
+            entry_date = ""
+            if loading_date:
+                try:
+                    d = datetime.strptime(loading_date, "%Y-%m-%d")
+                    entry_date = (d + timedelta(days=30)).strftime("%Y-%m-%d")
                 except ValueError:
                     pass
-
-            rows.append(
-                ExcelRow(
-                    wagon_no=wagon_no,
-                    container_no=container_1,
-                    container_no_2=container_2,
-                    cargo_name=batch_info["cargo_name"],
-                    ship_name=batch_info["ship_name"],
-                    contract_no=batch_info["contract_no"],
-                    order_identifier=batch_info["order_identifier"],
-                    loading_date=loading_str,
-                    entry_date=entry_str,
-                    seq=0,  # filled later
-                )
-            )
-
-        # Assign sequential numbers
-        for i, r in enumerate(rows, 1):
-            r.seq = i
-
+            rows.append({
+                "seq": i,
+                "wagon_no": r["car_no"] or "",
+                "container_no": cont1,
+                "container_no_2": cont2,
+                "cargo_name": ctx["cargo_name"],
+                "ship_name": ctx["ship_name"],
+                "contract_no": ctx["contract_no"],
+                "order_identifier": ctx["order_identifier"],
+                "loading_date": loading_date,
+                "entry_date": entry_date,
+                "ticketed_at_raw": ta,
+                "marked_weight": r["marked_weight"] or "",
+                "car_model": r["car_model"] or "",
+                "origin_name": r["origin_name"] or "",
+                "destination_name": r["destination_name"] or "",
+                # batch-level constants/derived also injected for direct lookup
+                "ticketed_at_compact_text": ctx["ticketed_at_compact_text"],
+                "release_batch_id": release_batch_id,
+            })
+        return rows, ctx, ""
     finally:
         conn.close()
 
-    return rows, batch_info, ""
+
+# ── Column value resolution ─────────────────────────────────────────────
 
 
-# ── Column value resolution ──────────────────────────────────────────────
+def _resolve_cell_value(col: ExcelColumn, row: dict[str, Any]) -> Any:
+    """Resolve a cell value for one column on one row.
 
-def _resolve_cell_value(col: ExcelColumn, row: ExcelRow) -> str:
-    """Resolve a cell value per the column fill_rule."""
-    key = col.key
-
-    if key == "seq":
-        return str(row.seq)
-    elif key == "supplier_name":
-        return ""
-    elif key == "detail_account":
-        return ""
-    elif key == "wagon_no":
-        return row.wagon_no
-    elif key == "container_no_1":
-        return row.container_no
-    elif key == "container_no_2":
-        return row.container_no_2
-    elif key == "loading_date":
-        return row.loading_date
-    elif key == "entry_date":
-        return row.entry_date
-    elif key == "cargo_name":
-        return row.cargo_name
-    elif key == "ship_name":
-        return row.ship_name
-    elif key == "entry_contract_no":
-        return row.contract_no
-    elif key == "order_identifier":
-        return row.order_identifier
-    elif key == "original_departure_weight":
-        return ""
-    elif key == "shipment_count_type":
-        return "单次"
-
-    return ""
+    Priority:
+      1. yaml `constant` (literal, no lookup)
+      2. row dict[key] lookup
+      3. empty string
+    """
+    if col.constant is not None:
+        return col.constant
+    if col.key == "seq":
+        return row.get("seq", "")
+    return row.get(col.key, "")
 
 
-# ── Excel generation ─────────────────────────────────────────────────────
+# ── Styling ──────────────────────────────────────────────────────────────
 
-def _apply_excel_style(ws, tpl: ExcelTemplate, last_data_row: int):
-    """Apply formatting: merged title, borders, column widths."""
+
+def _apply_style(ws, tpl: ExcelTemplate, last_data_row: int):
+    """Apply yaml-driven styling."""
     thin_border = Border(
-        left=Side(style="thin"),
-        right=Side(style="thin"),
-        top=Side(style="thin"),
-        bottom=Side(style="thin"),
+        left=Side(style=tpl.border_style),
+        right=Side(style=tpl.border_style),
+        top=Side(style=tpl.border_style),
+        bottom=Side(style=tpl.border_style),
     )
 
-    # Title row
-    if tpl.title_merge and tpl.title_range:
-        ws.merge_cells(tpl.title_range)
-    title_cell = ws.cell(row=tpl.title_row, column=1)
-    title_cell.alignment = Alignment(horizontal="center", vertical="center")
-    title_cell.font = Font(bold=True, size=14)
+    # Optional title
+    if tpl.title_text and tpl.title_row > 0:
+        if tpl.title_merge and tpl.title_range:
+            try:
+                ws.merge_cells(tpl.title_range)
+            except Exception:
+                pass
+        title_cell = ws.cell(row=tpl.title_row, column=1)
+        title_cell.alignment = Alignment(horizontal="center", vertical="center")
+        title_cell.font = Font(bold=True, size=14)
 
     # Header row
     header_fill = PatternFill(start_color="D9EAD3", end_color="D9EAD3", fill_type="solid")
@@ -267,40 +297,86 @@ def _apply_excel_style(ws, tpl: ExcelTemplate, last_data_row: int):
         cell.fill = header_fill
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center", vertical="center")
-        cell.border = thin_border
+        if tpl.apply_border_header:
+            cell.border = thin_border
 
-    # Data rows: borders
-    for row_idx in range(tpl.data_start_row, last_data_row + 1):
-        for col_idx in range(1, len(tpl.columns) + 1):
-            ws.cell(row=row_idx, column=col_idx).border = thin_border
+    # Data rows borders
+    if tpl.apply_border_body:
+        for row_idx in range(tpl.data_start_row, last_data_row + 1):
+            for col_idx in range(1, len(tpl.columns) + 1):
+                ws.cell(row=row_idx, column=col_idx).border = thin_border
 
     # Column widths
     for col_idx in range(1, len(tpl.columns) + 1):
         ws.column_dimensions[get_column_letter(col_idx)].width = 18
 
 
+def _resolve_filename(pattern: str, *, car_count: int, batch_id: str) -> str:
+    today = datetime.now().strftime("%Y%m%d")
+    return (pattern
+            .replace("{car_count}", str(car_count))
+            .replace("{yyyymmdd}", today)
+            .replace("{batch_id}", batch_id)
+            .replace("{date}", today))
+
+
+# ── Public entry ─────────────────────────────────────────────────────────
+
+
 def generate_departure_excel(
     release_batch_id: str,
     *,
+    project_id: str | None = None,
     output_dir: str | Path | None = None,
     db_path: str | Path | None = None,
 ) -> ExcelGenerationResult:
-    """Generate departure Excel for one release_batch."""
-    tpl = _load_template()
+    """Generate departure Excel for one release_batch.
+
+    project_id 可以不传 — 自动从 release_batches.project 读。
+    """
+    # Resolve project_id from DB if not given
+    if not project_id:
+        db = Path(db_path) if db_path else SOP_DB
+        conn = sqlite3.connect(str(db))
+        try:
+            r = conn.execute(
+                "SELECT project FROM release_batches WHERE id=?", (release_batch_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        if not r or not r[0]:
+            return ExcelGenerationResult(
+                release_batch_id=release_batch_id,
+                error="cannot resolve project_id from release_batch",
+            )
+        project_id = str(r[0]).strip()
+
+    try:
+        tpl = _load_template(project_id)
+    except (FileNotFoundError, ValueError, KeyError) as exc:
+        return ExcelGenerationResult(
+            release_batch_id=release_batch_id,
+            error=f"template load failed: {exc}",
+        )
+
     out_dir = Path(output_dir) if output_dir else DEFAULT_OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    rows, batch_info, error = _extract_rows(release_batch_id, db_path=db_path)
-    if error:
+    rows, ctx, err = _extract_rows(release_batch_id, db_path=db_path)
+    if err:
+        return ExcelGenerationResult(release_batch_id=release_batch_id, error=err)
+    if not rows:
         return ExcelGenerationResult(
-            release_batch_id=release_batch_id, error=error
+            release_batch_id=release_batch_id,
+            error="no wagon_shipments found for this release_batch",
         )
 
     row_count = len(rows)
-    wagon_count = len(set(r.wagon_no for r in rows))
+    wagon_count = len({r["wagon_no"] for r in rows if r["wagon_no"]})
 
-    today = datetime.now().strftime("%Y%m%d")
-    filename = f"吉林金钢_发运数据_{today}_{wagon_count}车.xlsx"
+    filename = _resolve_filename(tpl.file_pattern,
+                                  car_count=wagon_count,
+                                  batch_id=release_batch_id[:8])
     filepath = out_dir / filename
 
     wb = openpyxl.Workbook()
@@ -308,8 +384,9 @@ def generate_departure_excel(
     assert ws is not None
     ws.title = tpl.sheet_name
 
-    # Title
-    ws.cell(row=tpl.title_row, column=1, value=tpl.title_text)
+    # Title (optional)
+    if tpl.title_text and tpl.title_row > 0:
+        ws.cell(row=tpl.title_row, column=1, value=tpl.title_text)
 
     # Headers
     for col_idx, col in enumerate(tpl.columns, 1):
@@ -320,10 +397,13 @@ def generate_departure_excel(
         excel_row = tpl.data_start_row + row_offset
         for col_idx, col in enumerate(tpl.columns, 1):
             value = _resolve_cell_value(col, row)
-            ws.cell(row=excel_row, column=col_idx, value=value)
+            cell = ws.cell(row=excel_row, column=col_idx, value=value)
+            # 文本格式列(如朝阳的"货票时间")强制文本,避免 Excel 科学计数
+            if col.cell_format:
+                cell.number_format = col.cell_format
 
     last_data_row = tpl.data_start_row + row_count - 1
-    _apply_excel_style(ws, tpl, last_data_row)
+    _apply_style(ws, tpl, last_data_row)
 
     wb.save(str(filepath))
 
@@ -338,37 +418,30 @@ def generate_departure_excel(
 
 # ── CLI ──────────────────────────────────────────────────────────────────
 
-def _build_cli_parser():
+
+def main() -> int:
     import argparse
+    p = argparse.ArgumentParser(description="Generate departure Excel from yaml SOP.")
+    p.add_argument("--release-batch-id", required=True)
+    p.add_argument("--project", default=None, help="optional; default reads from DB")
+    p.add_argument("--output-dir", type=Path, default=None)
+    p.add_argument("--db-path", type=Path, default=None)
+    args = p.parse_args()
 
-    parser = argparse.ArgumentParser(
-        description="Generate Jilin Jingang departure Excel from SOP template."
-    )
-    parser.add_argument("--release-batch-id", required=True)
-    parser.add_argument("--output-dir", type=Path, default=None)
-    parser.add_argument("--db-path", type=Path, default=None)
-    return parser
-
-
-def main():
-    parser = _build_cli_parser()
-    args = parser.parse_args()
-
-    result = generate_departure_excel(
+    r = generate_departure_excel(
         args.release_batch_id,
+        project_id=args.project,
         output_dir=args.output_dir,
         db_path=args.db_path,
     )
-
-    if result.error:
-        print(f"ERROR: {result.error}")
+    if r.error:
+        print(f"ERROR: {r.error}")
         return 1
-
-    print(f"Excel generated: {result.output_path}")
-    print(f"  Wagons: {result.wagon_count}")
-    print(f"  Rows: {result.row_count}")
+    print(f"Excel: {r.output_path}")
+    print(f"  rows: {r.row_count}  wagons: {r.wagon_count}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    import sys
+    sys.exit(main())

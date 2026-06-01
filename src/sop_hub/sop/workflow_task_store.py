@@ -82,6 +82,13 @@ def _resolve_task_type(project_id: str, flow_name: str, node_name: str) -> str:
             and flow_name == "departure_flow"
             and node_name == "detect_departure_message"):
         return "jljg_departure_text_chain"
+    # R78: 朝阳检装车通知单 → 全链(match → 95306 → wagons → excel)
+    if (project_id == "chaoyang_steel"
+            and flow_name in ("inspection_flow", "inspection_notice_flow")
+            and node_name in ("detect_inspection_notice",
+                              "extract_inspection_notice",
+                              "extract_inspection_notice_fields")):
+        return "chaoyang_inspection_chain"
     if node_name == "create_release_batch":
         return "create_release_batch"
     if project_id == "chaoyang_steel" and flow_name == "dispatch_flow":

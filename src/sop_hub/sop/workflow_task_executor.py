@@ -152,6 +152,10 @@ def run_workflow_task(
             result = _execute_jljg_departure(input_json, message_id, db_path=db, apply=apply, task_id=task_id)
         elif task_type == "create_release_batch":
             result = _execute_create_release_batch(input_json, message_id, db_path=db, apply=apply)
+        elif task_type == "chaoyang_inspection_chain":
+            result = _execute_chaoyang_inspection_chain(
+                input_json, message_id, db_path=db, apply=apply, task_id=task_id,
+            )
         elif task_type in ("chaoyang_dispatch_context", "freight_detail_enrichment", "generic_sop_task"):
             result = {
                 "action": "skipped",
@@ -389,6 +393,251 @@ def _execute_create_release_batch(
             "ship_names": list({r.ship_name for r in records if r.ship_name}),
         },
     }
+
+
+def _execute_chaoyang_inspection_chain(
+    input_json: dict[str, Any],
+    message_id: str,
+    *,
+    db_path: Path,
+    apply: bool,
+    task_id: int = 0,
+) -> dict[str, Any]:
+    """R78: 朝阳钢铁检装车通知单 → release_batch 匹配 → wagon_shipments → excel。
+
+    步骤(只在 apply=True 时真正写库 / 写文件):
+      1. 从 message_inbox_id 找 inspection_ingestion_candidates 行
+      2. 读 VLM 抽取 JSON,过滤 defect=true 的车(排车不入 wagon_shipments)
+      3. 用 match_release_batch_by_ship_destination_cargo 找匹配 batch
+      4. 单一匹配 → 用车号逐一查 95306 拿 ydid,直插 wagon_shipments
+      5. 多匹配/无匹配 → 把 candidate 标 pending_review,task 退 skipped
+      6. wagon_shipments 写完 → 重算 shipped_weight + 生成 excel
+      7. 返回 output_json 含:matched_batch_id / wagon_count / excel_path
+    """
+    import hashlib
+    import json as _json
+    import sqlite3 as _sql
+    from sop_hub.sop.match_release_batch import (
+        match_release_batch_by_ship_destination_cargo,
+    )
+
+    RAIL_DB = Path(
+        "/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3"
+    )
+
+    inbox_id = input_json.get("message_inbox_id")
+    if not inbox_id:
+        return {"action": "failed", "status": "failed",
+                "error_message": "no message_inbox_id in input_json"}
+
+    conn = _sql.connect(str(db_path))
+    conn.row_factory = _sql.Row
+    try:
+        # ── 1. Find candidate ──────────────────────────────────────
+        cand = conn.execute(
+            "SELECT * FROM inspection_ingestion_candidates "
+            "WHERE message_id = (SELECT message_id FROM message_inbox WHERE id=?) "
+            "   OR id IN (SELECT inspection_candidate_id FROM message_inbox WHERE id=?) "
+            "ORDER BY created_at DESC LIMIT 1",
+            (inbox_id, inbox_id),
+        ).fetchone()
+        if not cand:
+            return {"action": "failed", "status": "failed",
+                    "error_message": f"no inspection candidate for inbox {inbox_id}"}
+        cand_d = dict(cand)
+        candidate_id = cand_d["id"]
+        ship = (cand_d.get("ship_name") or "").strip()
+        dest = (cand_d.get("destination") or "").strip()
+        cargo = (cand_d.get("cargo_name") or "").strip()
+        project_id = (cand_d.get("project_id") or "").strip()
+        if not (ship and dest and project_id):
+            return {"action": "failed", "status": "failed",
+                    "error_message": f"candidate missing fields: "
+                                     f"ship={ship!r} dest={dest!r} project={project_id!r}"}
+
+        # ── 2. Read extraction JSON, filter defect ────────────────
+        ext_path = cand_d.get("extraction_json_path")
+        if not ext_path or not Path(ext_path).exists():
+            return {"action": "failed", "status": "failed",
+                    "error_message": f"extraction JSON not found: {ext_path}"}
+        ext_data = _json.loads(Path(ext_path).read_text(encoding="utf-8"))
+        all_rows = ext_data.get("rows") or []
+        # 排车 / 缺陷车不入 wagon_shipments
+        loading_rows = [r for r in all_rows if not r.get("defect")]
+        loading_car_nos = [str(r.get("car_no") or "").strip()
+                           for r in loading_rows if r.get("car_no")]
+        if not loading_car_nos:
+            return {"action": "failed", "status": "failed",
+                    "error_message": "no non-defect car_no in extraction JSON"}
+
+        # ── 3. Match release_batch ─────────────────────────────────
+        m = match_release_batch_by_ship_destination_cargo(
+            project_id=project_id, ship_name=ship,
+            destination_station=dest, cargo_name=cargo, db_conn=conn,
+        )
+        if m.reason in ("no_open_batch", "no_match", "multiple_candidates"):
+            if apply:
+                conn.execute(
+                    "UPDATE inspection_ingestion_candidates "
+                    "SET candidate_status='pending_review', reason=?, "
+                    "    updated_at=datetime('now') WHERE id=?",
+                    (m.reason, candidate_id),
+                )
+                conn.commit()
+            return {
+                "action": "executed" if apply else "dry_run",
+                "status": "skipped",
+                "output_json": {
+                    "stage": "match_release_batch",
+                    "match_result": m.to_dict(),
+                    "candidate_id": candidate_id,
+                    "loading_car_count": len(loading_car_nos),
+                    "candidate_status": "pending_review",
+                },
+            }
+
+        matched_batch_id = m.matched_release_batch_id
+
+        if not apply:
+            return {
+                "action": "dry_run",
+                "status": "succeeded",
+                "output_json": {
+                    "stage": "would_proceed",
+                    "matched_release_batch_id": matched_batch_id,
+                    "candidate_id": candidate_id,
+                    "loading_car_count": len(loading_car_nos),
+                    "non_loading_car_count": len(all_rows) - len(loading_car_nos),
+                    "note": "apply=True to write wagon_shipments + excel",
+                },
+            }
+
+        # ── 4. Query 95306 per car_no, build wagon_shipments rows ─
+        if not RAIL_DB.exists():
+            return {"action": "failed", "status": "failed",
+                    "error_message": f"95306 DB not found: {RAIL_DB}"}
+        rail = _sql.connect(f"file:{RAIL_DB}?mode=ro", uri=True)
+        rail.row_factory = _sql.Row
+        try:
+            inserted = 0
+            no_match = []
+            for cno in loading_car_nos:
+                # 找朝阳西到站 + 货描含铁矿 + ticketed_at 最近的一条
+                row = rail.execute("""
+                    SELECT car_no, ydid, czydid, car_model, marked_weight, cargo_count,
+                           cargo_name, transport_mode_code, transport_mode_name,
+                           container_no_raw, container_numbers_json,
+                           origin_name, destination_name, ticketed_at, departed_at,
+                           arrived_at, delivered_at, status_name, latest_stage_key,
+                           latest_stage_name, latest_event_time, accepted_at, loaded_at
+                    FROM shipments
+                    WHERE car_no=? AND destination_name=?
+                      AND cargo_name LIKE '%铁矿%'
+                    ORDER BY ticketed_at DESC LIMIT 1
+                """, (cno, dest)).fetchone()
+                if not row:
+                    no_match.append(cno)
+                    continue
+                r = dict(row)
+                wid = hashlib.sha1(
+                    f"{r['ydid']}|{matched_batch_id}".encode()
+                ).hexdigest()[:24]
+                try:
+                    conn.execute("""INSERT INTO wagon_shipments
+                        (id, batch_id, car_no, ydid, czydid, car_model, marked_weight,
+                         cargo_count, cargo_name, shipper_name, consignee_name,
+                         origin_name, destination_name, ticketed_at, departed_at,
+                         arrived_at, delivered_at, status_name, latest_stage_key,
+                         latest_stage_name, latest_event_time, accepted_at, loaded_at,
+                         transport_mode_code, transport_mode_name,
+                         container_no, container_numbers_json,
+                         project_id, ship_name, dispatch_status,
+                         source_message_id, source_group_id, created_at, updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+                                ?,?,?,?,?,datetime('now'),datetime('now'))""",
+                        (wid, matched_batch_id, cno, r['ydid'], r['czydid'],
+                         r['car_model'], float(r['marked_weight']) if r['marked_weight'] else None,
+                         int(r['cargo_count']) if r['cargo_count'] else None,
+                         r['cargo_name'], "", "",
+                         r['origin_name'], r['destination_name'], r['ticketed_at'],
+                         r['departed_at'], r['arrived_at'], r['delivered_at'],
+                         r['status_name'], r['latest_stage_key'], r['latest_stage_name'],
+                         r['latest_event_time'], r['accepted_at'], r['loaded_at'],
+                         r['transport_mode_code'], r['transport_mode_name'],
+                         r['container_no_raw'] or "", r['container_numbers_json'] or "",
+                         project_id, ship, "completed",
+                         cand_d.get("message_id") or "", ""))
+                    # match 表
+                    mid = hashlib.sha1(
+                        f"{matched_batch_id}|{r['ydid']}".encode()
+                    ).hexdigest()[:24]
+                    try:
+                        conn.execute("""INSERT INTO shipment_release_batch_matches
+                            (id, release_batch_id, wagon_shipment_id, ydid,
+                             waybill_no, wagon_no, container_no, match_source)
+                            VALUES (?,?,?,?,?,?,?,?)""",
+                            (mid, matched_batch_id, wid, r['ydid'],
+                             "", cno, r['container_no_raw'] or "",
+                             "chaoyang_inspection_chain"))
+                    except _sql.IntegrityError:
+                        pass
+                    inserted += 1
+                except _sql.IntegrityError:
+                    # 同 batch 同 ydid 已存在,跳过
+                    pass
+        finally:
+            rail.close()
+
+        conn.commit()
+
+        # ── 5. Recompute shipped_weight (yaml rule) ───────────────
+        try:
+            from sop_hub.sop.shipped_weight import compute_for_release_batch
+            sw = compute_for_release_batch(matched_batch_id, db_path=str(db_path))
+        except Exception as exc:
+            sw = {"ok": False, "error": str(exc)}
+
+        # ── 6. Generate excel ─────────────────────────────────────
+        try:
+            from sop_hub.sop.departure_excel import generate_departure_excel
+            excel_result = generate_departure_excel(
+                matched_batch_id, project_id=project_id,
+            )
+            excel_info = {
+                "path": excel_result.output_path,
+                "wagon_count": excel_result.wagon_count,
+                "error": excel_result.error,
+            }
+        except Exception as exc:
+            excel_info = {"path": "", "wagon_count": 0, "error": str(exc)}
+
+        # ── 7. Mark candidate matched ─────────────────────────────
+        conn.execute(
+            "UPDATE inspection_ingestion_candidates "
+            "SET candidate_status='matched', release_batch_id=?, "
+            "    reason='auto_matched_by_chain', "
+            "    updated_at=datetime('now') WHERE id=?",
+            (matched_batch_id, candidate_id),
+        )
+        conn.commit()
+
+        return {
+            "action": "executed",
+            "status": "succeeded",
+            "output_json": {
+                "matched_release_batch_id": matched_batch_id,
+                "candidate_id": candidate_id,
+                "loading_car_count": len(loading_car_nos),
+                "non_loading_car_count": len(all_rows) - len(loading_car_nos),
+                "wagon_shipments_inserted": inserted,
+                "wagon_shipments_no_95306_match": no_match,
+                "shipped_weight": sw,
+                "excel": excel_info,
+            },
+        }
+
+    finally:
+        conn.close()
 
 
 def run_pending_workflow_tasks(

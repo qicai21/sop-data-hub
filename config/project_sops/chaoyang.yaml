@@ -193,13 +193,57 @@ flows:
 
   report_delivery_flow:
     description: "departure report delivery"
+    output_templates:
+      # R78: 朝阳钢铁的发运 excel,5 列,极简
+      # 货票时间用 yyyymmddhhmm00 文本格式(强制 number_format='@' 防止
+      # Excel 把它认成科学计数);全列可用单一时间(取本批首车的制票时间)
+      departure_excel:
+        business_name: "锦州港铁矿发运表"
+        file_naming:
+          pattern: "chaoyang_{car_count}cars.xlsx"
+          car_count_source: "export_row_count"
+        workbook:
+          sheet_name: "Sheet1"
+          # 朝阳的 excel 没标题行,header 就是第 1 行
+          header_row: 1
+          data_start_row: 2
+        columns:
+          - key: "seq"
+            header: "rowNo"
+            fill_rule: "从 1 开始自增"
+          - key: "wagon_no"
+            header: "铁路车号"
+            fill_rule: "wagon_shipments.car_no"
+          - key: "ticketed_at_compact_text"
+            header: "货票时间"
+            fill_rule: >
+              格式 yyyymmddhhmm00。强制写成文本(number_format='@'),
+              避免 Excel 把它当数字算成科学计数。全列共用一个时间
+              (取本批 wagon_shipments 中最早的 ticketed_at 截取到分钟 + '00')
+            cell_format: "@"
+          - key: "origin_name_fixed"
+            header: "发站名称"
+            fill_rule: "固定:高桥镇"
+            constant: "高桥镇"
+          - key: "antifreeze_flag"
+            header: "防冻标记"
+            fill_rule: "固定:1"
+            constant: "1"
+        style:
+          table:
+            bordered_range: "A1:E{last_data_row}"
+            border_style: "thin"
+            apply_border_to_header: true
+            apply_border_to_body: true
+            body_main_structure_has_border: true
     steps:
       - node: "generate_departure_excel"
         action: ["generate_departure_excel_task"]
         report_artifact:
           type: "departure_report"
-          template_path: "config/report_templates/cysteel_departure_report_template.xlsx"
-          filename_pattern: "锦州港铁矿发运表_{wagon_count}_{date}.xlsx"
+          # template_path 留作未来美术模板;当前生成代码完全 yaml 驱动,不依赖文件
+          template_path: ""
+          filename_pattern: "chaoyang_{car_count}cars.xlsx"
           generate_after: "departure_records_committed"
       - node: "generate_factory_json"
         action: ["generate_factory_transport_json_task"]

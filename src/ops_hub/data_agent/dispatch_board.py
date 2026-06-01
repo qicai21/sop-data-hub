@@ -985,19 +985,38 @@ def _build_release_batches_json(
         remaining_w = _try_float(row.get("remaining_weight_tons"))
         unresolved_n = int(row.get("unresolved_wagon_count") or 0)
 
-        # Resolve extraction_json_path by source_file_name stem via message_inbox.
-        # release_batches.source_file_name = "<seq>_<sha>_result.json" usually;
-        # message_inbox.extraction_json_path points to the archived JSON.
+        # Resolve extraction_json_path:
+        #   1. via message_inbox.extraction_json_path indexed by source filename stem
+        #   2. fallback: construct expected archive path by release_batch fields
+        #      business/projects/<project>/<dest>/<ship>/lot<seq>/json/<notice_date>/<sfn>
+        # The fallback handles batches whose ingest path didn't write to
+        # message_inbox (manual seed / R71-R73 replay / data surgery).
         ext_json_path = "待补充"
         sfn = str(row.get("source_file_name") or "")
-        if sfn and extraction_paths_by_stem:
+        if sfn:
             stem = Path(sfn).stem
-            cand = extraction_paths_by_stem.get(stem)
-            if not cand and "_" in stem:
+            cand = extraction_paths_by_stem.get(stem) if extraction_paths_by_stem else None
+            if not cand and "_" in stem and extraction_paths_by_stem:
                 bare = stem.split("_", 1)[1]
                 cand = extraction_paths_by_stem.get(bare)
             if cand and Path(cand).exists():
                 ext_json_path = cand
+            elif sfn.endswith(".json"):
+                # Fallback path construction
+                project_dir = str(row.get("project") or "")
+                dest_dir = str(row.get("destination_station") or "")
+                ship_dir = str(row.get("ship_name") or "")
+                seq_dir = str(row.get("batch_sequence") or "")
+                date_dir = str(row.get("notice_date") or "")
+                if all([project_dir, dest_dir, ship_dir, seq_dir, date_dir]):
+                    archive_root = Path(
+                        "/Users/qicai21/Documents/bussiness-artifacts/wechat_images/"
+                        "business/projects"
+                    )
+                    expected = (archive_root / project_dir / dest_dir / ship_dir
+                                / seq_dir / "json" / date_dir / sfn)
+                    if expected.exists():
+                        ext_json_path = str(expected)
 
         result.append({
             "release_batch_id": release_id,
@@ -1008,6 +1027,11 @@ def _build_release_batches_json(
             "planned_quantity": _try_float(row.get("batch_quantity")),
             "total_planned_quantity": _try_float(row.get("total_planned_quantity")),
             "batch_date": str(row.get("batch_date") or ""),
+            # 货物品类(铁矿/铁矿粉)与货物品名(印粉/麦克粉)拆两个字段
+            # 品类来自出港计划通知单 cargo_info.货物名称
+            # 品名来自放货货运信息文字消息,出港计划通知单上没有
+            "cargo_category": str(row.get("cargo_name") or ""),
+            "cargo_product_name": str(row.get("cargo_product_name") or ""),
             "cargo_name": str(row.get("cargo_product_name") or row.get("cargo_name") or ""),
             "plan_no": str(row.get("plan_id") or row.get("order_id") or row.get("order_identifier") or ""),
             "contract_no": str(row.get("contract_no") or ""),
@@ -1535,7 +1559,7 @@ th {{ background: #e0f2fe; position: sticky; top: 0; }}
 def _release_table_html(rows_html: str) -> str:
     return f"""<table>
 <thead><tr>
-<th>项目</th><th>船名</th><th>到站</th><th>lot</th><th>计划吨数</th><th>批次日期</th><th>货物品名</th><th>计划号/订单号</th><th>合同号</th><th>当前状态</th><th>已匹配候选数</th><th>待人工候选数</th><th>候选 lot 列表</th><th>已正式入库车数</th><th>已发运车辆明细</th><th>已发运重量(吨)</th><th>剩余可发运(吨)</th><th>待人工核重车数</th><th>原始图片</th><th>JSON</th>
+<th>项目</th><th>船名</th><th>到站</th><th>lot</th><th>计划吨数</th><th>批次日期</th><th>货物品类</th><th>货物品名</th><th>计划号/订单号</th><th>合同号</th><th>当前状态</th><th>已匹配候选数</th><th>待人工候选数</th><th>候选 lot 列表</th><th>已正式入库车数</th><th>已发运车辆明细</th><th>已发运重量(吨)</th><th>剩余可发运(吨)</th><th>待人工核重车数</th><th>原始图片</th><th>JSON</th>
 </tr></thead>
 <tbody>
 {rows_html}
@@ -1570,7 +1594,8 @@ def _release_table_rows_html(
             f"<td>{_h(row.get('batch_sequence'))}</td>"
             f"<td>{_fmt_num(row.get('batch_quantity'))}</td>"
             f"<td>{_h(row.get('batch_date'))}</td>"
-            f"<td>{_h(row.get('cargo_product_name') or row.get('cargo_name'))}</td>"
+            f"<td>{_h(row.get('cargo_name'))}</td>"
+            f"<td>{_h(row.get('cargo_product_name'))}</td>"
             f"<td>{_h(row.get('plan_id') or row.get('order_id'))}</td>"
             f"<td>{_h(row.get('contract_no'))}</td>"
             f"<td>{_h(status_label)}</td>"

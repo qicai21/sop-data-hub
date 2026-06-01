@@ -1242,6 +1242,23 @@ class BusinessDataAgent:
                 destination_station=default_destination_station,
             )
 
+        # R78: 尊重 chaoyang.release_batch_policy.do_not_merge_release_batches。
+        # 同船(同到站同货)在不同 notice 下是不同 batch,sequence 应当
+        # **同 notice_date 内** dedup;跨 notice 的 lot01 不该相互比对。
+        # 之前 dedup map 把 c600 (notice=5/11 lot01) 跟新 9918a9
+        # (notice=5/29 lot01) 按 sequence='lot01' 互比 → 误报
+        # review_needed("date/qty 不一致")。
+        if existing_batches and notice_date:
+            scoped = [
+                eb for eb in existing_batches
+                if (eb.get("notice_date") or "") == notice_date
+            ]
+            if scoped:
+                existing_batches = scoped
+            else:
+                # 没 same-notice batch → 视为新 notice,跳过 sequence dedup
+                existing_batches = []
+
         review_needed_remarks: list[dict[str, Any]] = []
         filtered_remarks: list[dict[str, Any]] = []
         if existing_batches:

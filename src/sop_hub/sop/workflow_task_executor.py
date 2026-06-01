@@ -611,6 +611,39 @@ def _execute_chaoyang_inspection_chain(
         except Exception as exc:
             excel_info = {"path": "", "wagon_count": 0, "error": str(exc)}
 
+        # ── 6b. Send excel via wx-ui-bridge ─────────────────────────
+        # 默认走 yaml 中的 test 模式 target(郭东北/数据单发群),不直发
+        # 生产群。production 路径要 input_json 里显式给 send_mode="production"。
+        send_info: dict[str, Any] = {"skipped": True}
+        if excel_info.get("path") and not excel_info.get("error"):
+            try:
+                from sop_hub.sop.send_excel import send_to_wechat
+                send_mode = str(input_json.get("send_mode") or "test")
+                target = _resolve_send_target(project_id, send_mode)
+                if target:
+                    msg = (f"{ship} 发运 {excel_info['wagon_count']} 车 / "
+                           f"{round(sw.get('shipped_weight_tons', 0), 1) if isinstance(sw, dict) else 0}t "
+                           f"(batch {matched_batch_id[:8]})")
+                    sr = send_to_wechat(
+                        target=target,
+                        message=msg,
+                        file_path=excel_info["path"],
+                    )
+                    send_info = {
+                        "skipped": False,
+                        "mode": send_mode,
+                        "target": target,
+                        "success": sr.success,
+                        "output_tail": (sr.output or "")[-300:],
+                        "error": sr.error,
+                    }
+                else:
+                    send_info = {"skipped": True,
+                                 "reason": f"no target_contact configured for "
+                                           f"send_{send_mode}_report in yaml"}
+            except Exception as exc:
+                send_info = {"skipped": False, "error": str(exc)}
+
         # ── 7. Mark candidate matched ─────────────────────────────
         conn.execute(
             "UPDATE inspection_ingestion_candidates "
@@ -633,11 +666,40 @@ def _execute_chaoyang_inspection_chain(
                 "wagon_shipments_no_95306_match": no_match,
                 "shipped_weight": sw,
                 "excel": excel_info,
+                "send": send_info,
             },
         }
 
     finally:
         conn.close()
+
+
+def _resolve_send_target(project_id: str, mode: str = "test") -> str | None:
+    """Read send target_contact (first) from yaml report_delivery_flow.
+
+    Returns None if yaml has no test/production node configured.
+    Modes: "test" -> send_test_report.target_contact[0]
+           "production" -> send_production_report.target_contact[0] (or target_group)
+    """
+    try:
+        import yaml as _yaml
+        from sop_hub.sop.departure_excel import _find_yaml_for_project
+        yp = _find_yaml_for_project(project_id)
+        raw = _yaml.safe_load(yp.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return None
+    flows = (raw.get("flows") or {}).get("report_delivery_flow") or {}
+    node_name = f"send_{mode}_report"
+    for step in flows.get("steps") or []:
+        if step.get("node") != node_name:
+            continue
+        contacts = step.get("target_contact") or []
+        if contacts:
+            return str(contacts[0])
+        groups = step.get("target_group") or []
+        if groups:
+            return str(groups[0])
+    return None
 
 
 def run_pending_workflow_tasks(

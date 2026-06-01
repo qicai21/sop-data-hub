@@ -35,3 +35,6 @@ dashboard/jiusan_dashboard_data.json
 
 # Live service runtime — ephemeral output, not source
 runtime/
+
+# Generated departure excels — ephemeral output, not source
+output/

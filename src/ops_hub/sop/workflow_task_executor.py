@@ -376,7 +376,7 @@ def _execute_create_release_batch(
 
     # Apply mode: actually ingest
     from ops_hub.data_agent.agent import BusinessDataAgent
-    agent = BusinessDataAgent(db_path=str(db_path))
+    agent = BusinessDataAgent()
     records = agent.ingest_release_batch_file(str(ext_path))
 
     return {

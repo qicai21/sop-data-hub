@@ -104,6 +104,11 @@ def _build_input_json(row: dict[str, Any]) -> dict[str, Any]:
         "summary": row.get("summary"),
         "media_status": row.get("media_status"),
         "source_file": row.get("source_file"),
+        "extraction_json_path": row.get("extraction_json_path"),
+        "raw_standard_image_path": row.get("raw_standard_image_path"),
+        "classification_label": row.get("classification_label"),
+        "business_archive_image_path": row.get("business_archive_image_path"),
+        "business_archive_json_path": row.get("business_archive_json_path"),
     }
     return {k: v for k, v in inp.items() if v is not None}
 

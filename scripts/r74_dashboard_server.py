@@ -11,8 +11,17 @@ from pathlib import Path
 DB_PATH = "/Users/qicai21/projects/repos/sop-data-hub/data/sop_agent.db"
 REPO = "/Users/qicai21/projects/repos/sop-data-hub"
 RUNTIME = f"{REPO}/runtime"
+DASHBOARD_DIR = f"{REPO}/dashboard"
+RAIL95306_DB = "/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3"
 PORT = 8787
 HOST = "0.0.0.0"
+
+STATIC_WHITELIST = {
+    "/dispatch_board.html": ("dispatch_board.html", "text/html; charset=utf-8"),
+    "/dispatch_board_data.json": ("dispatch_board_data.json", "application/json; charset=utf-8"),
+    "/jiusan_dashboard.html": ("jiusan_dashboard.html", "text/html; charset=utf-8"),
+    "/jiusan_dashboard_data.json": ("jiusan_dashboard_data.json", "application/json; charset=utf-8"),
+}
 
 def query_db(sql, params=()):
     conn = sqlite3.connect(DB_PATH)
@@ -260,6 +269,30 @@ setInterval(load, 8000);
 </body>
 </html>"""
 
+def api_refresh():
+    """Regenerate dashboard/dispatch_board_data.json from the live DBs."""
+    import sys
+    src_path = os.path.join(REPO, "src")
+    if src_path not in sys.path:
+        sys.path.insert(0, src_path)
+    out_path = os.path.join(DASHBOARD_DIR, "dispatch_board_data.json")
+    try:
+        from ops_hub.data_agent.dispatch_board import generate_dispatch_board_data
+        payload = generate_dispatch_board_data(
+            business_db_path=DB_PATH,
+            rail_db_path=RAIL95306_DB,
+            refresh_reason="api_refresh_endpoint",
+        )
+        Path(out_path).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return {"ok": True, "out_path": out_path,
+                "timestamp": datetime.now().isoformat(),
+                "summary": payload.get("summary", {})}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "type": type(exc).__name__}
+
+
 class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
@@ -281,8 +314,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/health/latest":
             snap = save_health_snapshot()
             self._respond_json(snap)
+        elif path == "/api/refresh":
+            self._respond_json(api_refresh())
+        elif path in STATIC_WHITELIST:
+            filename, ctype = STATIC_WHITELIST[path]
+            self._respond_static(os.path.join(DASHBOARD_DIR, filename), ctype)
         else:
             self.send_response(404)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
             self.end_headers()
             self.wfile.write(b'{"error":"not found"}')
 
@@ -299,6 +338,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
         body = html.encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _respond_static(self, file_path, ctype):
+        if not os.path.exists(file_path):
+            self.send_response(404)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b'{"error":"file missing on disk"}')
+            return
+        with open(file_path, "rb") as f:
+            body = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

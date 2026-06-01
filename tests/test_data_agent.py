@@ -400,7 +400,7 @@ class TestBusinessDataAgent:
 
         assert len(records) == 1
         assert records[0].batch_sequence == "lot01"
-        assert records[0].batch_key.endswith("|朝阳西|lot01")
+        assert records[0].batch_key.endswith("|朝阳西|2026-05-11|lot01")
         assert records[0].destination_station == "朝阳西"
 
     def test_upsert_dedup(self, tmp_db):

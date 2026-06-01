@@ -307,7 +307,11 @@ def _move_processed_artifacts(settings: Settings, img: Path, result: "Processing
     image_dest = image_dir / img.name
     json_dest = json_dir / f"{img.stem}_result.json"
     if Path(result.saved_path) != image_dest:
-        shutil.copy2(img, image_dest)
+        shutil.move(str(img), str(image_dest))
+    # Clean up _vlm.jpg preview (VLM classification thumbnail, no longer needed)
+    vlm_preview = img.parent / f"{img.stem}_vlm.jpg"
+    if vlm_preview.exists():
+        vlm_preview.unlink()
     Path(result.extraction_saved_path).replace(json_dest)
     result.saved_path = str(image_dest)
     result.extraction_saved_path = str(json_dest)

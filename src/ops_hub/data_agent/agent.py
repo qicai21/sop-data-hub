@@ -1285,7 +1285,7 @@ class BusinessDataAgent:
 
         base_key = "|".join(
             str(item).strip()
-            for item in [ship_name, cargo_name, consignor, consignee]
+            for item in [ship_name, cargo_name]
         )
         total_planned_quantity = sum(item.get("quantity") or 0 for item in remarks)
         rows = []
@@ -1296,9 +1296,12 @@ class BusinessDataAgent:
             destination_station = remark.get("destination") or default_destination_station
             row_project = release_batch_project_for_destination(project, destination_station)
             
-            # 使用 sequence 作为 batch_key 核心；如果没有 sequence，退化为使用 date
-            unique_identifier = seq if seq else dt
-            batch_key = "|".join([base_key, str(destination_station or ""), unique_identifier])
+            # Temporal key: use normalised remark date when available;
+            # fall back to notice_date for whole-ship releases with empty remarks.
+            batch_date_key = normalize_chinese_date(dt) if dt else str(notice_date or "")
+            # Sequence is the primary lot identifier; if absent, fall back to date
+            unique_identifier = seq if seq else batch_date_key
+            batch_key = "|".join([base_key, str(destination_station or ""), batch_date_key, unique_identifier])
 
             
             # Generate ID Label: 汐子铁矿粉/沈阳盛京颐昇代/鞍子河

@@ -1350,7 +1350,19 @@ def _infer_source_artifact_path(source_file: str, artifact_kind: str) -> str:
     if not artifact_root.exists():
         return ""
     if artifact_kind == "json":
-        pattern = f"**/extractions/**/*{stem}_result.json"
+        # Search multiple possible archive locations (most specific first)
+        for pattern in [
+            f"**/business/projects/**/{stem}_result.json",
+            f"**/read_data/{stem}_result.json",
+            f"**/extractions/**/{stem}_result.json",
+        ]:
+            try:
+                match = next(artifact_root.glob(pattern), None)
+            except OSError:
+                match = None
+            if match:
+                return str(match)
+        return ""
     elif artifact_kind == "status":
         pattern = f"**/_status/{stem}.json"
     else:

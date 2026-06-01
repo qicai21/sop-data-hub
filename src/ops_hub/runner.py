@@ -459,6 +459,14 @@ def process_new_image(
                 )
                 result.extraction_saved_path = str(json_path)
                 _move_processed_artifacts(settings, img, result, month_str=month_str)
+                # Inject archive path metadata into the payload so it gets
+                # persisted in source_json when ingest_release_batch stores the record.
+                # This lets the dashboard resolve JSON/image links without relying
+                # solely on the audit table.
+                if result.extraction_saved_path:
+                    extracted["extraction_json_path"] = result.extraction_saved_path
+                if result.project_archive_paths:
+                    extracted["project_archive_paths"] = result.project_archive_paths
         except Exception as e:
             result.error = f"识别失败: {e}"
 

@@ -35,6 +35,16 @@ def _get_db_path(db_path: str | Path | None = None) -> Path:
     return Path(__file__).resolve().parents[3] / "data" / "sop_agent.db"
 
 
+_CN_NUMS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
+
+
+def _cn_num(n: int) -> str:
+    """1→一,2→二,…,10→十;>10 用阿拉伯数字。"""
+    if 0 <= n <= 10:
+        return _CN_NUMS[n]
+    return str(n)
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -613,6 +623,27 @@ def _execute_chaoyang_inspection_chain(
         except Exception as exc:
             excel_info = {"path": "", "wagon_count": 0, "error": str(exc)}
 
+        # ── 7. Mark candidate matched(先标后发,这样算"第几列"时
+        #         当前候选已计入)─────────────────────────────────
+        conn.execute(
+            "UPDATE inspection_ingestion_candidates "
+            "SET candidate_status='matched', release_batch_id=?, "
+            "    reason='auto_matched_by_chain', "
+            "    updated_at=datetime('now') WHERE id=?",
+            (matched_batch_id, candidate_id),
+        )
+        conn.commit()
+
+        # "第几列" = 该 batch 下 status=matched 的候选总数(含当前)
+        try:
+            nth = conn.execute(
+                "SELECT COUNT(*) FROM inspection_ingestion_candidates "
+                "WHERE release_batch_id=? AND candidate_status='matched'",
+                (matched_batch_id,),
+            ).fetchone()[0]
+        except Exception:
+            nth = 1
+
         # ── 6b. Send excel via wx-ui-bridge ─────────────────────────
         # 默认走 yaml 中的 test 模式 target(郭东北/数据单发群),不直发
         # 生产群。production 路径要 input_json 里显式给 send_mode="production"。
@@ -623,9 +654,7 @@ def _execute_chaoyang_inspection_chain(
                 send_mode = str(input_json.get("send_mode") or "test")
                 target = _resolve_send_target(project_id, send_mode)
                 if target:
-                    msg = (f"{ship} 发运 {excel_info['wagon_count']} 车 / "
-                           f"{round(sw.get('shipped_weight_tons', 0), 1) if isinstance(sw, dict) else 0}t "
-                           f"(batch {matched_batch_id[:8]})")
+                    msg = f"{ship} 第{_cn_num(nth)}列 {excel_info['wagon_count']}车"
                     sr = send_to_wechat(
                         target=target,
                         message=msg,
@@ -635,6 +664,7 @@ def _execute_chaoyang_inspection_chain(
                         "skipped": False,
                         "mode": send_mode,
                         "target": target,
+                        "message": msg,
                         "success": sr.success,
                         "output_tail": (sr.output or "")[-300:],
                         "error": sr.error,
@@ -646,22 +676,14 @@ def _execute_chaoyang_inspection_chain(
             except Exception as exc:
                 send_info = {"skipped": False, "error": str(exc)}
 
-        # ── 7. Mark candidate matched ─────────────────────────────
-        conn.execute(
-            "UPDATE inspection_ingestion_candidates "
-            "SET candidate_status='matched', release_batch_id=?, "
-            "    reason='auto_matched_by_chain', "
-            "    updated_at=datetime('now') WHERE id=?",
-            (matched_batch_id, candidate_id),
-        )
-        conn.commit()
-
         return {
             "action": "executed",
             "status": "succeeded",
             "output_json": {
                 "matched_release_batch_id": matched_batch_id,
                 "candidate_id": candidate_id,
+                "ship_name": ship,
+                "nth_loading": nth,
                 "loading_car_count": len(loading_car_nos),
                 "non_loading_car_count": len(all_rows) - len(loading_car_nos),
                 "wagon_shipments_inserted": inserted,

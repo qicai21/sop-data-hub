@@ -270,6 +270,51 @@ flows:
         target_group: ["GROUP004"]
         action: ["send_excel_task"]
 
+  # ── 收货人系统上传(朝阳钢铁专属,2026-06-02 新增) ─────────────
+  # 跟 report_delivery_flow 并行的下游:发 excel 给微信群是给"人"看,
+  # 上传到鞍钢门户是给"收货系统"。两个不冲突,chain 一并执行。
+  consignee_upload_flow:
+    description: "上传车皮明细到鞍钢门户(朝阳钢铁的母公司收货系统)"
+    target_system:
+      type: "ansteel_portal"
+      base_url: "https://56.ansteel.com.cn"
+      account: "CWL20085"       # 朱峰,鞍钢汽车运输有限责任公司(party_b)
+      app_name: "AGMPM1"
+      company_code: "00047800"   # 朝阳钢铁
+    # ★ 业务铁律:每次 upload 必须紧跟 verify(同一进程内),
+    #   反查 wagon 集合 = 上传 wagon 集合 才算成功。
+    #   实现:src/sop_hub/external/chaoyang_ansteel/upload_wagons.upload_and_verify
+    upload_after_verify: true
+    upload_module: "sop_hub.external.chaoyang_ansteel.upload_wagons"
+    apis:
+      query_plan: "AGM4M.wmwm01_inq_v1"    # 按时间窗查 plan
+      query_wagons: "AGM4M.wmwm19_inq_v"   # 入参 plan row,返回 wagon 列表
+      insert_wagons: "AGM4M.wmwm19_ins_v"  # 入参 12 字段 × N 行
+    payload_constants:
+      # 每行 12 字段中 4 个常量:
+      fs_name: "高桥镇"
+      antifreeze_flag: "1"
+      # 其余从 plan 复制:REC_ID / MT_ID / TRANSPORT_PLAN_NO /
+      # SHIP_CNAME / GOODS_CODE / BUY_ORDER_NO(=WAYBILL_NO)
+      # 每行不同:WAGONNO(车号) / WAYBILL_TIME(YYYYMMDDHHMMSS)
+      # uuid:Python uuid.uuid4() 即可
+    verify_sleep_seconds: 2
+    delete_granularity_note: |
+      朝阳系统的"列"= 一次上传的 batch。
+      用户实测:删除任何 1 车 → 整列全删。
+      所以"列"在朝阳系统内是不可分原子单位,跟我们的检装车通知单 = 一列对应。
+    steps:
+      - node: "upload_wagon_batch"
+        action: ["upload_wagons_to_ansteel"]
+        conditions:
+          # ship_name 必须有(infer 三层级联保证)
+          require_ship_name: true
+          require_loading_car_nos_non_empty: true
+      - node: "verify_uploaded_wagons"
+        action: ["query_wmwm19_and_compare"]
+        # ★ 不允许跳过 — 上传无 verify = 失败
+        required: true
+
 runtime:
   watcher:
     enabled: true

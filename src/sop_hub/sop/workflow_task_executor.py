@@ -723,6 +723,36 @@ def _execute_chaoyang_inspection_chain(
             except Exception as exc:
                 send_info = {"skipped": False, "error": str(exc)}
 
+        # ── 6c. 上传到鞍钢门户(朝阳钢铁专属)+ 立即反查 ──────────
+        # 业务铁律:每次上传必须紧跟一次查询验证(详见 docs/business-rules/
+        # chaoyang_upload_verify.md)。upload_and_verify 内置 verify。
+        # 跟 6b 不冲突 — 发 excel 给微信群是给人看,上传 ansteel 是给收货系统。
+        upload_info: dict[str, Any] = {"skipped": True}
+        if project_id == "chaoyang_steel" and loading_car_nos:
+            try:
+                from sop_hub.external.chaoyang_ansteel.upload_wagons import (
+                    upload_and_verify,
+                )
+                ur = upload_and_verify(
+                    db_path=str(db_path),
+                    batch_id=matched_batch_id,
+                    ship_name=ship,
+                    car_nos=loading_car_nos,  # 用本次单子的精确车号集
+                )
+                upload_info = {
+                    "skipped": False,
+                    "success": ur.success,
+                    "uploaded": ur.uploaded_count,
+                    "server_returned": ur.server_returned_count,
+                    "verified": ur.verified_count,
+                    "missing": ur.missing_car_nos,
+                    "extra": ur.extra_car_nos,
+                    "plan": ur.plan_summary,
+                    "error": ur.error,
+                }
+            except Exception as exc:
+                upload_info = {"skipped": False, "error": str(exc)}
+
         return {
             "action": "executed",
             "status": "succeeded",
@@ -738,6 +768,7 @@ def _execute_chaoyang_inspection_chain(
                 "shipped_weight": sw,
                 "excel": excel_info,
                 "send": send_info,
+                "consignee_upload": upload_info,  # 新:ansteel 上传 + 反查
             },
         }
 

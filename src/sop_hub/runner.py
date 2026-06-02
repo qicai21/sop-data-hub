@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from sop_hub.config import Settings
+from sop_hub.utils.time import now_iso_beijing_compact as _now_iso_beijing
 
 
 def _sanitize_component(value: str) -> str:
@@ -342,7 +343,7 @@ def _record_pending_index(
         "extracted_cargo": cargo.get("货物名称", ""),
         "missing": missing,
         "reason": reason,
-        "recorded_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        "recorded_at": _now_iso_beijing(),
     }
 
     # Dedup by image filename — overwrite if same image is reprocessed

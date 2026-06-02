@@ -27,6 +27,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from sop_hub.utils.time import (
+    BEIJING_TZ,
+    parse_any_timestamp,
+)
+
 
 logger = logging.getLogger("sop_hub.pending_match_verifier")
 
@@ -54,12 +59,13 @@ class VerifierSummary:
 
 
 def _parse_dt(s: str) -> datetime | None:
-    if not s:
-        return None
-    try:
-        return datetime.fromisoformat(s.replace(" ", "T").replace("Z", ""))
-    except (ValueError, AttributeError):
-        return None
+    """容错 parse + tz-correct(转 Beijing aware)。
+
+    旧版直接 fromisoformat 丢 tz → naive,跟 datetime.now() 减得到错误
+    的 elapsed(偏 8h)。新版统一用 parse_any_timestamp,naive 字符串
+    假设 UTC(SQLite/utcnow 历史默认),返回 tz-aware Beijing datetime。
+    """
+    return parse_any_timestamp(s)
 
 
 def _find_inbox_id(candidate_id: str, db_path: str | Path) -> tuple[int | None, str]:
@@ -150,12 +156,12 @@ def verify_pending_candidates(
         conn.close()
 
     summary.scanned = len(rows)
-    now = datetime.now()
+    now = datetime.now(BEIJING_TZ)  # tz-aware Beijing,跟 _parse_dt 输出一致
 
     for row in rows:
         cand_id = row["id"]
         created_at = row["created_at"] or row["updated_at"] or ""
-        created_dt = _parse_dt(created_at)
+        created_dt = _parse_dt(created_at)  # tz-aware Beijing
         elapsed_h = (
             (now - created_dt).total_seconds() / 3600.0
             if created_dt else float("inf")

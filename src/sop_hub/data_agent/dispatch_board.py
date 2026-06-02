@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import quote
 
 from sop_hub.data_agent.agent import active_business_sop_project_tokens, parse_business_text_fields
+from sop_hub.utils.time import now_iso_beijing_compact as _now_iso_beijing
 
 
 STATUS_LABELS = {
@@ -648,7 +649,7 @@ def generate_dispatch_board_data(
 
     return {
         "meta": {
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "generated_at": _now_iso_beijing(),
             "source_db": str(business_db_path.resolve()),
             "rail95306_db": str(rail_db_path.resolve()) if rail_db_path else "",
             "generator_version": "1.0.0",
@@ -815,7 +816,7 @@ def _write_error_json(json_path: Path, error_message: str) -> None:
     json_path.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "meta": {
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "generated_at": _now_iso_beijing(),
             "source_db": "",
             "rail95306_db": "",
             "generator_version": "1.0.0",
@@ -1536,7 +1537,7 @@ def _build_html(
     manual_pending_count = _manual_pending_count(candidate_summary)
     formal_count = sum(item.get("formal_match_count", 0) for key, item in formal_summary.items() if key in visible_release_ids)
     formal_weight = sum(float(item.get("formal_weight") or 0) for key, item in formal_summary.items() if key in visible_release_ids)
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    generated_at = _now_iso_beijing()
 
     release_by_id = {str(row.get("id") or ""): row for row in release_rows}
     in_progress_rows = [row for row in release_rows if str(row.get("dispatch_status") or "") != "completed"]

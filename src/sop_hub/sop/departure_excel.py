@@ -151,19 +151,15 @@ def _load_template(project_id: str) -> ExcelTemplate:
 
 
 def _extract_rows(
-    release_batch_id: str, *, db_path: str | Path | None = None,
+    release_batch_id: str,
+    *,
+    db_path: str | Path | None = None,
+    car_nos: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
     """Return (per-wagon dicts, batch_context dict, error_str).
 
-    Wagon dict keys (lowercased, columns will lookup by key):
-      seq, wagon_no, container_no, container_no_2, cargo_name,
-      ship_name, contract_no, order_identifier, loading_date,
-      entry_date, ticketed_at_raw, marked_weight, car_model,
-      origin_name, destination_name
-    Batch context (computed once, shared across rows):
-      release_batch_id, project, ship_name, cargo_name,
-      destination_station, contract_no, order_identifier,
-      ticketed_at_compact_text (earliest car's ticketed_at as yyyymmddhhmm00 string)
+    car_nos: 如果给了,只取这些车号的 wagon_shipments(用于"本次单子"
+    范围,而不是 batch 历史累计)。
     """
     db = Path(db_path) if db_path else SOP_DB
     conn = sqlite3.connect(str(db))
@@ -176,11 +172,20 @@ def _extract_rows(
             return [], {}, f"release_batch not found: {release_batch_id}"
         batch = dict(rb)
 
-        ws_rows = conn.execute(
-            "SELECT * FROM wagon_shipments WHERE batch_id=? "
-            "ORDER BY ticketed_at ASC, car_no ASC",
-            (release_batch_id,),
-        ).fetchall()
+        if car_nos:
+            placeholders = ",".join("?" * len(car_nos))
+            ws_rows = conn.execute(
+                f"SELECT * FROM wagon_shipments "
+                f"WHERE batch_id=? AND car_no IN ({placeholders}) "
+                f"ORDER BY ticketed_at ASC, car_no ASC",
+                (release_batch_id, *car_nos),
+            ).fetchall()
+        else:
+            ws_rows = conn.execute(
+                "SELECT * FROM wagon_shipments WHERE batch_id=? "
+                "ORDER BY ticketed_at ASC, car_no ASC",
+                (release_batch_id,),
+            ).fetchall()
 
         # batch context
         # 全列共用一个"货票时间":取最早 ticketed_at,format yyyymmddhhmm00
@@ -329,10 +334,13 @@ def generate_departure_excel(
     project_id: str | None = None,
     output_dir: str | Path | None = None,
     db_path: str | Path | None = None,
+    car_nos: list[str] | None = None,
 ) -> ExcelGenerationResult:
     """Generate departure Excel for one release_batch.
 
     project_id 可以不传 — 自动从 release_batches.project 读。
+    car_nos: 如果给了,只导出这些车号(对应"本次检装车通知单"),
+    避免 batch 多次发车时累计输出。
     """
     # Resolve project_id from DB if not given
     if not project_id:
@@ -362,7 +370,9 @@ def generate_departure_excel(
     out_dir = Path(output_dir) if output_dir else DEFAULT_OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    rows, ctx, err = _extract_rows(release_batch_id, db_path=db_path)
+    rows, ctx, err = _extract_rows(
+        release_batch_id, db_path=db_path, car_nos=car_nos,
+    )
     if err:
         return ExcelGenerationResult(release_batch_id=release_batch_id, error=err)
     if not rows:

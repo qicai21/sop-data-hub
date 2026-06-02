@@ -598,10 +598,12 @@ def _execute_chaoyang_inspection_chain(
             sw = {"ok": False, "error": str(exc)}
 
         # ── 6. Generate excel ─────────────────────────────────────
+        # excel 只导出"本次单子"的车号,不是 batch 历史累计。
         try:
             from sop_hub.sop.departure_excel import generate_departure_excel
             excel_result = generate_departure_excel(
                 matched_batch_id, project_id=project_id,
+                car_nos=loading_car_nos,
             )
             excel_info = {
                 "path": excel_result.output_path,

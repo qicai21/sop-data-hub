@@ -5,6 +5,7 @@ Scans wechat_images, cross-references DB, generates manifest CSV/JSON/summary.
 NO file moves, NO deletes, NO DB writes, NO external uploads, NO WeChat sends.
 """
 
+from sop_hub.utils.time import now_iso_beijing
 import argparse
 import csv
 import hashlib
@@ -515,7 +516,7 @@ def build_manifest() -> dict:
 
     summary = {
         "manifest_version": 1,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": now_iso_beijing(),
         "storage_policy_version": 1,
         "total_files": len(rows),
         "image_count": sum(1 for r in rows if r["file_type"] == "image"),

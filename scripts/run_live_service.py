@@ -16,6 +16,8 @@ Default chat records root: ~/projects/repos/wx-ops-agent/data/chat_records.
 
 from __future__ import annotations
 
+from sop_hub.utils.time import now_iso_beijing as _now_iso_beijing
+
 import argparse
 import json
 import logging
@@ -55,7 +57,7 @@ PID_FILE_NAME = "live_service.pid"
 def _utc_now_iso() -> str:
     from datetime import UTC, datetime
 
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return _now_iso_beijing()
 
 
 def _safe_component(value: str) -> str:

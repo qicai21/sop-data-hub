@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from sop_hub.sop.departure_text_parser import DepartureCandidate, parse_departure_text
+from sop_hub.utils.time import now_iso_beijing_compact
 from sop_hub.sop.monitoring_plan_matcher import MessageEvent
 from sop_hub.sop.query_95306_shipments import query_95306_shipments_by_window
 from sop_hub.sop.create_wagon_shipments import (
@@ -233,7 +234,7 @@ def run_departure_executor_chain(
         group_id=event.group_id or "",
         project_id="",
         chain=chain_str,
-        parsed_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        parsed_at=now_iso_beijing_compact(),
         apply_mode=apply_mode,
     )
 
@@ -268,9 +269,9 @@ def run_departure_executor_chain(
             # ── Step 3: query 95306 ───────────────────────────────────
             origin = "高桥镇"
             dest = candidate.destination or "四平"
-            ref_time = candidate.message_time or datetime.now(timezone.utc).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+            # ref_time 给 95306 query 用,空格分隔的 naive 风格(无 tz 后缀),
+            # 仓库历史约定。从 ISO Beijing 截前 19 字符 + T→空格。
+            ref_time = candidate.message_time or now_iso_beijing_compact()[:19].replace("T", " ")
             query_result = query_95306_shipments_by_window(
                 origin_station=origin,
                 destination_station=dest,

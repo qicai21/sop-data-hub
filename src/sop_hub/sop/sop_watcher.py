@@ -75,9 +75,8 @@ class SopRuntime:
             self._reload_from_md()
 
         self.sop_hash = new_hash
-        self.last_reload = (
-            datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
-        )
+        from sop_hub.utils.time import now_iso_beijing_compact
+        self.last_reload = now_iso_beijing_compact()
 
         # Recompute per-file hashes for detailed diagnostics
         self._file_hashes = {}

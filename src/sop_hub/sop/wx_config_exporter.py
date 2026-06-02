@@ -31,6 +31,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from sop_hub.utils.time import now_iso_beijing_compact
+
 
 logger = logging.getLogger("sop_hub.wx_config_exporter")
 
@@ -79,7 +81,7 @@ def build_wx_config_payload() -> dict[str, Any]:
 
     payload: dict[str, Any] = {
         "schema_version": 1,
-        "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "exported_at": now_iso_beijing_compact(),
         "source": "sop_hub.wx_config_exporter",
         "monitored_groups": monitored_groups,
         "sop_route_contexts": sop_route_contexts,

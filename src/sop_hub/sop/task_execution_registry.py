@@ -151,7 +151,8 @@ class TaskExecutionRegistry:
         Returns:
           TaskExecutionTrace with status and actions.
         """
-        now = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        from sop_hub.utils.time import now_iso_beijing_compact
+        now = now_iso_beijing_compact()
         trace_id = f"trace_{event.message_id}_{now.replace(':', '').replace('-', '')[:15]}"
 
         flow = self._match_flow(event)

@@ -24,7 +24,8 @@ PAYLOAD_VERSION = "r15"
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    from sop_hub.utils.time import now_iso_beijing_compact
+    return now_iso_beijing_compact()
 
 
 def _value_present(value: Any) -> bool:

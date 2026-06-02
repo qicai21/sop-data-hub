@@ -5,6 +5,7 @@ NO deletions. Uses shutil.move (rename) to _quarantine/r65_20260531/.
 Protects business/projects, business/general, _quarantine.
 """
 
+from sop_hub.utils.time import now_iso_beijing
 import argparse
 import csv
 import hashlib
@@ -336,7 +337,7 @@ def generate_active_path_check() -> str:
     """Generate active path check report."""
     lines = []
     lines.append("=== R65 Active Path Check ===")
-    lines.append(f"Generated: {datetime.now(timezone.utc).isoformat()}")
+    lines.append(f"Generated: {now_iso_beijing()}")
     lines.append("")
 
     # Check obsolete patterns
@@ -516,7 +517,7 @@ def main():
 
     summary = {
         "r65_version": 1,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": now_iso_beijing(),
         "dry_run": dry_run,
         "quarantine_root": str(QUARANTINE_ROOT),
         "dry_run_target_count": stats["dry_run_target_count"],

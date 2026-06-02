@@ -15,6 +15,7 @@ R66: Storage Contract Total Verification & Smoke Test
  10. 旧路径是否复活
 """
 
+from sop_hub.utils.time import now_iso_beijing
 import json
 import os
 import sys
@@ -438,7 +439,7 @@ def check_old_path_resurrection() -> dict:
 
 
 def main():
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = now_iso_beijing()
     report = {
         "r66_storage_contract_verification": {
             "timestamp": timestamp,

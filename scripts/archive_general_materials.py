@@ -5,6 +5,7 @@ Archives non-business-critical images (photos, unknown) to business/general/.
 Hardlinks preferred, copy fallback. No deletions.
 """
 
+from sop_hub.utils.time import now_iso_beijing
 import argparse
 import csv
 import hashlib
@@ -50,8 +51,8 @@ def extract_yyyy_mm(entry: dict) -> str:
         if len(part) == 7 and part[4] == "-" and part[:4].isdigit() and part[5:].isdigit():
             return part
 
-    # Fallback
-    return datetime.now(timezone.utc).strftime("%Y-%m")
+    # Fallback:用 Beijing 算月份(免得 UTC 月初/月底跨边界算错月)
+    return now_iso_beijing()[:7]
 
 
 def sanitize_doc_type(doc_type: str) -> str:
@@ -192,7 +193,7 @@ def process_general_materials(dry_run: bool = True) -> dict:
 
     summary = {
         "r64_version": 1,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": now_iso_beijing(),
         "dry_run": dry_run,
         "total_target": len(target),
         "archived_count": stats.get("archived", 0),

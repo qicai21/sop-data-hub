@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from sop_hub.data_agent.db import open_db
 from sop_hub.data_agent.json_utils import read_json, to_searchable_text, write_json
+from sop_hub.utils.time import now_iso_beijing as _now_iso_beijing_full
 
 WORKSPACE_DOCS_DIR = Path(__file__).resolve().parents[3] / "doc"
 PROJECT_SOPS_DIR = Path(__file__).resolve().parents[3] / "config" / "project_sops"
@@ -1044,7 +1045,7 @@ class BusinessDataAgent:
         payload["_manual_assignment"] = {
             "release_batch_id": release_batch_id,
             "operator_note": operator_note,
-            "assigned_at": datetime.now(timezone.utc).isoformat(),
+            "assigned_at": _now_iso_beijing_full(),
         }
         self.db.execute(
             """

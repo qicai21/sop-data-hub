@@ -5,6 +5,7 @@ Moves everything to _quarantine/r65_20260531_review/.
 Protects business/projects, business/general, _quarantine.
 """
 
+from sop_hub.utils.time import now_iso_beijing
 import argparse
 import csv
 import hashlib
@@ -170,7 +171,7 @@ def generate_active_path_check(images_root: Path) -> tuple[str, int]:
     """Generate report and return (text, remaining_obsolete_count)."""
     lines = []
     lines.append("=== R65.1 Active Path Check ===")
-    lines.append(f"Generated: {datetime.now(timezone.utc).isoformat()}")
+    lines.append(f"Generated: {now_iso_beijing()}")
     lines.append("")
 
     checks = [
@@ -328,7 +329,7 @@ def main():
     sha_mismatches = sum(1 for r in results if r.get("sha_mismatch"))
     summary = {
         "r65_1_version": 1,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": now_iso_beijing(),
         "dry_run": dry_run,
         "quarantine_review_root": str(QUARANTINE_ROOT),
         "review_moved_count": stats["moved"],

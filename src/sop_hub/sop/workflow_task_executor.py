@@ -46,7 +46,8 @@ def _cn_num(n: int) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    from sop_hub.utils.time import now_iso_beijing
+    return now_iso_beijing()
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

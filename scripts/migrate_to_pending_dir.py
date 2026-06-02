@@ -20,6 +20,8 @@
 """
 from __future__ import annotations
 
+from sop_hub.utils.time import now_iso_beijing as _now_iso_beijing
+
 import argparse
 import json
 import shutil
@@ -121,7 +123,7 @@ def _build_index_entry(image_name: str, json_name: str | None,
         "extracted_cargo": cargo.get("货物名称", ""),
         "missing": missing,
         "reason": reason,
-        "recorded_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        "recorded_at": _now_iso_beijing(),
     }
 
 

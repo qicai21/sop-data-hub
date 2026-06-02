@@ -29,7 +29,8 @@ def _get_db_path(db_path: str | Path | None = None) -> Path:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    from sop_hub.utils.time import now_iso_beijing
+    return now_iso_beijing()
 
 
 WORKFLOW_TASK_DB_SCHEMA = """

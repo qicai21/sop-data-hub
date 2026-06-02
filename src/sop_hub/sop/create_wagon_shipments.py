@@ -417,9 +417,8 @@ def create_wagon_shipments_from_candidates(
         }
         if "dispatch_status" in rb_columns:
             result.release_batch_progress["dispatch_status"] = "in_progress"
-            result.release_batch_progress["dispatch_status_updated_at"] = (
-                datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            )
+            from sop_hub.utils.time import now_iso_beijing_compact as _now_bj
+            result.release_batch_progress["dispatch_status_updated_at"] = _now_bj()
 
         # ── 8. Dry run → return ─────────────────────────────────────
         if dry_run:
@@ -428,7 +427,8 @@ def create_wagon_shipments_from_candidates(
         # ── 9. Apply: write to sop_agent.db ──────────────────────────
         inserted = 0
         departure_id = _generate_departure_id(release_batch_id, ship_name)
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        from sop_hub.utils.time import now_iso_beijing_compact
+        now = now_iso_beijing_compact()
 
         for plan in insert_plans:
             wagon_id = _gen_wagon_id(plan.ydid, release_batch_id)

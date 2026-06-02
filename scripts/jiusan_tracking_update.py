@@ -14,6 +14,7 @@
 Usage:
     python3 scripts/jiusan_tracking_update.py
 """
+from sop_hub.utils.time import now_iso_beijing
 import json
 import sqlite3
 import sys
@@ -62,7 +63,7 @@ def get_jiusan_shipments(conn) -> list[dict]:
 
 def build_tracking_status(records: list[dict], train_label: str) -> dict:
     """为一列集装箱生成 tracking_status"""
-    now = datetime.now(timezone.utc).isoformat()
+    now = now_iso_beijing()
 
     if not records:
         return {

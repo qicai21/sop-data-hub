@@ -246,7 +246,8 @@ def enrich_release_batch_with_freight_detail(
             )
 
         # ── Apply: write to DB ──────────────────────────────────────
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        from sop_hub.utils.time import now_iso_beijing_compact
+        now = now_iso_beijing_compact()
         applied_updates = dict(planned_updates)
 
         set_clauses = []

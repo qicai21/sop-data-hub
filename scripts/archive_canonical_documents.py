@@ -6,6 +6,7 @@ Hardlinks/copies to canonical project archive paths, updates sop_agent.db.
 Does NOT delete original files.
 """
 
+from sop_hub.utils.time import now_iso_beijing
 import argparse
 import csv
 import hashlib
@@ -428,7 +429,7 @@ def process_canonical_documents(dry_run: bool = True) -> dict:
     # Build summary
     summary = {
         "r63_version": 1,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": now_iso_beijing(),
         "input_manifest": str(R62_MANIFEST),
         "dry_run": dry_run,
         "total_canonical_in_manifest": sum(1 for r in rows if r["is_canonical_document"]),

@@ -13,6 +13,7 @@ Usage:
     python3 scripts/jiusan_board_generate.py
     python3 scripts/jiusan_board_generate.py --example
 """
+from sop_hub.utils.time import now_iso_beijing
 import json
 import re
 import sqlite3
@@ -272,7 +273,7 @@ def _load_95306_daily_stats() -> dict:
 
 
 def generate(conn) -> dict:
-    now = datetime.now(timezone.utc).isoformat()
+    now = now_iso_beijing()
     date_str = datetime.now().strftime("%Y-%m-%d")
 
     # ── 读取各表数据 ──

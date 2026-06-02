@@ -8,6 +8,7 @@
   3. 厂家库存 (jiusan_factory_inventory)
   4. 循环列状态更新 (jiusan_cycle_trains + jiusan_cycle_train_runs)
 """
+from sop_hub.utils.time import now_iso_beijing
 import json
 import sqlite3
 import uuid
@@ -17,7 +18,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 JIUSAN_DB = REPO_ROOT / "data" / "jiusan_cycle.db"
 
-now = datetime.now(timezone.utc).isoformat()
+now = now_iso_beijing()
 date_str = "2026-05-20"
 
 

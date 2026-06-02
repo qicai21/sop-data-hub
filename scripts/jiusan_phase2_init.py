@@ -14,6 +14,7 @@
 Usage:
     python3 scripts/jiusan_phase2_init.py [--force]
 """
+from sop_hub.utils.time import now_iso_beijing
 import json
 import sqlite3
 import sys
@@ -145,7 +146,7 @@ def scan_new_vessel():
     bulk_stats = calc_bulk_wagon_weight(bulk_05_19)
 
     result = {
-        "scan_time": datetime.now(timezone.utc).isoformat(),
+        "scan_time": now_iso_beijing(),
         "total_records": len(records),
         "container_05_19": {
             "count": len(container_05_19),

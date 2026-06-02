@@ -38,3 +38,6 @@ runtime/
 
 # Generated departure excels — ephemeral output, not source
 output/
+
+# Generated departure reports — ephemeral output, not source
+reports/

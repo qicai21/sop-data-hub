@@ -41,3 +41,6 @@ output/
 
 # Generated departure reports — ephemeral output, not source
 reports/
+
+# 朝阳钢铁系统 auth bundle / 测试 response,不入仓
+runtime/chaoyang_*.json

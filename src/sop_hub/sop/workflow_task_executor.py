@@ -600,6 +600,52 @@ def _execute_chaoyang_inspection_chain(
 
         conn.commit()
 
+        # ── 4.5. Guard:必须全部 loading 车都已落库才能继续 ───────────
+        # 业务铁律:95306 票延迟时(支票晚到 1-2 h),不能用半套数据
+        # 出 excel。期望数 = footer.zhuangche_jieshu(VLM 抽的实装),
+        # 兜底 = len(loading_car_nos)。
+        # 实际数 = DB 中 batch_id+本次 car_nos 的实际行数(idempotent
+        # 重跑也对 — 不依赖 inserted 计数)。
+        expected_count = (
+            int((ext_data.get("footer") or {}).get("zhuangche_jieshu") or 0)
+            or len(loading_car_nos)
+        )
+        placeholders = ",".join("?" * len(loading_car_nos))
+        db_count = conn.execute(
+            f"SELECT COUNT(*) FROM wagon_shipments "
+            f"WHERE batch_id=? AND car_no IN ({placeholders})",
+            (matched_batch_id, *loading_car_nos),
+        ).fetchone()[0]
+
+        if db_count < expected_count:
+            # 票尚未全部到达 → 挂 pending_95306_match,等延迟验证器
+            conn.execute(
+                "UPDATE inspection_ingestion_candidates "
+                "SET candidate_status='pending_95306_match', "
+                "    reason=?, updated_at=datetime('now') "
+                "WHERE id=?",
+                (f"waiting_95306_tickets:{db_count}/{expected_count}",
+                 candidate_id),
+            )
+            conn.commit()
+            return {
+                "action": "executed",
+                "status": "skipped",
+                "output_json": {
+                    "stage": "waiting_95306_tickets",
+                    "matched_release_batch_id": matched_batch_id,
+                    "candidate_id": candidate_id,
+                    "loading_car_count": len(loading_car_nos),
+                    "expected_count": expected_count,
+                    "actual_in_db_count": db_count,
+                    "wagon_shipments_inserted": inserted,
+                    "wagon_shipments_no_95306_match": no_match,
+                    "candidate_status": "pending_95306_match",
+                    "note": (f"票尚未全到 95306({db_count}/{expected_count}),"
+                             f"候选已挂起,等延迟验证(6h timeout)"),
+                },
+            }
+
         # ── 5. Recompute shipped_weight (yaml rule) ───────────────
         try:
             from sop_hub.sop.shipped_weight import compute_for_release_batch

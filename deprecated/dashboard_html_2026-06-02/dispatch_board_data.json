@@ -1,0 +1,1225 @@
+{
+  "meta": {
+    "generated_at": "2026-06-02 14:55:18",
+    "source_db": "/Users/qicai21/projects/repos/sop-data-hub/data/sop_agent.db",
+    "rail95306_db": "/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3",
+    "generator_version": "1.0.0",
+    "refresh_reason": "live_service_poll_cycle"
+  },
+  "summary": {
+    "pending_total": 1,
+    "pending_text_release": 0,
+    "pending_release_plan_images": 1,
+    "pending_inspection_assignment": 0,
+    "pending_95306_check": 0,
+    "active_release_batches": 3,
+    "release_batch_total": 4,
+    "matched_inspection_candidates": 17,
+    "manual_candidate_count": 2,
+    "unassigned_candidate_count": 0,
+    "formal_wagon_count": 137,
+    "formal_weight": 0.0
+  },
+  "pending_items": [
+    {
+      "type": "departure_plan",
+      "pending_id": "audit:3659ff1335771713e6c98047b85410081b820944",
+      "source_table": "image_ingestion_audit",
+      "source_id": "3659ff1335771713e6c98047b85410081b820944",
+      "display_type": "待匹配出港计划/放货图片",
+      "ship_name": "",
+      "cargo_name": "",
+      "quantity": "",
+      "wagon_count": 0,
+      "plan_no": "",
+      "contract_no": "",
+      "status": "extracted",
+      "reason": "non_sop_project_json_only",
+      "candidate_lots": "",
+      "source_image_path": "/Users/qicai21/Documents/bussiness-artifacts/wechat_images/_pending/2026-06/images/2693_d39df312dff1ebe84d6063fd02162b7c.jpg",
+      "source_json_path": "/Users/qicai21/Documents/bussiness-artifacts/wechat_images/_pending/2026-06/json/2693_d39df312dff1ebe84d6063fd02162b7c_result.json",
+      "recorded_at": "2026-06-02 01:38:17"
+    }
+  ],
+  "release_batches": [
+    {
+      "release_batch_id": "8649b574e93e0176212954aa0ba3ebb2f9a30550",
+      "project": "jilin_jingang_jinzhou",
+      "ship_name": "蓝鳍",
+      "destination_station": "四平",
+      "batch_sequence": "lot03",
+      "planned_quantity": 3000.0,
+      "batch_date": "2026-05-29",
+      "cargo_name": "铁矿",
+      "plan_no": "CGR20260528174209",
+      "contract_no": "HNMC20260528-1X-1",
+      "status": "发运中",
+      "dispatch_status": "in_progress",
+      "actual_wagon_count": 0,
+      "confirmed_received_at": "",
+      "matched_candidate_count": 0,
+      "manual_candidate_count": 0,
+      "candidate_lots": "",
+      "formal_wagon_count": 0,
+      "formal_weight": 0.0,
+      "remaining_quantity": "3000",
+      "source_image_path": "68_8a08eac66343e7419028a183c26ea9c2_result.json",
+      "source_json_path": "待补充",
+      "state_file_path": "待补充",
+      "formal_shipments": []
+    },
+    {
+      "release_batch_id": "968afe04b09fdfda5a1c2db1c2b2f53e1f38fa45",
+      "project": "jilin_jingang_jinzhou",
+      "ship_name": "蓝鳍",
+      "destination_station": "四平",
+      "batch_sequence": "lot02",
+      "planned_quantity": 3000.0,
+      "batch_date": "2026-05-27",
+      "cargo_name": "铁矿",
+      "plan_no": "CGR20260526171655",
+      "contract_no": "HNMC20260525-6X-1",
+      "status": "发运中",
+      "dispatch_status": "in_progress",
+      "actual_wagon_count": 45,
+      "confirmed_received_at": "2026-05-31 04:30:34",
+      "matched_candidate_count": 0,
+      "manual_candidate_count": 0,
+      "candidate_lots": "",
+      "formal_wagon_count": 45,
+      "formal_weight": 0.0,
+      "remaining_quantity": "3000",
+      "source_image_path": "/Users/qicai21/Documents/bussiness-artifacts/wechat_images/数据单发群/2026-05/69_daf96a9f7300b5685caff802ac59d2c6.jpg",
+      "source_json_path": "待补充",
+      "state_file_path": "待补充",
+      "formal_shipments": [
+        {
+          "car_no": "1500105",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1510005",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1561925",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1566212",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1592498",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1602439",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1612315",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1624465",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1651864",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1660092",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1667736",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1674868",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1684978",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1689134",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1698672",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1708713",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1718428",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1723669",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1748035",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1765393",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1774928",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1780020",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1784906",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1794206",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1802226",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1810136",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1810967",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1812919",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1816822",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1819631",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1845742",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1857308",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1876287",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1883613",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5227780",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5229589",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5231040",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5244195",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5312336",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5320503",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5322969",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5779028",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5782555",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5786012",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5786440",
+          "time": "2026-05-29 20:39:00",
+          "inspection_file": ""
+        }
+      ]
+    },
+    {
+      "release_batch_id": "d83f66c6f5eeecc78b1ffbce60b67884ac2cad41",
+      "project": "jilin_jingang_jinzhou",
+      "ship_name": "蓝鳍",
+      "destination_station": "四平",
+      "batch_sequence": "lot01",
+      "planned_quantity": 3000.0,
+      "batch_date": "2026-05-21",
+      "cargo_name": "铁矿",
+      "plan_no": "CGR20260520095954",
+      "contract_no": "HNMC20260520-1X-1",
+      "status": "发运中",
+      "dispatch_status": "in_progress",
+      "actual_wagon_count": 46,
+      "confirmed_received_at": "2026-05-31 04:30:34",
+      "matched_candidate_count": 0,
+      "manual_candidate_count": 0,
+      "candidate_lots": "",
+      "formal_wagon_count": 46,
+      "formal_weight": 0.0,
+      "remaining_quantity": "3000",
+      "source_image_path": "/Users/qicai21/Documents/bussiness-artifacts/wechat_images/数据单发群/2026-05/69_daf96a9f7300b5685caff802ac59d2c6.jpg",
+      "source_json_path": "待补充",
+      "state_file_path": "待补充",
+      "formal_shipments": [
+        {
+          "car_no": "1511993",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1512030",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1513992",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1517744",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1562493",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1566694",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1567297",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1570983",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1572860",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1587651",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1594785",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1595331",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1600795",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1620389",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1625630",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1643820",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1648200",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1674627",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1685290",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1732413",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1737763",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1748639",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1760066",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1794724",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1806163",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1806244",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1811694",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1814956",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1821273",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1830790",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1853568",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1857138",
+          "time": "2026-05-24 11:24:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5225933",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5230198",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5235214",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5325262",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5328487",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5342259",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5488818",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5490245",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5499771",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5724614",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5743706",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5785773",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5790847",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "5791805",
+          "time": "2026-05-23 06:20:00",
+          "inspection_file": ""
+        }
+      ]
+    },
+    {
+      "release_batch_id": "7e846399b5ec470c8cfb91d3d5f086ff",
+      "project": "jilin_jingang_jinzhou",
+      "ship_name": "长航滨海",
+      "destination_station": "四平",
+      "batch_sequence": "lot01",
+      "planned_quantity": 3000.0,
+      "batch_date": "2026-05-19",
+      "cargo_name": "红土镍矿",
+      "plan_no": "CGR20260518174420",
+      "contract_no": "JGCG-SFY-HTNK20260501",
+      "status": "已发完",
+      "dispatch_status": "completed",
+      "actual_wagon_count": 46,
+      "confirmed_received_at": "2026-05-22 01:44:06",
+      "matched_candidate_count": 0,
+      "manual_candidate_count": 0,
+      "candidate_lots": "",
+      "formal_wagon_count": 46,
+      "formal_weight": 0.0,
+      "remaining_quantity": "3000",
+      "source_image_path": "待补充",
+      "source_json_path": "待补充",
+      "state_file_path": "待补充",
+      "formal_shipments": [
+        {
+          "car_no": "1690221",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1860526",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869467",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869469",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869470",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869471",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869472",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869473",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869475",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869476",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869477",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869478",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869480",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869481",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869482",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869483",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869484",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869485",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869486",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869487",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869488",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869489",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869490",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869491",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869492",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869493",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869494",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869495",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869496",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869497",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869498",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869501",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869502",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869503",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869504",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869505",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869506",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869507",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869508",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869510",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869511",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869514",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869515",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869516",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869517",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        },
+        {
+          "car_no": "1869518",
+          "time": "2026-05-21 11:57:00",
+          "inspection_file": ""
+        }
+      ]
+    }
+  ],
+  "inspection_candidates": [
+    {
+      "candidate_id": "8abfd6aaeb8bda4d37a4a889bcfd91f12eae5c0f",
+      "project": "朝阳钢铁铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "9918a97cd362ac2560dcc1557550797fd21f75f5",
+      "source_image_path": "83_58fa26bdaa2deb36f76c486210c66b9a.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 54,
+      "defect_car_count": 0,
+      "status": "pending",
+      "needs_review": true,
+      "review_reasons": "ok",
+      "created_at": "2026-06-02 03:39:08"
+    },
+    {
+      "candidate_id": "0fd838170938e6d558016cd8b4f6335121d82478",
+      "project": "朝阳钢铁铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "9918a97cd362ac2560dcc1557550797fd21f75f5",
+      "source_image_path": "80_0457bd5f8f321715ff50911351f29a64.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 57,
+      "defect_car_count": 0,
+      "status": "pending",
+      "needs_review": true,
+      "review_reasons": "auto_matched_by_chain",
+      "created_at": "2026-06-01 13:13:34"
+    },
+    {
+      "candidate_id": "c7e365fcef68f3dea7df",
+      "project": "",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "c600da1cac3427657af231068c44c9efde69c72e",
+      "source_image_path": "47_6fe46bebb7a4386a3cf958ed1e127254.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 200,
+      "defect_car_count": 0,
+      "status": "pending_match",
+      "needs_review": false,
+      "review_reasons": "",
+      "created_at": "2026-05-31T16:41:32.897568"
+    },
+    {
+      "candidate_id": "51916f7e83274bd1a2605656168a6bb3",
+      "project": "",
+      "ship_name": "蓝鳍",
+      "destination_station": "四平",
+      "candidate_lot": "",
+      "release_batch_id": "916ec02cd1ef23302a533a3cac109953ac47d310",
+      "source_image_path": "铁晟业务工作群-文字报告-蓝鳍18节",
+      "source_json_path": "",
+      "parsed_car_count": 18,
+      "defect_car_count": 0,
+      "status": "committed",
+      "needs_review": false,
+      "review_reasons": "formal_95306_linkage_committed",
+      "created_at": "2026-05-23 18:45:58"
+    },
+    {
+      "candidate_id": "730856c4d0021ae456b01fafc06a063f6af026aa",
+      "project": "朝阳钢铁铁矿发运项目",
+      "ship_name": "木森17",
+      "destination_station": "朝阳西",
+      "candidate_lot": "lot01",
+      "release_batch_id": "01d5d3414bdc8671e46e6649d498f6a1ebaf6ae9",
+      "source_image_path": "a42b18b3678b41fd21dd8e06304f86f5_decoded.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 49,
+      "defect_car_count": 0,
+      "status": "candidate",
+      "needs_review": false,
+      "review_reasons": "matched_release_batch_waiting_95306_validation",
+      "created_at": "2026-05-22 08:00:06"
+    },
+    {
+      "candidate_id": "pdc_jljg_20260521_152211",
+      "project": "",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "7e846399b5ec470c8cfb91d3d5f086ff",
+      "source_image_path": "user_provided_jilin_jingang_first_batch",
+      "source_json_path": "",
+      "parsed_car_count": 46,
+      "defect_car_count": 46,
+      "status": "resolved",
+      "needs_review": false,
+      "review_reasons": "factory_upload_completed",
+      "created_at": "2026-05-21T15:22:11"
+    },
+    {
+      "candidate_id": "adc6a028de63fa0a67fe12f489bfbc4ebd9456b2",
+      "project": "朝阳钢铁铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "c600da1cac3427657af231068c44c9efde69c72e",
+      "source_image_path": "1927_1ec9dbf987313a4870e45bcf45091683.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 53,
+      "defect_car_count": 0,
+      "status": "committed",
+      "needs_review": false,
+      "review_reasons": "formal_95306_linkage_committed",
+      "created_at": "2026-05-21 11:00:29"
+    },
+    {
+      "candidate_id": "ab3dd66aef492a09d4ef8b9156f2e572be9fee8a",
+      "project": "朝阳钢铁铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "c600da1cac3427657af231068c44c9efde69c72e",
+      "source_image_path": "1636_6c39fe9a9894ad4c2fa280e9b92b4d29.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 54,
+      "defect_car_count": 0,
+      "status": "committed",
+      "needs_review": false,
+      "review_reasons": "formal_95306_linkage_committed",
+      "created_at": "2026-05-18 10:24:27"
+    },
+    {
+      "candidate_id": "7d9bc28c8e4770885a3b8726372ea25fa7be4fd7",
+      "project": "朝阳钢铁铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "c600da1cac3427657af231068c44c9efde69c72e",
+      "source_image_path": "48_264614be5653604d2fdc172d7e54a369.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 55,
+      "defect_car_count": 0,
+      "status": "committed",
+      "needs_review": false,
+      "review_reasons": "formal_95306_linkage_committed",
+      "created_at": "2026-05-18 02:45:16"
+    },
+    {
+      "candidate_id": "c2a05da509be7c5f55c04670bcfbf7585587cca1",
+      "project": "朝阳钢铁铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "c600da1cac3427657af231068c44c9efde69c72e",
+      "source_image_path": "47_6fe46bebb7a4386a3cf958ed1e127254.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 55,
+      "defect_car_count": 0,
+      "status": "committed",
+      "needs_review": false,
+      "review_reasons": "formal_95306_linkage_committed",
+      "created_at": "2026-05-18 02:43:04"
+    },
+    {
+      "candidate_id": "c72c38c51535c0ad2960a30bf044b02e5d5dc8d5",
+      "project": "朝阳钢铁铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "efa7653d1708e33ce40a5a1296f1f6d0ac94b7a0",
+      "source_image_path": "41_2abe261302d8e6b100c814f7dbf0e370.jpg#rows14-30#lot06",
+      "source_json_path": "",
+      "parsed_car_count": 17,
+      "defect_car_count": 0,
+      "status": "committed",
+      "needs_review": false,
+      "review_reasons": "manual_assigned_formal_linked",
+      "created_at": "2026-05-15 08:11:49"
+    },
+    {
+      "candidate_id": "ce50b5c0c3e0b6a322da56364e106b82ea5edbe3",
+      "project": "朝阳钢铁铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "35c3623c2df1a50179088c50490bba67649562c6",
+      "source_image_path": "41_2abe261302d8e6b100c814f7dbf0e370.jpg#rows31-45#lot07",
+      "source_json_path": "",
+      "parsed_car_count": 15,
+      "defect_car_count": 0,
+      "status": "committed",
+      "needs_review": false,
+      "review_reasons": "manual_assigned_formal_linked",
+      "created_at": "2026-05-15 08:11:49"
+    },
+    {
+      "candidate_id": "dcd326a5b390fa10557c174c83a4d63f1f501118",
+      "project": "中唐特钢铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "35c3623c2df1a50179088c50490bba67649562c6",
+      "source_image_path": "42_5e5913a97f2fa0ebc22a30d603827f34.jpg#rows1-57#lot07",
+      "source_json_path": "",
+      "parsed_car_count": 57,
+      "defect_car_count": 0,
+      "status": "committed",
+      "needs_review": false,
+      "review_reasons": "manual_assigned_formal_linked",
+      "created_at": "2026-05-15 08:11:49"
+    },
+    {
+      "candidate_id": "a9fda4f7ff5ec3a8187db1ec2e5e45a12ccb42c1",
+      "project": "中唐特钢铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "35c3623c2df1a50179088c50490bba67649562c6",
+      "source_image_path": "43_9ad403eff462e3caf9382d4c3e5bf9bf.jpg#rows1-56#lot07",
+      "source_json_path": "",
+      "parsed_car_count": 56,
+      "defect_car_count": 0,
+      "status": "committed",
+      "needs_review": false,
+      "review_reasons": "manual_assigned_formal_linked",
+      "created_at": "2026-05-15 08:11:49"
+    },
+    {
+      "candidate_id": "54ac7c399f81d29ea2c9a681c3b816028ae146b9",
+      "project": "中唐特钢铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "",
+      "source_image_path": "43_9ad403eff462e3caf9382d4c3e5bf9bf.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 56,
+      "defect_car_count": 0,
+      "status": "superseded",
+      "needs_review": false,
+      "review_reasons": "manual_split_resolved",
+      "created_at": "2026-05-15 07:15:37"
+    },
+    {
+      "candidate_id": "6a1c7791ccd061aad1929b96f7dab8a2818809eb",
+      "project": "中唐特钢铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "",
+      "source_image_path": "42_5e5913a97f2fa0ebc22a30d603827f34.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 57,
+      "defect_car_count": 0,
+      "status": "superseded",
+      "needs_review": false,
+      "review_reasons": "manual_split_resolved",
+      "created_at": "2026-05-15 07:13:22"
+    },
+    {
+      "candidate_id": "8cd7d82e217dd29c39a3686750a591a0a4dc0c49",
+      "project": "朝阳钢铁铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "",
+      "source_image_path": "41_2abe261302d8e6b100c814f7dbf0e370.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 46,
+      "defect_car_count": 0,
+      "status": "superseded",
+      "needs_review": false,
+      "review_reasons": "manual_split_resolved",
+      "created_at": "2026-05-15 07:11:05"
+    },
+    {
+      "candidate_id": "d42f26ba9d99c974772ea0862b390dfcf7ddd5db",
+      "project": "中唐特钢铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "88ceb9b2086fed6e81cd4eadb8b2b0a0002c8c01",
+      "source_image_path": "29_c2f505ab0360f1402e9ff8e760ce2979.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 37,
+      "defect_car_count": 0,
+      "status": "candidate",
+      "needs_review": false,
+      "review_reasons": "matched_release_batch_waiting_95306_validation",
+      "created_at": "2026-05-13 08:12:45"
+    },
+    {
+      "candidate_id": "148a05bb0c9d2fad9366c071c4b22eac37a3b40d",
+      "project": "中唐特钢铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "88ceb9b2086fed6e81cd4eadb8b2b0a0002c8c01",
+      "source_image_path": "28_5af919d9be18d9777652856c094b3ede.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 54,
+      "defect_car_count": 0,
+      "status": "candidate",
+      "needs_review": false,
+      "review_reasons": "matched_release_batch_waiting_95306_validation",
+      "created_at": "2026-05-13 08:10:54"
+    },
+    {
+      "candidate_id": "cf5a2833850d9dc3362bc9664b464afd8a6df139",
+      "project": "中唐特钢铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "88ceb9b2086fed6e81cd4eadb8b2b0a0002c8c01",
+      "source_image_path": "27_534ee2088cead9b2c6deaa7b466cdc95.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 55,
+      "defect_car_count": 0,
+      "status": "candidate",
+      "needs_review": false,
+      "review_reasons": "matched_release_batch_waiting_95306_validation",
+      "created_at": "2026-05-13 08:08:43"
+    },
+    {
+      "candidate_id": "56df680d99810f527f43dae4479b3ef6355a532b",
+      "project": "中唐特钢铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "88ceb9b2086fed6e81cd4eadb8b2b0a0002c8c01",
+      "source_image_path": "26_549ff2ca57f8da505990bd0d638cbdc4.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 56,
+      "defect_car_count": 0,
+      "status": "candidate",
+      "needs_review": false,
+      "review_reasons": "matched_release_batch_waiting_95306_validation",
+      "created_at": "2026-05-13 08:06:29"
+    },
+    {
+      "candidate_id": "75370457af6b3de158490096b326543b7da87732",
+      "project": "中唐特钢铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "8a0c8a04901cfaea5d48063f633124d486127471",
+      "source_image_path": "23_faaa7f499e15282322e67fcb88bf555a.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 56,
+      "defect_car_count": 0,
+      "status": "committed",
+      "needs_review": false,
+      "review_reasons": "formal_95306_linkage_committed",
+      "created_at": "2026-05-13 06:43:02"
+    },
+    {
+      "candidate_id": "bc41a28ed53d564557d7a495346ba202f376d769",
+      "project": "中唐特钢铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "8a0c8a04901cfaea5d48063f633124d486127471",
+      "source_image_path": "21_542f26205d7e7d5cf7b0033f472fd924.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 55,
+      "defect_car_count": 0,
+      "status": "committed",
+      "needs_review": false,
+      "review_reasons": "formal_95306_linkage_committed",
+      "created_at": "2026-05-13 03:12:10"
+    },
+    {
+      "candidate_id": "0ca4868996d18653fbf49665ab07c410c12fae1d",
+      "project": "中唐特钢铁矿发运项目",
+      "ship_name": "",
+      "destination_station": "",
+      "candidate_lot": "",
+      "release_batch_id": "844d4859bf906decebd6440fb9dead0c200a39c3",
+      "source_image_path": "19_f46f58fa2d9c87b55c0c940ec97747fc.jpg",
+      "source_json_path": "",
+      "parsed_car_count": 56,
+      "defect_car_count": 0,
+      "status": "candidate",
+      "needs_review": false,
+      "review_reasons": "matched_release_batch_waiting_95306_validation",
+      "created_at": "2026-05-12 08:57:41"
+    }
+  ],
+  "reconcile_plans": []
+}

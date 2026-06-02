@@ -14,7 +14,6 @@ if str(SRC) not in sys.path:
 
 from sop_hub.config import load_settings  # noqa: E402
 from sop_hub.data_agent.agent import BusinessDataAgent  # noqa: E402
-from sop_hub.data_agent.dispatch_board import render_dispatch_board  # noqa: E402
 from sop_hub.matching.inspection_95306_reconciler import reconcile_inspection_shipments  # noqa: E402
 
 
@@ -55,10 +54,6 @@ def cmd_reconcile_inspection(args: argparse.Namespace) -> None:
     _run_reconcile(args)
 
 
-def cmd_finalize_inspection(args: argparse.Namespace) -> None:
-    _run_reconcile(args, deprecated_finalize_cli=True)
-
-
 def cmd_list_dispatch(args: argparse.Namespace) -> None:
     agent = _agent_for_business_db(_business_db_from_args(args))
     status = args.status
@@ -89,17 +84,6 @@ def cmd_assign_inspection_candidate(args: argparse.Namespace) -> None:
         operator_note=args.operator_note or args.note or "",
     )
     print(json.dumps({"assigned": assigned, "candidate_id": args.candidate_id, "release_batch_id": args.release_batch_id}, ensure_ascii=False, indent=2))
-
-
-def cmd_render_dispatch_board(args: argparse.Namespace) -> None:
-    settings = load_settings(args.config)
-    output_path = args.output or "/Users/qicai21/projects/repos/business-system-docs/dashboard/dispatch_board.html"
-    result = render_dispatch_board(
-        business_db_path=args.business_db or settings.agent_db_path,
-        rail_db_path=args.rail_db or settings.db_95306_path,
-        output_path=output_path,
-    )
-    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 def _add_reconcile_args(p: argparse.ArgumentParser, *, legacy_dry_run: bool = False) -> None:
@@ -148,15 +132,8 @@ def main() -> None:
     p.add_argument("--business-db", default=None)
     p.set_defaults(func=cmd_assign_inspection_candidate)
 
-    p = sub.add_parser("render-dispatch-board", help="生成本地静态放货/发运/识别/匹配入库看板 HTML")
-    p.add_argument("--business-db", default=None)
-    p.add_argument("--rail-db", default=None, help="95306_collection.sqlite3；只读查询 shipment_release_batch_matches")
-    p.add_argument("--output", default=None, help="输出 HTML 路径，默认写入 business-system-docs/dashboard/dispatch_board.html")
-    p.set_defaults(func=cmd_render_dispatch_board)
-
-    legacy = sub.add_parser("finalize-inspection", help="DEPRECATED: use reconcile-inspection --plan/--commit")
-    _add_reconcile_args(legacy, legacy_dry_run=True)
-    legacy.set_defaults(func=cmd_finalize_inspection)
+    # render-dispatch-board / finalize-inspection 子命令在 2026-06-02 删除
+    # (HTML 看板退役 + finalize-inspection 早已 deprecated → reconcile-inspection)
 
     args = parser.parse_args()
     args.func(args)

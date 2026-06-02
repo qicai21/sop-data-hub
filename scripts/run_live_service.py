@@ -901,12 +901,8 @@ def run_live_service(
             write_message_inbox=write_message_inbox,
         )
         logger.info("poll complete processed=%s seen=%s", processed, len(seen))
-        # Refresh dashboard data file after each poll cycle
-        try:
-            from sop_hub.data_agent.dispatch_board import ensure_dispatch_board_data
-            ensure_dispatch_board_data(reason="live_service_poll_cycle", max_age_seconds=30)
-        except Exception:
-            pass
+        # 2026-06-02: ensure_dispatch_board_data hook 移除。
+        # 老 HTML 看板退役,改 scripts/cli_dashboard.py(直查 sqlite,无中间 JSON)。
         if once:
             return
         if max_iterations is not None and iterations >= max_iterations:

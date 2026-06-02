@@ -11,7 +11,10 @@
     python -m sop_hub health                    检查 VLM 服务状态
     python -m sop_hub ingest <json_file>        导入放货批次数据
     python -m sop_hub list-batches              列出放货批次
-    python -m sop_hub dispatch-board            刷新 dispatch board (JSON + HTML)
+    python -m sop_hub pending drop <audit_id>   把 dashboard 待落实项标为 dropped
+
+注:看板自身改 CLI(scripts/cli_dashboard.py),不再产 dispatch_board.html
+   + dispatch_board_data.json。相关子命令于 2026-06-02 dead-code 清理时一并删除。
 """
 from __future__ import annotations
 
@@ -136,7 +139,6 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     print(f"导入完成: {len(records)} 条批次记录")
     for r in records:
         print(f"  - {r.ship_name} / {r.cargo_name} / {r.batch_date} / {r.batch_quantity}吨")
-    _auto_refresh_dispatch_board("release_batch_ingested")
 
 
 def cmd_list_batches(args: argparse.Namespace) -> None:
@@ -169,7 +171,6 @@ def cmd_complete_match_rule(args: argparse.Namespace) -> None:
     ok = agent.complete_release_dispatch_match_rule(args.release_batch_id, manual_note=args.note)
     if ok:
         print(f"已下表 release_batch_id={args.release_batch_id}")
-        _auto_refresh_dispatch_board("formal_commit")
     else:
         print(f"未找到匹配规则 release_batch_id={args.release_batch_id}")
         sys.exit(1)
@@ -187,103 +188,6 @@ def cmd_reopen_match_rule(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def cmd_dispatch_board(args: argparse.Namespace) -> None:
-    from sop_hub.data_agent.dispatch_board import refresh_dispatch_board, _dashboard_dir
-
-    result = refresh_dispatch_board(
-        reason=args.reason or "manual_refresh",
-        business_db_path=args.db or None,
-        rail_db_path=args.rail_db or None,
-    )
-    summary = result.get("summary", {})
-    print(f"✅ Dispatch board refreshed (reason={result.get('refresh_reason', '')})")
-    print(f"   JSON: {result['json_path']}")
-    print(f"   HTML: {_dashboard_dir() / 'dispatch_board.html'}")
-    print(f"   release_batches: {summary.get('release_batch_total', 0)}")
-    print(f"   active: {summary.get('active_release_batches', 0)}")
-    print(f"   pending_total: {summary.get('pending_total', 0)}")
-
-
-def _auto_refresh_dispatch_board(reason: str) -> None:
-    """Best-effort auto-refresh after business state changes.  Silently ignores errors."""
-    try:
-        from sop_hub.data_agent.dispatch_board import refresh_dispatch_board
-        refresh_dispatch_board(reason=reason)
-    except Exception:
-        pass  # never let dashboard refresh block business operations
-
-
-def cmd_dispatch_board_serve(args: argparse.Namespace) -> None:
-    """Start a local HTTP server that serves the dashboard directory.
-
-    On start, ensures dispatch_board_data.json exists.
-    The server serves the dashboard on the given host:port so the browser
-    can fetch JSON from the same origin — no file:// fetch restrictions.
-    """
-    from sop_hub.data_agent.dispatch_board import ensure_dispatch_board_data, _dashboard_dir
-
-    dashboard_dir = _dashboard_dir()
-    ensure_dispatch_board_data(reason="serve_start")
-
-    import http.server
-    import socketserver
-
-    host = args.host or "127.0.0.1"
-    port = args.port or 8765
-
-    # Change to the dashboard directory so static files are served from there
-    import os as _os
-    serve_dir = str(dashboard_dir)
-
-    class Handler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *a, **kw):
-            super().__init__(*a, directory=serve_dir, **kw)
-
-        def end_headers(self):
-            # No-cache for JSON and HTML to prevent stale data
-            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-            self.send_header("Pragma", "no-cache")
-            self.send_header("Expires", "0")
-            super().end_headers()
-
-        def do_GET(self):
-            if self.path == "/api/refresh" or self.path.startswith("/api/refresh?"):
-                self._handle_refresh()
-                return
-            super().do_GET()
-
-        def _handle_refresh(self):
-            from sop_hub.data_agent.dispatch_board import refresh_dispatch_board
-            import json as _json
-            try:
-                result = refresh_dispatch_board(reason="http_refresh")
-                body = _json.dumps({"ok": True, "json_path": result["json_path"], "summary": result["summary"]}, ensure_ascii=False)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(body.encode("utf-8"))
-            except Exception as exc:
-                body = _json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(body.encode("utf-8"))
-
-        def log_message(self, fmt, *a):
-            # Quiet logging
-            pass
-
-    with socketserver.TCPServer((host, port), Handler) as httpd:
-        url = f"http://{host}:{port}/dispatch_board.html"
-        print(f"🚀 Dispatch board served at: {url}")
-        print(f"   Dashboard dir: {serve_dir}")
-        print(f"   Press Ctrl+C to stop.")
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\n⏹  Server stopped.")
-
-
 def _output_result(result: dict, output_path: str | None) -> None:
     text = json.dumps(result, indent=2, ensure_ascii=False)
     if output_path:
@@ -293,30 +197,36 @@ def _output_result(result: dict, output_path: str | None) -> None:
         print(text)
 
 
-def _dispatch_board_router(args: argparse.Namespace) -> None:
-    if args.action == "serve":
-        cmd_dispatch_board_serve(args)
-    else:
-        cmd_dispatch_board(args)
-
-
 def cmd_pending_drop(args: argparse.Namespace) -> None:
-    """Mark a pending item as dropped and auto-refresh the dashboard."""
-    from sop_hub.data_agent.dispatch_board import mark_pending_item_dropped
+    """把 image_ingestion_audit 行标记为 discarded_by_operator(看板待落实项移除)。"""
+    import sqlite3
+    from sop_hub.data_agent.db import get_db_path
 
-    try:
-        result = mark_pending_item_dropped(
-            audit_id=args.audit_id,
-            reason=args.reason or "user_dropped_from_dispatch_board",
-            do_refresh=True,
+    audit_id = args.audit_id
+    reason = args.reason or "user_dropped_from_dispatch_board"
+
+    db_path = get_db_path()
+    with sqlite3.connect(str(db_path)) as db:
+        db.row_factory = sqlite3.Row
+        existing = db.execute(
+            "SELECT id, status, reason, db_action FROM image_ingestion_audit WHERE id = ?",
+            (audit_id,),
+        ).fetchone()
+        if not existing:
+            print(f"❌ image_ingestion_audit record not found: {audit_id}", file=sys.stderr)
+            sys.exit(1)
+        prev_status = existing["status"]
+        prev_reason = existing["reason"]
+        db.execute(
+            "UPDATE image_ingestion_audit "
+            "SET db_action = 'discarded_by_operator', reason = ?, status = 'ingested' "
+            "WHERE id = ?",
+            (reason, audit_id),
         )
-        print(f"✅ Pending item dropped: audit_id={result['audit_id']}")
-        print(f"   previous: status={result['previous_status']} reason={result['previous_reason']}")
-        print(f"   new reason: {result['new_reason']}")
-        print(f"   dashboard JSON refreshed (reason=pending_item_dropped)")
-    except ValueError as exc:
-        print(f"❌ {exc}", file=sys.stderr)
-        sys.exit(1)
+        db.commit()
+    print(f"✅ pending item dropped: audit_id={audit_id}")
+    print(f"   prev status={prev_status} reason={prev_reason}")
+    print(f"   new reason={reason}")
 
 
 def main() -> None:
@@ -405,15 +315,8 @@ def main() -> None:
     p_pending_drop.add_argument("--reason", default="user_dropped_from_dispatch_board", help="drop 原因")
     p_pending_drop.set_defaults(func=cmd_pending_drop)
 
-    # dispatch-board
-    p_dboard = subparsers.add_parser("dispatch-board", help="刷新或启动 dispatch board 服务")
-    p_dboard.add_argument("action", nargs="?", default="refresh", choices=["refresh", "serve"], help="refresh: 生成JSON数据; serve: 启动HTTP静态服务")
-    p_dboard.add_argument("--reason", default=None, help="刷新原因 (e.g. manual_refresh, release_batch_updated)")
-    p_dboard.add_argument("--db", default=None, help="业务库路径 (默认从配置读取)")
-    p_dboard.add_argument("--rail-db", default=None, help="95306数据库路径")
-    p_dboard.add_argument("--host", default=None, help="HTTP服务监听地址 (默认 127.0.0.1，仅 serve)")
-    p_dboard.add_argument("--port", type=int, default=None, help="HTTP服务端口 (默认 8765，仅 serve)")
-    p_dboard.set_defaults(func=_dispatch_board_router)
+    # dispatch-board 子命令在 2026-06-02 移除(HTML 看板退役,替代为
+    # scripts/cli_dashboard.py)。如要"看板",直接 `python3 scripts/cli_dashboard.py`。
 
     args = parser.parse_args()
     if not args.command:

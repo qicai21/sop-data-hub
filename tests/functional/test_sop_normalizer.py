@@ -11,7 +11,8 @@ from pathlib import Path
 from sop_hub.models.project_sop import load_normalized_project_sops, normalize_markdown_sop_fixture
 
 
-FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "sops"
+# 2026-06-02 文档收敛:SOP md 挪到 docs/project-sops/
+FIXTURE_DIR = Path(__file__).resolve().parents[2] / "docs" / "project-sops"
 EXPECTED_PROJECT_IDS = {
     "zhongtang_special_steel",
     "chaoyang_steel",
@@ -67,7 +68,7 @@ def test_normalizer_extracts_project_and_group_tokens():
 
 
 def test_normalizer_preserves_raw_source_path_and_title():
-    path = FIXTURE_DIR / "jilin_jingang_sop.md"
+    path = FIXTURE_DIR / "jilin_jingang_jinzhou.md"
     normalized = normalize_markdown_sop_fixture(path)
 
     assert normalized.source_path == path

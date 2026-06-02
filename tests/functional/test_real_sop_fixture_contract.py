@@ -11,13 +11,15 @@ from pathlib import Path
 from sop_hub.models.project_sop import load_markdown_sop_fixture
 
 
-FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "sops"
+# 2026-06-02 文档收敛:SOP md 从 tests/fixtures/sops/ 挪到 docs/project-sops/
+# 文件名同步去掉 _sop 后缀(跟 yaml project_id 对齐)
+FIXTURE_DIR = Path(__file__).resolve().parents[2] / "docs" / "project-sops"
 EXPECTED_FIXTURE_NAMES = sorted(
     [
-        "chaoyang_steel_sop.md",
-        "jiusan_soybean_sop.md",
-        "jilin_jingang_sop.md",
-        "zhongtang_special_steel_sop.md",
+        "chaoyang_steel.md",
+        "jiusan.md",
+        "jilin_jingang_jinzhou.md",
+        "zhongtang_special_steel.md",
     ]
 )
 

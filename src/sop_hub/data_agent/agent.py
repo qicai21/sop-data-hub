@@ -956,6 +956,63 @@ class BusinessDataAgent:
             ),
         )
         self.db.commit()
+
+        # ── infer ship/dest/cargo/project_id 三层级联 ────────────────
+        # B 文本融合 → A 证据打分 → 都不行 → pending_review(业务铁律)
+        # 失败也不让 ingest 整体 fail,只是不更新 inferred 字段。
+        try:
+            from sop_hub.sop.infer_candidate_context import infer_candidate_context
+            from sop_hub.data_agent.db import get_db_path
+            received = ""
+            if source_file_name:
+                ib = self.db.execute(
+                    "SELECT received_datetime FROM message_inbox "
+                    "WHERE raw_standard_image_path LIKE ? "
+                    "ORDER BY id DESC LIMIT 1",
+                    (f"%{source_file_name}",),
+                ).fetchone()
+                if ib:
+                    received = ib["received_datetime"] or ""
+            inferred = infer_candidate_context(
+                payload, group_name=group_name or "",
+                received_datetime=received,
+                db_path=str(get_db_path()),
+            )
+            # 写回候选(含业务铁律:matched 才设 release_batch_id,挂起也明确状态)
+            new_release_batch_id = inferred.release_batch_id or release_batch_id
+            self.db.execute(
+                """
+                UPDATE inspection_ingestion_candidates SET
+                  ship_name=?, destination=?, cargo_name=?, project_id=?,
+                  release_batch_id=?, candidate_status=?, reason=?,
+                  updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (
+                    inferred.ship_name, inferred.destination, inferred.cargo_name,
+                    inferred.project_id, new_release_batch_id,
+                    inferred.candidate_status, inferred.reason,
+                    candidate_id,
+                ),
+            )
+            self.db.commit()
+            # 同步外部 status / release_batch_ids,让 runner 知道
+            if inferred.matched:
+                status = "candidate"
+                reason = inferred.reason
+                if inferred.release_batch_id:
+                    release_batch_id = inferred.release_batch_id
+                    release_batch_ids = [inferred.release_batch_id]
+            else:
+                status = "pending"
+                reason = inferred.reason
+        except Exception as exc:
+            import logging
+            logging.getLogger("sop_hub.data_agent").warning(
+                "infer_candidate_context failed for candidate %s: %s",
+                candidate_id, exc,
+            )
+
         return {
             "status": status,
             "reason": reason,

@@ -18,6 +18,17 @@ project_meta:
     same_ship_can_have_multiple_release_batches: true
     do_not_merge_release_batches: true
 
+  # ── 候选推断提示(infer_candidate_context 用) ─────────────────
+  # 用于检装车通知单 candidate 无 ship_name 时的兜底证据打分
+  daoxian_keywords: ["十四道", "十二道"]
+  destination_aliases:
+    朝阳西: ["朝阳铁", "朝阳"]
+  cargo_aliases:
+    铁矿: ["铁矿粉", "铁精粉", "朝阳西铁矿粉"]
+  # 已知该项目的船名;参与文本融合的兜底匹配。新船加这里就行。
+  known_ships:
+    - "宝腾海"
+
   # ── R76: 已发运重量计算规则(整车 / 按车型) ─────────────────
   # 用 sop-data-hub/src/sop_hub/calc DSL 表达。整车业务下,先取 95306
   # marked_weight(标载);为空则按 car_model 前缀回退;最终查表得"实装重量"。

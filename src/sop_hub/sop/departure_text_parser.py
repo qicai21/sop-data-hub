@@ -38,7 +38,27 @@ _KNOWN_SHIPS = {
     "阿芙拉",
     "厦门世纪",
     "智慧",
+    # ── chaoyang_steel 朝阳铁矿发运船 ───────────────────────
+    "宝腾海",
 }
+
+
+def get_known_ships() -> set[str]:
+    """暴露给 infer_candidate_context 用,合并 yaml 中 project_meta.known_ships。"""
+    ships = set(_KNOWN_SHIPS)
+    try:
+        import yaml
+        from pathlib import Path
+        yp = Path(__file__).resolve().parents[3] / "config" / "project_sops"
+        for f in yp.glob("*.yaml"):
+            d = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+            pm = d.get("project_meta") or {}
+            for s in pm.get("known_ships") or []:
+                if s:
+                    ships.add(str(s).strip())
+    except Exception:
+        pass
+    return ships
 
 # ── destination aliases → canonical form ───────────────────────────────
 _DESTINATION_MAP = {
@@ -140,14 +160,15 @@ def _strip_chinese_quotes(s: str) -> str:
 
 def _find_ship_in_text(raw: str) -> str:
     """Find a known ship name in text. Handles Chinese-quoted ship names."""
+    ships = get_known_ships()
     # Try raw text first
-    for known in _KNOWN_SHIPS:
+    for known in ships:
         if known in raw:
             return known
     # Try stripping Chinese quotes first (e.g. "蓝鳍" → 蓝鳍)
     stripped = _strip_chinese_quotes(raw)
     if stripped != raw:
-        for known in _KNOWN_SHIPS:
+        for known in ships:
             if known in stripped:
                 return known
     return ""

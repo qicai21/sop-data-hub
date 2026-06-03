@@ -99,11 +99,11 @@ _EXECUTOR_STATUS: dict[str, tuple[str, str]] = {
     # ── factory upload ──
     "dry_run_receiver_system": (
         "implemented",
-        "src/sop_hub/sop/factory_upload.py (upload_release_batch with dry_run=True)",
+        "src/sop_hub/sop/factory_upload.py (upload_release_batch preview=True — 只 build payload 不 POST)",
     ),
     "factory_upload": (
         "implemented",
-        "src/sop_hub/sop/factory_upload.py (upload_release_batch with dry_run=False)",
+        "src/sop_hub/sop/factory_upload.py (upload_release_batch — #98 默认真上传)",
     ),
     # ── dry_run_only (simulated delivery, no real send) ──
     "send_excel_task": (

@@ -54,8 +54,8 @@ AUTO_SAFE_TASK_TYPES = (
 )
 
 # 含对外提交(工厂上传:吉林金钢 / 朝阳鞍钢)的 task_type → 必须 --run-chains 显式
-# 开启;真正提交还要再加 --apply-chains(默认 preview)。create_release_batch 虽
-# 是内部写库,但属核心建批链,保守起见同样放在显式开启集合,不默认自动跑。
+# 开启;#98 一体化后开了就是真提交(幂等由 external_action_log 守)。
+# create_release_batch 虽是内部写库,但属核心建批链,保守起见同样放在显式开启集合。
 EXTERNAL_CHAIN_TASK_TYPES = (
     "jljg_departure_text_chain",
     "chaoyang_inspection_chain",
@@ -230,16 +230,15 @@ def run_one_pass(
     log_each: bool = False,
     batch_size: int = 200,
     run_chains: bool = False,
-    apply_chains: bool = False,
     chain_limit: int = 10,
 ) -> dict[str, Any]:
     """跑一轮:
 
     1. 扫 inbox pending text 行 → 货运明细 ingest / SOP 行建 workflow_task。
     2. backfill:补建遗留 matched_sop 行的 workflow_task(只在有漏网行时)。
-    3. (可选) run_chains:跑 pending workflow_task。
-       - apply_chains=False(默认):preview,不触发对外提交。
-       - apply_chains=True:真正执行链路,含工厂提交(谨慎,生产动作)。
+    3. 默认自动跑内部安全链(freight enrichment,无对外提交)。
+    4. run_chains=True:额外跑含对外提交的链(吉林工厂上传/朝阳)——#98 一体化:
+       跑就真跑真提交,幂等由 external_action_log 守。默认 run_chains=False 不跑。
     """
     counts = {
         "fetched": 0, "ingested": 0, "skipped": 0, "errors": 0,
@@ -280,13 +279,13 @@ def run_one_pass(
     except Exception as exc:
         logger.warning("workflow_task backfill failed: %s", exc)
 
-    # ── 默认:自动跑内部安全链(freight enrichment),apply=True,无对外动作 ──
+    # ── 默认:自动跑内部安全链(freight enrichment)—— 只写本地库,无对外提交 ──
     try:
         from sop_hub.sop.workflow_task_executor import run_pending_workflow_tasks
         safe_ran = safe_ok = 0
         for tt in AUTO_SAFE_TASK_TYPES:
             ch = run_pending_workflow_tasks(
-                db_path=db_path, apply=True, limit=chain_limit, task_type=tt,
+                db_path=db_path, limit=chain_limit, task_type=tt,
             )
             safe_ran += ch.get("ran", 0)
             safe_ok += ch.get("succeeded", 0)
@@ -298,7 +297,7 @@ def run_one_pass(
     except Exception as exc:
         logger.warning("auto-safe chain run failed: %s", exc)
 
-    # ── 可选:跑含对外提交的链(--run-chains;真提交还需 --apply-chains) ──────
+    # ── --run-chains:跑含对外提交的链(吉林工厂上传/朝阳)——跑就真提交。──────
     if run_chains:
         try:
             from sop_hub.sop.workflow_task_executor import (
@@ -307,8 +306,7 @@ def run_one_pass(
             ran = succeeded = failed = 0
             for tt in EXTERNAL_CHAIN_TASK_TYPES:
                 ch = run_pending_workflow_tasks(
-                    db_path=db_path, apply=apply_chains,
-                    limit=chain_limit, task_type=tt,
+                    db_path=db_path, limit=chain_limit, task_type=tt,
                 )
                 ran += ch.get("ran", 0)
                 succeeded += ch.get("succeeded", 0)
@@ -318,8 +316,8 @@ def run_one_pass(
             counts["chains_failed"] = failed
             if ran and log_each:
                 logger.info(
-                    "ran %d external workflow_task(s) apply=%s → ok=%d fail=%d",
-                    ran, apply_chains, succeeded, failed,
+                    "ran %d external workflow_task(s) → ok=%d fail=%d",
+                    ran, succeeded, failed,
                 )
         except Exception as exc:
             logger.warning("run_pending_workflow_tasks failed: %s", exc)
@@ -344,7 +342,6 @@ def run_loop(
     once: bool = False,
     batch_size: int = 200,
     run_chains: bool = False,
-    apply_chains: bool = False,
     chain_limit: int = 10,
 ) -> None:
     signal.signal(signal.SIGINT, _handle_signal)
@@ -352,10 +349,8 @@ def run_loop(
 
     import os
     logger.info(
-        "text_watch_daemon started pid=%d db=%s interval=%ds batch=%d "
-        "run_chains=%s apply_chains=%s",
-        os.getpid(), db_path, interval_seconds, batch_size,
-        run_chains, apply_chains,
+        "text_watch_daemon started pid=%d db=%s interval=%ds batch=%d run_chains=%s",
+        os.getpid(), db_path, interval_seconds, batch_size, run_chains,
     )
 
     pass_no = 0
@@ -364,8 +359,7 @@ def run_loop(
         try:
             counts = run_one_pass(
                 db_path=db_path, log_each=not quiet, batch_size=batch_size,
-                run_chains=run_chains, apply_chains=apply_chains,
-                chain_limit=chain_limit,
+                run_chains=run_chains, chain_limit=chain_limit,
             )
         except Exception as exc:
             logger.warning("pass %d failed: %s", pass_no, exc)
@@ -406,9 +400,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--debug", action="store_true",
                    help="verbose debug logging")
     p.add_argument("--run-chains", action="store_true",
-                   help="每轮跑 pending workflow_task(默认 preview,不对外提交)")
-    p.add_argument("--apply-chains", action="store_true",
-                   help="配合 --run-chains:真正执行链路含工厂提交(生产动作,谨慎)")
+                   help="每轮额外跑含对外提交的链(吉林工厂上传/朝阳)——跑就真提交。"
+                        "默认关:只建 task + 跑内部安全链(freight enrich)")
     p.add_argument("--chain-limit", type=int, default=10,
                    help="每轮最多跑多少个 workflow_task(default: 10)")
     return p
@@ -420,8 +413,6 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.debug else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    if args.apply_chains and not args.run_chains:
-        logger.warning("--apply-chains 需配合 --run-chains 才生效;本次按 preview 处理")
     run_loop(
         db_path=args.db,
         interval_seconds=args.interval,
@@ -429,7 +420,6 @@ def main(argv: list[str] | None = None) -> int:
         once=args.once,
         batch_size=args.batch,
         run_chains=args.run_chains,
-        apply_chains=args.apply_chains,
         chain_limit=args.chain_limit,
     )
     return 0

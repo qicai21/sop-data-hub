@@ -139,7 +139,6 @@ def test_95306_db_row_count_unchanged(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
         rail_db_path=rail_path,
     )
@@ -170,7 +169,6 @@ def test_95306_db_matches_unchanged(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
         rail_db_path=rail_path,
     )
@@ -194,7 +192,6 @@ def test_sop_db_has_matches_table(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
     )
 
@@ -217,7 +214,6 @@ def test_match_records_in_sop_db(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
     )
 
@@ -246,7 +242,6 @@ def test_wagon_shipments_in_sop_db(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
     )
 
@@ -276,7 +271,6 @@ def test_95306_db_checksum_unchanged(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
         rail_db_path=rail_path,
     )
@@ -297,7 +291,6 @@ def test_missing_rail_db_no_crash(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
         rail_db_path="/nonexistent/95306.db",
     )
@@ -316,7 +309,6 @@ def test_repeat_apply_idempotent_wagons_and_matches(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
     )
 
@@ -325,7 +317,6 @@ def test_repeat_apply_idempotent_wagons_and_matches(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
     )
 
@@ -355,7 +346,6 @@ def test_match_has_wagon_shipment_id(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
     )
 

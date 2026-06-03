@@ -83,7 +83,6 @@ class ExecutionPreview:
     excel_target: str = ""
 
     # Overall
-    apply_mode: bool = False
     error: str = ""
     skipped_reason: str = ""
 
@@ -94,7 +93,6 @@ class ExecutionPreview:
             "project_id": self.project_id,
             "chain": self.chain,
             "parsed_at": self.parsed_at,
-            "apply_mode": self.apply_mode,
             "steps": {
                 "1_parse_departure_text": {
                     "status": self.departure_status,
@@ -211,17 +209,16 @@ def run_departure_executor_chain(
     *,
     runtime_root: str | Path,
     db_path: str | Path | None = None,
-    apply_mode: bool = False,
 ) -> ExecutionPreview:
     """Execute the full departure executor chain.
 
     Chain: parse_departure_text → query_95306 → create_wagon_shipments
-           → departure_excel → factory_upload
+           → departure_excel → factory_upload → factory_verify → send_excel
 
-    In apply_mode:
-      - Writes wagon_shipments to DB
-      - Generates real Excel
-      - Performs real factory upload
+    #98 一体化:不再分 dry/apply,跑就真跑 —— 写 wagon_shipments、生成 Excel、
+    真上传工厂、反查、发微信。是否真跑由调用方(daemon --run-chains)决定;
+    一旦进来就是真的。各步失败结构化记录在 ExecutionPreview.error,不抛断链。
+    create_wagon_shipments 内部仍按 status 自我把关(pending_review 不写)。
     """
     rt = Path(runtime_root)
     chain_str = (
@@ -235,7 +232,6 @@ def run_departure_executor_chain(
         project_id="",
         chain=chain_str,
         parsed_at=now_iso_beijing_compact(),
-        apply_mode=apply_mode,
     )
 
     # ── Step 1: parse departure text ──────────────────────────────────
@@ -297,13 +293,11 @@ def run_departure_executor_chain(
             preview.query_result = query_dict
             preview.query_total_candidates = query_result.total_candidates
 
-            # ── Step 4: create_wagon_shipments ────────────────────────
-            dry_run_wagons = not apply_mode
+            # ── Step 4: create_wagon_shipments(内部按 status 自我把关)──
             wagon_result = create_wagon_shipments_from_candidates(
                 release_batch_id=preview.release_batch_id,
                 departure_candidate=candidate,
                 shipment_query_result=query_result,
-                dry_run=dry_run_wagons,
                 db_path=db_path,
             )
             wr_dict = wagon_result.to_dict()
@@ -312,8 +306,8 @@ def run_departure_executor_chain(
             preview.wagon_planned_insert = wagon_result.planned_insert_count
             preview.wagon_actual_insert = wagon_result.inserted_count
 
-            # ── Step 5: departure_excel + factory_upload (apply only) ─
-            if apply_mode and wagon_result.status == "safe_to_apply":
+            # ── Step 5: departure_excel + factory_upload(仅 safe_to_apply)─
+            if wagon_result.status == "safe_to_apply":
                 # Trigger Excel + factory even if all wagons already exist
                 # (idempotent: create_wagon_shipments skips existing, but we
                 #  still want to re-generate Excel and re-upload)
@@ -332,7 +326,6 @@ def run_departure_executor_chain(
                     from sop_hub.sop.factory_upload import upload_release_batch
                     factory_result = upload_release_batch(
                         preview.release_batch_id,
-                        dry_run=False,
                         db_path=db_path,
                     )
                     preview.factory_login = factory_result.login_success
@@ -398,7 +391,6 @@ def run_departure_executor_chain_if_applicable(
     *,
     runtime_root: str | Path,
     db_path: str | Path | None = None,
-    apply_mode: bool = False,
 ) -> ExecutionPreview | None:
     """Convenience: run chain only if departure text matches jilin_jingang.
 
@@ -409,5 +401,5 @@ def run_departure_executor_chain_if_applicable(
     if "四平" not in event.text:
         return None
     return run_departure_executor_chain(
-        event, runtime_root=runtime_root, db_path=db_path, apply_mode=apply_mode,
+        event, runtime_root=runtime_root, db_path=db_path,
     )

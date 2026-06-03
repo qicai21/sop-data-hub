@@ -46,9 +46,8 @@ def main() -> None:
     parser.add_argument("--cargo-name", default="")
     parser.add_argument("--window-before", type=int, default=60)
     parser.add_argument("--window-after", type=int, default=60)
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--dry-run", action="store_true")
-    mode.add_argument("--apply", action="store_true")
+    # #98 一体化:不再分 dry-run/apply。跑就真跑 —— status==safe_to_apply 直接写库,
+    # pending_review(数量需人工裁决)只返回计划不写。
     parser.add_argument("--allow-partial", action="store_true")
     parser.add_argument("--no-skip-existing", dest="skip_existing", action="store_false", default=True)
     parser.add_argument("--db-path", default=None)
@@ -79,7 +78,6 @@ def main() -> None:
         release_batch_id=args.release_batch_id,
         departure_candidate=departure,
         shipment_query_result=query_result,
-        dry_run=args.dry_run,
         allow_partial=args.allow_partial,
         allow_existing_skip=args.skip_existing,
         db_path=args.db_path,

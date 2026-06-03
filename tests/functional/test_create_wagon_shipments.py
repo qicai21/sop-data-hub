@@ -126,7 +126,6 @@ def test_candidates_equal_car_count_safe_to_apply(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=True,
         db_path=db_path,
     )
     assert result.status == "safe_to_apply"
@@ -136,22 +135,25 @@ def test_candidates_equal_car_count_safe_to_apply(tmp_path: Path):
 
 # ── Test 2: dry-run → no writes ────────────────────────────────────────
 
-def test_dry_run_does_not_write(tmp_path: Path):
+def test_pending_review_does_not_write(tmp_path: Path):
+    # #98: dry_run 没了,写库自我把关于 status。pending_review(数量对不上、需人工
+    # 裁决)不写库 —— 这是唯一保留的"人工 review 前预览"语义。
     db_path = tmp_path / "test.db"
     _create_sop_db(db_path)
 
-    create_wagon_shipments_from_candidates(
+    result = create_wagon_shipments_from_candidates(
         release_batch_id=BATCH_ID,
-        departure_candidate=_make_departure(3),
-        shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=True,
-        db_path=db_path,
+        departure_candidate=_make_departure(3),          # 期望 3
+        shipment_query_result=_make_query_result(_make_candidates(2)),  # 只有 2
+        db_path=db_path,                                  # 无 allow_partial → pending_review
     )
 
+    assert result.status == "pending_review"
+    assert result.safe_to_apply is False
     conn = sqlite3.connect(str(db_path))
     cnt = conn.execute("SELECT COUNT(*) FROM wagon_shipments").fetchone()[0]
     conn.close()
-    assert cnt == 0
+    assert cnt == 0   # 自我把关:pending_review 不写
 
 
 # ── Test 3: apply writes wagon_shipments ───────────────────────────────
@@ -164,7 +166,6 @@ def test_apply_writes_wagon_shipments(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
     )
     assert result.status == "safe_to_apply"
@@ -188,7 +189,6 @@ def test_apply_writes_waybill_wagon_container(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
     )
 
@@ -214,7 +214,6 @@ def test_repeat_apply_idempotent_skip(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
     )
     assert r1.inserted_count == 3
@@ -224,7 +223,6 @@ def test_repeat_apply_idempotent_skip(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
     )
     assert r2.skipped_existing_count == 3
@@ -250,7 +248,6 @@ def test_cumulative_departures_18_plus_28(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(18),
         shipment_query_result=_make_query_result(candidates_18),
-        dry_run=False,
         db_path=db_path,
     )
     assert r1.inserted_count == 18
@@ -261,7 +258,6 @@ def test_cumulative_departures_18_plus_28(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(28),
         shipment_query_result=_make_query_result(candidates_28),
-        dry_run=False,
         db_path=db_path,
     )
     assert r2.inserted_count == 28
@@ -294,7 +290,6 @@ def test_cross_batch_conflict(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=True,
         db_path=db_path,
     )
     assert result.conflict_count >= 1
@@ -313,7 +308,6 @@ def test_fewer_candidates_than_expected(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(10),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=True,
         db_path=db_path,
     )
     assert result.status == "pending_review"
@@ -333,7 +327,6 @@ def test_filter_reduces_large_candidates(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(candidates),
-        dry_run=True,
         db_path=db_path,
     )
     # Since all match destination, filter doesn't reduce count
@@ -353,7 +346,6 @@ def test_allow_partial_accepts_fewer(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(10),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=True,
         allow_partial=True,
         db_path=db_path,
     )
@@ -372,7 +364,6 @@ def test_release_batch_not_found(tmp_path: Path):
         release_batch_id="nonexistent",
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(),
-        dry_run=True,
         db_path=db_path,
     )
     assert result.status == "not_found"
@@ -388,7 +379,6 @@ def test_no_candidates(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result([]),
-        dry_run=True,
         db_path=db_path,
     )
     assert result.status == "no_candidates"
@@ -405,7 +395,6 @@ def test_updates_release_batch_wagon_count(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
     )
 
@@ -427,7 +416,6 @@ def test_cumulative_updates_wagon_count(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(18),
         shipment_query_result=_make_query_result(_make_candidates(18, "18")),
-        dry_run=False,
         db_path=db_path,
     )
     # Then 28
@@ -435,7 +423,6 @@ def test_cumulative_updates_wagon_count(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(28),
         shipment_query_result=_make_query_result(_make_candidates(28, "28")),
-        dry_run=False,
         db_path=db_path,
     )
 
@@ -464,7 +451,6 @@ def test_does_not_modify_95306_db(tmp_path: Path):
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(3),
         shipment_query_result=_make_query_result(_make_candidates(3)),
-        dry_run=False,
         db_path=db_path,
         rail_db_path=rail_path,
     )

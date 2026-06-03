@@ -111,7 +111,7 @@ class FactoryUploadBatchResult:
     results: list[UploadResult] = field(default_factory=list)
     login_success: bool = False
     login_error: str = ""
-    dry_run: bool = False
+    preview: bool = False   # #98: 仅 build payload 不 POST(人工 review 用)
 
     @property
     def all_success(self) -> bool:
@@ -347,18 +347,18 @@ def upload_release_batch(
     release_batch_id: str,
     *,
     project_id: str = "jilin_jingang_jinzhou",
-    dry_run: bool = True,
+    preview: bool = False,
     db_path: str | Path | None = None,
 ) -> FactoryUploadBatchResult:
     """Upload all wagon shipments for a release_batch to the factory system.
 
-    In dry_run mode: builds payloads, attempts login, but does NOT POST wagons.
-    In live mode: login → POST each wagon → collect results.
+    #98 一体化:默认就是真上传(login → POST each wagon → 结构化结果)。
+    preview=True 是唯一保留的"人工 review"语义:只 login + build payload、不 POST。
 
     Args:
         release_batch_id: The release_batch to upload wagons for.
         project_id: SOP project id.
-        dry_run: If True, only login + build payloads, skip POST.
+        preview: If True, only login + build payloads, skip POST (human review).
         db_path: Optional sop_agent.db path.
 
     Returns:
@@ -371,7 +371,7 @@ def upload_release_batch(
         total_wagons=0,
         success_count=0,
         failure_count=0,
-        dry_run=dry_run,
+        preview=preview,
     )
 
     # ── Step 1: login ──
@@ -391,12 +391,12 @@ def upload_release_batch(
 
     result.total_wagons = len(payloads)
 
-    if dry_run:
-        # In dry-run: return payload previews in results
+    if preview:
+        # preview:返回 payload 预览,不 POST(人工 review)
         for w in payloads:
             result.results.append(UploadResult(
                 wagon_no=w.wagon_no,
-                success=True,  # dry-run always "succeeds"
+                success=True,  # preview 一律标 success
                 http_status=0,
                 response_body=json.dumps(w.payload, ensure_ascii=False),
             ))
@@ -433,12 +433,8 @@ def _build_cli_parser():
         "--release-batch-id", required=True, help="Release batch ID"
     )
     parser.add_argument(
-        "--dry-run", action="store_true", default=True,
-        help="Login + build payloads, skip POST (default)"
-    )
-    parser.add_argument(
-        "--apply", action="store_true",
-        help="Actually POST to factory system"
+        "--preview", action="store_true",
+        help="只 login + build payload,不 POST(人工 review);默认就是真上传"
     )
     parser.add_argument(
         "--db-path", type=Path, default=None,
@@ -451,17 +447,15 @@ def main():
     parser = _build_cli_parser()
     args = parser.parse_args()
 
-    dry_run = not args.apply
-
     result = upload_release_batch(
         args.release_batch_id,
-        dry_run=dry_run,
+        preview=args.preview,
         db_path=args.db_path,
     )
 
     print(json.dumps({
         "release_batch_id": result.release_batch_id,
-        "dry_run": result.dry_run,
+        "preview": result.preview,
         "login_success": result.login_success,
         "login_error": result.login_error,
         "total_wagons": result.total_wagons,

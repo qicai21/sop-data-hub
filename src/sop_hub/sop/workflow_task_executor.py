@@ -118,7 +118,6 @@ def run_workflow_task(
     task_id: int,
     *,
     db_path: str | Path | None = None,
-    apply: bool = False,
     force: bool = False,
 ) -> dict[str, Any]:
     """Execute a single workflow_task by id.
@@ -160,16 +159,16 @@ def run_workflow_task(
     # ── Dispatch by task_type ─────────────────────────────────────────
     try:
         if task_type == "jljg_departure_text_chain":
-            result = _execute_jljg_departure(input_json, message_id, db_path=db, apply=apply, task_id=task_id)
+            result = _execute_jljg_departure(input_json, message_id, db_path=db, task_id=task_id)
         elif task_type == "create_release_batch":
-            result = _execute_create_release_batch(input_json, message_id, db_path=db, apply=apply)
+            result = _execute_create_release_batch(input_json, message_id, db_path=db)
         elif task_type == "chaoyang_inspection_chain":
             result = _execute_chaoyang_inspection_chain(
-                input_json, message_id, db_path=db, apply=apply, task_id=task_id,
+                input_json, message_id, db_path=db, task_id=task_id,
             )
         elif task_type == "freight_detail_enrichment":
             result = _execute_freight_detail_enrichment(
-                input_json, message_id, db_path=db, apply=apply,
+                input_json, message_id, db_path=db,
             )
         elif task_type in ("chaoyang_dispatch_context", "generic_sop_task"):
             result = {
@@ -224,10 +223,13 @@ def _execute_jljg_departure(
     message_id: str,
     *,
     db_path: Path,
-    apply: bool,
     task_id: int = 0,
 ) -> dict[str, Any]:
-    """Execute the jilin_jingang departure text chain."""
+    """Execute the jilin_jingang departure text chain.
+
+    #98 一体化:进来即真跑(写库、生成 Excel、真上传工厂、反查、发微信)。是否进
+    来由调用方(daemon --run-chains)决定。幂等(R71)由 external_action_log 守住:
+    若该 task 的对外动作**已执行过**,直接跳过、绝不二次提交。"""
     from sop_hub.sop.executor_runner import (
         run_departure_executor_chain,
         ExecutionPreview,
@@ -246,36 +248,41 @@ def _execute_jljg_departure(
         received_at=received_at,
     )
 
-    # ── R71: check external action idempotency before executing ──────
-    effective_apply = apply
-    if apply:
-        try:
-            import sqlite3 as _sql
-            _conn = _sql.connect(str(db_path))
-            executed_count = _conn.execute(
-                "SELECT COUNT(*) FROM external_action_log WHERE workflow_task_id=? AND action_status='executed'",
-                (task_id,),
-            ).fetchone()[0]
-            _conn.close()
-            if executed_count > 0:
-                effective_apply = False
-        except Exception:
-            pass  # table may not exist yet
+    # ── R71 幂等:对外动作已执行过 → 跳过重跑,绝不二次提交工厂 ──────────
+    already_executed = False
+    try:
+        import sqlite3 as _sql
+        _conn = _sql.connect(str(db_path))
+        already_executed = _conn.execute(
+            "SELECT COUNT(*) FROM external_action_log "
+            "WHERE workflow_task_id=? AND action_status='executed'",
+            (task_id,),
+        ).fetchone()[0] > 0
+        _conn.close()
+    except Exception:
+        pass  # table may not exist yet
+    if already_executed:
+        return {
+            "action": "skipped",
+            "status": "succeeded",
+            "output_json": {
+                "reason": "external actions already executed (idempotent) — skip re-submit",
+            },
+        }
 
     preview: ExecutionPreview = run_departure_executor_chain(
         event,
         runtime_root=RUNTIME_ROOT,
         db_path=str(db_path),
-        apply_mode=effective_apply,
     )
 
     output = preview.to_dict()
 
     # ── R70: plan external actions with idempotency keys ──────────────
     external_actions: list[dict[str, Any]] = []
+    wagon_count = 0
     try:
         release_batch_id = preview.release_batch_id or ""
-        wagon_count = 0
         step3 = (preview.wagon_result or {})
         if isinstance(step3, dict):
             wagon_count = step3.get("planned_insert_count", 0) or step3.get("expected_car_count", 0) or 0
@@ -290,19 +297,18 @@ def _execute_jljg_departure(
             release_batch_id=release_batch_id,
             wagon_count=wagon_count,
             ship_name=preview.release_batch_ship or "",
-            apply_mode=effective_apply,
+            apply_mode=True,
         )
         output["external_actions"] = {
             "planned": len([a for a in external_actions if a.get("action") == "created"]),
             "skipped_duplicate": len([a for a in external_actions if a.get("action") == "skipped"]),
-            "effective_apply": effective_apply,
             "actions": external_actions,
         }
     except Exception as exc:
         output["external_actions_error"] = str(exc)
 
-    # ── R71: mark external actions as executed if chain ran with apply ─
-    if effective_apply and not preview.skipped_reason and not preview.error:
+    # ── R71: 链路真正跑通(无 skip/无 error)→ 标记对外动作 executed ──────
+    if not preview.skipped_reason and not preview.error:
         try:
             from sop_hub.sop.external_action_log import mark_external_action_executed
             steps = preview.to_dict().get("steps", {})
@@ -360,9 +366,10 @@ def _execute_create_release_batch(
     message_id: str,
     *,
     db_path: Path,
-    apply: bool,
 ) -> dict[str, Any]:
-    """Execute create_release_batch: OCR extraction JSON → release_batches DB."""
+    """Execute create_release_batch: OCR extraction JSON → release_batches DB.
+
+    #98 一体化:进来即真写库(ingest_release_batch_file 幂等)。"""
     extraction_path = input_json.get("extraction_json_path")
     if not extraction_path:
         return {
@@ -379,21 +386,7 @@ def _execute_create_release_batch(
             "error_message": f"extraction_json_path not found: {extraction_path}",
         }
 
-    if not apply:
-        # Dry-run: validate extraction JSON is parseable
-        payload = json.loads(ext_path.read_text(encoding="utf-8"))
-        return {
-            "action": "dry_run",
-            "status": "succeeded",
-            "output_json": {
-                "mode": "dry_run",
-                "extraction_path": str(ext_path),
-                "payload_keys": list(payload.keys()) if isinstance(payload, dict) else [],
-                "message": "dry_run: extraction JSON found, apply=True to write DB",
-            },
-        }
-
-    # Apply mode: actually ingest
+    # 真正 ingest(幂等:已存在的 batch 会 skip)
     from sop_hub.data_agent.agent import BusinessDataAgent
     agent = BusinessDataAgent()
     records = agent.ingest_release_batch_file(str(ext_path))
@@ -415,10 +408,9 @@ def _execute_freight_detail_enrichment(
     message_id: str,
     *,
     db_path: Path,
-    apply: bool,
 ) -> dict[str, Any]:
     """#96: freight_detail text → match release_batch by CGR/HNMC → enrich
-    cargo_product_name (印粉/麦克粉/…)."""
+    cargo_product_name (印粉/麦克粉/…). #98:进来即真写(内部安全,无对外提交)。"""
     from sop_hub.sop.freight_detail_extractor import extract_freight_detail
     from sop_hub.sop.enrich_release_batch import (
         auto_enrich_release_batches_from_freight_detail,
@@ -443,7 +435,7 @@ def _execute_freight_detail_enrichment(
         }
 
     res = auto_enrich_release_batches_from_freight_detail(
-        candidate, apply=apply, db_path=db_path,
+        candidate, apply=True, db_path=db_path,
     )
     st = res.get("status")
     if st == "schema_missing_fields":
@@ -458,9 +450,9 @@ def _execute_freight_detail_enrichment(
         # may be created later, so keep retryable (non-terminal skipped).
         return {"action": "skipped", "status": "skipped", "output_json": res}
 
-    # applied / dry_run / no_op → success
+    # applied / no_op → success
     return {
-        "action": "executed" if apply else "dry_run",
+        "action": "executed",
         "status": "succeeded",
         "output_json": res,
     }
@@ -471,12 +463,12 @@ def _execute_chaoyang_inspection_chain(
     message_id: str,
     *,
     db_path: Path,
-    apply: bool,
     task_id: int = 0,
 ) -> dict[str, Any]:
     """R78: 朝阳钢铁检装车通知单 → release_batch 匹配 → wagon_shipments → excel。
 
-    步骤(只在 apply=True 时真正写库 / 写文件):
+    #98 一体化:进来即真跑(写库 / 写文件)。多/无匹配 → candidate 标 pending_review
+    并 task 退 skipped(这就是人工 review 入口)。步骤:
       1. 从 message_inbox_id 找 inspection_ingestion_candidates 行
       2. 读 VLM 抽取 JSON,过滤 defect=true 的车(排车不入 wagon_shipments)
       3. 用 match_release_batch_by_ship_destination_cargo 找匹配 batch
@@ -547,16 +539,15 @@ def _execute_chaoyang_inspection_chain(
             destination_station=dest, cargo_name=cargo, db_conn=conn,
         )
         if m.reason in ("no_open_batch", "no_match", "multiple_candidates"):
-            if apply:
-                conn.execute(
-                    "UPDATE inspection_ingestion_candidates "
-                    "SET candidate_status='pending_review', reason=?, "
-                    "    updated_at=datetime('now') WHERE id=?",
-                    (m.reason, candidate_id),
-                )
-                conn.commit()
+            conn.execute(
+                "UPDATE inspection_ingestion_candidates "
+                "SET candidate_status='pending_review', reason=?, "
+                "    updated_at=datetime('now') WHERE id=?",
+                (m.reason, candidate_id),
+            )
+            conn.commit()
             return {
-                "action": "executed" if apply else "dry_run",
+                "action": "executed",
                 "status": "skipped",
                 "output_json": {
                     "stage": "match_release_batch",
@@ -568,20 +559,6 @@ def _execute_chaoyang_inspection_chain(
             }
 
         matched_batch_id = m.matched_release_batch_id
-
-        if not apply:
-            return {
-                "action": "dry_run",
-                "status": "succeeded",
-                "output_json": {
-                    "stage": "would_proceed",
-                    "matched_release_batch_id": matched_batch_id,
-                    "candidate_id": candidate_id,
-                    "loading_car_count": len(loading_car_nos),
-                    "non_loading_car_count": len(all_rows) - len(loading_car_nos),
-                    "note": "apply=True to write wagon_shipments + excel",
-                },
-            }
 
         # ── 4. Query 95306 per car_no, build wagon_shipments rows ─
         if not RAIL_DB.exists():
@@ -869,10 +846,12 @@ def run_pending_workflow_tasks(
     limit: int = 10,
     task_type: str | None = None,
     db_path: str | Path | None = None,
-    apply: bool = False,
     force: bool = False,
 ) -> dict[str, Any]:
     """Run all pending workflow tasks, optionally filtered by type.
+
+    #98 一体化:跑就真跑。是否调用本函数(以及跑哪些 task_type)由调用方决定
+    (daemon:freight enrich 默认自动跑;外部提交链需 --run-chains)。
 
     Returns: {ran, succeeded, failed, skipped, results: [...]}
     """
@@ -896,7 +875,7 @@ def run_pending_workflow_tasks(
     counts = {"ran": 0, "succeeded": 0, "failed": 0, "skipped": 0}
 
     for row in rows:
-        r = run_workflow_task(row["id"], db_path=db, apply=apply, force=force)
+        r = run_workflow_task(row["id"], db_path=db, force=force)
         results.append(r)
         counts["ran"] += 1
         s = r.get("status", "unknown")
@@ -936,8 +915,6 @@ if __name__ == "__main__":
     p.add_argument("--run-pending", action="store_true", help="Execute pending tasks")
     p.add_argument("--task-type", type=str, help="Filter --run-pending by task_type")
     p.add_argument("--limit", type=int, default=10, help="Max tasks for --run-pending")
-    p.add_argument("--apply", action="store_true", default=False,
-                   help="Real execution (default: dry-run)")
     p.add_argument("--force", action="store_true",
                    help="Re-run already succeeded/failed tasks")
     p.add_argument("--get", type=int, help="Get task with message_inbox join")
@@ -948,14 +925,14 @@ if __name__ == "__main__":
 
     if args.run_task:
         result = run_workflow_task(
-            args.run_task, db_path=_db, apply=args.apply, force=args.force,
+            args.run_task, db_path=_db, force=args.force,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
     elif args.run_pending:
         result = run_pending_workflow_tasks(
             limit=args.limit, task_type=args.task_type,
-            db_path=_db, apply=args.apply, force=args.force,
+            db_path=_db, force=args.force,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
 

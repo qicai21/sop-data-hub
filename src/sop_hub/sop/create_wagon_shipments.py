@@ -11,7 +11,7 @@ Supports repeated departures for the same ship/release_batch:
 This module:
 - reads sop_agent.db (release_batches + wagon_shipments)
 - reads 95306_collection.sqlite3 (shipment_release_batch_matches, read-only)
-- writes sop_agent.db (INSERT wagon_shipments) ONLY with dry_run=False
+- writes sop_agent.db (INSERT wagon_shipments) only when status==safe_to_apply
 - writes sop_agent.db (INSERT shipment_release_batch_matches) — local table
 - updates release_batches.actual_wagon_count + dispatch_status
 - does NOT write to 95306 DB — 95306 is read-only
@@ -225,7 +225,6 @@ def create_wagon_shipments_from_candidates(
     release_batch_id: str,
     departure_candidate: DepartureCandidate,
     shipment_query_result: ShipmentQueryResult,
-    dry_run: bool = True,
     allow_partial: bool = False,
     allow_existing_skip: bool = True,
     db_path: str | Path | None = None,
@@ -233,18 +232,22 @@ def create_wagon_shipments_from_candidates(
 ) -> CreateWagonShipmentsResult:
     """Create wagon_shipments rows from 95306 shipment candidates.
 
+    #98 一体化:不再分 dry_run/apply。计划完成后,**status==safe_to_apply 即直接
+    写库**;status==pending_review(数量对不上、需人工裁决,如多 lot 分票)则只返回
+    计划、不写库 —— 这就是唯一保留的"人工 review 前预览"语义,由 status 自然驱动,
+    不靠 flag。
+
     Args:
       release_batch_id: target release_batches.id.
       departure_candidate: parsed departure text.
       shipment_query_result: from query_95306_shipments_by_window.
-      dry_run: if True, plan only, no DB writes.
       allow_partial: if True, accept fewer candidates than car_count.
       allow_existing_skip: if True, skip already-existing wagons.
       db_path: path to sop_agent.db.
       rail_db_path: path to 95306_collection.sqlite3.
 
     Returns:
-      CreateWagonShipmentsResult.
+      CreateWagonShipmentsResult.  写库仅在 safe_to_apply 时发生。
     """
     sop_path = _resolve_sop_db_path(db_path)
 
@@ -420,11 +423,11 @@ def create_wagon_shipments_from_candidates(
             from sop_hub.utils.time import now_iso_beijing_compact as _now_bj
             result.release_batch_progress["dispatch_status_updated_at"] = _now_bj()
 
-        # ── 8. Dry run → return ─────────────────────────────────────
-        if dry_run:
+        # ── 8. 需人工裁决(pending_review)→ 只返回计划,不写库 ──────────
+        if not result.safe_to_apply:
             return result
 
-        # ── 9. Apply: write to sop_agent.db ──────────────────────────
+        # ── 9. safe_to_apply → 直接写 sop_agent.db ───────────────────
         inserted = 0
         departure_id = _generate_departure_id(release_batch_id, ship_name)
         from sop_hub.utils.time import now_iso_beijing_compact
@@ -515,7 +518,7 @@ def create_wagon_shipments_from_candidates(
         # SOP-driven via yaml shipped_weight_rule. Failures are surfaced as
         # warnings, never block ingestion. Uses its own connection so it sees
         # the just-committed rows.
-        if not dry_run and result.inserted_count > 0:
+        if result.inserted_count > 0:
             try:
                 from sop_hub.sop.shipped_weight import compute_for_release_batch
                 sw = compute_for_release_batch(release_batch_id, db_path=str(sop_path))

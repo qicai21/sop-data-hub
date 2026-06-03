@@ -52,7 +52,8 @@ def test_plan_has_freight_detail_flow():
 def test_plan_has_departure_flow():
     plan = _plan()
     assert "departure_flow" in plan.flows
-    assert len(plan.flows["departure_flow"]) >= 14
+    # #97 移除了 telegram_json_delivery 节点,节点数 -1
+    assert len(plan.flows["departure_flow"]) >= 13
 
 
 def test_plan_has_tracking_flow():
@@ -164,11 +165,11 @@ def test_task_resolver_excel_generation():
     assert task.task_type == "excel_generation"
 
 
-def test_task_resolver_telegram_delivery():
+def test_task_resolver_telegram_delivery_removed():
+    # #97: telegram_delivery 已从 SOP / 编译器移除,不应再解析出该 task
     plan = _plan()
     task = next((t for t in plan.task_resolver_tasks if t.node == "telegram_delivery"), None)
-    assert task is not None
-    assert task.task_type == "telegram_delivery"
+    assert task is None
 
 
 # ── 9. Summary ─────────────────────────────────────────────────────────

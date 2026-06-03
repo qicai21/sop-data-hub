@@ -810,11 +810,17 @@ def _execute_chaoyang_inspection_chain(
         )
         conn.commit()
 
-        # "第几列" = 该 batch 下 status=matched 的候选总数(含当前)
+        # "第几列" = 该 batch 下**全部已落实**候选总数(含当前)。包含
+        # matched(已经链路对上)和 matched_by_inference(推断阶段已对上但
+        # 链路还没真正跑过,如今天宝腾海 06-02 那张)。之前只数 'matched'
+        # 漏掉 matched_by_inference,2026-06-03 宝腾海算成"第二列"
+        # (实际第三列)的根因。pending_review / pending_95306_match 这些
+        # 还没落实的不算。
         try:
             nth = conn.execute(
                 "SELECT COUNT(*) FROM inspection_ingestion_candidates "
-                "WHERE release_batch_id=? AND candidate_status='matched'",
+                "WHERE release_batch_id=? AND candidate_status IN "
+                "      ('matched','matched_by_inference')",
                 (matched_batch_id,),
             ).fetchone()[0]
         except Exception:
@@ -906,11 +912,14 @@ def _execute_chaoyang_inspection_chain(
 
 
 def _resolve_send_target(project_id: str, mode: str = "test") -> str | None:
-    """Read send target_contact (first) from yaml report_delivery_flow.
+    """Read send target from yaml report_delivery_flow.
 
-    Returns None if yaml has no test/production node configured.
-    Modes: "test" -> send_test_report.target_contact[0]
-           "production" -> send_production_report.target_contact[0] (or target_group)
+    优先级:target_group > target_contact。群比个人触达面广、可追溯,业务
+    缺省就该发到群。target_contact 留作 fallback(yaml 只配了联系人时)。
+    2026-06-03 宝腾海漏发数据单发群、只发郭东北的根因即此原优先级反了。
+
+    Modes: "test" -> send_test_report.{target_group[0] or target_contact[0]}
+           "production" -> send_production_report.{target_group[0] or target_contact[0]}
     """
     try:
         import yaml as _yaml
@@ -924,12 +933,17 @@ def _resolve_send_target(project_id: str, mode: str = "test") -> str | None:
     for step in flows.get("steps") or []:
         if step.get("node") != node_name:
             continue
+        groups = step.get("target_group") or []
+        if groups:
+            g = str(groups[0]).strip()
+            # wx-ui-bridge 搜群必须用 [GROUPxxx] 完整格式(方括号是搜索码的
+            # 一部分),裸搜 GROUP013 会命中别的会话。yaml 漏写就在这兜底。
+            if g.startswith("GROUP") and not g.startswith("["):
+                g = f"[{g}]"
+            return g
         contacts = step.get("target_contact") or []
         if contacts:
             return str(contacts[0])
-        groups = step.get("target_group") or []
-        if groups:
-            return str(groups[0])
     return None
 
 

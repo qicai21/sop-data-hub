@@ -1,0 +1,35 @@
+# ── 清理台账(cleanup ledger)───────────────────────────────────────────
+# 集中登记"先留着、过段时间再删"的东西,免得跑着跑着忘了。
+#
+# cleanup_check.py 每周扫一遍:
+#   - 今天 >= ripe_after 且 status=pending → 到期,跑 verify 检查
+#   - verify 全部 exit 0(通过)→ 标"可删",弹 macOS 通知提醒你
+#   - 任一 verify 失败 → "到期但还有引用",列出是哪条,先别删
+# 脚本**只提示、绝不自动删**。你看到通知后跟我说一声,我跑 verify 复核再删。
+#
+# 加新项:复制一段 [[items]],填好 paths / ripe_after / verify 即可。
+# 删完一项:把它的 status 改成 "done"(留作记录),或整段删掉。
+
+[[items]]
+id = "openclaw-backup-qwen3vl"
+description = "qwen3-vl 服务旧副本 — 已搬到 ~/projects/repos/qwen3vl-mlx-service 并由 launchctl 托管"
+paths = [
+  "/Users/qicai21/.openclaw.backup/workspace-expert-agent/.venv-mlx",
+  "/Users/qicai21/.openclaw.backup/workspace-expert-agent/qwen3vl-mlx-service",
+]
+size = "1.2G"
+deferred_on = "2026-06-03"
+ripe_after = "2026-06-10"        # 新服务跑稳一周后
+status = "pending"
+
+  [[items.verify]]
+  desc = "新 qwen3-vl 服务健康(8018,launchctl 托管,model_loaded)"
+  cmd = "curl -s --max-time 5 http://localhost:8018/health | grep -q '\"model_loaded\": *true'"
+
+  [[items.verify]]
+  desc = "已安装的 LaunchAgent 指向新路径、且不含旧 .openclaw 路径"
+  cmd = "grep -q 'projects/repos/qwen3vl-mlx-service' ~/Library/LaunchAgents/com.qicai.qwen3vl.mlx.plist && ! grep -q '.openclaw' ~/Library/LaunchAgents/com.qicai.qwen3vl.mlx.plist"
+
+  [[items.verify]]
+  desc = "repos 源码/配置里没有再引用旧 .openclaw 路径(只扫真实源码,排除 venv/git/pycache/台账)"
+  cmd = "! grep -rIl --exclude-dir=.venv-mlx --exclude-dir=.venv --exclude-dir=venv --exclude-dir=.git --exclude-dir=__pycache__ --exclude-dir=node_modules --exclude-dir=maintenance --include='*.py' --include='*.yaml' --include='*.yml' --include='*.json' -- '\\.openclaw' /Users/qicai21/projects/repos 2>/dev/null | grep -q ."

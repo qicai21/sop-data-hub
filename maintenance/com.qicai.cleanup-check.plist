@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.qicai.cleanup-check</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/python3.14</string>
+    <string>/Users/qicai21/projects/repos/sop-data-hub/maintenance/cleanup_check.py</string>
+  </array>
+  <!-- 每周一 10:00 跑一次;关机错过则下次唤醒补跑一次 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>1</integer>
+    <key>Hour</key><integer>10</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>/Users/qicai21/projects/repos/sop-data-hub/maintenance/cleanup_check.log</string>
+  <key>StandardErrorPath</key><string>/Users/qicai21/projects/repos/sop-data-hub/maintenance/cleanup_check.log</string>
+</dict>
+</plist>

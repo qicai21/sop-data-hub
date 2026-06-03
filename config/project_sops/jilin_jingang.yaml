@@ -41,7 +41,6 @@ scope:
     - 持续跟踪95306状态直至确认收货
   excludes:
     - 不定义python脚本文件名
-    - 不定义telegram联系人
     - 不定义HTTP实现细节
     - 不定义数据库schema
     - 不定义OCR/VLM模型实现
@@ -412,11 +411,6 @@ flows:
             receiver: "郭东北"
         action:
           - "send_excel_task"
-      - node: "telegram_json_delivery"
-        runtime_rules:
-          test_mode: true
-        action:
-          - "telegram_json_delivery_task"
       - node: "enter_tracking_phase"
         next:
           - "track_95306_status"
@@ -609,8 +603,6 @@ runtime:
       task_type: "excel_generation"
     factory_json:
       task_type: "json_generation"
-    telegram_delivery:
-      task_type: "telegram_delivery"
     receiver_upload:
       task_type: "http_delivery"
 

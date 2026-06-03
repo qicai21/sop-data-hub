@@ -110,10 +110,6 @@ _EXECUTOR_STATUS: dict[str, tuple[str, str]] = {
         "dry_run_only",
         "src/sop_hub/sop/delivery_result.py (simulate_delivery_result — local only)",
     ),
-    "telegram_json_delivery_task": (
-        "dry_run_only",
-        "src/sop_hub/sop/delivery_result.py (simulate_delivery_result — local only)",
-    ),
     # ── all others → default "missing" ──
 }
 
@@ -121,7 +117,6 @@ _EXECUTOR_STATUS: dict[str, tuple[str, str]] = {
 _TASK_TYPE_MAP: dict[str, str] = {
     "departure_excel": "excel_generation",
     "factory_json": "json_generation",
-    "telegram_delivery": "telegram_delivery",
     "receiver_upload": "http_delivery",
 }
 
@@ -298,7 +293,6 @@ def _compile_task_resolver_tasks(
         action_map = {
             "departure_excel": "generate_departure_excel_task",
             "factory_json": "generate_factory_transport_json_task",
-            "telegram_delivery": "telegram_json_delivery_task",
             "receiver_upload": "dry_run_receiver_system",
         }
         primary_action = action_map.get(resolver_name, resolver_name)

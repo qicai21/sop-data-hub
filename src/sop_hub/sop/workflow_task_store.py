@@ -84,9 +84,13 @@ def _resolve_task_type(project_id: str, flow_name: str, node_name: str) -> str:
             and node_name == "detect_departure_message"):
         return "jljg_departure_text_chain"
     # R78: 朝阳检装车通知单 → 全链(match → 95306 → wagons → excel)
+    # 节点名:live_service 分类管线实际产出 create_inspection_candidate
+    # (run_live_service.py),repair 路径用 extract_inspection_notice —— 两个都收,
+    # 否则生产者/消费者节点名不一致会把检装车链卡死(2026-06-03 宝腾海漏触发根因)。
     if (project_id == "chaoyang_steel"
             and flow_name in ("inspection_flow", "inspection_notice_flow")
-            and node_name in ("detect_inspection_notice",
+            and node_name in ("create_inspection_candidate",
+                              "detect_inspection_notice",
                               "extract_inspection_notice",
                               "extract_inspection_notice_fields")):
         return "chaoyang_inspection_chain"

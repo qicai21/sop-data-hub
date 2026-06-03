@@ -59,9 +59,12 @@ def promote_classified_image_messages(
       - ``processing_status='classified'``
       - ``is_sop_msg=1``
       - ``sop_flow`` and ``sop_node`` are non-empty (set by classification pipeline)
-      - ``(sop_project_id IS NULL OR sop_project_id='')``
       - ``extraction_json_path`` is non-empty and the file exists
-      - extraction JSON has a non-empty ``project`` field
+
+    Project resolution: 若 ``sop_project_id`` 已有值,直接用它升 matched_sop;若为空,
+    从 extraction JSON 的 ``project`` 字段推断(推断不到则 skip)。
+    —— 2026-06-03 修:原来只处理空 project 的行,导致已带 project 的检装车图片(如
+    inbox 270 chaoyang_steel)永远停在 classified、进不了流程。
 
     Returns: ``{promoted: int, skipped: int, errors: int, details: [...]}``.
     """
@@ -70,10 +73,9 @@ def promote_classified_image_messages(
     conn.row_factory = sqlite3.Row
 
     base_sql = (
-        "SELECT id, message_id, group_name, extraction_json_path, sop_flow, sop_node "
+        "SELECT id, message_id, group_name, sop_project_id, extraction_json_path, sop_flow, sop_node "
         "FROM message_inbox "
         "WHERE processing_status='classified' AND is_sop_msg=1 "
-        "  AND COALESCE(sop_project_id,'')='' "
         "  AND COALESCE(sop_flow,'')<>'' AND COALESCE(sop_node,'')<>'' "
         "  AND COALESCE(extraction_json_path,'')<>''"
     )
@@ -92,10 +94,18 @@ def promote_classified_image_messages(
     errors = 0
     details: list[dict[str, Any]] = []
 
+    from sop_hub.models.project_sop import PROJECT_ID_ALIASES
+
     for row in rows:
         rid = row["id"]
         ext_path = row["extraction_json_path"]
-        project, _payload = _read_extraction_project(ext_path)
+        # 已有 project → 直接用;否则从 extraction JSON 推断
+        project = (row["sop_project_id"] or "").strip()
+        if not project:
+            project, _payload = _read_extraction_project(ext_path)
+        # extraction JSON 里常是中文显示名(如"朝阳钢铁铁矿发运项目"),归一到规范 id
+        # (chaoyang_steel),否则 _resolve_task_type 认不出 → 落 generic_sop_task。
+        project = PROJECT_ID_ALIASES.get(project, project)
         if not project:
             skipped += 1
             details.append(

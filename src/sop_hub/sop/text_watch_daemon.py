@@ -264,6 +264,21 @@ def run_one_pass(
                 result.get("record_count", 0), result.get("task_id", ""),
             )
 
+    # ── 图片升级:classified 检装车/出港图片 → matched_sop(否则建不了 task)。
+    #    promoter 之前没接进任何 daemon,导致检装车链卡死(2026-06-03 宝腾海)。──────
+    try:
+        from sop_hub.sop.image_route_promoter import (
+            promote_classified_image_messages,
+        )
+        pr = promote_classified_image_messages(db_path)
+        if pr.get("promoted"):
+            counts["images_promoted"] = pr["promoted"]
+            if log_each:
+                logger.info("promoted %d classified image(s) → matched_sop",
+                            pr["promoted"])
+    except Exception as exc:
+        logger.warning("image promote failed: %s", exc)
+
     # ── backfill:补建遗留 matched_sop 行(如 id=229 已被标 text_ingest_skipped,
     #    fetch 不会再捞到它) → 用独立扫描兜底,幂等。 ────────────────────────
     try:

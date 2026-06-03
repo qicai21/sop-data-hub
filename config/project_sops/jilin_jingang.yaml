@@ -18,6 +18,11 @@ project_meta:
     - "红土镍矿"
     - "镍矿"
     - "铁矿粉"
+  # 业务约束:本项目合同只走铁路。出港通知单 remarks 里若含"(公路 彰武鑫汇)"
+  # 之类 → ingest 时按 scope 过滤掉,不建 release_batch(2026-06-03 蓝鳍
+  # lot4 "公路 彰武鑫汇" 误入根因)。
+  transport_modes:
+    - "铁路"
   has_inspection_slip: false
   departure_confirmation_source: "handwritten_list_or_text_report"
   source_of_truth: "git"

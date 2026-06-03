@@ -1279,6 +1279,21 @@ class BusinessDataAgent:
             normalized_payload.get("cargo_info", {}),
             notice_date,
         )
+        # ── 项目 scope 过滤(2026-06-03 蓝鳍 lot4 公路/彰武鑫汇 误入根因) ──
+        # 出港通知单的 remarks 里可能含**不属于本项目**的 lot(如 jilin_jingang
+        # 合同明确只走铁路四平,但 notice 偶尔会带"(公路 彰武鑫汇)"这种走别的
+        # 渠道的 lot)。这里按 project yaml 里 transport_modes / destination_station
+        # 把超出范围的 remark 透明 skip 掉,不建 release_batch。skipped 走日志保留痕迹。
+        _proj_display = normalized_payload.get("project") or normalized_payload.get("项目")
+        remarks, _scope_skipped = _filter_remarks_by_project_scope(remarks, _proj_display)
+        if _scope_skipped:
+            import logging as _logging
+            _logging.getLogger("sop_hub.data_agent").info(
+                "ingest_release_batch: skipped %d out-of-scope remark(s) for project=%r: %s",
+                len(_scope_skipped), _proj_display,
+                [(r.get("sequence"), r.get("transport_mode"), r.get("destination"),
+                  r.get("_skipped_reason")) for r in _scope_skipped],
+            )
         if len(remarks) == 1 and not remarks[0].get("sequence"):
             # A formal departure plan that yields exactly one business batch is
             # still a concrete release lot.  Use lot01 so downstream project
@@ -1704,6 +1719,61 @@ def parse_business_text_fields(text: str) -> Dict[str, str]:
         if key and value.strip():
             fields[key] = value.strip()
     return fields
+
+
+def _filter_remarks_by_project_scope(
+    remarks: List[Dict[str, Any]],
+    project_display: Optional[str],
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """按项目 yaml 的 scope(transport_modes / destination_station)过滤超出
+    项目范围的 remark。返回 (kept, skipped)。
+
+    业务案例(2026-06-03 jilin_jingang 蓝鳍):
+      "(公路 彰武鑫汇)" → transport_mode=公路 不在 ["铁路"] → skip
+      "(铁路 四平)"      → keep
+    显式标了 transport_mode/destination 且不匹配 → skip。
+    没显式标 → 视为继承项目默认,keep(不强求,避免漏掉合规的 remark)。
+    """
+    if not project_display or not remarks:
+        return remarks, []
+    try:
+        from sop_hub.models.project_sop import PROJECT_ID_ALIASES
+        project_id = PROJECT_ID_ALIASES.get(project_display, project_display)
+        import yaml as _yaml
+        from sop_hub.sop.departure_excel import _find_yaml_for_project
+        yp = _find_yaml_for_project(project_id)
+        raw = _yaml.safe_load(yp.read_text(encoding="utf-8")) or {}
+    except Exception:
+        # yaml 找不到/加载失败 → 透明放行(向后兼容,不破老项目)
+        return remarks, []
+
+    # 兼容两种 yaml 布局:transport_modes / destination_station 可能在顶层
+    # 或 project_meta 下(jilin_jingang.yaml 就是后者)。两处都试。
+    meta = raw.get("project_meta") or {}
+    allowed_modes = (meta.get("transport_modes")
+                     or raw.get("transport_modes")
+                     or [])
+    allowed_dest = ((meta.get("destination_station")
+                     or raw.get("destination_station")
+                     or "").strip())
+    if not allowed_modes and not allowed_dest:
+        return remarks, []
+
+    kept: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+    for r in remarks:
+        mode = (r.get("transport_mode") or "").strip()
+        dest = (r.get("destination") or "").strip()
+        if allowed_modes and mode and mode not in allowed_modes:
+            r["_skipped_reason"] = f"transport_mode {mode!r} not in {allowed_modes}"
+            skipped.append(r)
+            continue
+        if allowed_dest and dest and allowed_dest not in dest:
+            r["_skipped_reason"] = f"destination {dest!r} 不含 {allowed_dest!r}"
+            skipped.append(r)
+            continue
+        kept.append(r)
+    return kept, skipped
 
 
 def parse_remarks(

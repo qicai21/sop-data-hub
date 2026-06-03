@@ -276,3 +276,162 @@ def enrich_release_batch_with_freight_detail(
 
     finally:
         conn.close()
+
+
+# ── Auto-linkage enrichment (#96) ─────────────────────────────────────────
+# Unlike the manual binder above, this matches a FreightDetailCandidate to
+# release_batch(es) by EXACT key — order_identifier (CGR) first, then
+# contract_no (HNMC). Exact-key matching is deterministic, not vessel guessing,
+# so it is safe to auto-apply (the "no auto-bind" rule was about not inferring
+# which *ship* a freight-detail text belongs to — CGR/HNMC are unambiguous).
+#
+# Primary goal: fill release_batches.cargo_product_name (印粉/麦克粉/…) which is
+# the *specific* product, distinct from the generic cargo_name (铁矿).
+_AUTO_ENRICH_MAPPING: dict[str, str] = {
+    "cargo_name_detail": "cargo_product_name",  # PRIMARY
+    "contract_no": "contract_no",
+    "order_identifier": "order_identifier",
+    "quantity_tons": "quantity_tons",
+    "message_id": "source_message_id",
+    "group_id": "source_group_id",
+}
+
+
+def auto_enrich_release_batches_from_freight_detail(
+    candidate: FreightDetailCandidate,
+    *,
+    apply: bool = False,
+    allow_overwrite: bool = False,
+    db_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Auto-match a FreightDetailCandidate to release_batch(es) by CGR/HNMC and
+    enrich cargo_product_name (+ related fields).
+
+    Match priority: order_identifier (CGR) exact → contract_no (HNMC) exact.
+    All batches sharing the matched key get enriched (same order/contract ⇒ same
+    product). Per-field overwrite is gated by allow_overwrite (default False:
+    only fill empty columns).
+
+    Returns a dict:
+      {status, matched_by, matched_count, results:[{release_batch_id, planned,
+       applied, skipped}], cargo_product_name, message}
+      status ∈ {applied, dry_run, no_op, no_match, schema_missing_fields}
+    """
+    if candidate.status not in ("complete", "incomplete"):
+        return {
+            "status": "no_op",
+            "reason": f"candidate status {candidate.status!r} (not complete/incomplete)",
+            "results": [],
+        }
+    if not (candidate.order_identifier or candidate.contract_no):
+        return {
+            "status": "no_op",
+            "reason": "candidate has no order_identifier/contract_no to match on",
+            "results": [],
+        }
+
+    conn = _open_db(db_path)
+    try:
+        available = _get_available_columns(conn)
+        if "cargo_product_name" not in available:
+            return {
+                "status": "schema_missing_fields",
+                "schema_missing_fields": ["cargo_product_name"],
+                "results": [],
+            }
+
+        # ── Match: order_identifier (CGR) first, then contract_no (HNMC) ──
+        rows: list[sqlite3.Row] = []
+        matched_by = ""
+        if candidate.order_identifier and "order_identifier" in available:
+            rows = conn.execute(
+                "SELECT * FROM release_batches WHERE order_identifier = ?",
+                (candidate.order_identifier,),
+            ).fetchall()
+            if rows:
+                matched_by = "order_identifier"
+        if not rows and candidate.contract_no:
+            rows = conn.execute(
+                "SELECT * FROM release_batches WHERE contract_no = ?",
+                (candidate.contract_no,),
+            ).fetchall()
+            if rows:
+                matched_by = "contract_no"
+
+        if not rows:
+            return {
+                "status": "no_match",
+                "reason": "no release_batch with matching CGR/HNMC",
+                "candidate": candidate.to_dict(),
+                "results": [],
+            }
+
+        from sop_hub.utils.time import now_iso_beijing_compact
+        now = now_iso_beijing_compact()
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            planned: dict[str, Any] = {}
+            skipped: dict[str, Any] = {}
+            for cand_field, col in _AUTO_ENRICH_MAPPING.items():
+                if col not in available:
+                    continue
+                value = getattr(candidate, cand_field, None)
+                if cand_field == "quantity_tons":
+                    if value is None or value < 0:
+                        continue
+                elif not _is_non_empty(value):
+                    continue
+                existing = row[col]
+                if _is_non_empty(existing) and not allow_overwrite:
+                    skipped[col] = {"existing": existing, "candidate": value}
+                    continue
+                planned[col] = value
+
+            applied: dict[str, Any] = {}
+            if planned and apply:
+                set_clauses = []
+                params: dict[str, Any] = {"id": row["id"]}
+                for col, value in planned.items():
+                    pname = f"v_{col}"
+                    set_clauses.append(f"{col} = :{pname}")
+                    params[pname] = value
+                set_clauses.append("updated_at = :updated_at")
+                params["updated_at"] = now
+                conn.execute(
+                    f"UPDATE release_batches SET {', '.join(set_clauses)} WHERE id = :id",
+                    params,
+                )
+                applied = dict(planned)
+
+            results.append({
+                "release_batch_id": row["id"],
+                "planned": planned,
+                "applied": applied,
+                "skipped": skipped,
+            })
+
+        if apply:
+            conn.commit()
+
+        n_with_updates = sum(1 for r in results if r["planned"])
+        if apply and any(r["applied"] for r in results):
+            status = "applied"
+        elif not apply and n_with_updates:
+            status = "dry_run"
+        else:
+            status = "no_op"
+
+        return {
+            "status": status,
+            "matched_by": matched_by,
+            "matched_count": len(rows),
+            "cargo_product_name": candidate.cargo_name_detail,
+            "results": results,
+            "message": (
+                f"{'applied' if apply else 'dry_run'}: {matched_by} matched "
+                f"{len(rows)} batch(es), {n_with_updates} with updates"
+            ),
+        }
+    finally:
+        conn.close()

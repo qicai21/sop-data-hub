@@ -46,6 +46,22 @@ logger = logging.getLogger("sop_hub.text_watch")
 DEFAULT_INTERVAL_SECONDS = 5
 DEFAULT_DB = Path("data/sop_agent.db")
 
+# 内部安全 task_type:只写本地 sop_agent.db,**无任何对外提交** → daemon 每轮
+# 默认自动 apply,不需要任何 flag。#96 freight_detail_enrichment(填
+# cargo_product_name)属于这类,所以 "自动 enrich" 名副其实。
+AUTO_SAFE_TASK_TYPES = (
+    "freight_detail_enrichment",
+)
+
+# 含对外提交(工厂上传:吉林金钢 / 朝阳鞍钢)的 task_type → 必须 --run-chains 显式
+# 开启;真正提交还要再加 --apply-chains(默认 preview)。create_release_batch 虽
+# 是内部写库,但属核心建批链,保守起见同样放在显式开启集合,不默认自动跑。
+EXTERNAL_CHAIN_TASK_TYPES = (
+    "jljg_departure_text_chain",
+    "chaoyang_inspection_chain",
+    "create_release_batch",
+)
+
 
 # ── DB layer ────────────────────────────────────────────────────────────
 
@@ -59,7 +75,7 @@ def _fetch_pending_text_rows(
     try:
         rows = conn.execute(
             "SELECT id, message_id, text_content, processing_status, is_sop_msg, "
-            "       sop_project_id, group_name "
+            "       sop_project_id, sop_flow, sop_node, group_name "
             "FROM message_inbox "
             "WHERE msg_type='text' "
             "  AND text_content IS NOT NULL AND text_content != '' "
@@ -101,6 +117,27 @@ def _mark_ingest_result(
         conn.close()
 
 
+def _count_unrouted_sop_rows(db_path: str | Path) -> int:
+    """matched_sop 行里还没有对应 workflow_task 的数量。
+
+    用作 backfill 触发条件:稳态下为 0,只在有遗留/新漏网行时才真正 backfill,
+    避免每轮都对全部 matched_sop 行空跑一遍 create_task。"""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        try:
+            return conn.execute(
+                "SELECT COUNT(*) FROM message_inbox mi "
+                "LEFT JOIN workflow_task_db wt ON wt.message_inbox_id = mi.id "
+                "WHERE mi.processing_status='matched_sop' AND mi.is_sop_msg=1 "
+                "  AND wt.id IS NULL",
+            ).fetchone()[0]
+        except sqlite3.OperationalError:
+            # workflow_task_db 还没建表 → 视为无需 backfill
+            return 0
+    finally:
+        conn.close()
+
+
 # ── ingest layer ────────────────────────────────────────────────────────
 
 
@@ -116,6 +153,40 @@ def _ingest_one_row(row: dict[str, Any], *, db_path: str | Path) -> dict[str, An
             db_record_ids=[], error_message="empty_text",
         )
         return {"action": "skipped_empty", "message_id": message_id}
+
+    # SOP-classified messages (出港通知/检装车通知 等) are *chain triggers*, not
+    # freight-detail text. Route them straight into the workflow_task pipeline
+    # instead of BusinessDataAgent.ingest_business_text — which returns no
+    # records for them (→ text_ingest_skipped) and the chain never starts.
+    # This was the B0 root cause: detect_departure_message rows were dead-ended.
+    if (
+        row.get("is_sop_msg")
+        and (row.get("processing_status") or "") == "matched_sop"
+        and (row.get("sop_node") or "")
+    ):
+        try:
+            from sop_hub.sop.workflow_task_store import create_task_from_message_inbox
+            res = create_task_from_message_inbox(inbox_id, db_path=db_path)
+        except Exception as exc:
+            logger.warning("create_task_from_message_inbox failed for %s: %s",
+                           inbox_id, exc)
+            _mark_ingest_result(
+                db_path, inbox_id, db_action="text_ingest_error",
+                error_message=str(exc),
+            )
+            return {"action": "error", "message_id": message_id, "error": str(exc)}
+        task_id = res.get("id")
+        # db_action keeps the 'text_ingest_' prefix so the fetch query treats the
+        # row as processed and won't re-pick it next pass.
+        _mark_ingest_result(
+            db_path, inbox_id, db_action="text_ingest_workflow_task",
+            db_record_ids=[str(task_id)] if task_id else [],
+        )
+        return {
+            "action": "workflow_task_created", "message_id": message_id,
+            "task_id": task_id, "task_type": res.get("task_type"),
+            "created": res.get("action") == "created",
+        }
 
     try:
         from sop_hub.data_agent.agent import BusinessDataAgent
@@ -154,11 +225,25 @@ def _ingest_one_row(row: dict[str, Any], *, db_path: str | Path) -> dict[str, An
 
 
 def run_one_pass(
-    *, db_path: str | Path, log_each: bool = False, batch_size: int = 200,
+    *,
+    db_path: str | Path,
+    log_each: bool = False,
+    batch_size: int = 200,
+    run_chains: bool = False,
+    apply_chains: bool = False,
+    chain_limit: int = 10,
 ) -> dict[str, Any]:
-    """跑一轮:扫 inbox pending text 行 → ingest 一批。"""
+    """跑一轮:
+
+    1. 扫 inbox pending text 行 → 货运明细 ingest / SOP 行建 workflow_task。
+    2. backfill:补建遗留 matched_sop 行的 workflow_task(只在有漏网行时)。
+    3. (可选) run_chains:跑 pending workflow_task。
+       - apply_chains=False(默认):preview,不触发对外提交。
+       - apply_chains=True:真正执行链路,含工厂提交(谨慎,生产动作)。
+    """
     counts = {
         "fetched": 0, "ingested": 0, "skipped": 0, "errors": 0,
+        "sop_routed": 0,
     }
     rows = _fetch_pending_text_rows(db_path, limit=batch_size)
     counts["fetched"] = len(rows)
@@ -167,16 +252,78 @@ def run_one_pass(
         action = result.get("action", "")
         if action == "ingested":
             counts["ingested"] += 1
+        elif action == "workflow_task_created":
+            counts["sop_routed"] += 1
         elif action.startswith("skipped"):
             counts["skipped"] += 1
         elif action == "error":
             counts["errors"] += 1
         if log_each and action != "skipped_empty":
             logger.info(
-                "inbox#%s msg=%s → %s (rec_count=%s)",
+                "inbox#%s msg=%s → %s (rec_count=%s task=%s)",
                 row["id"], row.get("message_id"), action,
-                result.get("record_count", 0),
+                result.get("record_count", 0), result.get("task_id", ""),
             )
+
+    # ── backfill:补建遗留 matched_sop 行(如 id=229 已被标 text_ingest_skipped,
+    #    fetch 不会再捞到它) → 用独立扫描兜底,幂等。 ────────────────────────
+    try:
+        if _count_unrouted_sop_rows(db_path) > 0:
+            from sop_hub.sop.workflow_task_store import (
+                create_tasks_for_matched_messages,
+            )
+            t = create_tasks_for_matched_messages(db_path=db_path)
+            counts["backfilled"] = t.get("created_count", 0)
+            if counts["backfilled"] and log_each:
+                logger.info("backfilled %d workflow_task(s) for legacy matched_sop rows",
+                            counts["backfilled"])
+    except Exception as exc:
+        logger.warning("workflow_task backfill failed: %s", exc)
+
+    # ── 默认:自动跑内部安全链(freight enrichment),apply=True,无对外动作 ──
+    try:
+        from sop_hub.sop.workflow_task_executor import run_pending_workflow_tasks
+        safe_ran = safe_ok = 0
+        for tt in AUTO_SAFE_TASK_TYPES:
+            ch = run_pending_workflow_tasks(
+                db_path=db_path, apply=True, limit=chain_limit, task_type=tt,
+            )
+            safe_ran += ch.get("ran", 0)
+            safe_ok += ch.get("succeeded", 0)
+        if safe_ran:
+            counts["safe_chains_ran"] = safe_ran
+            counts["safe_chains_succeeded"] = safe_ok
+            if log_each:
+                logger.info("auto-safe chains: ran %d → ok %d", safe_ran, safe_ok)
+    except Exception as exc:
+        logger.warning("auto-safe chain run failed: %s", exc)
+
+    # ── 可选:跑含对外提交的链(--run-chains;真提交还需 --apply-chains) ──────
+    if run_chains:
+        try:
+            from sop_hub.sop.workflow_task_executor import (
+                run_pending_workflow_tasks,
+            )
+            ran = succeeded = failed = 0
+            for tt in EXTERNAL_CHAIN_TASK_TYPES:
+                ch = run_pending_workflow_tasks(
+                    db_path=db_path, apply=apply_chains,
+                    limit=chain_limit, task_type=tt,
+                )
+                ran += ch.get("ran", 0)
+                succeeded += ch.get("succeeded", 0)
+                failed += ch.get("failed", 0)
+            counts["chains_ran"] = ran
+            counts["chains_succeeded"] = succeeded
+            counts["chains_failed"] = failed
+            if ran and log_each:
+                logger.info(
+                    "ran %d external workflow_task(s) apply=%s → ok=%d fail=%d",
+                    ran, apply_chains, succeeded, failed,
+                )
+        except Exception as exc:
+            logger.warning("run_pending_workflow_tasks failed: %s", exc)
+
     return counts
 
 
@@ -196,14 +343,19 @@ def run_loop(
     quiet: bool = False,
     once: bool = False,
     batch_size: int = 200,
+    run_chains: bool = False,
+    apply_chains: bool = False,
+    chain_limit: int = 10,
 ) -> None:
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
     import os
     logger.info(
-        "text_watch_daemon started pid=%d db=%s interval=%ds batch=%d",
+        "text_watch_daemon started pid=%d db=%s interval=%ds batch=%d "
+        "run_chains=%s apply_chains=%s",
         os.getpid(), db_path, interval_seconds, batch_size,
+        run_chains, apply_chains,
     )
 
     pass_no = 0
@@ -212,12 +364,15 @@ def run_loop(
         try:
             counts = run_one_pass(
                 db_path=db_path, log_each=not quiet, batch_size=batch_size,
+                run_chains=run_chains, apply_chains=apply_chains,
+                chain_limit=chain_limit,
             )
         except Exception as exc:
             logger.warning("pass %d failed: %s", pass_no, exc)
             counts = {"errors": 1, "fatal": str(exc)}
         non_silent = sum(counts.get(k, 0) for k in
-                         ("ingested", "errors"))
+                         ("ingested", "errors", "sop_routed", "backfilled",
+                          "safe_chains_ran", "chains_ran"))
         if non_silent or not quiet:
             shown = {k: v for k, v in counts.items() if v}
             logger.info("pass %d: %s", pass_no, shown or "{}")
@@ -250,6 +405,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
                    help="only log when something happens")
     p.add_argument("--debug", action="store_true",
                    help="verbose debug logging")
+    p.add_argument("--run-chains", action="store_true",
+                   help="每轮跑 pending workflow_task(默认 preview,不对外提交)")
+    p.add_argument("--apply-chains", action="store_true",
+                   help="配合 --run-chains:真正执行链路含工厂提交(生产动作,谨慎)")
+    p.add_argument("--chain-limit", type=int, default=10,
+                   help="每轮最多跑多少个 workflow_task(default: 10)")
     return p
 
 
@@ -259,12 +420,17 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.debug else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+    if args.apply_chains and not args.run_chains:
+        logger.warning("--apply-chains 需配合 --run-chains 才生效;本次按 preview 处理")
     run_loop(
         db_path=args.db,
         interval_seconds=args.interval,
         quiet=args.quiet,
         once=args.once,
         batch_size=args.batch,
+        run_chains=args.run_chains,
+        apply_chains=args.apply_chains,
+        chain_limit=args.chain_limit,
     )
     return 0
 

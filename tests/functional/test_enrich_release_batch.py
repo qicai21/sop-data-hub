@@ -468,3 +468,89 @@ def test_no_match_candidate_returns_no_op(tmp_path: Path):
     )
     assert result.status == "no_op"
     assert result.planned_updates == {}
+
+
+# ── #96: auto-linkage by CGR/HNMC → cargo_product_name ─────────────────
+
+from sop_hub.sop.enrich_release_batch import (  # noqa: E402
+    auto_enrich_release_batches_from_freight_detail,
+)
+
+
+def _set_order_identifier(db_path, cgr: str) -> None:
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        "UPDATE release_batches SET order_identifier=? WHERE id=?",
+        (cgr, _BATCH_ID),
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_auto_enrich_matches_by_cgr_and_sets_cargo_product_name(tmp_path: Path):
+    """A freight-detail candidate auto-matches the batch carrying its CGR and
+    fills cargo_product_name (印粉) — no manual release_batch_id needed."""
+    db_path = tmp_path / "test.db"
+    _create_test_db(db_path)
+    _set_order_identifier(db_path, "CGR20260520095954")  # match key
+
+    candidate = _make_complete_candidate()
+    res = auto_enrich_release_batches_from_freight_detail(
+        candidate, apply=True, db_path=db_path,
+    )
+
+    assert res["status"] == "applied"
+    assert res["matched_by"] == "order_identifier"
+    assert res["matched_count"] == 1
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT * FROM release_batches WHERE id=?", (_BATCH_ID,)
+    ).fetchone()
+    conn.close()
+    assert row["cargo_product_name"] == "印粉"
+
+
+def test_auto_enrich_does_not_overwrite_existing_product(tmp_path: Path):
+    """Existing cargo_product_name is preserved when allow_overwrite=False."""
+    db_path = tmp_path / "test.db"
+    _create_test_db(db_path)
+    _set_order_identifier(db_path, "CGR20260520095954")
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        "UPDATE release_batches SET cargo_product_name='麦克粉' WHERE id=?",
+        (_BATCH_ID,),
+    )
+    conn.commit()
+    conn.close()
+
+    candidate = _make_complete_candidate()  # would set 印粉
+    res = auto_enrich_release_batches_from_freight_detail(
+        candidate, apply=True, db_path=db_path,
+    )
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT cargo_product_name FROM release_batches WHERE id=?", (_BATCH_ID,)
+    ).fetchone()
+    conn.close()
+    assert row["cargo_product_name"] == "麦克粉"  # not overwritten
+    # cargo_product_name was skipped, not applied
+    assert all(
+        "cargo_product_name" not in r["applied"] for r in res["results"]
+    )
+
+
+def test_auto_enrich_no_release_batch_with_key_returns_no_match(tmp_path: Path):
+    """If no batch carries the candidate's CGR/HNMC, status is no_match."""
+    db_path = tmp_path / "test.db"
+    _create_test_db(db_path)  # row has no matching order_identifier/contract_no
+
+    candidate = _make_complete_candidate()
+    res = auto_enrich_release_batches_from_freight_detail(
+        candidate, apply=True, db_path=db_path,
+    )
+    assert res["status"] == "no_match"
+    assert res["results"] == []

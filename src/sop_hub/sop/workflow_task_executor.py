@@ -167,7 +167,11 @@ def run_workflow_task(
             result = _execute_chaoyang_inspection_chain(
                 input_json, message_id, db_path=db, apply=apply, task_id=task_id,
             )
-        elif task_type in ("chaoyang_dispatch_context", "freight_detail_enrichment", "generic_sop_task"):
+        elif task_type == "freight_detail_enrichment":
+            result = _execute_freight_detail_enrichment(
+                input_json, message_id, db_path=db, apply=apply,
+            )
+        elif task_type in ("chaoyang_dispatch_context", "generic_sop_task"):
             result = {
                 "action": "skipped",
                 "status": "skipped",
@@ -403,6 +407,62 @@ def _execute_create_release_batch(
             "batch_sequences": [r.batch_sequence for r in records],
             "ship_names": list({r.ship_name for r in records if r.ship_name}),
         },
+    }
+
+
+def _execute_freight_detail_enrichment(
+    input_json: dict[str, Any],
+    message_id: str,
+    *,
+    db_path: Path,
+    apply: bool,
+) -> dict[str, Any]:
+    """#96: freight_detail text → match release_batch by CGR/HNMC → enrich
+    cargo_product_name (印粉/麦克粉/…)."""
+    from sop_hub.sop.freight_detail_extractor import extract_freight_detail
+    from sop_hub.sop.enrich_release_batch import (
+        auto_enrich_release_batches_from_freight_detail,
+    )
+
+    text = input_json.get("text_content", "") or ""
+    group_id = input_json.get("group_name") or input_json.get("source_group_id") or ""
+    candidate = extract_freight_detail(
+        text, message_id=message_id, group_id=group_id,
+    )
+    if candidate.status == "no_match":
+        # Not freight-detail text at all (no 订单标识) — this can NEVER enrich,
+        # so terminate the task (succeeded no-op) instead of leaving it pending
+        # to re-run every daemon pass forever.
+        return {
+            "action": "skipped",
+            "status": "succeeded",
+            "output_json": {
+                "reason": "freight_detail text no_match (无 订单标识) — terminal no-op",
+                "matched": [],
+            },
+        }
+
+    res = auto_enrich_release_batches_from_freight_detail(
+        candidate, apply=apply, db_path=db_path,
+    )
+    st = res.get("status")
+    if st == "schema_missing_fields":
+        return {
+            "action": "failed",
+            "status": "failed",
+            "error_message": "release_batches missing column cargo_product_name",
+            "output_json": res,
+        }
+    if st == "no_match":
+        # Parsed OK but no release_batch carries this CGR/HNMC *yet* — the batch
+        # may be created later, so keep retryable (non-terminal skipped).
+        return {"action": "skipped", "status": "skipped", "output_json": res}
+
+    # applied / dry_run / no_op → success
+    return {
+        "action": "executed" if apply else "dry_run",
+        "status": "succeeded",
+        "output_json": res,
     }
 
 

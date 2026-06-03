@@ -188,20 +188,34 @@ def login_to_factory(config: FactoryUploadConfig | None = None) -> tuple[str | N
 # ── Payload building ─────────────────────────────────────────────────────
 
 def _get_cargo_name_from_batch(batch_row: dict[str, Any]) -> str:
-    """Get cargo_name: prefer cargo_name_detail, fall back to cargo_name."""
+    """货物品名优先级:cargo_product_name(品名,如"印粉")→ cargo_name_detail
+    → cargo_name(品类,如"铁矿")。yaml 要求"严格按放货批次货物品名原文"。"""
     return (
-        batch_row.get("cargo_name_detail")
+        batch_row.get("cargo_product_name")
+        or batch_row.get("cargo_name_detail")
         or batch_row.get("cargo_name")
         or ""
     )
 
 
+def _wagon_containers(wagon_row: dict[str, Any]) -> list[str]:
+    """从 wagon row 提取箱号列表。container_numbers_json 优先(JSON array 稳定源),
+    fallback container_no("A/B" 字符串)。两者都空返回 []。"""
+    cnj = wagon_row.get("container_numbers_json")
+    if cnj:
+        try:
+            return [b for b in json.loads(cnj) if b]
+        except Exception:
+            pass
+    raw = wagon_row.get("container_no") or ""
+    return [p.strip() for p in str(raw).split("/") if p.strip()]
+
+
 def _split_container_pair(container_no: str) -> list[str]:
-    """Split "TBJU5418112/TBJU8388454" into two single containers."""
+    """Legacy split — 仅当只能拿到 'A/B' 字符串时用。新代码用 _wagon_containers。"""
     if not container_no:
         return [""]
-    parts = container_no.split("/")
-    return [p.strip() for p in parts if p.strip()]
+    return [p.strip() for p in container_no.split("/") if p.strip()]
 
 
 def build_upload_payloads(
@@ -254,9 +268,7 @@ def build_upload_payloads(
     for w in wagons:
         w_dict = dict(w)
         wagon_no = w_dict.get("car_no", "")
-        container_raw = w_dict.get("container_no", "")
-
-        containers = _split_container_pair(container_raw)
+        containers = _wagon_containers(w_dict)
         for box in containers:
             payload: dict[str, Any] = {}
             for fdef in config.fields:

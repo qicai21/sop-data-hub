@@ -157,25 +157,28 @@ def verify_factory_upload(
                     summary.order_id = order_id
 
                 wagons = conn.execute(
-                    "SELECT container_no FROM wagon_shipments WHERE batch_id=?",
+                    "SELECT container_no, container_numbers_json FROM wagon_shipments WHERE batch_id=?",
                     (release_batch_id,),
                 ).fetchall()
+
+                def _row_boxes(row) -> list[str]:
+                    """container_numbers_json 优先,fallback container_no("A/B")."""
+                    cnj = row["container_numbers_json"]
+                    if cnj:
+                        try:
+                            return [b for b in json.loads(cnj) if b]
+                        except Exception:
+                            pass
+                    raw = row["container_no"] or ""
+                    return [b.strip() for b in raw.split("/") if b.strip()]
+
                 boxes: set[str] = set()
                 for w in wagons:
-                    raw = w["container_no"] or ""
-                    for b in raw.split("/"):
-                        b = b.strip()
-                        if b:
-                            boxes.add(b)
+                    boxes.update(_row_boxes(w))
                 if expected_box_numbers is None:
                     expected_box_numbers = boxes
                 if expected_count is None:
-                    # Count per-box: each container_no split on "/" counts separately
-                    count = 0
-                    for w in wagons:
-                        raw = w["container_no"] or ""
-                        count += len([b for b in raw.split("/") if b.strip()])
-                    expected_count = count
+                    expected_count = sum(len(_row_boxes(w)) for w in wagons)
             finally:
                 conn.close()
 

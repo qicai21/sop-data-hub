@@ -214,11 +214,22 @@ def _extract_rows(
             "ticketed_at_compact_text": ticketed_compact,
         }
 
+        import json as _json
         rows: list[dict[str, Any]] = []
         for i, r in enumerate(ws_rows, start=1):
-            containers = (r["container_no"] or "").split("/") if r["container_no"] else []
-            cont1 = containers[0].strip() if len(containers) >= 1 else ""
-            cont2 = containers[1].strip() if len(containers) >= 2 else ""
+            # 箱号:container_numbers_json 优先(稳定源),fallback container_no("A/B")
+            containers: list[str] = []
+            r_dict = dict(r)
+            cnj = r_dict.get("container_numbers_json")
+            if cnj:
+                try:
+                    containers = [b for b in _json.loads(cnj) if b]
+                except Exception:
+                    containers = []
+            if not containers and r_dict.get("container_no"):
+                containers = [b.strip() for b in str(r_dict["container_no"]).split("/") if b.strip()]
+            cont1 = containers[0] if len(containers) >= 1 else ""
+            cont2 = containers[1] if len(containers) >= 2 else ""
             ta = (r["ticketed_at"] or "").strip()
             loading_date = ta[:10] if ta and len(ta) >= 10 else ""
             entry_date = ""
@@ -231,11 +242,11 @@ def _extract_rows(
             rows.append({
                 "seq": i,
                 "wagon_no": r["car_no"] or "",
-                "container_no": cont1,
+                "container_no_1": cont1,
                 "container_no_2": cont2,
                 "cargo_name": ctx["cargo_name"],
                 "ship_name": ctx["ship_name"],
-                "contract_no": ctx["contract_no"],
+                "entry_contract_no": ctx["contract_no"],
                 "order_identifier": ctx["order_identifier"],
                 "loading_date": loading_date,
                 "entry_date": entry_date,
@@ -244,6 +255,7 @@ def _extract_rows(
                 "car_model": r["car_model"] or "",
                 "origin_name": r["origin_name"] or "",
                 "destination_name": r["destination_name"] or "",
+                "shipment_count_type": "单次",
                 # batch-level constants/derived also injected for direct lookup
                 "ticketed_at_compact_text": ctx["ticketed_at_compact_text"],
                 "release_batch_id": release_batch_id,

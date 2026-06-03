@@ -560,6 +560,98 @@ def _execute_chaoyang_inspection_chain(
 
         matched_batch_id = m.matched_release_batch_id
 
+        # ── 4a. 95306 时间窗反推 → 真装车权威列表(治本) ───────────────
+        # VLM 可能把真装车误标排车(无理由 defect)→ 通知单 loading 漏算 1 车。
+        # 用 1-2 个装车号反查 95306 ticketed_at,建窗,窗内同到站+货名的所有
+        # 制票车号才是权威。前 4 个查不到 = 还没制单,挂起等(业务约定)。
+        # 2026-06-03 宝腾海 53→52 漏触发即此处治本。
+        from sop_hub.sop.inspection_window_recover import (
+            recover_loading_cars_via_window,
+        )
+        all_notice_car_nos = [
+            str(r.get("car_no") or "").strip()
+            for r in all_rows if r.get("car_no")
+        ]
+        recover = recover_loading_cars_via_window(
+            rail_db_path=str(RAIL_DB),
+            loading_car_nos=loading_car_nos,
+            all_notice_car_nos=all_notice_car_nos,
+            destination=dest,
+            cargo_pattern="%铁矿%",
+            max_anchor_attempts=4,
+            window_minutes=120,
+        )
+        if recover["status"] == "no_ticket_yet":
+            # 95306 还没制票 → 候选挂 pending_95306_match,延迟验证器后续重试
+            conn.execute(
+                "UPDATE inspection_ingestion_candidates "
+                "SET candidate_status='pending_95306_match', "
+                "    reason=?, updated_at=datetime('now') WHERE id=?",
+                (recover["message"], candidate_id),
+            )
+            conn.commit()
+            return {
+                "action": "executed",
+                "status": "skipped",
+                "output_json": {
+                    "stage": "95306_window_recover",
+                    "recover_result": recover,
+                    "matched_release_batch_id": matched_batch_id,
+                    "candidate_id": candidate_id,
+                    "candidate_status": "pending_95306_match",
+                },
+            }
+        if recover["status"] == "anomaly":
+            # 窗内有通知单没列的车号 → 拼批/窗太宽,需人工裁决
+            conn.execute(
+                "UPDATE inspection_ingestion_candidates "
+                "SET candidate_status='pending_review', "
+                "    reason=?, updated_at=datetime('now') WHERE id=?",
+                (recover["message"], candidate_id),
+            )
+            conn.commit()
+            return {
+                "action": "executed",
+                "status": "skipped",
+                "output_json": {
+                    "stage": "95306_window_recover",
+                    "recover_result": recover,
+                    "matched_release_batch_id": matched_batch_id,
+                    "candidate_id": candidate_id,
+                    "candidate_status": "pending_review",
+                },
+            }
+        # status == "ok":用 95306 权威装车列表替换 VLM 抽的(治 52→53)
+        authoritative_loading = recover["loading_car_nos"]
+        if authoritative_loading:
+            # 跟通知单 footer.zhuangche_jieshu 再 sanity 一道
+            expected = int((ext_data.get("footer") or {}).get("zhuangche_jieshu") or 0)
+            if expected and len(authoritative_loading) != expected:
+                conn.execute(
+                    "UPDATE inspection_ingestion_candidates "
+                    "SET candidate_status='pending_review', "
+                    "    reason=?, updated_at=datetime('now') WHERE id=?",
+                    (
+                        f"window 反推 {len(authoritative_loading)} 车 ≠ "
+                        f"通知单 footer.zhuangche_jieshu {expected}",
+                        candidate_id,
+                    ),
+                )
+                conn.commit()
+                return {
+                    "action": "executed",
+                    "status": "skipped",
+                    "output_json": {
+                        "stage": "95306_window_recover",
+                        "recover_result": recover,
+                        "footer_zhuangche_jieshu": expected,
+                        "matched_release_batch_id": matched_batch_id,
+                        "candidate_id": candidate_id,
+                        "candidate_status": "pending_review",
+                    },
+                }
+            loading_car_nos = authoritative_loading
+
         # ── 4. Query 95306 per car_no, build wagon_shipments rows ─
         if not RAIL_DB.exists():
             return {"action": "failed", "status": "failed",

@@ -958,6 +958,25 @@ class BusinessDataAgent:
         )
         self.db.commit()
 
+        # ── 关联 message_inbox.message_id ───────────────────────────────
+        # 候选按 source_file_name 建,但 chaoyang_inspection_chain 执行器是按
+        # candidate.message_id 回查的;之前从不回填 message_id → 执行器永远报
+        # "no inspection candidate",检装车链对不上(2026-06-03 宝腾海 271 漏触发根因)。
+        if source_file_name:
+            _stem = source_file_name.rsplit(".", 1)[0]
+            _ib = self.db.execute(
+                "SELECT message_id FROM message_inbox "
+                "WHERE raw_standard_image_path LIKE ? OR extraction_json_path LIKE ? "
+                "ORDER BY id DESC LIMIT 1",
+                (f"%{source_file_name}", f"%{_stem}%"),
+            ).fetchone()
+            if _ib and (_ib["message_id"] or ""):
+                self.db.execute(
+                    "UPDATE inspection_ingestion_candidates SET message_id=? WHERE id=?",
+                    (_ib["message_id"], candidate_id),
+                )
+                self.db.commit()
+
         # ── infer ship/dest/cargo/project_id 三层级联 ────────────────
         # B 文本融合 → A 证据打分 → 都不行 → pending_review(业务铁律)
         # 失败也不让 ingest 整体 fail,只是不更新 inferred 字段。

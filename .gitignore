@@ -44,3 +44,6 @@ reports/
 
 # 朝阳钢铁系统 auth bundle / 测试 response,不入仓
 runtime/chaoyang_*.json
+
+# Claude Code 本地权限配置(含本机绝对路径,不入仓)
+.claude/settings.local.json

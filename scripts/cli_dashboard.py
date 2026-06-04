@@ -80,6 +80,39 @@ def _bold(s: str) -> str:
     return f"\033[1m{s}\033[0m"
 
 
+# ── 显示宽度 helpers(中文 / 全角 = 2 cell,ASCII = 1 cell)─────────────
+def _disp_width(s: str) -> int:
+    import unicodedata
+    w = 0
+    for ch in s:
+        w += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return w
+
+
+def _truncate_disp(s: str, max_w: int) -> str:
+    import unicodedata
+    out: list[str] = []
+    cur = 0
+    for ch in s:
+        cw = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+        if cur + cw > max_w:
+            break
+        out.append(ch)
+        cur += cw
+    return "".join(out)
+
+
+def _pad_disp(s: str, width: int, align: str = "left") -> str:
+    """按终端 cell 宽度 pad — 中文 2 cell,ASCII 1 cell。
+    ANSI 颜色码会算进 _disp_width 是 0(不可见),但调用方要在 pad 之后再套色码。
+    """
+    cur = _disp_width(s)
+    if cur >= width:
+        return s
+    pad = " " * (width - cur)
+    return s + pad if align == "left" else pad + s
+
+
 def _dim(s: str) -> str:
     return f"\033[2m{s}\033[0m"
 
@@ -268,27 +301,40 @@ def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
         return _box(title, [_dim("  (无 in_progress / 近期 completed batch)")])
 
     lines: list[str] = []
-    # 表头
-    lines.append(_dim(
-        f"{'船名':<12}{'lot':<7}{'下达日':<11}{'计划t':>8}"
-        f"{'已发t':>8}{'剩 t':>8}{'车数':>5}  状态"
-    ))
+    # 表头(用 _pad_disp 按终端 cell 宽度对齐 — 中文 2 cell)
+    header = (
+        _pad_disp("船名", 14)
+        + _pad_disp("lot", 7)
+        + _pad_disp("下达日", 12)
+        + _pad_disp("计划t", 8, "right")
+        + _pad_disp("已发t", 8, "right")
+        + _pad_disp("剩 t", 8, "right")
+        + _pad_disp("车数", 5, "right")
+        + "  状态"
+    )
+    lines.append(_dim(header))
     for b in batches[:8]:  # 最多 8 条/项目
-        ship = (b.get("ship_name") or "—")[:11]
-        lot = (b.get("batch_sequence") or "—")[:6]
+        ship = _truncate_disp(b.get("ship_name") or "—", 13)
+        lot = _truncate_disp(b.get("batch_sequence") or "—", 6)
         # 业务上看每个 lot 各自的"下达日期"(batch_date),不是出港单整张的
         # "通知日期"(notice_date)— 一张累计放货单的 notice_date 是共用的,
         # batch_date 才是每段 remark 的下达日。2026-06-04 用户校订。
-        notice = (b.get("batch_date") or "—")[:10]
+        notice = _truncate_disp(b.get("batch_date") or "—", 11)
         planned = _num(b.get("batch_quantity"))
         shipped = _num(b.get("shipped_weight_tons"))
         remain = _num(b.get("remaining_weight_tons"))
-        wagons = b.get("actual_wagon_count") or 0
+        wagons = str(b.get("actual_wagon_count") or 0)
         status = b.get("dispatch_status") or "—"
         status_colored = _color_status(status)
         lines.append(
-            f"{ship:<12}{lot:<7}{notice:<11}{planned:>8}"
-            f"{shipped:>8}{remain:>8}{wagons:>5}  {status_colored}"
+            _pad_disp(ship, 14)
+            + _pad_disp(lot, 7)
+            + _pad_disp(notice, 12)
+            + _pad_disp(planned, 8, "right")
+            + _pad_disp(shipped, 8, "right")
+            + _pad_disp(remain, 8, "right")
+            + _pad_disp(wagons, 5, "right")
+            + "  " + status_colored
         )
     if len(batches) > 8:
         lines.append(_dim(f"  …还有 {len(batches) - 8} 条未显示"))
@@ -351,6 +397,18 @@ def panel_system() -> list[str]:
 # ── 主循环 ────────────────────────────────────────────────────────────
 
 
+def panel_paths() -> list[str]:
+    """常用 DB / 路径提示 — 跟 Claude 对话时直接引用,不用临时回忆。"""
+    rows = [
+        f"  {_dim('业务库')}     data/sop_agent.db",
+        f"  {_dim('95306 库')}   ~/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3",
+        f"  {_dim('微信流水')}   ~/projects/repos/wx-ops-agent/data/chat_records/<群>/<YYYY-MM>.jsonl",
+        f"  {_dim('归档根')}     ~/Documents/bussiness-artifacts/wechat_images/business/projects/<canonical_id>/",
+        f"  {_dim('yaml SOP')}   config/project_sops/<canonical_id>.yaml",
+    ]
+    return _box("常用数据库 / 路径", rows)
+
+
 def render_once() -> str:
     out_lines: list[str] = []
 
@@ -359,6 +417,9 @@ def render_once() -> str:
         f"  sop-data-hub 看板  ·  {now_iso_beijing_compact()}  ·  "
         f"刷新 {REFRESH_SECONDS}s  ·  Ctrl-C 退出"
     ))
+    out_lines.append("")
+
+    out_lines.extend(panel_paths())
     out_lines.append("")
 
     by_project = query_projects_with_batches()

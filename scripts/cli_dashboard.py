@@ -134,13 +134,13 @@ def _cyan(s: str) -> str:
 
 
 def _fixed(s: str, width: int, align: str = "<") -> str:
-    """ANSI-aware 定宽截断 / padding(简单版,不处理多色嵌套宽度)。"""
+    """ANSI-aware + East Asian Width-aware 定宽。中文 2 cell ASCII 1 cell。"""
     visible = _strip_ansi(s)
-    if len(visible) > width:
-        # 截断保留前缀
-        kept = visible[: width - 1] + "…"
-        return kept
-    pad = width - len(visible)
+    cur = _disp_width(visible)
+    if cur > width:
+        # 按 cell 截断(_truncate_disp 处理中文宽),颜色码丢了认了
+        return _truncate_disp(visible, width - 1) + "…"
+    pad = width - cur
     if align == ">":
         return " " * pad + s
     return s + " " * pad
@@ -276,7 +276,7 @@ def list_daemons() -> list[dict[str, Any]]:
 # ── 渲染 panel ────────────────────────────────────────────────────────
 
 
-PANEL_WIDTH = 76
+PANEL_WIDTH = 92
 
 
 def _box(title: str, lines: list[str], width: int = PANEL_WIDTH) -> list[str]:
@@ -325,7 +325,9 @@ def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
         remain = _num(b.get("remaining_weight_tons"))
         wagons = str(b.get("actual_wagon_count") or 0)
         status = b.get("dispatch_status") or "—"
-        status_colored = _color_status(status)
+        # status 列固定 19 cell — 容纳 pending_completion 全名,所有行右
+        # 边框自然对齐(_color_status 改成 strip 后判颜色,pad 不影响)
+        status_colored = _color_status(_pad_disp(status, 19))
         lines.append(
             _pad_disp(ship, 14)
             + _pad_disp(lot, 7)
@@ -354,14 +356,16 @@ def _num(v: Any) -> str:
 
 
 def _color_status(s: str) -> str:
-    if s in ("in_progress", "active"):
+    # 调用方可传 pad 过的字符串(含末尾空格);判颜色用 strip,套色码保留原串
+    key = s.strip()
+    if key in ("in_progress", "active"):
         return _green(s)
-    if s in ("pending_review", "pending_95306_match", "suspended",
-             "pending_completion"):
+    if key in ("pending_review", "pending_95306_match", "suspended",
+               "pending_completion"):
         return _yellow(s)
-    if s in ("timeout_manual_review", "cancelled"):
+    if key in ("timeout_manual_review", "cancelled"):
         return _red(s)
-    if s == "completed":
+    if key == "completed":
         return _dim(s)
     return s
 

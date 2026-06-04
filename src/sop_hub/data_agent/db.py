@@ -321,6 +321,11 @@ def migrate_release_batches_schema(connection: sqlite3.Connection) -> None:
         "quantity_tons": "REAL",
         "source_message_id": "TEXT",
         "source_group_id": "TEXT",
+        # 中唐特钢业务:海铁联运两段船(A船在青岛进口 → B船内贸转水到锦州港),
+        # 原 ship_name 用作到港船名,新增 import_ship_name 存进口段大船名。
+        # 发运 excel footer 要两个都展示。补充货运信息文字消息与出港通知单船名
+        # 不一致时,人工指认 + 双存。
+        "import_ship_name": "TEXT",
     }
     
     for field, type_def in new_fields.items():

@@ -1,6 +1,38 @@
 project_id: "zhongtang_special_steel"
 project_name: "中唐特钢铁矿发运项目"
 status: "active"
+sop_type: "freight_rail"
+source_of_truth: "git"
+
+# ── 项目元信息(数据约束的入口,被 ingest/filter 代码读取)─────────────
+# 参考 jilin_jingang 和 chaoyang 的 project_meta 结构。
+project_meta:
+  category: "iron_ore"
+  dashboard: "normal_freight"
+  origin_station: "高桥镇"
+  destination_station: "汐子"
+  cargo_names:
+    - "铁矿"
+    - "铁矿粉"
+  # #98 filter:本项目合同明确只走铁路。出港通知单的 remarks 里"(公路 X)"
+  # 这种 ingest 时按 scope 过滤掉(2026-06-04 跟 jilin 蓝鳍同性质问题)。
+  transport_modes:
+    - "铁路"
+  has_inspection_notice: true
+  # 已见过的船名,辅助识别 / 文字补充货运信息时对船名一致性核对。
+  # 中唐是海铁联运两段船:A船青岛进口 → B船内贸转水到锦州港。
+  # 数据库:import_ship_name 存大船(A),ship_name 存到港船(B)。
+  # 当中唐特钢发运群的补充货运消息船名 ≠ 出港通知单船名时:
+  #   import_ship_name <- 补充货运消息船名(进口段大船)
+  #   ship_name        <- 出港通知单船名(到港小船)
+  # 一致时只填 ship_name,import_ship_name 留空。
+  known_ships:
+    - "丰收散运"
+    - "鞍子河"
+    - "马兰探险"
+  # OCR 常见误识(汐子 ⇄ 沙子),ingest 时归一到汐子。
+  destination_aliases:
+    汐子: ["沙子"]
 
 # 该项目需要的监听任务清单
 listening_tasks:

@@ -34,6 +34,35 @@ project_meta:
   destination_aliases:
     汐子: ["沙子"]
 
+  # ── 装车重量换算规则(中唐特钢约定) ──────────────────────────────
+  # 检装车通知单的 car_model 经常以 "70/64K/62AK/70E/70H" 形式出现。
+  # C70 系列(70/70E/70H)→ 标载 70 吨 → 实际装 70.2 吨
+  # C64K → 标载 61 吨 → 实际装 64.5 吨
+  # C62/62A/62AK → 标载 60 吨 → 实际装 63.5 吨
+  # shipped_weight.py 读的是 project_meta.shipped_weight_rule。
+  shipped_weight_rule:
+    per_wagon:
+      op: lookup
+      key:
+        op: coalesce
+        choices:
+          - op: to_float
+            value: $wagon.marked_weight
+          - op: lookup_by_prefix
+            value: $wagon.car_model
+            prefix_map:
+              C70: 70
+              C64: 61
+              C62: 60
+              "70": 70
+              "64": 61
+              "62": 60
+      table:
+        "70": 70.2
+        "61": 64.5
+        "60": 63.5
+      on_miss: pending_review
+
 # ── 流程编排(主要给 departure_excel 提供模板;executor 是 hard-coded)─
 flows:
   # 发运 excel 生成 + 发到指定群

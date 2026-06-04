@@ -280,9 +280,9 @@ PANEL_WIDTH = 92
 
 
 def _box(title: str, lines: list[str], width: int = PANEL_WIDTH) -> list[str]:
-    """画框。title 出现在顶边。"""
+    """画框。title 出现在顶边。中文 title 也按 cell 算宽。"""
     top_pre = f"┌─ {_bold(title)} "
-    visible_top_pre = len(_strip_ansi(top_pre))
+    visible_top_pre = _disp_width(_strip_ansi(top_pre))
     if visible_top_pre < width - 1:
         top = top_pre + "─" * (width - 1 - visible_top_pre) + "┐"
     else:

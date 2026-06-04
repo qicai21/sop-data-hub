@@ -886,14 +886,13 @@ def _execute_chaoyang_inspection_chain(
             nth = 1
 
         # ── 6b. Send excel via wx-ui-bridge ─────────────────────────
-        # 默认走 yaml 中的 test 模式 target(郭东北/数据单发群),不直发
-        # 生产群。production 路径要 input_json 里显式给 send_mode="production"。
+        # 发到 yaml flows.report_delivery_flow.send_report.target_group。
+        # 不区分"测试 / 生产"阶段 — 程序只看配置,要换收件方改 yaml 即可。
         send_info: dict[str, Any] = {"skipped": True}
         if excel_info.get("path") and not excel_info.get("error"):
             try:
                 from sop_hub.sop.send_excel import send_to_wechat
-                send_mode = str(input_json.get("send_mode") or "test")
-                target = _resolve_send_target(project_id, send_mode)
+                target = _resolve_send_target(project_id)
                 if target:
                     msg = f"{ship} 第{_cn_num(nth)}列 {excel_info['wagon_count']}车"
                     sr = send_to_wechat(
@@ -903,7 +902,6 @@ def _execute_chaoyang_inspection_chain(
                     )
                     send_info = {
                         "skipped": False,
-                        "mode": send_mode,
                         "target": target,
                         "message": msg,
                         "success": sr.success,
@@ -912,8 +910,8 @@ def _execute_chaoyang_inspection_chain(
                     }
                 else:
                     send_info = {"skipped": True,
-                                 "reason": f"no target_contact configured for "
-                                           f"send_{send_mode}_report in yaml"}
+                                 "reason": "no send_report target_group/"
+                                           "target_contact in yaml"}
             except Exception as exc:
                 send_info = {"skipped": False, "error": str(exc)}
 
@@ -970,15 +968,16 @@ def _execute_chaoyang_inspection_chain(
         conn.close()
 
 
-def _resolve_send_target(project_id: str, mode: str = "test") -> str | None:
-    """Read send target from yaml report_delivery_flow.
+def _resolve_send_target(project_id: str) -> str | None:
+    """Read send target from yaml report_delivery_flow.send_report.
 
     优先级:target_group > target_contact。群比个人触达面广、可追溯,业务
     缺省就该发到群。target_contact 留作 fallback(yaml 只配了联系人时)。
     2026-06-03 宝腾海漏发数据单发群、只发郭东北的根因即此原优先级反了。
 
-    Modes: "test" -> send_test_report.{target_group[0] or target_contact[0]}
-           "production" -> send_production_report.{target_group[0] or target_contact[0]}
+    程序不区分"测试 / 生产"阶段(只看配置)—— 2026-06-04 收敛掉原
+    send_test_report / send_production_report 双轨,统一一个 send_report
+    节点;要切收件人改 yaml 即可。
     """
     try:
         import yaml as _yaml
@@ -988,9 +987,8 @@ def _resolve_send_target(project_id: str, mode: str = "test") -> str | None:
     except Exception:
         return None
     flows = (raw.get("flows") or {}).get("report_delivery_flow") or {}
-    node_name = f"send_{mode}_report"
     for step in flows.get("steps") or []:
-        if step.get("node") != node_name:
+        if step.get("node") != "send_report":
             continue
         groups = step.get("target_group") or []
         if groups:

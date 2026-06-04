@@ -258,16 +258,11 @@ flows:
           generate_after: "departure_records_committed"
       - node: "generate_factory_json"
         action: ["generate_factory_transport_json_task"]
-      - node: "send_test_report"
-        conditions:
-          runtime_mode: "test"
+      # 程序只看配置 — 不再区分"测试 / 生产"阶段。当前统一发到数据单发群
+      # [GROUP013];日后真正上线发朝阳钢铁业务群,直接把 target_group 改成
+      # ["GROUP004"](朝阳钢铁发运群)即可,无须改代码。
+      - node: "send_report"
         target_group: ["GROUP013"]
-        target_contact: ["郭东北"]
-        action: ["send_excel_task"]
-      - node: "send_production_report"
-        conditions:
-          runtime_mode: "production"
-        target_group: ["GROUP004"]
         action: ["send_excel_task"]
 
   # ── 收货人系统上传(朝阳钢铁专属,2026-06-02 新增) ─────────────

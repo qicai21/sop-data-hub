@@ -75,12 +75,12 @@ groups:
       - "补充放货信息"
       - "补充货运信息"
       - "补充装车发运信息"
-      - "测试阶段发送发运excel"
+      - "发送发运excel"
     message_types:
       - "release_notice_image"
       - "freight_detail_text"
       - "departure_text"
-      - "departure_excel_test"
+      - "departure_excel"
 
 freight_detail_text_patterns:
   - "标识号"

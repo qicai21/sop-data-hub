@@ -128,7 +128,7 @@ def _retry_chain(
         _execute_chaoyang_inspection_chain,
     )
     return _execute_chaoyang_inspection_chain(
-        input_json={"message_inbox_id": inbox_id, "send_mode": "test"},
+        input_json={"message_inbox_id": inbox_id},
         message_id=message_id,
         db_path=Path(db_path),
         apply=True,

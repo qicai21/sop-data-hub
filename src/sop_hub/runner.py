@@ -17,7 +17,27 @@ from pathlib import Path
 from typing import Any
 
 from sop_hub.config import Settings
+from sop_hub.models.project_sop import PROJECT_ID_ALIASES
 from sop_hub.utils.time import now_iso_beijing_compact as _now_iso_beijing
+
+
+def _to_canonical_project_id(value: str) -> str:
+    """display name → canonical id 归一(business archive 路径强约束)。
+
+    用户 2026-06-04 决定:所有 project 标识统一用拼音 canonical id
+    (zhongtang_special_steel / chaoyang_steel / jilin_jingang_jinzhou /
+    wulanhaote_steel / jiusan),避免 business/projects/ 目录同时出现
+    "中唐特钢铁矿发运项目" 和 "zhongtang_special_steel" 两份。
+    extra alias 在这里兜底 PROJECT_ID_ALIASES 还没覆盖的字符串。
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return raw
+    extra = {
+        "乌兰浩特钢铁铁矿发运项目": "wulanhaote_steel",
+        "乌兰浩特钢铁铁矿发运项目 SOP": "wulanhaote_steel",
+    }
+    return PROJECT_ID_ALIASES.get(raw, extra.get(raw, raw))
 
 
 def _sanitize_component(value: str) -> str:
@@ -276,8 +296,10 @@ def _archive_components(payload: dict[str, Any], settings: Settings) -> dict[str
     # another project; combining those sources creates invalid paths such as
     # 朝阳钢铁/.../汐子/马兰探险.  The release row is the authoritative archive
     # anchor whenever present.
+    raw_project = str(release_row.get("project") or payload.get("project") or "unknown")
     return {
-        "project": str(release_row.get("project") or payload.get("project") or "unknown"),
+        # canonical id 强约束(see _to_canonical_project_id docstring)
+        "project": _to_canonical_project_id(raw_project),
         "destination": str(release_row.get("destination_station") or first_remark.get("destination") or cargo_info.get("到站") or payload.get("destination_station") or "unknown"),
         "ship": str(release_row.get("ship_name") or business_info.get("进口船名") or business_info.get("船名") or payload.get("ship_name") or "unknown"),
         "lot": lot_value,
@@ -730,17 +752,17 @@ def _infer_sop_project_token(payload: dict[str, Any], *, category: str) -> str:
     text = _payload_search_text(payload)
     if category == "出港计划通知单":
         if any(token in text for token in ("合远9", "朝阳钢铁", "朝钢", "朝阳西", "朝阳铁")):
-            return "朝阳钢铁铁矿发运项目"
+            return "chaoyang_steel"
         if any(token in text for token in ("汐子", "鞍子河", "丰收散运", "丰收", "沱子", "中唐", "赤峰中唐", "ZLZT")):
-            return "中唐特钢铁矿发运项目"
+            return "zhongtang_special_steel"
         if any(token in text for token in ("四平",)):
             return "jilin_jingang_jinzhou"
         return ""
     if category == "检装车通知单":
         if any(token in text for token in ("合远9", "朝阳西", "朝阳铁", "朝阳钢铁", "朝钢")):
-            return "朝阳钢铁铁矿发运项目"
+            return "chaoyang_steel"
         if any(token in text for token in ("汐子", "鞍子河", "中唐", "赤峰中唐")):
-            return "中唐特钢铁矿发运项目"
+            return "zhongtang_special_steel"
         return ""
     return ""
 

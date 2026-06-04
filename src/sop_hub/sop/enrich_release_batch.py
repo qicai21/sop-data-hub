@@ -435,3 +435,180 @@ def auto_enrich_release_batches_from_freight_detail(
         }
     finally:
         conn.close()
+
+
+# ── Zhongtang freight supplement enrichment(2026-06-04 新增)──────────────
+# 中唐特钢业务概念:**海铁联运两段船** —— 铁矿粉先在青岛港由 A船(进口大船)
+# 进口,中唐买其中一部分,内贸转水到锦州港由 B船(到港小船)承运。出港计划
+# 通知单上写的是 B船,补充货运信息上写的是 A船。二者不一致时:
+#   import_ship_name <- 补充货运信息.船名  (A 船,进口大船)
+#   ship_name        <- 出港通知单.船名      (B 船,到港小船,原有字段)
+# 一致时只填 ship_name,import_ship_name 留空。
+#
+# 匹配键:合同号(contract_no)优先,计划号(plan_id)兜底;exact-key,确定性匹配。
+_ZHONGTANG_ENRICH_MAPPING: dict[str, str] = {
+    "cargo_product_name": "cargo_product_name",  # 货物品名(纽曼粉/印粉…)
+    "contract_no": "contract_no",
+    "plan_id": "plan_id",
+    "quantity_tons": "quantity_tons",
+    "message_id": "source_message_id",
+    "group_id": "source_group_id",
+}
+
+
+def auto_enrich_release_batches_from_zhongtang_supplement(
+    candidate: Any,                 # ZhongtangFreightSupplement
+    *,
+    apply: bool = False,
+    allow_overwrite: bool = False,
+    db_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """中唐特钢补充货运信息 → 反查/填 release_batch。
+
+    Match priority: contract_no exact → plan_id exact。两者都对不上 → no_match。
+    特殊处理 import_ship_name:
+      - 若 candidate.ship_name 非空,且 release_batch.ship_name 非空,且二者**不相等**
+        → 把 candidate.ship_name 写入 release_batch.import_ship_name(进口大船)
+      - 一致或 batch.ship_name 还没填 → import_ship_name 留空(留给后续业务决定)
+    """
+    status_attr = getattr(candidate, "status", "")
+    if status_attr not in ("complete", "incomplete"):
+        return {
+            "status": "no_op",
+            "reason": f"candidate status {status_attr!r} (not complete/incomplete)",
+            "results": [],
+        }
+    contract = (getattr(candidate, "contract_no", "") or "").strip()
+    plan_id = (getattr(candidate, "plan_id", "") or "").strip()
+    if not (contract or plan_id):
+        return {
+            "status": "no_op",
+            "reason": "candidate 无 contract_no/plan_id 锚点",
+            "results": [],
+        }
+
+    conn = _open_db(db_path)
+    try:
+        available = _get_available_columns(conn)
+        required = {"cargo_product_name", "import_ship_name"}
+        missing = sorted(c for c in required if c not in available)
+        if missing:
+            return {
+                "status": "schema_missing_fields",
+                "schema_missing_fields": missing,
+                "results": [],
+            }
+
+        # 匹配:contract_no 先,plan_id 兜底
+        rows: list[sqlite3.Row] = []
+        matched_by = ""
+        if contract:
+            rows = conn.execute(
+                "SELECT * FROM release_batches WHERE contract_no=?",
+                (contract,),
+            ).fetchall()
+            if rows:
+                matched_by = "contract_no"
+        if not rows and plan_id and "plan_id" in available:
+            rows = conn.execute(
+                "SELECT * FROM release_batches WHERE plan_id=?",
+                (plan_id,),
+            ).fetchall()
+            if rows:
+                matched_by = "plan_id"
+
+        if not rows:
+            return {
+                "status": "no_match",
+                "reason": "无 release_batch 匹配 contract_no/plan_id",
+                "candidate": candidate.to_dict() if hasattr(candidate, "to_dict") else {},
+                "results": [],
+            }
+
+        from sop_hub.utils.time import now_iso_beijing_compact
+        now = now_iso_beijing_compact()
+        supplement_ship = (getattr(candidate, "ship_name", "") or "").strip()
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            planned: dict[str, Any] = {}
+            skipped: dict[str, Any] = {}
+            # 通用字段映射(同 chaoyang 模式)
+            for cand_field, col in _ZHONGTANG_ENRICH_MAPPING.items():
+                if col not in available:
+                    continue
+                value = getattr(candidate, cand_field, None)
+                if cand_field == "quantity_tons":
+                    if value is None or value < 0:
+                        continue
+                elif not _is_non_empty(value):
+                    continue
+                existing = row[col]
+                if _is_non_empty(existing) and not allow_overwrite:
+                    skipped[col] = {"existing": existing, "candidate": value}
+                    continue
+                planned[col] = value
+
+            # 海铁联运:supplement.ship_name 与 batch.ship_name 不一致
+            # → import_ship_name <- supplement.ship_name
+            batch_ship = (row["ship_name"] or "").strip() if "ship_name" in available else ""
+            if supplement_ship and batch_ship and supplement_ship != batch_ship:
+                existing_import = row["import_ship_name"] if "import_ship_name" in available else None
+                if not _is_non_empty(existing_import) or allow_overwrite:
+                    planned["import_ship_name"] = supplement_ship
+                else:
+                    skipped["import_ship_name"] = {
+                        "existing": existing_import,
+                        "candidate": supplement_ship,
+                    }
+
+            applied: dict[str, Any] = {}
+            if planned and apply:
+                set_clauses = []
+                params: dict[str, Any] = {"id": row["id"]}
+                for col, value in planned.items():
+                    pname = f"v_{col}"
+                    set_clauses.append(f"{col} = :{pname}")
+                    params[pname] = value
+                set_clauses.append("updated_at = :updated_at")
+                params["updated_at"] = now
+                conn.execute(
+                    f"UPDATE release_batches SET {', '.join(set_clauses)} WHERE id = :id",
+                    params,
+                )
+                applied = dict(planned)
+
+            results.append({
+                "release_batch_id": row["id"],
+                "release_batch_ship_name": batch_ship,
+                "import_ship_name_set": planned.get("import_ship_name", ""),
+                "planned": planned,
+                "applied": applied,
+                "skipped": skipped,
+            })
+
+        if apply:
+            conn.commit()
+
+        n_with_updates = sum(1 for r in results if r["planned"])
+        if apply and any(r["applied"] for r in results):
+            status = "applied"
+        elif not apply and n_with_updates:
+            status = "dry_run"
+        else:
+            status = "no_op"
+
+        return {
+            "status": status,
+            "matched_by": matched_by,
+            "matched_count": len(rows),
+            "cargo_product_name": getattr(candidate, "cargo_product_name", ""),
+            "supplement_ship_name": supplement_ship,
+            "results": results,
+            "message": (
+                f"{'applied' if apply else 'dry_run'}: {matched_by} matched "
+                f"{len(rows)} batch(es), {n_with_updates} with updates"
+            ),
+        }
+    finally:
+        conn.close()

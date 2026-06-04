@@ -409,15 +409,64 @@ def _execute_freight_detail_enrichment(
     *,
     db_path: Path,
 ) -> dict[str, Any]:
-    """#96: freight_detail text → match release_batch by CGR/HNMC → enrich
-    cargo_product_name (印粉/麦克粉/…). #98:进来即真写(内部安全,无对外提交)。"""
+    """#96: freight_detail text → match release_batch → enrich cargo_product_name 等。
+    #98:进来即真写(内部安全,无对外提交)。
+
+    Project 分支(2026-06-04):
+      - chaoyang_steel(default):订单标识 CGR + 合同号 HNMC 模板(印粉/麦克粉…)
+      - zhongtang_special_steel:供方/船名/货名/港口/数量/计划号/合同号 7 字段模板,
+        且含"海铁联运两段船"的 import_ship_name 双存逻辑。
+    """
+    text = input_json.get("text_content", "") or ""
+    group_id = input_json.get("group_name") or input_json.get("source_group_id") or ""
+    project_id = (input_json.get("sop_project_id") or "").strip()
+
+    # ── 中唐分支:补充货运信息(7 字段) ──────────────────────────────────
+    if project_id == "zhongtang_special_steel":
+        from sop_hub.sop.zhongtang_freight_text_extractor import (
+            extract_zhongtang_freight_supplement,
+        )
+        from sop_hub.sop.enrich_release_batch import (
+            auto_enrich_release_batches_from_zhongtang_supplement,
+        )
+        candidate_zt = extract_zhongtang_freight_supplement(
+            text, message_id=message_id, group_id=group_id,
+        )
+        if candidate_zt.status == "no_match":
+            return {
+                "action": "skipped",
+                "status": "succeeded",
+                "output_json": {
+                    "reason": "zhongtang supplement no_match (无 contract_no/plan_id) — terminal no-op",
+                    "project": "zhongtang_special_steel",
+                },
+            }
+        res = auto_enrich_release_batches_from_zhongtang_supplement(
+            candidate_zt, apply=True, db_path=db_path,
+        )
+        st = res.get("status")
+        if st == "schema_missing_fields":
+            return {
+                "action": "failed",
+                "status": "failed",
+                "error_message": f"release_batches 缺列: {res.get('schema_missing_fields')}",
+                "output_json": res,
+            }
+        if st == "no_match":
+            # 合同号/计划号没在 release_batches 里 — 通知单还没来,留 skipped 重试
+            return {"action": "skipped", "status": "skipped", "output_json": res}
+        return {
+            "action": "executed",
+            "status": "succeeded",
+            "output_json": res,
+        }
+
+    # ── 默认分支:chaoyang/jilin 的 freight_detail(订单标识 CGR + 合同号 HNMC)──
     from sop_hub.sop.freight_detail_extractor import extract_freight_detail
     from sop_hub.sop.enrich_release_batch import (
         auto_enrich_release_batches_from_freight_detail,
     )
 
-    text = input_json.get("text_content", "") or ""
-    group_id = input_json.get("group_name") or input_json.get("source_group_id") or ""
     candidate = extract_freight_detail(
         text, message_id=message_id, group_id=group_id,
     )

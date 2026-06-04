@@ -159,7 +159,10 @@ def _infer_project_from_text(text: str) -> str:
         return "jilin_jingang_jinzhou"
     if any(kw in text for kw in ("朝阳西", "朝阳", "合远9", "木森17", "宝腾海")):
         return "chaoyang_steel"
-    if any(kw in text for kw in ("汐子", "中唐")):
+    # 中唐:显式"汐子/中唐"关键字 OR 合同号前缀 "ZLZT-"(中唐特钢合同号格式,
+    # 2026-06-04 补 — 中唐补充货运信息模板正文里没有"汐子/中唐",但**总有
+    # ZLZT- 开头的合同号**,足以做强识别)
+    if any(kw in text for kw in ("汐子", "中唐", "ZLZT-")):
         return "zhongtang_special_steel"
     return ""
 

@@ -36,6 +36,14 @@ from openpyxl.utils import get_column_letter
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SOP_DIR = REPO_ROOT / "config" / "project_sops"
 SOP_DB = REPO_ROOT / "data" / "sop_agent.db"
+# 业务文档归档根 — 跟 json/原图同根。用户业务侧查文档只会进 Documents/bussiness-
+# artifacts,不该跑到 git 仓库里翻。生成 excel 走 business archive,保持跟
+# VLM 抽出的 json(business/projects/<proj>/<dest>/<ship>/<lot>/json/<date>/)
+# 对称的目录结构。
+BUSINESS_ARCHIVE_ROOT = Path(
+    "/Users/qicai21/Documents/bussiness-artifacts/wechat_images/business/projects"
+)
+# 仅作 fallback:business archive 根不可写时(测试 / 没挂卷)用仓库本地。
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "output" / "excel"
 
 
@@ -431,6 +439,49 @@ def _resolve_filename(pattern: str, *, car_count: int, batch_id: str) -> str:
 # ── Public entry ─────────────────────────────────────────────────────────
 
 
+def _resolve_archive_dir(
+    project_id: str,
+    release_batch_id: str,
+    *,
+    db_path: str | Path | None = None,
+) -> Path:
+    """业务归档目录:business/projects/<proj>/<dest>/<ship>/<lot>/excel/<date>/
+
+    跟 json 归档结构对称(json 是 .../lot01/json/<date>/);excel 放 excel/
+    子目录。<date> 用 batch_date(出港单上"第几次下达计划"那一行的日期);
+    没有就 fallback notice_date,再没有 fallback 今天。
+
+    business archive 根盘不可写时(测试 / 没挂卷)fallback 到 DEFAULT_OUTPUT_DIR。
+    """
+    db = Path(db_path) if db_path else SOP_DB
+    conn = sqlite3.connect(str(db))
+    try:
+        r = conn.execute(
+            "SELECT ship_name, destination_station, batch_sequence, "
+            "       batch_date, notice_date "
+            "  FROM release_batches WHERE id=?",
+            (release_batch_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not r:
+        return DEFAULT_OUTPUT_DIR
+    ship, dest, lot, batch_date, notice_date = r
+    ship = (ship or "_unknown_ship").strip()
+    dest = (dest or "_unknown_dest").strip()
+    lot = (lot or "lot01").strip()
+    date_seg = (batch_date or notice_date or "").strip()
+    if not date_seg:
+        from datetime import datetime
+        date_seg = datetime.now().strftime("%Y-%m-%d")
+    candidate = BUSINESS_ARCHIVE_ROOT / project_id / dest / ship / lot / "excel" / date_seg
+    try:
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        return candidate
+    except OSError:
+        return DEFAULT_OUTPUT_DIR
+
+
 def generate_departure_excel(
     release_batch_id: str,
     *,
@@ -470,7 +521,10 @@ def generate_departure_excel(
             error=f"template load failed: {exc}",
         )
 
-    out_dir = Path(output_dir) if output_dir else DEFAULT_OUTPUT_DIR
+    out_dir = (
+        Path(output_dir) if output_dir
+        else _resolve_archive_dir(project_id, release_batch_id, db_path=db_path)
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     rows, ctx, err = _extract_rows(

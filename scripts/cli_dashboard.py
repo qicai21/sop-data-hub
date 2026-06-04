@@ -143,7 +143,7 @@ def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
               actual_wagon_count, shipped_weight_tons, remaining_weight_tons,
               dispatch_status, updated_at
             FROM release_batches
-            WHERE dispatch_status IN ('in_progress', 'active', 'suspended')
+            WHERE dispatch_status IN ('in_progress', 'active', 'suspended', 'pending_completion')
                OR (dispatch_status='completed' AND date(updated_at) >= date('now','-7 days'))
             ORDER BY
               CASE dispatch_status
@@ -310,7 +310,8 @@ def _num(v: Any) -> str:
 def _color_status(s: str) -> str:
     if s in ("in_progress", "active"):
         return _green(s)
-    if s in ("pending_review", "pending_95306_match", "suspended"):
+    if s in ("pending_review", "pending_95306_match", "suspended",
+             "pending_completion"):
         return _yellow(s)
     if s in ("timeout_manual_review", "cancelled"):
         return _red(s)

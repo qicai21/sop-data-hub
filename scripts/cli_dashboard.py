@@ -139,7 +139,7 @@ def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
             """
             SELECT
               id, project, ship_name, destination_station, cargo_name,
-              batch_sequence, notice_date, batch_quantity,
+              batch_sequence, notice_date, batch_date, batch_quantity,
               actual_wagon_count, shipped_weight_tons, remaining_weight_tons,
               dispatch_status, updated_at
             FROM release_batches
@@ -153,7 +153,7 @@ def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
                 WHEN 'completed' THEN 2
                 ELSE 3
               END,
-              notice_date DESC
+              batch_date DESC
             """
         ).fetchall()
     finally:
@@ -270,13 +270,16 @@ def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
     lines: list[str] = []
     # 表头
     lines.append(_dim(
-        f"{'船名':<12}{'lot':<7}{'通知日':<11}{'计划t':>8}"
+        f"{'船名':<12}{'lot':<7}{'下达日':<11}{'计划t':>8}"
         f"{'已发t':>8}{'剩 t':>8}{'车数':>5}  状态"
     ))
     for b in batches[:8]:  # 最多 8 条/项目
         ship = (b.get("ship_name") or "—")[:11]
         lot = (b.get("batch_sequence") or "—")[:6]
-        notice = (b.get("notice_date") or "—")[:10]
+        # 业务上看每个 lot 各自的"下达日期"(batch_date),不是出港单整张的
+        # "通知日期"(notice_date)— 一张累计放货单的 notice_date 是共用的,
+        # batch_date 才是每段 remark 的下达日。2026-06-04 用户校订。
+        notice = (b.get("batch_date") or "—")[:10]
         planned = _num(b.get("batch_quantity"))
         shipped = _num(b.get("shipped_weight_tons"))
         remain = _num(b.get("remaining_weight_tons"))

@@ -30,6 +30,7 @@ project_meta:
     - "丰收散运"
     - "鞍子河"
     - "马兰探险"
+    - "贝拉"
   # OCR 常见误识(汐子 ⇄ 沙子),ingest 时归一到汐子。
   destination_aliases:
     汐子: ["沙子"]

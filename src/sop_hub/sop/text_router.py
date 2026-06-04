@@ -33,7 +33,10 @@ _DEPARTURE_LANE_PATTERNS = {"道", "煤一", "煤二", "煤三", "煤四", "煤�
 _DEPARTURE_CAR_PATTERNS = {"节", "车"}
 
 # ── Chaoyang business context signals ────────────────────────────────────
-_CHAOYANG_SHIP_KEYWORDS = {"木森17", "合远9", "宝腾海", "贝拉"}
+_CHAOYANG_SHIP_KEYWORDS = {"木森17", "合远9", "宝腾海"}
+# 2026-06-04 贝拉从 chaoyang 移到 zhongtang:贝拉走汐子站,属于中唐特钢
+# 业务范畴。chaoyang 历史里贝拉是误归类(从没真用过)。
+_ZHONGTANG_SHIP_KEYWORDS = {"丰收散运", "鞍子河", "马兰探险", "贝拉"}
 _CHAOYANG_DEST_KEYWORDS = {"朝阳西", "朝阳铁", "朝钢", "朝阳钢铁"}
 _CHAOYANG_CARGO_KEYWORDS = {"铁矿", "印粉", "PB粉", "麦克粉", "纽曼粉"}
 
@@ -159,10 +162,12 @@ def _infer_project_from_text(text: str) -> str:
         return "jilin_jingang_jinzhou"
     if any(kw in text for kw in ("朝阳西", "朝阳", "合远9", "木森17", "宝腾海")):
         return "chaoyang_steel"
-    # 中唐:显式"汐子/中唐"关键字 OR 合同号前缀 "ZLZT-"(中唐特钢合同号格式,
-    # 2026-06-04 补 — 中唐补充货运信息模板正文里没有"汐子/中唐",但**总有
-    # ZLZT- 开头的合同号**,足以做强识别)
+    # 中唐:显式"汐子/中唐"关键字 OR 已知船名 OR 合同号前缀 "ZLZT-"(中唐
+    # 特钢合同号格式)。补充货运信息模板正文里没有"汐子/中唐",但有合同号
+    # 或船名即可推断。
     if any(kw in text for kw in ("汐子", "中唐", "ZLZT-")):
+        return "zhongtang_special_steel"
+    if any(kw in text for kw in _ZHONGTANG_SHIP_KEYWORDS):
         return "zhongtang_special_steel"
     return ""
 

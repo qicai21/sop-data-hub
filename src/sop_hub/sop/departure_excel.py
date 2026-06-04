@@ -199,11 +199,19 @@ def _extract_rows(
             placeholders = ",".join("?" * len(car_nos))
             ws_rows = conn.execute(
                 f"SELECT * FROM wagon_shipments "
-                f"WHERE batch_id=? AND car_no IN ({placeholders}) "
-                f"ORDER BY ticketed_at ASC, car_no ASC",
+                f"WHERE batch_id=? AND car_no IN ({placeholders})",
                 (release_batch_id, *car_nos),
             ).fetchall()
+            # 按调用方给的 car_nos 顺序输出 — 对应检装车通知单的 seq,
+            # 也就是列车物理排序(机车头到机车尾)。OCR 抽错的车号可改,
+            # 但顺序不能断。2026-06-04 业务约定。
+            order_index = {c: i for i, c in enumerate(car_nos)}
+            ws_rows = sorted(
+                ws_rows,
+                key=lambda r: order_index.get(r["car_no"], 1_000_000),
+            )
         else:
+            # batch 历史累计场景,无 seq 上下文,fallback ticketed_at
             ws_rows = conn.execute(
                 "SELECT * FROM wagon_shipments WHERE batch_id=? "
                 "ORDER BY ticketed_at ASC, car_no ASC",

@@ -94,6 +94,15 @@ def _resolve_task_type(project_id: str, flow_name: str, node_name: str) -> str:
                               "extract_inspection_notice",
                               "extract_inspection_notice_fields")):
         return "chaoyang_inspection_chain"
+    # 中唐特钢复用同一套检装车链(汐子站铁矿粉),只是没有鞍钢门户上传段。
+    # 共用 _execute_chaoyang_inspection_chain 执行器,内部 project_id 门控。
+    if (project_id == "zhongtang_special_steel"
+            and flow_name in ("inspection_flow", "inspection_notice_flow")
+            and node_name in ("create_inspection_candidate",
+                              "detect_inspection_notice",
+                              "extract_inspection_notice",
+                              "extract_inspection_notice_fields")):
+        return "zhongtang_inspection_chain"
     if node_name == "create_release_batch":
         return "create_release_batch"
     if project_id == "chaoyang_steel" and flow_name == "dispatch_flow":

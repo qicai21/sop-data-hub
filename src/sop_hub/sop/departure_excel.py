@@ -68,6 +68,20 @@ class ExcelTemplate:
     apply_border_header: bool
     apply_border_body: bool
     columns: list[ExcelColumn]
+    # 项目特定 footer(2026-06-04 中唐:发运 excel 底部 5 行业务字段)。
+    # 结构示例(全 yaml 驱动):
+    #   footer:
+    #     start_row_gap: 1          # 数据末行与 footer 之间空几行
+    #     label_col: "A"
+    #     value_col: "B"
+    #     value_merge_end_col: "E"  # 可选,value 跨列合并
+    #     rows:
+    #       - label: "货物品名"
+    #         from_release_batch: "cargo_product_name"
+    #       - label: "进口船名"
+    #         from_release_batch: "import_ship_name"
+    # 不配 footer 的项目(朝阳/吉林)行为不变。
+    footer: dict | None = None
 
 
 @dataclass
@@ -144,6 +158,7 @@ def _load_template(project_id: str) -> ExcelTemplate:
         apply_border_header=bool(style.get("apply_border_to_header", True)),
         apply_border_body=bool(style.get("apply_border_to_body", True)),
         columns=cols,
+        footer=tpl_dict.get("footer"),
     )
 
 
@@ -328,6 +343,82 @@ def _apply_style(ws, tpl: ExcelTemplate, last_data_row: int):
         ws.column_dimensions[get_column_letter(col_idx)].width = 18
 
 
+def _render_footer(
+    *,
+    ws,
+    footer_cfg: dict,
+    release_batch_id: str,
+    data_end_row: int,
+    db_path: str | Path | None = None,
+) -> None:
+    """yaml 驱动的 footer 渲染。每条 row 拉一个 release_batches 字段值,
+    label 在 label_col,value 在 value_col(可选 merge 到 value_merge_end_col)。
+
+    例:中唐特钢底部
+      货物品名:  纽曼粉
+      计划号:    90260500008
+      合同号:    ZLZT-2026050801
+      进口船名:  丰收散运
+      到港船名:  鞍子河
+    """
+    from openpyxl.styles import Font, Alignment
+    from openpyxl.utils import column_index_from_string
+
+    rows_cfg = footer_cfg.get("rows") or []
+    if not rows_cfg:
+        return
+    gap = int(footer_cfg.get("start_row_gap", 1) or 0)
+    label_col = footer_cfg.get("label_col", "A")
+    value_col = footer_cfg.get("value_col", "B")
+    value_merge_end = footer_cfg.get("value_merge_end_col")
+
+    # 拉 release_batch 行
+    db = Path(db_path) if db_path else SOP_DB
+    conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
+    try:
+        rb = conn.execute(
+            "SELECT * FROM release_batches WHERE id=?", (release_batch_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not rb:
+        return  # 没行就别写 footer
+
+    label_idx = column_index_from_string(label_col)
+    value_idx = column_index_from_string(value_col)
+    label_font = Font(bold=True)
+    label_align = Alignment(horizontal="right", vertical="center")
+    value_align = Alignment(horizontal="left", vertical="center")
+
+    start_row = data_end_row + gap + 1
+    for offset, r in enumerate(rows_cfg):
+        excel_row = start_row + offset
+        label = str(r.get("label") or "")
+        field = r.get("from_release_batch") or ""
+        try:
+            value = rb[field] if field else ""
+        except (IndexError, KeyError):
+            value = ""
+        if value is None:
+            value = ""
+        # 写标签
+        c_lbl = ws.cell(row=excel_row, column=label_idx, value=label + ":")
+        c_lbl.font = label_font
+        c_lbl.alignment = label_align
+        # 写值
+        c_val = ws.cell(row=excel_row, column=value_idx, value=value)
+        c_val.alignment = value_align
+        # 可选:值合并跨列(footer 值通常较长)
+        if value_merge_end:
+            end_idx = column_index_from_string(value_merge_end)
+            if end_idx > value_idx:
+                ws.merge_cells(
+                    start_row=excel_row, start_column=value_idx,
+                    end_row=excel_row,   end_column=end_idx,
+                )
+
+
 def _resolve_filename(pattern: str, *, car_count: int, batch_id: str) -> str:
     today = datetime.now().strftime("%Y%m%d")
     return (pattern
@@ -426,6 +517,17 @@ def generate_departure_excel(
 
     last_data_row = tpl.data_start_row + row_count - 1
     _apply_style(ws, tpl, last_data_row)
+
+    # ── Footer(2026-06-04 中唐 海铁联运:底部加 货物品名/计划号/合同号/
+    #            进口船名/到港船名 5 行)── 项目特定,yaml 驱动,不配则跳过 ──
+    if tpl.footer:
+        _render_footer(
+            ws=ws,
+            footer_cfg=tpl.footer,
+            release_batch_id=release_batch_id,
+            data_end_row=last_data_row,
+            db_path=db_path,
+        )
 
     wb.save(str(filepath))
 

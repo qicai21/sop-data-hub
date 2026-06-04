@@ -59,6 +59,7 @@ AUTO_SAFE_TASK_TYPES = (
 EXTERNAL_CHAIN_TASK_TYPES = (
     "jljg_departure_text_chain",
     "chaoyang_inspection_chain",
+    "zhongtang_inspection_chain",
     "create_release_batch",
 )
 

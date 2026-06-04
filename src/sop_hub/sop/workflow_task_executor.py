@@ -162,7 +162,11 @@ def run_workflow_task(
             result = _execute_jljg_departure(input_json, message_id, db_path=db, task_id=task_id)
         elif task_type == "create_release_batch":
             result = _execute_create_release_batch(input_json, message_id, db_path=db)
-        elif task_type == "chaoyang_inspection_chain":
+        elif task_type in ("chaoyang_inspection_chain",
+                            "zhongtang_inspection_chain"):
+            # 中唐复用朝阳同一执行器(95306 反推 / wagon_shipments / excel / 发群
+            # 结构完全同构)。朝阳鞍钢门户上传段在执行器内已自门控
+            # (project_id == "chaoyang_steel"),中唐自动跳过。
             result = _execute_chaoyang_inspection_chain(
                 input_json, message_id, db_path=db, task_id=task_id,
             )
@@ -761,13 +765,19 @@ def _execute_chaoyang_inspection_chain(
                         f"{matched_batch_id}|{r['ydid']}".encode()
                     ).hexdigest()[:24]
                     try:
+                        # 用项目派生的 match_source,便于审计区分朝阳 vs 中唐
+                        # 自动链跑出来的对单关系。
+                        ms = (
+                            "zhongtang_inspection_chain"
+                            if project_id == "zhongtang_special_steel"
+                            else "chaoyang_inspection_chain"
+                        )
                         conn.execute("""INSERT INTO shipment_release_batch_matches
                             (id, release_batch_id, wagon_shipment_id, ydid,
                              waybill_no, wagon_no, container_no, match_source)
                             VALUES (?,?,?,?,?,?,?,?)""",
                             (mid, matched_batch_id, wid, r['ydid'],
-                             "", cno, r['container_no_raw'] or "",
-                             "chaoyang_inspection_chain"))
+                             "", cno, r['container_no_raw'] or "", ms))
                     except _sql.IntegrityError:
                         pass
                     inserted += 1

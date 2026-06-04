@@ -34,6 +34,77 @@ project_meta:
   destination_aliases:
     汐子: ["沙子"]
 
+# ── 流程编排(主要给 departure_excel 提供模板;executor 是 hard-coded)─
+flows:
+  # 发运 excel 生成 + 发到指定群
+  report_delivery_flow:
+    description: "检装车成链后,生成发运 excel 发到目标群"
+    steps:
+      - node: "send_test_report"
+        conditions:
+          runtime_mode: "test"
+        # 目前调试阶段先发数据单发群,稳定后改成 production 直接发中唐发运群
+        target_group: ["GROUP013"]
+        action: ["send_excel_task"]
+      - node: "send_production_report"
+        conditions:
+          runtime_mode: "production"
+        target_group: ["GROUP003"]
+        action: ["send_excel_task"]
+    # excel 模板(由 departure_excel.py 完全 yaml 驱动)
+    output_templates:
+      departure_excel:
+        business_name: "中唐特钢汐子站铁矿粉发运表"
+        file_naming:
+          pattern: "zhongtang_{car_count}cars.xlsx"
+          car_count_source: "export_row_count"
+        workbook:
+          sheet_name: "Sheet1"
+          header_row: 1
+          data_start_row: 2
+        columns:
+          - key: "seq"
+            header: "rowNo"
+            fill_rule: "从 1 开始自增"
+          - key: "wagon_no"
+            header: "铁路车号"
+            fill_rule: "wagon_shipments.car_no"
+          - key: "ticketed_at_compact_text"
+            header: "货票时间"
+            fill_rule: "yyyymmddhhmm00 文本(避免 Excel 科学计数)"
+            cell_format: "@"
+          - key: "origin_name_fixed"
+            header: "发站名称"
+            fill_rule: "固定:高桥镇"
+            constant: "高桥镇"
+          - key: "destination_name_fixed"
+            header: "到站名称"
+            fill_rule: "固定:汐子"
+            constant: "汐子"
+        style:
+          table:
+            bordered_range: "A1:E{last_data_row}"
+            border_style: "thin"
+            apply_border_to_header: true
+            apply_border_to_body: true
+        # ── 中唐特钢特有 footer:底部 5 行业务信息(用户口述 + PDF SOP)──
+        footer:
+          start_row_gap: 1
+          label_col: "A"
+          value_col: "B"
+          value_merge_end_col: "E"
+          rows:
+            - label: "货物品名"
+              from_release_batch: "cargo_product_name"
+            - label: "计划号"
+              from_release_batch: "plan_id"
+            - label: "合同号"
+              from_release_batch: "contract_no"
+            - label: "进口船名"
+              from_release_batch: "import_ship_name"
+            - label: "到港船名"
+              from_release_batch: "ship_name"
+
 # 该项目需要的监听任务清单
 listening_tasks:
   - group_id: "GROUP003"

@@ -27,6 +27,7 @@ import sqlite3
 import sys
 import time
 from datetime import datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -163,7 +164,10 @@ def _connect(db_path: Path):
 
 
 def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
-    """按 project 分组,取所有 in_progress + completed in last 7 days 的 batch。"""
+    """按 project 分组,取所有 in_progress + completed in last 7 days 的 batch。
+    顺手补一列 box_count(集装箱业务用,从 wagon_shipments.container_numbers_json
+    聚合;散运业务忽略此列,继续看 actual_wagon_count)。
+    """
     conn = _connect(DB_PATH)
     if conn is None:
         return {}
@@ -171,22 +175,30 @@ def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
         rows = conn.execute(
             """
             SELECT
-              id, project, ship_name, destination_station, cargo_name,
-              batch_sequence, notice_date, batch_date, batch_quantity,
-              actual_wagon_count, shipped_weight_tons, remaining_weight_tons,
-              dispatch_status, updated_at
-            FROM release_batches
-            WHERE dispatch_status IN ('in_progress', 'active', 'suspended', 'pending_completion')
-               OR (dispatch_status='completed' AND date(updated_at) >= date('now','-7 days'))
+              rb.id, rb.project, rb.ship_name, rb.destination_station, rb.cargo_name,
+              rb.batch_sequence, rb.notice_date, rb.batch_date, rb.batch_quantity,
+              rb.actual_wagon_count, rb.shipped_weight_tons, rb.remaining_weight_tons,
+              rb.dispatch_status, rb.updated_at,
+              COALESCE((
+                SELECT SUM(json_array_length(
+                  CASE WHEN ws.container_numbers_json IS NULL
+                            OR ws.container_numbers_json=''
+                       THEN '[]'
+                       ELSE ws.container_numbers_json END))
+                FROM wagon_shipments ws WHERE ws.batch_id=rb.id
+              ), 0) AS box_count
+            FROM release_batches rb
+            WHERE rb.dispatch_status IN ('in_progress', 'active', 'suspended', 'pending_completion')
+               OR (rb.dispatch_status='completed' AND date(rb.updated_at) >= date('now','-7 days'))
             ORDER BY
-              CASE dispatch_status
+              CASE rb.dispatch_status
                 WHEN 'in_progress' THEN 0
                 WHEN 'active' THEN 0
                 WHEN 'suspended' THEN 1
                 WHEN 'completed' THEN 2
                 ELSE 3
               END,
-              batch_date DESC
+              rb.batch_date DESC
             """
         ).fetchall()
     finally:
@@ -200,6 +212,29 @@ def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
             continue
         by_project.setdefault(proj, []).append(dict(r))
     return by_project
+
+
+@lru_cache(maxsize=1)
+def _container_business_projects() -> set[str]:
+    """读所有 yaml 找 project_meta.is_container_business=True 的 canonical id 集。
+    用于 dashboard 选用"箱数"还是"车数"列。
+    """
+    import yaml as _yaml
+    from pathlib import Path as _P
+    result: set[str] = set()
+    sop_dir = _P(__file__).resolve().parents[1] / "config" / "project_sops"
+    if not sop_dir.exists():
+        return result
+    for yp in sop_dir.glob("*.yaml"):
+        try:
+            data = _yaml.safe_load(yp.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
+        pid = (data.get("project_id") or "").strip()
+        meta = data.get("project_meta") or {}
+        if pid and bool(meta.get("is_container_business")):
+            result.add(pid)
+    return result
 
 
 def query_pending_candidate_counts() -> dict[str, int]:
@@ -301,6 +336,10 @@ def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
         return _box(title, [_dim("  (无 in_progress / 近期 completed batch)")])
 
     lines: list[str] = []
+    # 集装箱项目(yaml is_container_business=true)显示"箱数",散运显示"车数"
+    is_container = project_id in _container_business_projects()
+    unit_label = "箱数" if is_container else "车数"
+
     # 表头(用 _pad_disp 按终端 cell 宽度对齐 — 中文 2 cell)
     header = (
         _pad_disp("船名", 14)
@@ -309,7 +348,7 @@ def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
         + _pad_disp("计划t", 8, "right")
         + _pad_disp("已发t", 8, "right")
         + _pad_disp("剩 t", 8, "right")
-        + _pad_disp("车数", 5, "right")
+        + _pad_disp(unit_label, 5, "right")
         + "  状态"
     )
     lines.append(_dim(header))
@@ -323,7 +362,10 @@ def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
         planned = _num(b.get("batch_quantity"))
         shipped = _num(b.get("shipped_weight_tons"))
         remain = _num(b.get("remaining_weight_tons"))
-        wagons = str(b.get("actual_wagon_count") or 0)
+        unit_count = str(
+            (b.get("box_count") if is_container else b.get("actual_wagon_count"))
+            or 0
+        )
         status = b.get("dispatch_status") or "—"
         # status 列固定 19 cell — 容纳 pending_completion 全名,所有行右
         # 边框自然对齐(_color_status 改成 strip 后判颜色,pad 不影响)
@@ -335,7 +377,7 @@ def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
             + _pad_disp(planned, 8, "right")
             + _pad_disp(shipped, 8, "right")
             + _pad_disp(remain, 8, "right")
-            + _pad_disp(wagons, 5, "right")
+            + _pad_disp(unit_count, 5, "right")
             + "  " + status_colored
         )
     if len(batches) > 8:

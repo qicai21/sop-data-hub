@@ -27,15 +27,18 @@ project_meta:
   departure_confirmation_source: "handwritten_list_or_text_report"
   source_of_truth: "git"
 
-  # ── R76: 已发运重量计算规则(集装箱 / 按箱数) ─────────────────
-  # 用 sop-data-hub/src/sop_hub/calc DSL 表达。集装箱业务约定:每箱 32.3 吨,
+  # ── 已发运重量计算规则(集装箱 / 按箱数) ─────────────────
+  # 用 sop-data-hub/src/sop_hub/calc DSL 表达。集装箱业务约定:每箱 32.28 吨,
   # 不依赖 marked_weight(它是铁路计费重量)。每节车通常 2 个箱(cargo_count=2)。
-  # 业务事实见 Hindsight memory doc: biz-rule-marked-weight-vs-loaded-weight-20260601
+  # 2026-06-05 用户校订:32.3 → 32.28(仅限本项目精度)
   shipped_weight_rule:
     per_wagon:
       op: multiply
       lhs: $wagon.cargo_count
-      rhs: 32.3
+      rhs: 32.28
+
+  # 业务模式标志:集装箱发运(dashboard 按"箱数"显示而不是"车数")
+  is_container_business: true
 
 scope:
   description:

@@ -103,7 +103,12 @@ def _mark_timeout(
 def _send_timeout_notice(
     candidate_id: str, group_name: str, elapsed_h: float,
 ) -> None:
-    """超时通知:发到 yaml test target(郭东北/数据单发群)。"""
+    """超时通知:发到数据单发群 [GROUP013](运营兜底通道)。
+
+    2026-06-06:不再硬编码郭东北。候选超时是项目无关的运营通知,统一发到
+    GROUP013 数据单发群,人工在群里排查。日后想分项目通知可读 candidate
+    的 project 再走 yaml _resolve_send_target。
+    """
     try:
         from sop_hub.sop.send_excel import send_to_wechat
         msg = (
@@ -111,7 +116,7 @@ def _send_timeout_notice(
             f"候选 {candidate_id[:8]} (来自 {group_name})\n"
             f"已等 {elapsed_h:.1f} 小时未拿到全部票,需人工排查"
         )
-        send_to_wechat(target="郭东北", message=msg, file_path=None)
+        send_to_wechat(target="[GROUP013]", message=msg, file_path=None)
     except Exception as exc:
         logger.warning("超时通知发送失败 candidate=%s: %s", candidate_id, exc)
 
@@ -127,11 +132,12 @@ def _retry_chain(
     from sop_hub.sop.workflow_task_executor import (
         _execute_chaoyang_inspection_chain,
     )
+    # 2026-06-06:删 apply=True kwarg —— #98 收敛后 chain 默认即 apply,
+    # 旧 apply= 参数早从签名里去掉了,留着这里调用导致 verifier 一直 TypeError。
     return _execute_chaoyang_inspection_chain(
         input_json={"message_inbox_id": inbox_id},
         message_id=message_id,
         db_path=Path(db_path),
-        apply=True,
     )
 
 

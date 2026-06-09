@@ -8,6 +8,26 @@ status: "active"
 # - 不自动识别或跟踪放货单.
 # - 放货单由用户发送后手动指认项目、路线和发运信息.
 # - 系统后续从 xts 账号 95306 数据查询每日发车动态.
+
+# ── 项目元(#85 2026-06-06 补全)──────────────────────────────
+# 即便九三 SOP 自动化程度低,跟踪模式跟其他全程项目一致:发车后跟到货。
+project_meta:
+  category: "grain_freight"
+  dashboard: "normal_freight"
+  origin_station: "高桥镇"
+  destination_station: "新台子"
+  cargo_names:
+    - "大豆"
+  transport_modes:
+    - "铁路"
+  has_inspection_notice: false
+  departure_confirmation_source: "rail95306_xts_account"
+  # 全程跟踪到 confirmed_received。九三大豆结算同样依赖到货,跟 jilin/中唐
+  # 同模式。当前 SOP 自动化未实现的部分不影响 lifecycle 语义。
+  lifecycle:
+    mode: "full_track_to_received"
+    rationale: "粮食结算依赖到货时间;wagon 全部到货才标 confirmed_received"
+
 rail95306:
   account: "xts"
   cargo_name: "大豆"

@@ -31,8 +31,40 @@ FALLBACK_BUSINESS_SOP_TOKENS = {
 # station names, not project hard-coding: the final value still passes through
 # the normal station canonicalization path below.
 STATION_OCR_CORRECTIONS = {
+    # 中唐特钢汐子站 VLM 误识闭集 — 2026-06-06 用户补
     "沱子": "汐子",
+    "沙子": "汐子",
+    "夕子": "汐子",
 }
+
+
+# 2026-06-06 #ocr-normalize 用户补:VLM 把锦州新僡物流有限公司经常 OCR 成
+# "锦州新德/新得/新儒/新铁晟" 等(僡 是单人旁+惠,生僻字 VLM 拼不准)。
+# prompts.py:96 已在 VLM prompt 写归一指令但模型不严格执行,这里做读时兜底。
+# 所有读到 release_batches.consignor / wagon_shipments.shipper_name 的入口
+# 都应该过 canonicalize_shipper_text。
+SHIPPER_OCR_CORRECTIONS = {
+    "锦州新德物流有限公司": "锦州新僡物流有限公司",
+    "锦州新得物流有限公司": "锦州新僡物流有限公司",
+    "锦州新儒物流有限公司": "锦州新僡物流有限公司",
+    "锦州新铁晟港口物流有限公司": "锦州新僡物流有限公司",
+    "锦州新铁晟物流有限公司": "锦州新僡物流有限公司",
+}
+
+
+def canonicalize_shipper_text(text: Optional[str]) -> Optional[str]:
+    """归一发货单位/承运代理名 — 兜底 VLM OCR 不准。"""
+    if not text:
+        return text
+    raw = str(text).strip()
+    if not raw:
+        return raw
+    if raw in SHIPPER_OCR_CORRECTIONS:
+        return SHIPPER_OCR_CORRECTIONS[raw]
+    # 模糊兜底:"锦州新"+"物流" 且不是已知正确"新僡" → 强归一
+    if "锦州新" in raw and "物流" in raw and "新僡" not in raw:
+        return "锦州新僡物流有限公司"
+    return raw
 
 
 @lru_cache(maxsize=1)
@@ -759,6 +791,17 @@ class BusinessDataAgent:
         tokens = self._release_dispatch_rule_tokens(record)
         matching_str = " ".join(token for token in tokens["all"] if token)
         rule_id = hash_text(f"release_dispatch_match_rule|{record.id}")
+        # #125 lifecycle 8 值 → release_dispatch_match_rules 老 4 值映射
+        # (rules.status 仍是 active/completed/suspended/cancelled,只是 chain
+        # match 用的缓存,不参与 lifecycle 流转)
+        _lc = record.dispatch_status
+        if _lc in ("loading", "all_loaded", "tracking", "delivered",
+                   "enriched", "pending_freight"):
+            _rule_status = "active"
+        elif _lc in ("confirmed_received", "closed"):
+            _rule_status = "completed"
+        else:
+            _rule_status = _lc
         self.db.execute(
             """
             INSERT INTO release_dispatch_match_rules (
@@ -795,17 +838,24 @@ class BusinessDataAgent:
                 record.cargo_name,
                 matching_str,
                 json.dumps(tokens, ensure_ascii=False),
-                "active" if record.dispatch_status == "in_progress" else record.dispatch_status,
+                _rule_status,
                 100,
-                "active" if record.dispatch_status == "in_progress" else record.dispatch_status,
+                _rule_status,
                 record.dispatch_status_note,
             ),
         )
 
     def update_release_dispatch_status(self, release_batch_id: str, status: str, manual_note: str | None = None) -> bool:
-        normalized_status = "in_progress" if status == "active" else status
-        if normalized_status not in {"in_progress", "completed", "suspended", "cancelled"}:
-            raise ValueError("status must be one of: active, in_progress, completed, suspended, cancelled")
+        # #125: lifecycle 新枚举 + 老值兼容(老调用者传 in_progress/completed 自动迁)
+        from sop_hub.sop.lifecycle import ALL_PHASES, LEGACY_MIGRATION_MAP
+        normalized_status = LEGACY_MIGRATION_MAP.get(status, status)
+        # "active" 是历史别名,等价于 in_progress → loading
+        if status == "active":
+            normalized_status = "loading"
+        if normalized_status not in set(ALL_PHASES):
+            raise ValueError(
+                f"status must be one of lifecycle.ALL_PHASES (got {status!r} → {normalized_status!r})"
+            )
         cursor = self.db.execute(
             """
             UPDATE release_batches
@@ -906,7 +956,165 @@ class BusinessDataAgent:
         ids = match.get("release_batch_ids") or []
         return ids[0] if match.get("status") == "candidate" and len(ids) == 1 else None
 
+    def _split_payload_by_ship_rules(
+        self, payload: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """#130 (2026-06-08):一图含多船(复合检车单)按 rule.ship token 拆 N 组。
+
+        分组算法:走 rows,看 cargo_info_raw 是否含某 active rule 的 ship token。
+        命中 != 当前 rule → 切新组。真车号行(cargo_info_raw 不含船 token)归到
+        最近一个 rule 命中的组。
+
+        Returns:
+          - [payload] 当只 1 组(老行为)
+          - [sub_payload_1, sub_payload_2, ...] 当多组,每个 sub_payload 是
+            rows 切片 + meta 复制 + _matched_rule_id/_matched_ship_name 注入
+        """
+        rows = payload.get("rows") if isinstance(payload, dict) else []
+        rows = rows if isinstance(rows, list) else []
+        if not rows:
+            return [payload]
+        rules = self.db.execute(
+            "SELECT id, ship_name, matching_tokens_json FROM release_dispatch_match_rules "
+            "WHERE status='active' ORDER BY priority ASC"
+        ).fetchall()
+        rule_ship_tokens: List[tuple[str, Any]] = []  # (ship_token, rule_row)
+        for r in rules:
+            try:
+                tokens = json.loads(r["matching_tokens_json"] or "{}")
+            except Exception:
+                continue
+            for ship_tok in tokens.get("ship") or []:
+                if ship_tok:
+                    rule_ship_tokens.append((str(ship_tok), r))
+
+        # 算法:走 rows 找所有 ship 锚点 (seq, rule)。每段从
+        # (上一锚点之后 + 本锚点前向吸收 N 表头行) 到 (下一锚点前向吸收 N - 1)。
+        # 检车单 OCR 真实结构:每段开头 3-4 行是 destination/收货代理/船名/数量 等
+        # 表头,本算法把 ship 锚点前的连续标注行(cargo 非空)向上吸收最多 N=4 行
+        # 给该段,这样能涵盖完整段头(seq 15 朝阳西铁矿 / seq 16 鞍钢集团 /
+        # seq 17 宝腾海 → 段头 3 行)。
+        ANCHOR_BACK_LOOKUP = 4
+        anchor_points: List[tuple[int, Any]] = []  # (row_idx, rule)
+        for idx, row in enumerate(rows):
+            if not isinstance(row, dict):
+                continue
+            cargo = str(row.get("cargo_info_raw") or "")
+            for ship_tok, rule in rule_ship_tokens:
+                if ship_tok in cargo:
+                    anchor_points.append((idx, rule))
+                    break
+        if not anchor_points:
+            return [payload]
+
+        # 2026-06-09:相邻同 rule 的 anchor 合并 — qwen3-vl 偶尔会把空单元格脑补
+        # 成船名,使同一船的 anchor 出现 2 次。原算法会切成 N 段,导致 36 车
+        # 一张鞍子河单被拆成 28+8 两个 candidate(2026-06-08 wx_17)。
+        # 只对相邻 rule 比较:如果格式真"船A→船B→船A"交错(罕见),保留 3 段。
+        deduped_anchors: List[tuple[int, Any]] = []
+        last_rid = object()
+        for a_idx, a_rule in anchor_points:
+            rid = a_rule["id"] if a_rule is not None else None
+            if rid != last_rid:
+                deduped_anchors.append((a_idx, a_rule))
+                last_rid = rid
+        anchor_points = deduped_anchors
+
+        # 段起点 = anchor 前向吸收(直到 cargo 空或抵达上一段尾的下一行)
+        boundaries: List[int] = []  # segment start indices
+        last_seg_end = -1
+        for anc_idx, _ in anchor_points:
+            # 从 anc_idx 向前找连续 cargo 非空行(且 > last_seg_end)
+            start = anc_idx
+            for back in range(1, ANCHOR_BACK_LOOKUP + 1):
+                cand = anc_idx - back
+                if cand <= last_seg_end:
+                    break
+                if cand < 0:
+                    break
+                cand_cargo = str(rows[cand].get("cargo_info_raw") or "").strip()
+                if not cand_cargo:
+                    break
+                start = cand
+            boundaries.append(start)
+            last_seg_end = anc_idx  # next anchor's back-lookup stops here
+        # 段划分
+        segments: List[tuple[Any, List[int]]] = []
+        prefix_end = boundaries[0]
+        if prefix_end > 0:
+            segments.append((None, list(range(0, prefix_end))))
+        for i, b_start in enumerate(boundaries):
+            b_end = boundaries[i + 1] if i + 1 < len(boundaries) else len(rows)
+            segments.append((anchor_points[i][1], list(range(b_start, b_end))))
+        if len(segments) <= 1:
+            return [payload]
+        out: List[Dict[str, Any]] = []
+        for rule, idxs in segments:
+            sub_rows = [rows[i] for i in idxs]
+            sub = dict(payload)
+            sub["rows"] = sub_rows
+            # 覆盖 footer.zhuangche_jieshu = 本段真车数(非 defect),否则 chain
+            # 后续 sanity 检查会拿全图 jieshu 跟本段 loading_car_nos 比对,误判
+            # 数量不一致 → pending_review。本段独立后,zhuangche_jieshu = 本段长。
+            real_cars_in_seg = sum(
+                1 for r in sub_rows
+                if isinstance(r, dict) and r.get("car_no") and not r.get("defect")
+            )
+            sub_footer = dict(payload.get("footer") or {})
+            sub_footer["zhuangche_jieshu"] = real_cars_in_seg
+            sub["footer"] = sub_footer
+            # 同时 meta.jieshu 也同步(如有)
+            if "meta" in sub:
+                _m = dict(sub["meta"])
+                _m["jieshu"] = real_cars_in_seg
+                sub["meta"] = _m
+            if rule is not None:
+                sub["_split_group_rule_id"] = rule["id"]
+                sub["_split_group_ship_name"] = rule["ship_name"] or ""
+            else:
+                sub["_split_group_rule_id"] = ""
+                sub["_split_group_ship_name"] = ""
+                sub["_split_group_unmatched"] = True
+            out.append(sub)
+        return out
+
     def ingest_inspection_payload(
+        self,
+        payload: Dict[str, Any],
+        source_file_name: Optional[str] = None,
+        group_name: Optional[str] = None,
+        include_completed_release_batches: bool = False,
+    ) -> Dict[str, Any]:
+        # #130:复合检车单按 ship rule 拆 N 组,各自 ingest
+        # #131 (2026-06-08):unmatched 段(无 rule 命中,如乌兰浩特项目未建)
+        #   **直接丢弃**,不建 candidate 占位 pending_review。用户决策:不投资
+        #   未建项目的"等手工归属"路径。
+        groups = self._split_payload_by_ship_rules(payload)
+        if len(groups) > 1:
+            results = []
+            dropped = 0
+            for g in groups:
+                if g.get("_split_group_unmatched"):
+                    dropped += len(g.get("rows") or [])
+                    continue
+                r = self._ingest_single_inspection_payload(
+                    g, source_file_name=source_file_name, group_name=group_name,
+                    include_completed_release_batches=include_completed_release_batches,
+                )
+                results.append(r)
+            return {
+                "status": "multi_group",
+                "reason": (f"image split into {len(groups)} groups; "
+                           f"{len(results)} matched, dropped {dropped} unmatched rows"),
+                "groups": results,
+                "dropped_unmatched_rows": dropped,
+            }
+        return self._ingest_single_inspection_payload(
+            payload, source_file_name=source_file_name, group_name=group_name,
+            include_completed_release_batches=include_completed_release_batches,
+        )
+
+    def _ingest_single_inspection_payload(
         self,
         payload: Dict[str, Any],
         source_file_name: Optional[str] = None,
@@ -1012,6 +1220,27 @@ class BusinessDataAgent:
                 received_datetime=received,
                 db_path=str(get_db_path()),
             )
+            # #130:如果 split_payload_by_ship_rules 已经命中明确 rule,
+            # split 那一层结果就是 ground truth。绕开 infer 推断的不确定,
+            # 直接用 rule 的 ship+batch_id,candidate_status=candidate 让 chain
+            # 接得到 ship_name 等关键字段。
+            _split_rule_id = payload.get("_split_group_rule_id") or ""
+            if _split_rule_id and not payload.get("_split_group_unmatched"):
+                _rule_row = self.db.execute(
+                    "SELECT r.ship_name, r.destination_station, r.cargo_name, "
+                    "       r.release_batch_id, rb.project "
+                    "FROM release_dispatch_match_rules r "
+                    "JOIN release_batches rb ON r.release_batch_id=rb.id "
+                    "WHERE r.id=?", (_split_rule_id,),
+                ).fetchone()
+                if _rule_row:
+                    inferred.ship_name = _rule_row["ship_name"] or inferred.ship_name
+                    inferred.destination = _rule_row["destination_station"] or inferred.destination
+                    inferred.cargo_name = _rule_row["cargo_name"] or inferred.cargo_name
+                    inferred.project_id = _rule_row["project"] or inferred.project_id
+                    inferred.release_batch_id = _rule_row["release_batch_id"]
+                    inferred.candidate_status = "candidate"
+                    inferred.reason = "split_group_ship_rule_matched"
             # 写回候选(含业务铁律:matched 才设 release_batch_id,挂起也明确状态)
             new_release_batch_id = inferred.release_batch_id or release_batch_id
             self.db.execute(
@@ -1244,19 +1473,28 @@ class BusinessDataAgent:
         """
         dest_pattern = f"%{destination_station.strip()}%"
         rows = self.db.execute(
-            """SELECT batch_sequence, batch_date, batch_quantity, dispatch_status
+            """SELECT id, batch_key, batch_sequence, batch_date, batch_quantity,
+                      notice_date, dispatch_status, project
                FROM release_batches
                WHERE ship_name = ? AND cargo_name = ?
                  AND (destination_station LIKE ? OR destination_station = ?)
                ORDER BY batch_sequence""",
             (ship_name, cargo_name, dest_pattern, destination_station),
         ).fetchall()
+        # 2026-06-06 #105:加 notice_date / project / id / batch_key 回传 ——
+        # 老版本只返了 4 字段,下游 scope-by-notice_date 永远拿不到值 → filter 把
+        # 整个 existing_batches 清空 → ingest 二次去重失效。鞍子河 5 段 remark
+        # 全建新 batch 的根因。
         return [
             {
-                "batch_sequence": r[0],
-                "batch_date": r[1],
-                "batch_quantity": r[2],
-                "dispatch_status": r[3],
+                "id": r[0],
+                "batch_key": r[1],
+                "batch_sequence": r[2],
+                "batch_date": r[3],
+                "batch_quantity": r[4],
+                "notice_date": r[5],
+                "dispatch_status": r[6],
+                "project": r[7],
             }
             for r in rows
         ]
@@ -1316,7 +1554,8 @@ class BusinessDataAgent:
         ship_name = business_info.get("进口船名") or business_info.get("船名", "")
         cargo_name = cargo_info.get("货物品类") or cargo_info.get("货物名称", "")
         cargo_product_name = cargo_info.get("货物品名") or normalized_payload.get("货物品名")
-        consignor = business_info.get("发货单位", "")
+        # #112 #ocr-normalize 读时兜底:VLM 拼不准"锦州新僡"。
+        consignor = canonicalize_shipper_text(business_info.get("发货单位", ""))
         consignee = business_info.get("收货单位", "")
         default_destination_station = parse_destination_station(special_matter) or (
             latest_remark.get("destination") if latest_remark else ""
@@ -1376,25 +1615,69 @@ class BusinessDataAgent:
                     continue
                 existing_map[seq] = (eb.get("batch_date"), eb.get("batch_quantity"))
 
+            # 2026-06-06 #105:date+qty fuzzy 反查表 —— 当 VLM 把 sequence 抽错
+            # (长航滨海 lot01/lot03 case),seq 不在 existing_map,但 (date,qty)
+            # 可能跟某个 existing 完全对上 → 用 existing 的 sequence 校正,避免
+            # 误建新 batch。
+            existing_by_date_qty: dict[tuple[str, float], str] = {}
+            for eb in existing_batches:
+                eb_date = str(eb.get("batch_date") or "")
+                eb_qty = eb.get("batch_quantity")
+                if eb_date and eb_qty is not None:
+                    try:
+                        existing_by_date_qty[(eb_date, float(eb_qty))] = (
+                            eb.get("batch_sequence") or ""
+                        )
+                    except (TypeError, ValueError):
+                        pass
+
+            def _norm_date(d: str) -> str:
+                # "4月18日" / "2026-04-18" / "2026年4月18日" 都归一为 "MM-DD"(丢年)
+                # —— 同 notice_date scope 内年都相同,放心丢;remark 端常常没年。
+                s = str(d or "").replace("年", "-").replace("月", "-").replace("日", "")
+                parts = [p for p in s.split("-") if p]
+                if not parts:
+                    return ""
+                if len(parts) >= 2:
+                    parts = parts[-2:]
+                return "-".join(p.lstrip("0") for p in parts)
+
             for remark in remarks:
                 seq = str(remark.get("sequence") or "")
                 if not seq:
                     filtered_remarks.append(remark)
                     continue
                 if seq not in existing_map:
-                    # Sequence not in DB — new batch, proceed normally
-                    filtered_remarks.append(remark)
+                    # 2026-06-06 #105:seq 不撞 → 用 date+qty fuzzy 反查
+                    remark_date = str(remark.get("date") or "")
+                    remark_qty = remark.get("quantity")
+                    if remark_date and remark_qty is not None:
+                        for (db_d, db_q), db_seq in existing_by_date_qty.items():
+                            if (
+                                _norm_date(remark_date) == _norm_date(db_d)
+                                and abs(float(remark_qty) - db_q) < 0.01
+                            ):
+                                # 命中 — VLM 把 seq 抽错,校正成 DB 里现有 seq
+                                import logging as _log
+                                _log.getLogger("sop_hub.data_agent").info(
+                                    "release_batch dedup: OCR sequence %r corrected to %r by date+qty match (date=%s qty=%s)",
+                                    seq, db_seq, remark_date, remark_qty,
+                                )
+                                remark["sequence"] = db_seq
+                                # 标记后跳过 INSERT(已存在)
+                                seq = db_seq
+                                break
+                    if seq not in existing_map:
+                        # 仍然不在 → 真新 batch
+                        filtered_remarks.append(remark)
+                        continue
+                    # 校正后已存在 → 跳过
                     continue
 
                 # Sequence exists in DB — compare weight and date
                 db_date, db_qty = existing_map[seq]
                 remark_date = str(remark.get("date") or "")
                 remark_qty = remark.get("quantity")
-
-                # Normalize dates for comparison (strip leading "0" from month/day)
-                def _norm_date(d: str) -> str:
-                    parts = d.replace("年", "-").replace("月", "-").replace("日", "").split("-")
-                    return "-".join(p.lstrip("0") for p in parts)
 
                 date_match = _norm_date(remark_date) == _norm_date(str(db_date or "")) if remark_date and db_date else (remark_date == str(db_date or ""))
                 qty_match = (float(remark_qty) if remark_qty else None) == (float(db_qty) if db_qty else None) if remark_qty and db_qty else True
@@ -1478,7 +1761,9 @@ class BusinessDataAgent:
                     "customer_name": customer_name,
                     "id_label": id_label,
                     "actual_wagon_count": 0,
-                    "dispatch_status": "in_progress",
+                    # #125 lifecycle:新批次默认 pending_freight(合同/订单可能后补),
+                    # freight_detail_enrichment 完成后状态机推到 enriched → loading
+                    "dispatch_status": "pending_freight",
                     "dispatch_status_note": None,
                     "dispatch_status_updated_at": None,
                     "is_weighed": is_weighed,
@@ -1613,8 +1898,13 @@ def normalize_sequence_label(value: Optional[str], raw_line: Optional[str] = Non
     text = f"{value or ''} {raw_line or ''}"
     if not text.strip():
         return None
-    if str(value).startswith("lot"):
-        return str(value)
+    v = str(value or "").strip()
+    if v.lower().startswith("lot"):
+        # 2026-06-06 #105:lot3 → lot03 归一,否则 ingest 二次去重撞不上。
+        m = re.match(r"^lot\s*(\d+)\s*$", v, re.IGNORECASE)
+        if m:
+            return f"lot{int(m.group(1)):02d}"
+        return v
     sequence_patterns = [
         (r"第?一次(?:下达)?(?:计划)?", "lot01"),
         (r"第?二次(?:下达)?(?:计划)?", "lot02"),

@@ -41,8 +41,10 @@ class ReleaseBatchMatch:
         }
 
 
-_OPEN_STATUSES = ("in_progress", "suspended")
-_STATUS_PRIORITY = {"in_progress": 1, "suspended": 2}
+# #125 lifecycle 8 phase:open 状态 = enriched/loading(可接装车),其他阶段拒
+_OPEN_STATUSES = ("loading", "enriched")
+# 优先 loading(正在装),其次 enriched(等装)
+_STATUS_PRIORITY = {"loading": 1, "enriched": 2}
 
 
 def match_release_batch_by_ship_destination_cargo(
@@ -82,23 +84,24 @@ def match_release_batch_by_ship_destination_cargo(
     db_conn.row_factory = sqlite3.Row
 
     try:
+        # #125 lifecycle 8 phase open 集 = enriched/loading;动态用 _OPEN_STATUSES
+        ph = ",".join("?" * len(_OPEN_STATUSES))
         rows = db_conn.execute(
-            "SELECT id, project, ship_name, destination_station, cargo_name, "
-            "       cargo_product_name, dispatch_status, notice_date, batch_date "
-            "FROM release_batches "
-            "WHERE COALESCE(project,'') = ? "
-            "  AND COALESCE(ship_name,'') = ? "
-            "  AND COALESCE(destination_station,'') = ? "
-            "  AND dispatch_status IN (?, ?) "
-            "ORDER BY notice_date DESC, batch_date DESC",
-            (project_id, ship_name, destination_station,
-             _OPEN_STATUSES[0], _OPEN_STATUSES[1]),
+            f"SELECT id, project, ship_name, destination_station, cargo_name, "
+            f"       cargo_product_name, dispatch_status, notice_date, batch_date "
+            f"FROM release_batches "
+            f"WHERE COALESCE(project,'') = ? "
+            f"  AND COALESCE(ship_name,'') = ? "
+            f"  AND COALESCE(destination_station,'') = ? "
+            f"  AND dispatch_status IN ({ph}) "
+            f"ORDER BY notice_date DESC, batch_date DESC",
+            (project_id, ship_name, destination_station, *_OPEN_STATUSES),
         ).fetchall()
 
         if not rows:
             return ReleaseBatchMatch(
                 reason="no_open_batch",
-                notes=[f"no in_progress/suspended batch for {project_id}/{ship_name}/{destination_station}"],
+                notes=[f"no enriched/loading batch for {project_id}/{ship_name}/{destination_station}"],
             )
 
         # Cargo soft filter only when more than one row
@@ -122,17 +125,17 @@ def match_release_batch_by_ship_destination_cargo(
                 matched_dispatch_status=candidates[0]["dispatch_status"] or "",
             )
 
-        # If only one in_progress and rest suspended, prefer in_progress as auto-match.
+        # 多 candidate 时优先 loading;若只 1 个 loading + 多个 enriched → 自动选 loading
         top_status = candidates[0]["dispatch_status"] or ""
-        if top_status == "in_progress" and sum(
-            1 for c in candidates if c["dispatch_status"] == "in_progress"
+        if top_status == "loading" and sum(
+            1 for c in candidates if c["dispatch_status"] == "loading"
         ) == 1:
             return ReleaseBatchMatch(
                 matched_release_batch_id=candidates[0]["id"],
                 candidate_release_batch_ids=[c["id"] for c in candidates],
-                reason="single_in_progress_among_candidates",
+                reason="single_loading_among_candidates",
                 matched_dispatch_status=top_status,
-                notes=[f"chose unique in_progress over {len(candidates)-1} suspended"],
+                notes=[f"chose unique loading over {len(candidates)-1} enriched"],
             )
 
         return ReleaseBatchMatch(

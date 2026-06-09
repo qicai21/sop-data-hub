@@ -11,7 +11,7 @@ wx-ui-bridge repo: /Users/qicai21/projects/ai-tools/mcp/wx-ui-bridge
 Usage:
   PYTHONPATH=src /Users/qicai21/projects/ai-tools/mcp/wx-ui-bridge/.venv/bin/python3 \\
     -m sop_hub.sop.send_excel \\
-    --target "郭东北" \\
+    --target "[GROUP013]" \\
     --message "吉林金钢发运数据 蓝鳍 lot02" \\
     --file "output/excel/xxx.xlsx"
 """
@@ -48,7 +48,7 @@ def send_to_wechat(
     Uses: python3 -m src.main <target> <message> [file_path]
 
     Args:
-        target: WeChat contact display name (e.g. "郭东北").
+        target: WeChat search key (group code like "[GROUP013]" or contact name).
         message: Text message to send.
         file_path: Optional file to attach.
         dry_run: Report only, no send.

@@ -26,6 +26,13 @@ project_meta:
   has_inspection_slip: false
   departure_confirmation_source: "handwritten_list_or_text_report"
   source_of_truth: "git"
+  # ── 跟踪模式(#85 2026-06-06)────────────────────────────────
+  # 全程 "full_track_to_received":发运 + 工厂系统上传 + 反查后,继续
+  # 轮询 95306 直到所有 wagon 到货状态 = 已交付,才标 confirmed_received。
+  # 吉林金钢的合同结算依赖到货时间,不到货不能闭环。
+  lifecycle:
+    mode: "full_track_to_received"
+    rationale: "结算依赖 95306 已交付时间;wagon 全部到货后才标 confirmed_received"
 
   # ── 已发运重量计算规则(集装箱 / 按箱数) ─────────────────
   # 用 sop-data-hub/src/sop_hub/calc DSL 表达。集装箱业务约定:每箱 32.28 吨,
@@ -413,10 +420,10 @@ flows:
           - "dry_run_receiver_system"
         expected:
           response_code: 200
-      - node: "send_test_excel"
-        runtime_rules:
-          test_mode:
-            receiver: "郭东北"
+      # 程序只看配置 — 真正的发送目标在 flows.report_delivery_flow.send_report
+      # (target_group: ["GROUP013"])。这里只是 departure_flow 串成链时调用
+      # send_excel_task,具体收件人由 _resolve_send_target() yaml-driven 解析。
+      - node: "send_report"
         action:
           - "send_excel_task"
       - node: "enter_tracking_phase"
@@ -425,6 +432,13 @@ flows:
     output_templates:
       departure_excel:
         business_name: "发运 Excel"
+        # ── 业务铁律:车号顺序 = 检装车通知单 seq 顺序 ──────────────
+        # excel 行序 = 列车机车头到机车尾的物理装载顺序,跟工厂/收货端核对、
+        # 人工查表的默认锚点。chain 走 95306 反查时,用 95306 做"装/排"判断,
+        # 但车号排序保留通知单 seq。OCR 错抽的修正车号或 last-minute 换车
+        # 追加到末尾。**per 发车事件**(per-dispatch-event),不是 per release_batch
+        # —— 同一次出港若跨 lot,所有车并入一张表。详 [[dispatch-event-excel-rule]]。
+        row_order_rule: "by_inspection_notice_seq"
         file_naming:
           pattern: "吉林金钢_发运数据_{yyyymmdd}_{car_count}车.xlsx"
           date_source_priority:
@@ -551,12 +565,17 @@ flows:
         check:
           - "total == expected_count"
           - "all boxNumber values match"
-    delivery_targets:
-      dev:
-        type: "wechat_contact"
-        name: "郭东北"
-        bridge: "wx-ui-bridge"
-        send_via: "src/sop_hub/sop/send_excel.py"
+  # ── 发运 excel 推送目标(yaml-driven,2026-06-06)──────────────────────
+  # 程序只看配置 — 不再硬编码郭东北。当前统一发到数据单发群 [GROUP013];
+  # 日后真正上线发吉林金钢业务群,直接把 target_group 改成 ["GROUP005"]
+  # (金钢铁矿发运群)即可,无须改代码。
+  report_delivery_flow:
+    description: "发运 excel 生成后,推到目标群"
+    steps:
+      - node: "send_report"
+        target_group: ["GROUP013"]
+        action: ["send_excel_task"]
+
   tracking_flow:
     trigger:
       - "dispatched_wagon_exists"

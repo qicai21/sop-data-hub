@@ -201,7 +201,7 @@ def _try_evidence_scoring(
     rows = conn.execute(
         "SELECT id, project, ship_name, destination_station, cargo_name "
         "FROM release_batches "
-        "WHERE dispatch_status IN ('in_progress', 'suspended') "
+        "WHERE dispatch_status IN ('enriched','loading','all_loaded','tracking','delivered') "
         "ORDER BY notice_date DESC"
     ).fetchall()
     if not rows:

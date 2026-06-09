@@ -45,23 +45,9 @@ SCHEMA_ADDITIONS: list[tuple[str, str, str]] = [
 ]
 
 # New tables to CREATE IF NOT EXISTS
-NEW_TABLES: dict[str, str] = {
-    "dashboard_state": """
-        CREATE TABLE IF NOT EXISTS dashboard_state (
-            id TEXT PRIMARY KEY,
-            project_id TEXT NOT NULL,
-            release_batch_id TEXT,
-            total_wagon_count INTEGER DEFAULT 0,
-            dispatched_count INTEGER DEFAULT 0,
-            arrived_count INTEGER DEFAULT 0,
-            delivered_count INTEGER DEFAULT 0,
-            confirmed_received_count INTEGER DEFAULT 0,
-            status TEXT NOT NULL DEFAULT 'active',
-            last_updated_at TEXT,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-    """,
-}
+# 2026-06-06:dashboard_state 老 HTML 看板用,已 drop;CLI dashboard 直查
+# release_batches / wagon_shipments,不需要中间汇总表。
+NEW_TABLES: dict[str, str] = {}
 
 
 # ── Data model ──────────────────────────────────────────────────────────

@@ -422,6 +422,298 @@ def upload_release_batch(
     return result
 
 
+# ── Per-dispatch-event API(2026-06-06 #107)────────────────────────────
+# 配套 departure_excel.generate_dispatch_event_excel:同一次发车事件可能跨
+# 多个 release_batch,每条 wagon 用各自 batch 的 contract_no / order_identifier。
+# 上传一次(login → POST per wagon),后跑反查时按 order_identifier 分组各做
+# 一次(jilin 工厂 list API 按 orderId 查)。
+
+
+@dataclass
+class DispatchEventUploadResult:
+    project_id: str
+    total_wagons: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    results: list[UploadResult] = field(default_factory=list)
+    login_success: bool = False
+    login_error: str = ""
+    preview: bool = False
+    release_batch_ids: list[str] = field(default_factory=list)
+    # 按 order_identifier 分组的反查指引:caller 用 verify_factory_upload 逐组反查
+    order_identifier_groups: dict[str, list[str]] = field(default_factory=dict)
+
+    @property
+    def all_success(self) -> bool:
+        return self.login_success and self.failure_count == 0
+
+
+def _build_event_upload_payloads(
+    wagon_ids: list[str], config: FactoryUploadConfig, *,
+    db_path: str | Path | None = None,
+) -> tuple[list[WagonUploadPayload], list[str], str]:
+    """Build upload payloads from explicit wagon_ids spanning batches.
+
+    Returns (payloads, release_batch_ids, error). Each wagon's payload uses its
+    own batch's contract_no / order_identifier / cargo_name / ship_name.
+    """
+    if not wagon_ids:
+        return [], [], "wagon_ids is empty"
+    sop_path = Path(db_path) if db_path else SOP_DB_PATH
+    if not sop_path.exists():
+        return [], [], f"DB not found: {sop_path}"
+    conn = sqlite3.connect(str(sop_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        in_ph = ",".join("?" * len(wagon_ids))
+        wagons = conn.execute(
+            f"SELECT * FROM wagon_shipments WHERE id IN ({in_ph}) "
+            f"ORDER BY ticketed_at ASC, car_no ASC",
+            wagon_ids,
+        ).fetchall()
+        if not wagons:
+            return [], [], f"no wagons found for given {len(wagon_ids)} ids"
+        batch_ids_set: set[str] = {w["batch_id"] for w in wagons if w["batch_id"]}
+        # 2026-06-07:split 车 cbm 里指向的 lot 也要进 batches dict,否则下面
+        # build payload 时 batches.get(cbm[box]) 为 None,box2 fallback 回主 lot,
+        # 工厂端 order_id 错位(实战暴露,lot6 box1388540 → lot5 order)。
+        import json as _json
+        for w in wagons:
+            cbm_raw = w["container_batch_map"]
+            if cbm_raw:
+                try:
+                    for v in (_json.loads(cbm_raw) or {}).values():
+                        if v:
+                            batch_ids_set.add(v)
+                except Exception:
+                    pass
+        batch_ids = sorted(batch_ids_set)
+        if not batch_ids:
+            return [], [], "no batch_id on any wagon"
+        b_ph = ",".join("?" * len(batch_ids))
+        batches_rows = conn.execute(
+            f"SELECT * FROM release_batches WHERE id IN ({b_ph})", batch_ids,
+        ).fetchall()
+        batches = {b["id"]: dict(b) for b in batches_rows}
+    finally:
+        conn.close()
+
+    import json as _json
+    # #123 Phase 2:集装箱业务直接 SELECT wagon_container_shipments per box rows,
+    # box.batch_id 是真值,合同走该行 batch。整车业务保留老 cbm 路径。
+    _project_id = ""
+    for _w in wagons:
+        _pid = (dict(_w).get("project_id") if not isinstance(_w, dict) else _w.get("project_id"))
+        if _pid:
+            _project_id = _pid; break
+    _use_container_table = False
+    try:
+        from sop_hub.sop.wagon_container_shipments import is_container_business_project
+        _use_container_table = is_container_business_project(_project_id)
+    except Exception:
+        _use_container_table = False
+
+    payloads: list[WagonUploadPayload] = []
+
+    if _use_container_table:
+        # 用 (car_no, ydid) 查 box rows;补全 batches dict
+        car_ydid_pairs = []
+        for w in wagons:
+            wd = w if isinstance(w, dict) else dict(w)
+            cn = wd.get("car_no")
+            if cn:
+                car_ydid_pairs.append((cn, wd.get("ydid") or ""))
+        conn2 = sqlite3.connect(str(sop_path)); conn2.row_factory = sqlite3.Row
+        try:
+            extra_batch_ids: set[str] = set()
+            box_rows: list[dict[str, Any]] = []
+            for car_no, ydid in car_ydid_pairs:
+                if ydid:
+                    rs = conn2.execute(
+                        "SELECT car_no, box_no, batch_id FROM wagon_container_shipments "
+                        "WHERE car_no=? AND ydid=? ORDER BY box_position",
+                        (car_no, ydid),
+                    ).fetchall()
+                else:
+                    rs = conn2.execute(
+                        "SELECT car_no, box_no, batch_id FROM wagon_container_shipments "
+                        "WHERE car_no=? ORDER BY box_position",
+                        (car_no,),
+                    ).fetchall()
+                for r in rs:
+                    box_rows.append(dict(r))
+                    if r["batch_id"] not in batches:
+                        extra_batch_ids.add(r["batch_id"])
+            if extra_batch_ids:
+                ph = ",".join("?" * len(extra_batch_ids))
+                for br in conn2.execute(
+                    f"SELECT * FROM release_batches WHERE id IN ({ph})", list(extra_batch_ids),
+                ).fetchall():
+                    batches[br["id"]] = dict(br)
+        finally:
+            conn2.close()
+        for br in box_rows:
+            batch = batches.get(br["batch_id"])
+            if not batch:
+                continue
+            wagon_no = br["car_no"]; box = br["box_no"]
+            ship_name = batch.get("ship_name", "") or ""
+            cargo_name = _get_cargo_name_from_batch(batch)
+            order_identifier = batch.get("order_identifier", "") or ""
+            contract_no = batch.get("contract_no", "") or ""
+            payload: dict[str, Any] = {}
+            for fdef in config.fields:
+                if fdef.source == "fixed":
+                    payload[fdef.key] = fdef.value
+                elif fdef.source == "release_batch.ship_name":
+                    payload[fdef.key] = ship_name
+                elif fdef.source == "release_batch.cargo_name":
+                    payload[fdef.key] = cargo_name
+                elif fdef.source == "release_batch.order_identifier":
+                    payload[fdef.key] = order_identifier
+                elif fdef.source in ("release_batch.contract_no",
+                                     "release_batch.factory_contract_no"):
+                    payload[fdef.key] = contract_no
+                elif fdef.source == "95306_confirm" and fdef.key == "wagonNumber":
+                    payload[fdef.key] = wagon_no
+                elif fdef.source == "95306_confirm" and fdef.key == "boxNumber":
+                    payload[fdef.key] = box
+                else:
+                    payload[fdef.key] = fdef.value or ""
+            payloads.append(WagonUploadPayload(
+                wagon_no=wagon_no, container_no=box, payload=payload,
+            ))
+        return payloads, batch_ids, ""
+
+    # 老路径(整车业务)— split 车看 cbm 拆
+    for w in wagons:
+        w_dict = dict(w)
+        primary_batch = batches.get(w_dict.get("batch_id"))
+        if not primary_batch:
+            continue
+        wagon_no = w_dict.get("car_no", "") or ""
+        containers = _wagon_containers(w_dict)
+        # 解 cbm 取 per-box 归属 lot;split 车按 cbm 拆,整车直接走 primary
+        cbm_raw = w_dict.get("container_batch_map")
+        cbm: dict[str, str] = {}
+        if cbm_raw:
+            try:
+                cbm = _json.loads(cbm_raw) or {}
+            except Exception:
+                cbm = {}
+        for box in containers:
+            # box 对应的 batch:cbm 有就用它指的;没 cbm 就用 wagon.batch_id
+            target_batch_id = cbm.get(box) or w_dict.get("batch_id")
+            batch = batches.get(target_batch_id, primary_batch)
+            ship_name = batch.get("ship_name", "") or ""
+            cargo_name = _get_cargo_name_from_batch(batch)
+            order_identifier = batch.get("order_identifier", "") or ""
+            contract_no = batch.get("contract_no", "") or ""
+            payload: dict[str, Any] = {}
+            for fdef in config.fields:
+                if fdef.source == "fixed":
+                    payload[fdef.key] = fdef.value
+                elif fdef.source == "release_batch.ship_name":
+                    payload[fdef.key] = ship_name
+                elif fdef.source == "release_batch.cargo_name":
+                    payload[fdef.key] = cargo_name
+                elif fdef.source == "release_batch.order_identifier":
+                    payload[fdef.key] = order_identifier
+                elif fdef.source in (
+                    "release_batch.contract_no",
+                    "release_batch.factory_contract_no",
+                ):
+                    payload[fdef.key] = contract_no
+                elif fdef.source == "95306_confirm" and fdef.key == "wagonNumber":
+                    payload[fdef.key] = wagon_no
+                elif fdef.source == "95306_confirm" and fdef.key == "boxNumber":
+                    payload[fdef.key] = box
+                else:
+                    payload[fdef.key] = fdef.value or ""
+            payloads.append(WagonUploadPayload(
+                wagon_no=wagon_no, container_no=box, payload=payload,
+            ))
+    return payloads, batch_ids, ""
+
+
+def upload_dispatch_event_wagons(
+    wagon_ids: list[str],
+    *,
+    project_id: str = "jilin_jingang_jinzhou",
+    preview: bool = False,
+    db_path: str | Path | None = None,
+) -> DispatchEventUploadResult:
+    """Upload wagons of a per-dispatch-event to factory system.
+
+    跨 batch 的 wagon 集合一次上传,login 只跑 1 次,POST per wagon。返回 results
+    + order_identifier_groups,caller 按 group 逐个调 verify_factory_upload。
+    """
+    config = _load_factory_config(project_id)
+    result = DispatchEventUploadResult(project_id=project_id, preview=preview)
+
+    token, login_error = login_to_factory(config)
+    if login_error:
+        result.login_error = login_error
+        return result
+    result.login_success = True
+
+    payloads, batch_ids, build_error = _build_event_upload_payloads(
+        wagon_ids, config, db_path=db_path,
+    )
+    if build_error:
+        result.login_error = build_error
+        return result
+    result.release_batch_ids = batch_ids
+    result.total_wagons = len(payloads)
+
+    # 按 order_identifier 分组(同 batch 共享一个 order_identifier)。
+    # 反查时 jilin 工厂 list API 是按 orderId 查,所以每组 1 次反查。
+    sop_path = Path(db_path) if db_path else SOP_DB_PATH
+    conn = sqlite3.connect(str(sop_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        b_ph = ",".join("?" * len(batch_ids))
+        bm_rows = conn.execute(
+            f"SELECT id, order_identifier FROM release_batches WHERE id IN ({b_ph})",
+            batch_ids,
+        ).fetchall()
+        batch_to_order = {
+            r["id"]: (r["order_identifier"] or "") for r in bm_rows
+        }
+    finally:
+        conn.close()
+    # group: order_identifier → list of release_batch_id
+    for bid in batch_ids:
+        oid = batch_to_order.get(bid, "")
+        if not oid:
+            continue
+        result.order_identifier_groups.setdefault(oid, []).append(bid)
+
+    if preview:
+        for w in payloads:
+            result.results.append(UploadResult(
+                wagon_no=w.wagon_no, success=True, http_status=0,
+                response_body=json.dumps(w.payload, ensure_ascii=False),
+            ))
+        result.success_count = len(payloads)
+        return result
+
+    assert token is not None
+    for w in payloads:
+        r = upload_one_wagon(w, token, config)
+        result.results.append(r)
+        if r.success:
+            result.success_count += 1
+        else:
+            result.failure_count += 1
+            logger.warning(
+                "factory_upload(event) failed wagon=%s status=%s error=%s",
+                w.wagon_no, r.http_status, r.error or r.response_body[:100],
+            )
+        time.sleep(0.3)
+    return result
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────
 
 def _build_cli_parser():

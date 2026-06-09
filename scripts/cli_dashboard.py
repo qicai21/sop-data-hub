@@ -179,24 +179,42 @@ def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
               rb.batch_sequence, rb.notice_date, rb.batch_date, rb.batch_quantity,
               rb.actual_wagon_count, rb.shipped_weight_tons, rb.remaining_weight_tons,
               rb.dispatch_status, rb.updated_at,
-              COALESCE((
-                SELECT SUM(json_array_length(
-                  CASE WHEN ws.container_numbers_json IS NULL
-                            OR ws.container_numbers_json=''
-                       THEN '[]'
-                       ELSE ws.container_numbers_json END))
-                FROM wagon_shipments ws WHERE ws.batch_id=rb.id
-              ), 0) AS box_count
+              -- #123 Phase 2:先看新表 wagon_container_shipments(集装箱业务),
+              -- 它已迁完,直接 COUNT(*) 就是 box 数;新表没数据(整车业务/历史)
+              -- 退回老 wagon_shipments 拆 cbm 路径。
+              CASE WHEN (SELECT COUNT(*) FROM wagon_container_shipments wcs
+                         WHERE wcs.batch_id=rb.id) > 0
+                THEN (SELECT COUNT(*) FROM wagon_container_shipments wcs
+                      WHERE wcs.batch_id=rb.id)
+                ELSE COALESCE((
+                  SELECT SUM(json_array_length(
+                    CASE WHEN ws.container_numbers_json IS NULL
+                              OR ws.container_numbers_json=''
+                         THEN '[]'
+                         ELSE ws.container_numbers_json END))
+                  FROM wagon_shipments ws
+                  WHERE ws.batch_id=rb.id AND ws.container_batch_map IS NULL
+                ), 0) + COALESCE((
+                  SELECT COUNT(*)
+                  FROM wagon_shipments ws, json_each(ws.container_batch_map) j
+                  WHERE ws.container_batch_map IS NOT NULL AND j.value=rb.id
+                ), 0)
+              END AS box_count
             FROM release_batches rb
-            WHERE rb.dispatch_status IN ('in_progress', 'active', 'suspended', 'pending_completion')
-               OR (rb.dispatch_status='completed' AND date(rb.updated_at) >= date('now','-7 days'))
+            -- #125 lifecycle 新枚举:dashboard 默认活跃区
+            WHERE rb.dispatch_status IN ('pending_freight','enriched','loading','all_loaded','tracking','delivered')
+               OR (rb.dispatch_status IN ('confirmed_received','closed') AND date(rb.updated_at) >= date('now','-7 days'))
             ORDER BY
               CASE rb.dispatch_status
-                WHEN 'in_progress' THEN 0
-                WHEN 'active' THEN 0
-                WHEN 'suspended' THEN 1
-                WHEN 'completed' THEN 2
-                ELSE 3
+                WHEN 'loading' THEN 0
+                WHEN 'enriched' THEN 1
+                WHEN 'all_loaded' THEN 2
+                WHEN 'tracking' THEN 3
+                WHEN 'delivered' THEN 4
+                WHEN 'pending_freight' THEN 5
+                WHEN 'confirmed_received' THEN 6
+                WHEN 'closed' THEN 7
+                ELSE 9
               END,
               rb.batch_date DESC
             """
@@ -235,6 +253,39 @@ def _container_business_projects() -> set[str]:
         if pid and bool(meta.get("is_container_business")):
             result.add(pid)
     return result
+
+
+@lru_cache(maxsize=1)
+def _project_lifecycle_modes() -> dict[str, str]:
+    """canonical project_id → lifecycle.mode("shipped_is_completed" / "full_track_to_received")
+    yaml 没配的默认 "full_track_to_received"(保守 — 跟到底)。
+    """
+    import yaml as _yaml
+    from pathlib import Path as _P
+    result: dict[str, str] = {}
+    sop_dir = _P(__file__).resolve().parents[1] / "config" / "project_sops"
+    if not sop_dir.exists():
+        return result
+    for yp in sop_dir.glob("*.yaml"):
+        try:
+            data = _yaml.safe_load(yp.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
+        pid = (data.get("project_id") or "").strip()
+        if not pid:
+            continue
+        meta = data.get("project_meta") or {}
+        mode = ((meta.get("lifecycle") or {}).get("mode") or "").strip()
+        if mode not in ("shipped_is_completed", "full_track_to_received"):
+            mode = "full_track_to_received"
+        result[pid] = mode
+    return result
+
+
+def _life_tag(project: str) -> str:
+    """1 字标签:S=shipped(短链发运即完);F=full(全程跟到货)。"""
+    mode = _project_lifecycle_modes().get(project, "full_track_to_received")
+    return "S" if mode == "shipped_is_completed" else "F"
 
 
 def query_pending_candidate_counts() -> dict[str, int]:
@@ -331,7 +382,9 @@ def _box(title: str, lines: list[str], width: int = PANEL_WIDTH) -> list[str]:
 
 def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
     name = PROJECT_DISPLAY.get(project_id, project_id)
-    title = f"{name} [{project_id}]  ({len(batches)} 个 batch)"
+    # 标题加 lifecycle 标识:[S]=shipped_is_completed 短链 / [F]=full_track_to_received 全程
+    life_tag = _life_tag(project_id)
+    title = f"{name} [{project_id}]  [{life_tag}]  ({len(batches)} 个 batch)"
     if not batches:
         return _box(title, [_dim("  (无 in_progress / 近期 completed batch)")])
 
@@ -399,15 +452,18 @@ def _num(v: Any) -> str:
 
 def _color_status(s: str) -> str:
     # 调用方可传 pad 过的字符串(含末尾空格);判颜色用 strip,套色码保留原串
+    # #125: lifecycle 8 值新枚举着色
     key = s.strip()
-    if key in ("in_progress", "active"):
+    if key in ("loading", "enriched"):                          # 进行中
         return _green(s)
-    if key in ("pending_review", "pending_95306_match", "suspended",
-               "pending_completion"):
+    if key in ("all_loaded", "tracking", "delivered"):          # 路上 / 等签收
+        return _yellow(s)
+    if key in ("pending_freight", "pending_review",
+               "pending_95306_match"):                          # 等用户/数据
         return _yellow(s)
     if key in ("timeout_manual_review", "cancelled"):
         return _red(s)
-    if key == "completed":
+    if key in ("confirmed_received", "closed"):                 # 已完成
         return _dim(s)
     return s
 

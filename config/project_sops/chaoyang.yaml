@@ -11,6 +11,13 @@ project_meta:
   destination_station: "朝阳西"
   cargo_names: ["铁矿", "铁矿粉", "朝阳西铁", "朝阳西铁矿"]
   has_inspection_notice: true
+  # ── 跟踪模式(#85 2026-06-06)────────────────────────────────
+  # 短链 "shipped_is_completed":发运 + 鞍钢门户上传 + 反查 OK 即完结,
+  # 下游不再轮询 95306 到货 / 等 confirmed_received。朝阳钢铁场景下,
+  # 鞍钢收货系统接到上传记录即认收,不需 95306 二次确认。
+  lifecycle:
+    mode: "shipped_is_completed"
+    rationale: "鞍钢门户上传 + 反查 OK 即业务完结;无需追踪 95306 到货"
   confirmed_received_rule:
     default: "95306_delivered_equals_confirmed_received"
   release_batch_policy:
@@ -210,6 +217,14 @@ flows:
       # Excel 把它认成科学计数);全列可用单一时间(取本批首车的制票时间)
       departure_excel:
         business_name: "锦州港铁矿发运表"
+        # ── 业务铁律:车号顺序 = 检装车通知单 seq 顺序 ──────────────
+        # excel 行序必须等于通知单从机车头到机车尾的物理列车顺序,因为这是
+        # 收货端核对、人工查表的默认锚点。chain 走 95306 反查时,**用 95306
+        # 做"装/排"判断**,但车号排序**保留通知单 seq**。95306 多出来的
+        # last-minute 换车 / OCR 错字修正(通知单 OCR 错 → 95306 实有)
+        # 没法精准插回原位,追加到末尾。详 [[dispatch-event-excel-rule]] +
+        # [[release-batch-business-rules]] "列车物理排序"约定。
+        row_order_rule: "by_inspection_notice_seq"
         file_naming:
           pattern: "chaoyang_{car_count}cars.xlsx"
           car_count_source: "export_row_count"
@@ -353,5 +368,4 @@ acceptance:
   - "不同放货批次不得合并。"
   - "业务文字只作上下文，不替代检装车通知单。"
   - "95306已交付默认视为 confirmed_received。"
-  - "测试环境发送到 GROUP013 或郭东北。"
-  - "生产环境发送到 GROUP004 朝钢铁矿发运群。"
+  - "发送目标由 flows.report_delivery_flow.send_report.target_group 决定(yaml-driven)。"

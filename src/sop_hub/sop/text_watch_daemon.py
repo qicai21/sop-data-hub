@@ -338,6 +338,22 @@ def run_one_pass(
         except Exception as exc:
             logger.warning("run_pending_workflow_tasks failed: %s", exc)
 
+    # ── #127 lifecycle closeout:扫 active phase batch,wagons 全收货推 confirmed_received ──
+    try:
+        from sop_hub.sop.lifecycle_closeout import run_lifecycle_closeout
+        lc_res = run_lifecycle_closeout(db_path=db_path)
+        counts["lifecycle_scanned"] = lc_res.get("scanned", 0)
+        counts["lifecycle_advanced"] = lc_res.get("advanced", 0)
+        if lc_res.get("advanced") and log_each:
+            for a in lc_res.get("advances", []):
+                logger.info(
+                    "lifecycle advance: batch %s %s→%s (%s)",
+                    a.get("batch_id", "")[:12],
+                    a.get("from_phase"), a.get("to_phase"), a.get("reason"),
+                )
+    except Exception as exc:
+        logger.warning("run_lifecycle_closeout failed: %s", exc)
+
     return counts
 
 

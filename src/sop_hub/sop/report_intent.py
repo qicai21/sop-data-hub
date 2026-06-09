@@ -15,25 +15,37 @@ from typing import Any
 from sop_hub.sop.workflow_task import WorkflowTask
 
 
-DEV_RECIPIENT_TARGET = {"type": "contact", "name": "郭东北"}
+def _recipient_target_from_yaml(project_id: str) -> dict[str, Any]:
+    """从 yaml flows.report_delivery_flow.send_report.target_group 解析收件人。
+
+    2026-06-06:不再硬编码 {"type": "contact", "name": "郭东北"}。yaml-driven,
+    yaml 改了 target_group 这里跟着变。yaml 没配兜底为 GROUP013(数据单发群)。
+    """
+    try:
+        from sop_hub.sop.workflow_task_executor import _resolve_send_target
+        target = _resolve_send_target(project_id)
+    except Exception:
+        target = None
+    g = target or "[GROUP013]"
+    if g.startswith("[GROUP"):
+        return {"type": "group", "name": g}
+    return {"type": "contact", "name": g}
+
 
 PROJECT_REPORT_CONFIG = {
     "zhongtang_special_steel": {
         "report_type": "departure_report",
         "template_path": "/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/ztsteel_departure_report_template.xlsx",
-        "recipient_target": DEV_RECIPIENT_TARGET,
         "required_fields": ["message_id", "group_id", "project_id", "target_sop_node", "watch_item"],
     },
     "chaoyang_steel": {
         "report_type": "departure_report",
         "template_path": "/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/cysteel_departure_report_template.xlsx",
-        "recipient_target": DEV_RECIPIENT_TARGET,
         "required_fields": ["message_id", "group_id", "project_id", "target_sop_node", "watch_item"],
     },
     "jilin_jingang_jinzhou": {
         "report_type": "departure_report",
         "template_path": "/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/jilin_jingang_departure_report_template.xlsx",
-        "recipient_target": DEV_RECIPIENT_TARGET,
         "required_fields": ["message_id", "group_id", "project_id", "target_sop_node", "watch_item"],
     },
 }
@@ -123,7 +135,7 @@ def resolve_report_intent(task: WorkflowTask) -> ReportIntent:
     status = "ready" if not missing_fields else "incomplete"
     return ReportIntent(
         template_path=config["template_path"],
-        recipient_target=dict(config["recipient_target"]),
+        recipient_target=_recipient_target_from_yaml(project_id),
         required_fields=required_fields,
         missing_fields=missing_fields,
         report_type=config["report_type"],

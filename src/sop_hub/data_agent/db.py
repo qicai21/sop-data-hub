@@ -95,7 +95,13 @@ def open_db() -> sqlite3.Connection:
           customer_name TEXT,
           id_label TEXT,
           actual_wagon_count INTEGER DEFAULT 0,
-          dispatch_status TEXT NOT NULL DEFAULT 'in_progress' CHECK(dispatch_status IN ('in_progress', 'completed', 'suspended', 'cancelled')),
+          -- #125 (2026-06-07): dispatch_status 升级为 lifecycle 状态机
+          -- 8 个新值:pending_freight / enriched / loading / all_loaded /
+          --       tracking / delivered / confirmed_received / closed
+          -- 老值(in_progress/completed/pending_completion/suspended/cancelled)
+          -- 由 migration 自动 UPDATE 到新值(LEGACY_MIGRATION_MAP)。
+          -- 默认值 loading:新批一旦有 wagon ingest 就处于装车中。
+          dispatch_status TEXT NOT NULL DEFAULT 'loading' CHECK(dispatch_status IN ('pending_freight', 'enriched', 'loading', 'all_loaded', 'tracking', 'delivered', 'confirmed_received', 'closed')),
           dispatch_status_note TEXT,
           dispatch_status_updated_at TEXT,
           source_file_name TEXT,
@@ -112,6 +118,8 @@ def open_db() -> sqlite3.Connection:
     migrate_release_batches_schema(connection)
 
     migrate_wagon_shipments_schema(connection)
+
+    migrate_release_batch_dispatch_plan_schema(connection)
 
     migrate_shipment_release_batch_matches_schema(connection)
 
@@ -304,7 +312,8 @@ def migrate_release_batches_schema(connection: sqlite3.Connection) -> None:
         "customer_name": "TEXT",
         "id_label": "TEXT",
         "actual_wagon_count": "INTEGER DEFAULT 0",
-        "dispatch_status": "TEXT NOT NULL DEFAULT 'in_progress'",
+        # #125: lifecycle 8 值新枚举(loading 是装车中默认起点)
+        "dispatch_status": "TEXT NOT NULL DEFAULT 'loading'",
         "dispatch_status_note": "TEXT",
         "dispatch_status_updated_at": "TEXT",
         "is_weighed": "INTEGER DEFAULT 0",
@@ -377,10 +386,40 @@ def migrate_wagon_shipments_schema(connection: sqlite3.Connection) -> None:
         "dispatch_status": "TEXT NOT NULL DEFAULT 'in_progress'",
         "source_message_id": "TEXT",
         "source_group_id": "TEXT",
+        # 2026-06-06 #111:跨 lot 拆箱 JSON map(NULL=整车按 batch_id 整划归)
+        "container_batch_map": "TEXT",
     }
     for field, type_def in new_fields.items():
         if field not in columns:
             connection.execute(f"ALTER TABLE wagon_shipments ADD COLUMN {field} {type_def}")
+    connection.commit()
+
+
+def migrate_release_batch_dispatch_plan_schema(connection: sqlite3.Connection) -> None:
+    """#111 (2026-06-06): release_batch_dispatch_plan — 分票计划表。
+
+    集装箱业务里同船多 lot 在 in_progress 共存时,新车装箱按 plan 自动分配:
+    plan 包含 planned_box_count / allocated_box_count / priority_order / status,
+    allocate_wagons() 消费 plan 给 wagon.batch_id + container_batch_map 落地。
+    """
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS release_batch_dispatch_plan (
+            release_batch_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            ship_name TEXT NOT NULL,
+            planned_box_count INTEGER NOT NULL,
+            allocated_box_count INTEGER DEFAULT 0,
+            priority_order INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_dispatch_plan_active "
+        "ON release_batch_dispatch_plan(project_id, ship_name, status, priority_order)"
+    )
     connection.commit()
 
 

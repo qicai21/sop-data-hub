@@ -93,9 +93,13 @@ CREATE TABLE IF NOT EXISTS message_inbox (
 );
 """
 
+# #118 (2026-06-07): 唯一键加 source_file 区分跨月 jsonl。
+# wx-ops-agent 每月 jsonl seq 从 1 重置,5月.jsonl 跟 6月.jsonl 各自能产出
+# wx_367 → 旧索引 (source_agent, group_id, message_id) 不够,5月先 bootstrap
+# 占位后 6月版本进不来。蓝鳍 wx_367 "煤六 50节 四平铁 蓝鳍" 没自动跑根因之一。
 MESSAGE_INBOX_INDEXES = [
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_message_inbox_unique "
-    "ON message_inbox(source_agent, group_id, message_id);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_message_inbox_unique_v2 "
+    "ON message_inbox(source_agent, group_id, source_file, message_id);",
     "CREATE INDEX IF NOT EXISTS idx_message_inbox_message_id ON message_inbox(message_id);",
     "CREATE INDEX IF NOT EXISTS idx_message_inbox_group_id ON message_inbox(group_id);",
     "CREATE INDEX IF NOT EXISTS idx_message_inbox_processing_status ON message_inbox(processing_status);",
@@ -113,6 +117,12 @@ def ensure_message_inbox_schema(db_path: str | Path | None = None) -> None:
     conn = sqlite3.connect(str(db))
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute(MESSAGE_INBOX_SCHEMA)
+    # #118 migration: 老 (source_agent, group_id, message_id) unique 索引必须先删,
+    # 否则新索引建好后插跨月 wx_367 时仍被老索引拒绝。
+    try:
+        conn.execute("DROP INDEX IF EXISTS idx_message_inbox_unique")
+    except sqlite3.OperationalError:
+        pass
     for idx_sql in MESSAGE_INBOX_INDEXES:
         conn.execute(idx_sql)
     conn.commit()
@@ -202,12 +212,18 @@ def upsert_message_inbox_event(
     mid = row["message_id"]
     gid = row["group_id"] or ""
     sa = row["source_agent"]
+    sf = row.get("source_file") or ""  # #118: 唯一键的第 4 维(区分跨月 jsonl)
 
     conn = sqlite3.connect(str(db))
     conn.execute("PRAGMA journal_mode = WAL")
     conn.row_factory = sqlite3.Row
 
     conn.execute(MESSAGE_INBOX_SCHEMA)
+    # 跟 ensure_message_inbox_schema 保持一致:删老索引、建新索引(idempotent)
+    try:
+        conn.execute("DROP INDEX IF EXISTS idx_message_inbox_unique")
+    except sqlite3.OperationalError:
+        pass
     for idx_sql in MESSAGE_INBOX_INDEXES:
         try:
             conn.execute(idx_sql)
@@ -217,8 +233,8 @@ def upsert_message_inbox_event(
     # Check existing
     cur = conn.execute(
         "SELECT id, created_at FROM message_inbox "
-        "WHERE source_agent = ? AND group_id = ? AND message_id = ?",
-        (sa, gid, mid),
+        "WHERE source_agent = ? AND group_id = ? AND source_file = ? AND message_id = ?",
+        (sa, gid, sf, mid),
     )
     existing = cur.fetchone()
 
@@ -233,10 +249,10 @@ def upsert_message_inbox_event(
         ]
         sets = ", ".join(f"{c} = ?" for c in update_cols)
         values = [row.get(c) for c in update_cols]
-        values += [_now_iso(), _now_iso(), sa, gid, mid]
+        values += [_now_iso(), _now_iso(), sa, gid, sf, mid]
         conn.execute(
             f"UPDATE message_inbox SET {sets}, updated_at = ?, last_seen_at = ? "
-            "WHERE source_agent = ? AND group_id = ? AND message_id = ?",
+            "WHERE source_agent = ? AND group_id = ? AND source_file = ? AND message_id = ?",
             values,
         )
         conn.commit()

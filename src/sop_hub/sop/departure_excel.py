@@ -602,6 +602,405 @@ def generate_departure_excel(
     )
 
 
+# ── Per-dispatch-event API(2026-06-06 #107)─────────────────────────────
+# 业务事实:一次出港列车 = 一次发车事件,可能跨多个 release_batch(同一项目
+# 同船,lotN 余尾 + lotN+1 新装)。发运 excel 必须 per-event 而非 per-batch:
+# 行序按 ticketed_at(列车物理排序),每行各自携带其所属 batch 的合同/订单/
+# 货名/船名 — 跨 batch 行同表共存,各填各的。详 [[dispatch-event-excel-rule]]。
+#
+# 入口:generate_dispatch_event_excel(wagon_ids=[...]) — 直接指定本次事件
+# 涉及的 wagon_shipments.id 列表。caller 通常按某种业务规则(同一次检装车
+# 通知单 + 余尾、ticketed_at 时间窗、人工汇总)拼出 wagon_ids。
+
+
+@dataclass
+class DispatchEventExcelResult:
+    project_id: str = ""
+    output_path: str = ""
+    row_count: int = 0
+    wagon_count: int = 0
+    filename: str = ""
+    release_batch_ids: list[str] = field(default_factory=list)
+    error: str = ""
+
+
+def _fetch_event_wagons_and_batches(
+    wagon_ids: list[str], *, db_path: str | Path | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], str]:
+    """Return (wagon_rows ordered by ticketed_at, batch_id→batch_dict, error)."""
+    if not wagon_ids:
+        return [], {}, "wagon_ids is empty"
+    db = Path(db_path) if db_path else SOP_DB
+    conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
+    try:
+        in_ph = ",".join("?" * len(wagon_ids))
+        wagons = conn.execute(
+            f"SELECT * FROM wagon_shipments WHERE id IN ({in_ph}) "
+            f"ORDER BY ticketed_at ASC, car_no ASC",
+            wagon_ids,
+        ).fetchall()
+        if not wagons:
+            return [], {}, f"no wagon_shipments found for the given {len(wagon_ids)} wagon_ids"
+        batch_ids = sorted({r["batch_id"] for r in wagons if r["batch_id"]})
+        if not batch_ids:
+            return [], {}, "no batch_id on any wagon"
+        b_ph = ",".join("?" * len(batch_ids))
+        batches_rows = conn.execute(
+            f"SELECT * FROM release_batches WHERE id IN ({b_ph})", batch_ids,
+        ).fetchall()
+        batches = {b["id"]: dict(b) for b in batches_rows}
+        # 一致性:全部 wagon 必须属于同一项目(项目模板不同,无法混用)
+        projects = {b.get("project") for b in batches.values() if b.get("project")}
+        if len(projects) > 1:
+            return [], {}, (
+                f"per-event excel requires single-project wagons; got "
+                f"{sorted(projects)}"
+            )
+        return [dict(w) for w in wagons], batches, ""
+    finally:
+        conn.close()
+
+
+def _build_event_row(
+    *,
+    wagon: dict[str, Any],
+    batch: dict[str, Any],
+    seq: int,
+    earliest_ticketed_compact: str,
+    container_override: str | None = None,
+) -> dict[str, Any]:
+    """Build one excel row for a wagon, with per-row batch context (event-aware).
+
+    container_override:  传单个 box 号(#111 split 渲染用)→ 该行只填这 1 箱,
+                         箱号2 列留空,合同/订单/船名走该 box 对应的 batch。
+                         不传 → 整车 2 箱填同 1 行(常态)。
+    """
+    import json as _json
+    containers: list[str] = []
+    if container_override is not None:
+        containers = [container_override]
+    else:
+        cnj = wagon.get("container_numbers_json")
+        if cnj:
+            try:
+                containers = [b for b in _json.loads(cnj) if b]
+            except Exception:
+                containers = []
+        if not containers and wagon.get("container_no"):
+            containers = [b.strip() for b in str(wagon["container_no"]).split("/") if b.strip()]
+    cont1 = containers[0] if len(containers) >= 1 else ""
+    cont2 = containers[1] if len(containers) >= 2 else ""
+    ta = (wagon.get("ticketed_at") or "").strip()
+    loading_date = ta[:10] if ta and len(ta) >= 10 else ""
+    entry_date = ""
+    if loading_date:
+        try:
+            d = datetime.strptime(loading_date, "%Y-%m-%d")
+            entry_date = (d + timedelta(days=30)).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    cargo = (
+        batch.get("cargo_product_name")
+        or batch.get("cargo_name", "")
+        or ""
+    )
+    return {
+        "seq": seq,
+        "wagon_no": wagon.get("car_no") or "",
+        "container_no_1": cont1,
+        "container_no_2": cont2,
+        # per-row batch fields — 这是 per-event 的关键:每行带各自 batch 的
+        # 合同号/订单号/货名/船名,跨 batch 同表各填各的
+        "cargo_name": cargo,
+        "ship_name": batch.get("ship_name", ""),
+        "entry_contract_no": batch.get("contract_no", ""),
+        "order_identifier": batch.get("order_identifier", ""),
+        "loading_date": loading_date,
+        "entry_date": entry_date,
+        "ticketed_at_raw": ta,
+        "marked_weight": wagon.get("marked_weight") or "",
+        "car_model": wagon.get("car_model") or "",
+        "origin_name": wagon.get("origin_name") or "",
+        "destination_name": wagon.get("destination_name") or "",
+        "shipment_count_type": "单次",
+        # 朝阳 yaml 用的"货票时间"用本次事件最早 ticketed_at 共享(yaml 注释
+        # 明确"全列共用一个时间";per-event 也按这个共享语义)
+        "ticketed_at_compact_text": earliest_ticketed_compact,
+        "release_batch_id": batch.get("id", ""),
+    }
+
+
+def generate_dispatch_event_excel(
+    wagon_ids: list[str],
+    *,
+    project_id: str | None = None,
+    output_dir: str | Path | None = None,
+    db_path: str | Path | None = None,
+    filename_override: str | None = None,
+) -> DispatchEventExcelResult:
+    """Generate per-dispatch-event excel(跨 batch 合并一张表)。
+
+    Args:
+      wagon_ids: 本次事件涉及的 wagon_shipments.id 列表。caller 拼好传进来,
+                 函数按 ticketed_at ASC 排,seq 1..N 重排。
+      project_id: 不传则从首个 batch.project 读;若 wagons 跨多项目会报错。
+      output_dir: 不传则按主 batch(车数最多那个)的 archive 路径落盘。
+      filename_override: 不传则用 yaml file_naming.pattern + car_count。
+    """
+    wagons, batches, err = _fetch_event_wagons_and_batches(wagon_ids, db_path=db_path)
+    if err:
+        return DispatchEventExcelResult(error=err)
+
+    # 项目锁定(单一)
+    resolved_project: str | None = project_id
+    if not resolved_project:
+        for b in batches.values():
+            if b.get("project"):
+                resolved_project = str(b["project"]).strip()
+                break
+    if not resolved_project:
+        return DispatchEventExcelResult(
+            error="cannot resolve project_id from any batch",
+            release_batch_ids=sorted(batches.keys()),
+        )
+
+    try:
+        tpl = _load_template(resolved_project)
+    except (FileNotFoundError, ValueError, KeyError) as exc:
+        return DispatchEventExcelResult(
+            project_id=resolved_project,
+            release_batch_ids=sorted(batches.keys()),
+            error=f"template load failed: {exc}",
+        )
+
+    # 共享 ticketed_at_compact(取本次事件最早一条)
+    earliest_compact = ""
+    for w in wagons:
+        ta = (w.get("ticketed_at") or "").strip()
+        if ta:
+            try:
+                dt = datetime.fromisoformat(ta.replace(" ", "T"))
+                earliest_compact = dt.strftime("%Y%m%d%H%M") + "00"
+                break
+            except ValueError:
+                digits = "".join(ch for ch in ta if ch.isdigit())[:12]
+                if len(digits) >= 12:
+                    earliest_compact = digits + "00"
+                break
+
+    # #123 Phase 2 (2026-06-07):集装箱业务从 wagon_container_shipments 直接
+    # SELECT box rows,SQL 自然,无需 cbm JSON 拆。整车业务保留老路径。
+    import json as _json
+    rows: list[dict[str, Any]] = []
+    seq_counter = 0
+
+    _use_container_table = False
+    try:
+        from sop_hub.sop.wagon_container_shipments import is_container_business_project
+        _use_container_table = is_container_business_project(resolved_project)
+    except Exception:
+        _use_container_table = False
+
+    if _use_container_table:
+        # 新路径:用 (car_no, ydid) 查 box rows,batch_id 自带,合同走该行 batch
+        import sqlite3 as _sql
+        from pathlib import Path as _P
+        db = _P(db_path) if db_path else SOP_DB
+        car_ydid_pairs = [(w["car_no"], w.get("ydid") or "") for w in wagons
+                          if w.get("car_no")]
+        conn = _sql.connect(str(db))
+        conn.row_factory = _sql.Row
+        try:
+            box_rows: list[dict[str, Any]] = []
+            for car_no, ydid in car_ydid_pairs:
+                if ydid:
+                    rs = conn.execute(
+                        "SELECT * FROM wagon_container_shipments "
+                        "WHERE car_no=? AND ydid=? ORDER BY box_position",
+                        (car_no, ydid),
+                    ).fetchall()
+                else:
+                    rs = conn.execute(
+                        "SELECT * FROM wagon_container_shipments "
+                        "WHERE car_no=? ORDER BY box_position",
+                        (car_no,),
+                    ).fetchall()
+                for r in rs:
+                    box_rows.append(dict(r))
+        finally:
+            conn.close()
+        # 顺手补全 batches dict(box.batch_id 可能指向 wagons 不在的 lot)
+        extra_batch_ids = sorted({r["batch_id"] for r in box_rows
+                                  if r.get("batch_id") and r["batch_id"] not in batches})
+        if extra_batch_ids:
+            conn2 = _sql.connect(str(db)); conn2.row_factory = _sql.Row
+            try:
+                ph = ",".join("?" * len(extra_batch_ids))
+                for br in conn2.execute(
+                    f"SELECT * FROM release_batches WHERE id IN ({ph})", extra_batch_ids,
+                ).fetchall():
+                    batches[br["id"]] = dict(br)
+            finally:
+                conn2.close()
+        # 按 (car_no, ydid, batch_id) 分组:整车同 lot → 1 行 N box;
+        # split 车 → 2 行(每行 1 box,合同走该 box 对应 lot)。yaml 模板
+        # 每行结构:1 个 car_no + box_no_1/box_no_2 两列。
+        from collections import defaultdict, OrderedDict
+        groups: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+        # 维持原顺序:car_no 物理装载顺序 + box_position
+        first_seen_order: dict[tuple[str, str], int] = OrderedDict()
+        for br in box_rows:
+            key_full = (br["car_no"], br.get("ydid") or "", br["batch_id"])
+            groups[key_full].append(br)
+            if (br["car_no"], br.get("ydid") or "") not in first_seen_order:
+                first_seen_order[(br["car_no"], br.get("ydid") or "")] = len(first_seen_order)
+
+        # 排序 keys: 按 car_no 在原 wagon 顺序的 idx,然后 batch_id 内 box_position
+        def _grp_sort_key(k: tuple[str, str, str]) -> tuple[int, str]:
+            cn, yd, bid = k
+            return (first_seen_order.get((cn, yd), 9999), bid)
+
+        for key in sorted(groups.keys(), key=_grp_sort_key):
+            boxes_in_grp = sorted(groups[key], key=lambda r: r.get("box_position") or 0)
+            cn, yd, bid = key
+            b = batches.get(bid, {})
+            sample = boxes_in_grp[0]
+            wagon_like = {
+                "car_no": cn,
+                "ticketed_at": sample.get("ticketed_at"),
+                "marked_weight": sample.get("marked_weight"),
+                "car_model": sample.get("car_model"),
+                "origin_name": sample.get("origin_name"),
+                "destination_name": sample.get("destination_name"),
+                "container_numbers_json": _json.dumps(
+                    [bx["box_no"] for bx in boxes_in_grp]
+                ),
+                "container_no": "/".join(bx["box_no"] for bx in boxes_in_grp),
+            }
+            seq_counter += 1
+            rows.append(_build_event_row(
+                wagon=wagon_like, batch=b, seq=seq_counter,
+                earliest_ticketed_compact=earliest_compact,
+            ))
+    else:
+        # 老路径(整车业务):整车 1 行 2 箱,split 车看 cbm 拆
+        for w in wagons:
+            cbm_raw = w.get("container_batch_map")
+            cbm: dict[str, str] | None = None
+            if cbm_raw:
+                try:
+                    cbm = _json.loads(cbm_raw)
+                    if not isinstance(cbm, dict) or len(set(cbm.values())) < 2:
+                        cbm = None
+                except Exception:
+                    cbm = None
+            if cbm:
+                try:
+                    ordered_boxes = [b for b in _json.loads(w.get("container_numbers_json") or "[]") if b]
+                except Exception:
+                    ordered_boxes = []
+                if not ordered_boxes:
+                    raw = w.get("container_no") or ""
+                    ordered_boxes = [b.strip() for b in str(raw).split("/") if b.strip()]
+                if not ordered_boxes:
+                    ordered_boxes = list(cbm.keys())
+                for box in ordered_boxes:
+                    target_batch_id = cbm.get(box)
+                    if not target_batch_id:
+                        continue
+                    b = batches.get(target_batch_id, {})
+                    seq_counter += 1
+                    rows.append(_build_event_row(
+                        wagon=w, batch=b, seq=seq_counter,
+                        earliest_ticketed_compact=earliest_compact,
+                        container_override=box,
+                    ))
+            else:
+                b = batches.get(w.get("batch_id"), {})
+                seq_counter += 1
+                rows.append(_build_event_row(
+                    wagon=w, batch=b, seq=seq_counter,
+                    earliest_ticketed_compact=earliest_compact,
+                ))
+
+    if not rows:
+        return DispatchEventExcelResult(
+            project_id=resolved_project,
+            release_batch_ids=sorted(batches.keys()),
+            error="no rows built",
+        )
+
+    # 主 batch = 车数最多者(归档目录用)
+    from collections import Counter
+    primary_batch_id = Counter(
+        r["release_batch_id"] for r in rows if r.get("release_batch_id")
+    ).most_common(1)[0][0]
+
+    if output_dir:
+        out_dir = Path(output_dir)
+    else:
+        out_dir = _resolve_archive_dir(
+            resolved_project, primary_batch_id, db_path=db_path,
+        )
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    row_count = len(rows)
+    wagon_count = len({r["wagon_no"] for r in rows if r["wagon_no"]})
+
+    if filename_override:
+        filename = filename_override
+    else:
+        today = datetime.now().strftime("%Y%m%d")
+        # event excel 默认命名:{project}_event_{yyyymmdd}_{N}cars.xlsx,
+        # 跟单 batch 的 {project}_{N}cars 区分,看文件名能立刻判断是事件 vs 单 batch
+        filename = f"{resolved_project}_event_{today}_{wagon_count}cars.xlsx"
+    filepath = out_dir / filename
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.title = tpl.sheet_name
+
+    if tpl.title_text and tpl.title_row > 0:
+        ws.cell(row=tpl.title_row, column=1, value=tpl.title_text)
+
+    for col_idx, col in enumerate(tpl.columns, 1):
+        ws.cell(row=tpl.header_row, column=col_idx, value=col.header)
+
+    for row_offset, row in enumerate(rows):
+        excel_row = tpl.data_start_row + row_offset
+        for col_idx, col in enumerate(tpl.columns, 1):
+            value = _resolve_cell_value(col, row)
+            cell = ws.cell(row=excel_row, column=col_idx, value=value)
+            if col.cell_format:
+                cell.number_format = col.cell_format
+
+    last_data_row = tpl.data_start_row + row_count - 1
+    _apply_style(ws, tpl, last_data_row)
+
+    # footer 当前是 per-release-batch(从 batch 字段读)。per-event 跨 batch
+    # 时 footer 取主 batch 的字段。若项目本来不配 footer(朝阳/吉林),跳过。
+    if tpl.footer:
+        _render_footer(
+            ws=ws,
+            footer_cfg=tpl.footer,
+            release_batch_id=primary_batch_id,
+            data_end_row=last_data_row,
+            db_path=db_path,
+        )
+
+    wb.save(str(filepath))
+    return DispatchEventExcelResult(
+        project_id=resolved_project,
+        output_path=str(filepath),
+        row_count=row_count,
+        wagon_count=wagon_count,
+        filename=filename,
+        release_batch_ids=sorted(batches.keys()),
+    )
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────
 
 

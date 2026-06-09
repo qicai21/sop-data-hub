@@ -19,6 +19,13 @@ project_meta:
   transport_modes:
     - "铁路"
   has_inspection_notice: true
+  # ── 跟踪模式(#85 2026-06-06)────────────────────────────────
+  # 全程 "full_track_to_received":中唐发运后,继续 95306 轮询到 wagon
+  # 到货,直到全部到货才标 confirmed_received。海铁联运两段船,商务上
+  # 关心到港时间(汐子),不到货不能闭环。
+  lifecycle:
+    mode: "full_track_to_received"
+    rationale: "海铁联运商务依赖到港时间;wagon 全部到货后才标 confirmed_received"
   # 已见过的船名,辅助识别 / 文字补充货运信息时对船名一致性核对。
   # 中唐是海铁联运两段船:A船青岛进口 → B船内贸转水到锦州港。
   # 数据库:import_ship_name 存大船(A),ship_name 存到港船(B)。
@@ -80,6 +87,13 @@ flows:
     output_templates:
       departure_excel:
         business_name: "中唐特钢汐子站铁矿粉发运表"
+        # ── 业务铁律:车号顺序 = 检装车通知单 seq 顺序 ──────────────
+        # excel 行序 = 列车机车头到机车尾的物理装载顺序,跟收货端核对、人工
+        # 查表的默认锚点。chain 走 95306 反查时,用 95306 做"装/排"判断,
+        # 但车号排序保留通知单 seq。OCR 错抽的修正车号 / last-minute 换车
+        # 追加到末尾。详 [[dispatch-event-excel-rule]] + [[release-batch-business-rules]]
+        # "列车物理排序"约定。
+        row_order_rule: "by_inspection_notice_seq"
         file_naming:
           pattern: "zhongtang_{car_count}cars.xlsx"
           car_count_source: "export_row_count"
@@ -160,14 +174,10 @@ listening_tasks:
       - message_type: "image"
         trigger_condition: "category_in:[检装车通知单]"
         target_node: "process_inspection_slip"
-        report_targets:
-          dev:
-            type: "contact"
-            name: "郭东北"
-          production:
-            type: "group"
-            group_id: "[GROUP003]"
-            group_name: "中唐特钢发运群"
+        # 2026-06-06:dev/production 双轨已废弃。真正的发送目标在 yaml
+        # flows.report_delivery_flow.send_report.target_group(当前 ["GROUP013"]
+        # 数据单发群)。listening_tasks 只负责"听 + 路由触发节点",不再带
+        # 收件人。
 
   - group_id: "GROUP013"
     group_lookup_id: "[GROUP013]"
@@ -192,11 +202,7 @@ listening_tasks:
         trigger_condition: "category_in:[检装车通知单]"
         target_node: "process_inspection_slip"
         supplemental: true
-        report_targets:
-          dev:
-            type: "contact"
-            name: "郭东北"
-          production:
-            type: "group"
-            group_id: "[GROUP003]"
-            group_name: "中唐特钢发运群"
+        # 2026-06-06:dev/production 双轨已废弃。真正的发送目标在 yaml
+        # flows.report_delivery_flow.send_report.target_group(当前 ["GROUP013"]
+        # 数据单发群)。listening_tasks 只负责"听 + 路由触发节点",不再带
+        # 收件人。

@@ -354,9 +354,13 @@ def plan_jljg_external_actions(
     ))
 
     # 3. send_shipping_excel_wechat
+    # 2026-06-06:target_channel 由 yaml report_delivery_flow.send_report.target_group
+    # 决定(当前 ["GROUP013"])。yaml 缺配才兜底为数据单发群字符串。
     biz = (_biz_key_wechat(release_batch_id, wagon_count) if has_rb
            else _biz_key_fallback(message_id, "wechat"))
     key = build_idempotency_key(project_id, "send_shipping_excel_wechat", biz)
+    from sop_hub.sop.workflow_task_executor import _resolve_send_target
+    target_channel = _resolve_send_target(project_id) or "[GROUP013]"
     results.append(plan_external_action(
         db_path=db_path,
         workflow_task_id=workflow_task_id,
@@ -368,7 +372,7 @@ def plan_jljg_external_actions(
         action_status=status,
         request_json=request,
         target_system="wechat",
-        target_channel="郭东北",
+        target_channel=target_channel,
         fallback_key=not has_rb,
     ))
 

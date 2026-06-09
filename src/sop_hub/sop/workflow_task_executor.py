@@ -503,6 +503,22 @@ def _execute_freight_detail_enrichment(
         # may be created later, so keep retryable (non-terminal skipped).
         return {"action": "skipped", "status": "skipped", "output_json": res}
 
+    # #128 lifecycle 触发器:freight 补齐了 → 推 batch 到 enriched
+    # (res.results 含每个被 enrich 的 release_batch_id)
+    try:
+        from sop_hub.sop.lifecycle_transition import advance_lifecycle
+        for r in (res.get("results") or []):
+            rb_id = r.get("release_batch_id") or ""
+            if rb_id:
+                advance_lifecycle(
+                    rb_id, "enriched",
+                    reason="freight_detail 合同/订单/品名补齐",
+                    triggered_by="chain.freight_detail_enrichment",
+                    db_path=db_path,
+                )
+    except Exception:
+        pass  # 非阻塞:lifecycle 推不动不影响主流程
+
     # applied / no_op → success
     return {
         "action": "executed",
@@ -550,13 +566,26 @@ def _execute_chaoyang_inspection_chain(
     conn.row_factory = _sql.Row
     try:
         # ── 1. Find candidate ──────────────────────────────────────
+        # #130:多组 candidate(复合检车单按 ship rule 拆 N 组)时,优先取
+        # candidate_status='candidate' 的(已成功匹配 release_batch),跳过
+        # pending_review 的兜底组。仍 LIMIT 1 — 同 inbox 多组并发跑由后续做。
         cand = conn.execute(
             "SELECT * FROM inspection_ingestion_candidates "
-            "WHERE message_id = (SELECT message_id FROM message_inbox WHERE id=?) "
-            "   OR id IN (SELECT inspection_candidate_id FROM message_inbox WHERE id=?) "
+            "WHERE (message_id = (SELECT message_id FROM message_inbox WHERE id=?) "
+            "   OR id IN (SELECT inspection_candidate_id FROM message_inbox WHERE id=?)) "
+            "   AND candidate_status='candidate' "
             "ORDER BY created_at DESC LIMIT 1",
             (inbox_id, inbox_id),
         ).fetchone()
+        if not cand:
+            # 兜底:没 matched candidate,也试 pending(老行为)
+            cand = conn.execute(
+                "SELECT * FROM inspection_ingestion_candidates "
+                "WHERE message_id = (SELECT message_id FROM message_inbox WHERE id=?) "
+                "   OR id IN (SELECT inspection_candidate_id FROM message_inbox WHERE id=?) "
+                "ORDER BY created_at DESC LIMIT 1",
+                (inbox_id, inbox_id),
+            ).fetchone()
         if not cand:
             return {"action": "failed", "status": "failed",
                     "error_message": f"no inspection candidate for inbox {inbox_id}"}
@@ -571,15 +600,34 @@ def _execute_chaoyang_inspection_chain(
                     "error_message": f"candidate missing fields: "
                                      f"ship={ship!r} dest={dest!r} project={project_id!r}"}
 
-        # ── 2. Read extraction JSON, filter defect ────────────────
-        ext_path = cand_d.get("extraction_json_path")
-        if not ext_path or not Path(ext_path).exists():
-            return {"action": "failed", "status": "failed",
-                    "error_message": f"extraction JSON not found: {ext_path}"}
-        ext_data = _json.loads(Path(ext_path).read_text(encoding="utf-8"))
-        all_rows = ext_data.get("rows") or []
-        # 排车 / 缺陷车不入 wagon_shipments
-        loading_rows = [r for r in all_rows if not r.get("defect")]
+        # ── 2. Read rows ──────────────────────────────────────────
+        # #130 (2026-06-08):优先 candidate.payload_json(split 后的 sub_payload,
+        # 只含本组真车),否则 fallback extraction_json_path 全图(单组场景)。
+        # 关键:复合检车单图,chain 必须按本组真车走,不能拿全图前 4 个表头
+        # 伪车号查 95306(95306 永远查不到)。
+        cand_payload_raw = cand_d.get("payload_json") or ""
+        all_rows = []
+        ext_data: dict = {}
+        if cand_payload_raw:
+            try:
+                _cp = _json.loads(cand_payload_raw)
+                if isinstance(_cp, dict) and _cp.get("rows"):
+                    all_rows = _cp.get("rows") or []
+                    ext_data = _cp  # 用 candidate.payload_json 同时充当 ext_data
+                                    # 让 footer 等读取兜底
+            except Exception:
+                all_rows = []
+        if not all_rows:
+            ext_path = cand_d.get("extraction_json_path")
+            if not ext_path or not Path(ext_path).exists():
+                return {"action": "failed", "status": "failed",
+                        "error_message": f"extraction JSON not found: {ext_path}"}
+            ext_data = _json.loads(Path(ext_path).read_text(encoding="utf-8"))
+            all_rows = ext_data.get("rows") or []
+        # 排车 / 缺陷车不入。cargo_info_raw 是手写标注(船名/收货代理等),
+        # 不影响是否真车 — 真车的判断是 car_no 非空 + 非 defect。
+        loading_rows = [r for r in all_rows
+                        if r.get("car_no") and not r.get("defect")]
         loading_car_nos = [str(r.get("car_no") or "").strip()
                            for r in loading_rows if r.get("car_no")]
         if not loading_car_nos:
@@ -703,7 +751,19 @@ def _execute_chaoyang_inspection_chain(
                         "candidate_status": "pending_review",
                     },
                 }
-            loading_car_nos = authoritative_loading
+            # 2026-06-06:保留通知单物理顺序(列车机车头到尾)。
+            # authoritative_loading 是 95306 ticketed_at 序,直接用会让发运
+            # excel 顺序错乱。业务铁律:车号顺序 = 通知单 seq 顺序,因为这是
+            # 列车装载物理排序,跟收货端核对、人工查表都按这个顺序来。
+            # 处理:用 authoritative_loading 做"装/排"判断,但车号排序按
+            # 通知单 all_notice_car_nos 的位置。authoritative 里"通知单没有"
+            # 的车号(last-minute 换车 / OCR 错字 → 95306 实有 1739479 但
+            # 通知单 OCR 成 1799479),没法精准插回原位,追加到末尾。
+            auth_set = set(authoritative_loading)
+            notice_kept = [c for c in all_notice_car_nos if c in auth_set]
+            kept_set = set(notice_kept)
+            extras = [c for c in authoritative_loading if c not in kept_set]
+            loading_car_nos = notice_kept + extras
 
         # ── 4. Query 95306 per car_no, build wagon_shipments rows ─
         if not RAIL_DB.exists():
@@ -869,19 +929,24 @@ def _execute_chaoyang_inspection_chain(
         )
         conn.commit()
 
-        # "第几列" = 该 batch 下**全部已落实**候选总数(含当前)。包含
-        # matched(已经链路对上)和 matched_by_inference(推断阶段已对上但
-        # 链路还没真正跑过,如今天宝腾海 06-02 那张)。之前只数 'matched'
-        # 漏掉 matched_by_inference,2026-06-03 宝腾海算成"第二列"
-        # (实际第三列)的根因。pending_review / pending_95306_match 这些
-        # 还没落实的不算。
+        # "第几列" = 当前 candidate 时间点之前(含当前)的已落实候选总数。
+        # 状态包含 matched / matched_by_inference(2026-06-03 宝腾海漏数
+        # matched_by_inference 算成"第二列"修过);created_at 时序过滤是
+        # 2026-06-04 丰收散运 56 车场景修的(#103):之前数所有候选不分
+        # 时序,先发的检装车通知单 chain 跑时看到后续推断候选,被误算成
+        # "第二列",实际是第一列。pending_review / pending_95306_match
+        # 等还没落实的不算。
+        current_created_at = cand_d.get("created_at") or ""
         try:
             nth = conn.execute(
                 "SELECT COUNT(*) FROM inspection_ingestion_candidates "
                 "WHERE release_batch_id=? AND candidate_status IN "
-                "      ('matched','matched_by_inference')",
-                (matched_batch_id,),
+                "      ('matched','matched_by_inference') "
+                "  AND created_at <= ?",
+                (matched_batch_id, current_created_at),
             ).fetchone()[0]
+            if nth <= 0:
+                nth = 1
         except Exception:
             nth = 1
 
@@ -945,6 +1010,39 @@ def _execute_chaoyang_inspection_chain(
             except Exception as exc:
                 upload_info = {"skipped": False, "error": str(exc)}
 
+        # ── 6d. Lifecycle close(#85 downstream 2026-06-06)──────────
+        # shipped_is_completed 模式(朝阳钢铁)且本批已发满 → 立刻关 batch。
+        # full_track_to_received 模式(吉林/中唐/九三)留 in_progress,
+        # 等 95306 到货 daemon 后续标 confirmed_received 再关。
+        lifecycle_info: dict[str, Any] = {"mode": "", "closed_now": False}
+        try:
+            mode = _resolve_lifecycle_mode(project_id)
+            lifecycle_info["mode"] = mode
+            if mode == "shipped_is_completed" and sw.get("ok"):
+                shipped_t = float(sw.get("shipped_weight_tons") or 0)
+                planned_t = float(sw.get("planned_tons") or 0)
+                # 小余量 0.5 吨容忍(浮点 + 计量误差),宁可早关一点也别永远不关
+                if planned_t > 0 and shipped_t >= planned_t - 0.5:
+                    # #125: 朝阳 shipped_is_completed mode → 跳到 closed
+                    # (跳过 tracking/delivered/confirmed_received,因为这种 mode
+                    # 业务上"发完即结算",不等 95306 到货)
+                    conn.execute(
+                        "UPDATE release_batches "
+                        "SET dispatch_status='closed', "
+                        "    dispatch_status_note='lifecycle.shipped_is_completed: "
+                        "shipped_weight >= planned',"
+                        "    dispatch_status_updated_at=datetime('now'),"
+                        "    updated_at=datetime('now') WHERE id=?",
+                        (matched_batch_id,),
+                    )
+                    conn.commit()
+                    lifecycle_info["closed_now"] = True
+                    lifecycle_info["reason"] = (
+                        f"shipped {shipped_t:.1f}/{planned_t:.1f} tons"
+                    )
+        except Exception as exc:
+            lifecycle_info["error"] = str(exc)
+
         return {
             "action": "executed",
             "status": "succeeded",
@@ -959,6 +1057,7 @@ def _execute_chaoyang_inspection_chain(
                 "wagon_shipments_no_95306_match": no_match,
                 "shipped_weight": sw,
                 "excel": excel_info,
+                "lifecycle": lifecycle_info,
                 "send": send_info,
                 "consignee_upload": upload_info,  # 新:ansteel 上传 + 反查
             },
@@ -1002,6 +1101,33 @@ def _resolve_send_target(project_id: str) -> str | None:
         if contacts:
             return str(contacts[0])
     return None
+
+
+# ── Lifecycle resolution(2026-06-06 #85)─────────────────────────────────
+# 从 project_meta.lifecycle 读出项目跟踪模式:
+#   "shipped_is_completed"  — 短链(发运即完);chaoyang
+#   "full_track_to_received" — 全程(跟到 confirmed_received);jilin/中唐/九三
+# 调用方:发运 chain 结束后看这个字段决定:
+#   shipped_is_completed → release_batch.dispatch_status → completed 立刻
+#   full_track_to_received → 留在 in_progress,等 95306 到货 daemon 再标 completed
+
+
+def _resolve_lifecycle_mode(project_id: str) -> str:
+    """Return lifecycle mode for project (default: full_track_to_received)."""
+    try:
+        import yaml as _yaml
+        from sop_hub.sop.departure_excel import _find_yaml_for_project
+        yp = _find_yaml_for_project(project_id)
+        raw = _yaml.safe_load(yp.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return "full_track_to_received"
+    lc = ((raw.get("project_meta") or {}).get("lifecycle") or {})
+    mode = str(lc.get("mode") or "").strip()
+    if mode in ("shipped_is_completed", "full_track_to_received"):
+        return mode
+    return "full_track_to_received"
+
+
 
 
 def run_pending_workflow_tasks(

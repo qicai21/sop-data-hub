@@ -78,7 +78,64 @@ def ensure_workflow_task_db_schema(db_path: str | Path | None = None) -> None:
     conn.close()
 
 
+# 2026-06-07 #121:yaml 项目层"无此 flow"守门
+# 项目 yaml 写 has_inspection_slip: false 但消息分类时被误归到这个项目 +
+# inspection_notice_flow → 老路由会建出 generic_sop_task 孤儿(无 executor)→
+# 永远 pending。返回这个 sentinel 让上游 create_task 跳过建任务。
+SKIP_TASK_TYPE_SENTINEL = "skipped_by_yaml_no_such_flow"
+
+
+def _project_has_inspection_slip(project_id: str) -> bool:
+    """Read project yaml `project_meta.has_inspection_slip`(default True)。"""
+    if not project_id:
+        return True
+    try:
+        import yaml as _yaml
+        from sop_hub.sop.departure_excel import _find_yaml_for_project
+        yp = _find_yaml_for_project(project_id)
+        raw = _yaml.safe_load(yp.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return True  # 找不到 yaml 兜底放行(老行为)
+    pm = raw.get("project_meta") or {}
+    v = pm.get("has_inspection_slip")
+    if isinstance(v, bool):
+        return v
+    return True  # 字段缺省视为有(老行为)
+
+
+def _project_has_flow(project_id: str, flow_name: str) -> bool:
+    """yaml flows.<flow_name> 是否声明 — 项目没声明的 flow 直接拒绝建 task。
+    #129 (2026-06-08):防朝阳/乌兰浩特/中唐 text 路由到 detect_departure_message
+    落 generic_sop_task 永挂(只 jilin yaml 有 departure_flow)。
+    """
+    if not project_id or not flow_name:
+        return False
+    try:
+        import yaml as _yaml
+        from sop_hub.sop.departure_excel import _find_yaml_for_project
+        yp = _find_yaml_for_project(project_id)
+        raw = _yaml.safe_load(yp.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return True  # 找不到 yaml 兜底放行(避免误杀)
+    return flow_name in (raw.get("flows") or {})
+
+
 def _resolve_task_type(project_id: str, flow_name: str, node_name: str) -> str:
+    # #121 守门:项目 yaml 显式声明无检车单时,拒绝建 inspection_*_flow task
+    if (flow_name in ("inspection_flow", "inspection_notice_flow")
+            and not _project_has_inspection_slip(project_id)):
+        return SKIP_TASK_TYPE_SENTINEL
+
+    # #129 守门:项目 yaml 没声明该 flow → 拒绝(防 generic_sop_task 永挂孤儿)
+    # 只对会落到 generic_sop_task 的 flow 守门,已知有 chain 的 flow 放行
+    _KNOWN_HANDLED_FLOWS = {
+        "freight_detail_flow",                    # 通用 enrichment
+        "inspection_flow", "inspection_notice_flow",  # 朝阳/中唐
+    }
+    if (flow_name not in _KNOWN_HANDLED_FLOWS
+            and not _project_has_flow(project_id, flow_name)):
+        return SKIP_TASK_TYPE_SENTINEL
+
     if (project_id == "jilin_jingang_jinzhou"
             and flow_name == "departure_flow"
             and node_name == "detect_departure_message"):
@@ -154,6 +211,14 @@ def create_task_from_message_inbox(
     flow_name = row_dict.get("sop_flow") or ""
     node_name = row_dict.get("sop_node") or ""
     task_type = _resolve_task_type(project_id, flow_name, node_name)
+    # #121:守门标记 — 项目 yaml 无此 flow,直接跳过不建任务
+    if task_type == SKIP_TASK_TYPE_SENTINEL:
+        conn.close()
+        return {
+            "action": "skipped", "reason": "yaml_has_no_such_flow",
+            "project_id": project_id, "flow_name": flow_name,
+            "node_name": node_name, "message_inbox_id": message_inbox_id,
+        }
     input_json = _build_input_json(row_dict)
     now = _now_iso()
 

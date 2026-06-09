@@ -102,7 +102,7 @@ def _create_sop_db(db_path: str | Path) -> sqlite3.Connection:
         delivered_at TEXT, confirmed_received_at TEXT, container_no TEXT,
         waybill_no TEXT, project_id TEXT, ship_name TEXT,
         dispatch_status TEXT DEFAULT 'pending', source_message_id TEXT,
-        source_group_id TEXT
+        source_group_id TEXT, ydid TEXT
     )""")
 
     conn.execute(

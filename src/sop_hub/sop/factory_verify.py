@@ -156,29 +156,37 @@ def verify_factory_upload(
                     order_id = batch["order_identifier"] or order_id
                     summary.order_id = order_id
 
-                wagons = conn.execute(
-                    "SELECT container_no, container_numbers_json FROM wagon_shipments WHERE batch_id=?",
+                # #123 Phase 2:优先 SELECT 新表 wagon_container_shipments;
+                # fallback wagon_shipments(老业务/老数据)
+                box_rows = conn.execute(
+                    "SELECT box_no FROM wagon_container_shipments WHERE batch_id=?",
                     (release_batch_id,),
                 ).fetchall()
-
-                def _row_boxes(row) -> list[str]:
-                    """container_numbers_json 优先,fallback container_no("A/B")."""
-                    cnj = row["container_numbers_json"]
-                    if cnj:
-                        try:
-                            return [b for b in json.loads(cnj) if b]
-                        except Exception:
-                            pass
-                    raw = row["container_no"] or ""
-                    return [b.strip() for b in raw.split("/") if b.strip()]
-
-                boxes: set[str] = set()
-                for w in wagons:
-                    boxes.update(_row_boxes(w))
+                if box_rows:
+                    boxes = {r["box_no"] for r in box_rows if r["box_no"]}
+                else:
+                    # fallback 老路径
+                    wagons = conn.execute(
+                        "SELECT container_no, container_numbers_json "
+                        "FROM wagon_shipments WHERE batch_id=?",
+                        (release_batch_id,),
+                    ).fetchall()
+                    def _row_boxes(row) -> list[str]:
+                        cnj = row["container_numbers_json"]
+                        if cnj:
+                            try:
+                                return [b for b in json.loads(cnj) if b]
+                            except Exception:
+                                pass
+                        raw = row["container_no"] or ""
+                        return [b.strip() for b in raw.split("/") if b.strip()]
+                    boxes = set()
+                    for w in wagons:
+                        boxes.update(_row_boxes(w))
                 if expected_box_numbers is None:
                     expected_box_numbers = boxes
                 if expected_count is None:
-                    expected_count = sum(len(_row_boxes(w)) for w in wagons)
+                    expected_count = len(boxes)
             finally:
                 conn.close()
 

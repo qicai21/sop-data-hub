@@ -184,6 +184,22 @@ def _compute_inner(release_batch_id: str, conn: sqlite3.Connection,
                 (val if isinstance(val, (int, float)) else None, basis_str, wid),
             )
 
+    # #111: 跨 lot 拆箱场景下,box_count = primary(整车) + split-in(map 副)
+    # 当前 shipped_weight_tons 还是按 wagon.batch_id 算的(split-out wagon 全计入
+    # 主 lot,split-in wagon 一箱也不计),box_count 给 caller 用作对照锚点。
+    try:
+        from sop_hub.sop.dispatch_plan import count_lot_containers
+        box_count = count_lot_containers(release_batch_id)
+    except Exception:
+        box_count = 0
+    has_split = bool(conn.execute(
+        "SELECT 1 FROM wagon_shipments "
+        "WHERE container_batch_map IS NOT NULL "
+        "  AND (batch_id=? OR EXISTS (SELECT 1 FROM json_each(container_batch_map) j "
+        "                              WHERE j.value=?)) LIMIT 1",
+        (release_batch_id, release_batch_id),
+    ).fetchone())
+
     conn.commit()
     return {
         "ok": True,
@@ -194,6 +210,8 @@ def _compute_inner(release_batch_id: str, conn: sqlite3.Connection,
         "planned_tons": planned,
         "unresolved_wagon_count": unresolved,
         "total_wagons": total_items,
+        "box_count": box_count,            # #111 #boxes 主+副
+        "has_split_wagons": has_split,     # #111 是否含 container_batch_map
     }
 
 

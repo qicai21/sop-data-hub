@@ -419,7 +419,10 @@ def create_wagon_shipments_from_candidates(
             "actual_wagon_count": new_total,
         }
         if "dispatch_status" in rb_columns:
-            result.release_batch_progress["dispatch_status"] = "in_progress"
+            # #125 lifecycle:新枚举 8 值,wagon ingest 推到 loading;
+            # 状态机的进一步推进(all_loaded / tracking / delivered)由
+            # chain step 4b 后的 advance_lifecycle 调用接管。
+            result.release_batch_progress["dispatch_status"] = "loading"
             from sop_hub.utils.time import now_iso_beijing_compact as _now_bj
             result.release_batch_progress["dispatch_status_updated_at"] = _now_bj()
 
@@ -436,23 +439,26 @@ def create_wagon_shipments_from_candidates(
         for plan in insert_plans:
             wagon_id = _gen_wagon_id(plan.ydid, release_batch_id)
             try:
+                # #123 (2026-06-07): 把 ydid 一起写进去
+                # 老代码漏了 ydid,导致 jilin lot06 39 车 ydid 全空,新表迁移失败。
+                # ydid 是 95306 运单唯一 id,业务上 wagon 必须有它才能做对账/反查。
                 sop_conn.execute(
                     """INSERT INTO wagon_shipments (
                         id, departure_id, batch_id, car_no, car_model,
                         cargo_name, origin_name, destination_name,
                         ticketed_at, departed_at, arrived_at,
                         delivered_at, confirmed_received_at,
-                        container_no, waybill_no,
+                        container_no, waybill_no, ydid,
                         project_id, ship_name, dispatch_status,
                         source_message_id, source_group_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         wagon_id, departure_id, release_batch_id,
                         plan.wagon_no, "",
                         plan.cargo_name, plan.origin_station, plan.destination_station,
                         plan.ticketed_at, plan.departed_at, plan.arrived_at,
                         plan.delivered_at, "",
-                        plan.container_no, plan.waybill_no,
+                        plan.container_no, plan.waybill_no, plan.ydid,
                         departure_candidate.project_id, ship_name, "pending",
                         departure_candidate.message_id, departure_candidate.group_id,
                     ),
@@ -464,6 +470,62 @@ def create_wagon_shipments_from_candidates(
 
         sop_conn.commit()
         result.inserted_count = inserted
+
+        # ── 9.5 #123 Phase 3 (2026-06-07):集装箱业务双写 wagon_container_shipments ──
+        # 同 wagon_shipments 写完后,拆 box 写新表:每 box 一行,box.batch_id = 主 lot
+        # (split 由后续 allocate_wagons 改 box.batch_id 调整)
+        try:
+            from sop_hub.sop.wagon_container_shipments import (
+                ensure_schema as _ensure_wcs, is_container_business_project,
+            )
+            if is_container_business_project(departure_candidate.project_id):
+                _ensure_wcs(db_path=db_path)
+                import hashlib as _hash
+                import json as _json
+                for plan in result.plans:
+                    if plan.action not in ("insert", "skip_existing"):
+                        continue
+                    if not plan.ydid or not plan.wagon_no:
+                        continue
+                    # 拆 box(优先 container_numbers_json,fallback "/")
+                    raw_cnj = getattr(plan, "container_numbers_json", "") or ""
+                    boxes: list[str] = []
+                    if raw_cnj:
+                        try:
+                            boxes = [b for b in _json.loads(raw_cnj) if b]
+                        except Exception:
+                            boxes = []
+                    if not boxes and plan.container_no:
+                        boxes = [b.strip() for b in str(plan.container_no).split("/") if b.strip()]
+                    for idx, box in enumerate(boxes, start=1):
+                        row_id = _hash.sha1(
+                            f"{plan.wagon_no}|{box}|{plan.ydid}".encode()
+                        ).hexdigest()[:24]
+                        try:
+                            sop_conn.execute(
+                                """INSERT OR IGNORE INTO wagon_container_shipments (
+                                    id, car_no, box_no, box_position, ydid, waybill_no,
+                                    batch_id, ticketed_at, departed_at, arrived_at, delivered_at,
+                                    origin_name, destination_name, cargo_name,
+                                    project_id, ship_name, dispatch_status,
+                                    source_message_id, source_group_id
+                                ) VALUES (?,?,?,?,?,?, ?, ?,?,?,?, ?,?,?, ?,?,?, ?,?)""",
+                                (
+                                    row_id, plan.wagon_no, box, idx, plan.ydid, plan.waybill_no,
+                                    release_batch_id,
+                                    plan.ticketed_at, plan.departed_at, plan.arrived_at,
+                                    plan.delivered_at,
+                                    plan.origin_station, plan.destination_station,
+                                    plan.cargo_name,
+                                    departure_candidate.project_id, ship_name, "in_progress",
+                                    departure_candidate.message_id, departure_candidate.group_id,
+                                ),
+                            )
+                        except sqlite3.IntegrityError:
+                            pass
+                sop_conn.commit()
+        except Exception as exc:
+            result.warnings.append(f"wagon_container_shipments dual-write failed: {exc}")
 
         # ── 10. Update release_batches progress ──────────────────────
         set_clauses = []

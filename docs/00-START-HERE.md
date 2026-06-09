@@ -3,7 +3,7 @@
 > 这一篇专门给"刚开 session 的 Claude / 接手的新人 / 几个月没碰回来的我自己"看。
 > 读完应该能立刻干活,不必从 git log 倒查。
 
-最后更新:2026-06-02(整天大重构后)
+最后更新:2026-06-09(daemon 全部迁 launchd 后)
 
 ---
 
@@ -17,51 +17,53 @@
 
 ---
 
-## 2. 5 个常驻进程
+## 2. 4 个常驻 daemon + 1 个手开看板
 
-任何时候健康的系统大概是这样:
+任何时候健康的系统大概是这样(**2026-06-09 起全部 launchd 管理**,Mac 重启自动恢复):
 
-| 进程 | cwd | 角色 |
+| launchd Label | 角色 | cwd |
 |---|---|---|
-| `wechat_ops_agent.cli.main run-daemon` | `~/projects/repos/wx-ops-agent` | 拉微信 + 解码图片 + 落 jsonl(**只产数据,不做业务**) |
-| `scripts/run_live_service.py` | `~/projects/repos/sop-data-hub` | 扫 jsonl → 落 `message_inbox` + VLM 分类 + `process_new_image` |
-| `sop_hub.sop.text_watch_daemon` | 同上 | inbox 文本 → `BusinessDataAgent.ingest_business_text` 入业务库 |
-| `tools/run_sync_worker.py` | `~/projects/repos/rail95306-sync` | 5 min/轮 同步 95306 票 + 每轮完调 `pending_match_verifier` |
-| `scripts/cli_dashboard.py`(tmux) | sop-data-hub | 终端看板(直查 sqlite,5s 刷新) |
+| `com.qicai21.wechat-ops-agent` | 拉微信 + 解码图片 + 落 jsonl(**只产数据,不做业务**) | `~/projects/repos/wx-ops-agent` |
+| `com.qicai21.sop-data-hub.live-service` | 扫 jsonl → `message_inbox` + VLM 分类 + `process_new_image` | `~/projects/repos/sop-data-hub` |
+| `com.qicai21.sop-data-hub.text-watch` | inbox 文本 → ingest + 跑 chain(含 `--run-chains`) | 同上 |
+| `com.qicai21.rail95306-sync` | 5 min/轮同步 95306 + 调 `pending_match_verifier` | `~/projects/repos/rail95306-sync` |
+| `scripts/cli_dashboard.py`(tmux 手开) | 终端看板(直查 sqlite,5s 刷新) | sop-data-hub |
 
-`ps aux | grep -E "wechat_ops_agent|run_live_service|text_watch_daemon|run_sync_worker"` 应该有 4 进程。
+```bash
+launchctl list | grep -E "com.qicai" | sort           # launchd 视角
+ps aux | grep -E "wechat_ops_agent|run_live_service|text_watch_daemon|run_sync_worker" | grep -v grep   # 进程视角(4 个)
+```
+
+plist 在 `~/Library/LaunchAgents/`,都有 `RunAtLoad=true + KeepAlive=true`,Mac 重启 / daemon 崩溃都会自动拉起。每个 plist 显式设了 `PATH=/opt/homebrew/bin:/usr/bin:/bin`(否则 wx-ops-agent 找不到 `sqlcipher`)、text-watch 显式 `--run-chains`(否则外部链永远 pending)。
 
 ---
 
 ## 3. 怎么重启每个 daemon
 
-详细命令在 [docs/operations.md](operations.md)(如果不存在,先看下面)。简略:
+**改了代码或卡死时 → `launchctl kickstart -k`**(launchd 自动起新实例):
 
 ```bash
-# wx-ops-agent
-cd ~/projects/repos/wx-ops-agent
-pkill -f "wechat_ops_agent.cli.main"; sleep 2
-nohup env PYTHONPATH=src /opt/homebrew/bin/python3.14 \
-  -m wechat_ops_agent.cli.main run-daemon -k current_keys.json \
-  --interval 300 --ui-mode auto --doc-detail-mode shallow \
-  >> logs/daemon.log 2>&1 &
-disown
+launchctl kickstart -k "gui/$(id -u)/com.qicai21.wechat-ops-agent"
+launchctl kickstart -k "gui/$(id -u)/com.qicai21.sop-data-hub.live-service"
+launchctl kickstart -k "gui/$(id -u)/com.qicai21.sop-data-hub.text-watch"
+launchctl kickstart -k "gui/$(id -u)/com.qicai21.rail95306-sync"
+launchctl kickstart -k "gui/$(id -u)/com.qicai.qwen3vl.mlx"      # 顺手:VLM 服务
+```
 
-# rail95306-sync
-cd ~/projects/repos/rail95306-sync
-nohup /opt/homebrew/bin/python3.14 tools/run_sync_worker.py \
-  >> runtime/sync_worker.log 2>&1 & disown
+改代码触发哪个重启:
 
-# sop-data-hub text_watch
-cd ~/projects/repos/sop-data-hub
-nohup env PYTHONPATH=src /opt/homebrew/bin/python3.14 \
-  -m sop_hub.sop.text_watch_daemon --db data/sop_agent.db \
-  --interval 5 --quiet >> runtime/text_watch.log 2>&1 & disown
+- 改 `agent.py` / `runner.py` / image route → kickstart **live-service** + **text-watch**(内存里是老 module 不会 hot reload)
+- 改 chain / executor / freight_detail / lifecycle / engines/* → kickstart **text-watch**(live-service 不跑 chain 不用动)
+- 改 wx UI 行为 / zstd → kickstart **wechat-ops-agent**
+- 改 95306 query / verifier → kickstart **rail95306-sync**
 
-# CLI 看板
+**⚠️ 千万别再用老的 `nohup … & disown`**(2026-06-08 重启之前的方式)。那种 daemon PPID=1 但脱离 launchd 管理,Mac 重启就死,**不会自动恢复**。2026-06-08 中唐 36 车 9 小时静默就栽在这里。
+
+```bash
+# CLI 看板(不是 daemon,手开)
 tmux new -s board -d "cd ~/projects/repos/sop-data-hub && \
   PYTHONPATH=src python3 scripts/cli_dashboard.py"
-tmux attach -t board   # 看
+tmux attach -t board   # Ctrl-B D 后台,Ctrl-C 退出
 ```
 
 ---

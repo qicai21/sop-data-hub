@@ -157,47 +157,80 @@ def _find_release_batch(
     *,
     db_path: str | Path | None = None,
 ) -> dict[str, str] | None:
-    """Find a release_batch matching ship_name + destination.
+    """#126 (2026-06-07): phase-aware match — 只匹配 enriched/loading 的 batch。
 
-    Prefers 'in_progress' over 'completed' batches.
+    Returns dict with 'id', 'ship_name' on match.
+    Returns None when **no open lot is available**. Caller should look at
+    `find_release_batch_with_reason()` if it needs to differentiate
+    "ship 没找到" vs "ship 找到了但全 all_loaded"。
     """
+    rb, _reason, _candidates = find_release_batch_with_reason(
+        ship_name, destination, db_path=db_path,
+    )
+    return rb
+
+
+def find_release_batch_with_reason(
+    ship_name: str,
+    destination: str,
+    *,
+    db_path: str | Path | None = None,
+) -> tuple[dict[str, str] | None, str, list[str]]:
+    """Return (batch_dict|None, reason_code, candidate_batch_ids).
+
+    reason_code:
+      - "ok"               : 找到 enriched/loading batch
+      - "all_loaded_full"  : ship+dest 有 batch,但全在 all_loaded 之后(plan 满)
+      - "ship_not_found"   : ship 名在系统里没有
+      - "no_open_lot"      : ship 有 batch,但 phase 不在 open 集(可能都 pending_freight)
+    candidate_batch_ids:
+      reason='all_loaded_full' 时,返回那些被过滤掉的 batch_id 让 caller 落 pending
+    """
+    from sop_hub.sop.lifecycle import PHASES_OPEN_TO_DEPARTURE_MATCH
+
     sop_path = _resolve_sop_db_path() if db_path is None else Path(db_path)
     if not sop_path.exists():
-        return None
+        return None, "ship_not_found", []
+
+    open_phases = tuple(PHASES_OPEN_TO_DEPARTURE_MATCH)
+    placeholders = ",".join("?" * len(open_phases))
 
     conn = sqlite3.connect(str(sop_path))
     conn.row_factory = sqlite3.Row
     try:
-        rows = conn.execute(
-            """SELECT id, ship_name, dispatch_status, destination_station, project
-               FROM release_batches
-               WHERE ship_name LIKE ? AND destination_station LIKE ?
-               ORDER BY CASE dispatch_status
-                   WHEN 'in_progress' THEN 0
-                   WHEN 'active' THEN 1
-                   ELSE 2
-               END
-               LIMIT 3""",
+        # 先取 ship+dest 全部 batch(任何 phase)看分布
+        all_rows = conn.execute(
+            "SELECT id, ship_name, dispatch_status, destination_station, project "
+            "FROM release_batches WHERE ship_name LIKE ? AND destination_station LIKE ?",
             (f"%{ship_name}%", f"%{destination}%"),
         ).fetchall()
+        if not all_rows:
+            # 试 ship-only(老 fallback)
+            rows2 = conn.execute(
+                "SELECT id, ship_name, dispatch_status FROM release_batches "
+                "WHERE ship_name LIKE ?", (f"%{ship_name}%",),
+            ).fetchall()
+            if not rows2:
+                return None, "ship_not_found", []
+            all_rows = rows2
 
-        if rows:
-            r = rows[0]
-            return {"id": r["id"], "ship_name": r["ship_name"] or ship_name}
+        open_rows = [r for r in all_rows if r["dispatch_status"] in open_phases]
+        if open_rows:
+            # 优先 loading 再 enriched(loading 已开始装,优先填满)
+            open_rows.sort(
+                key=lambda r: (0 if r["dispatch_status"] == "loading" else 1),
+            )
+            r = open_rows[0]
+            return ({"id": r["id"], "ship_name": r["ship_name"] or ship_name},
+                    "ok", [])
 
-        rows2 = conn.execute(
-            """SELECT id, ship_name, dispatch_status, destination_station, project
-               FROM release_batches
-               WHERE ship_name LIKE ?
-               ORDER BY dispatch_status DESC
-               LIMIT 1""",
-            (f"%{ship_name}%",),
-        ).fetchall()
-        if rows2:
-            r = rows2[0]
-            return {"id": r["id"], "ship_name": r["ship_name"] or ship_name}
-
-        return None
+        # ship 有 batch 但没 open 的 — 区分 all_loaded vs 其他
+        beyond_loading = ["all_loaded", "tracking", "delivered",
+                          "confirmed_received", "closed"]
+        full_rows = [r for r in all_rows if r["dispatch_status"] in beyond_loading]
+        if full_rows:
+            return None, "all_loaded_full", [r["id"] for r in full_rows]
+        return None, "no_open_lot", [r["id"] for r in all_rows]
     finally:
         conn.close()
 
@@ -247,16 +280,41 @@ def run_departure_executor_chain(
     elif candidate.status == "incomplete":
         preview.skipped_reason = f"departure incomplete: car_count={candidate.car_count}"
     else:
-        # ── Step 2: find matching release_batch ───────────────────────
+        # ── Step 2: find matching release_batch (#126 phase-aware) ────
         rb = None
+        match_reason = "ship_not_found"
+        candidate_batch_ids: list[str] = []
         if candidate.optional_ship_name:
-            rb = _find_release_batch(
+            rb, match_reason, candidate_batch_ids = find_release_batch_with_reason(
                 candidate.optional_ship_name, candidate.destination, db_path=db_path
             )
         if rb is None:
+            # #126:落 pending_match 表等用户审,不强配
+            try:
+                from sop_hub.sop.release_batch_pending_match import create_pending
+                create_pending(
+                    message_id=event.message_id,
+                    reason=match_reason,
+                    ship_name=candidate.optional_ship_name or "",
+                    destination=candidate.destination or "",
+                    car_count=candidate.car_count,
+                    text_content=getattr(event, "text", "") or "",
+                    received_at=getattr(event, "received_at", "") or "",
+                    group_id=event.group_id or "",
+                    project_id=candidate.project_id,
+                    candidate_batch_ids=candidate_batch_ids,
+                    db_path=db_path,
+                )
+            except Exception as exc:
+                preview.error += f"pending_match create: {exc}; "
+            human_reason = {
+                "all_loaded_full": "船所有 lot 都已 all_loaded(plan 满),挂起待用户配新 lot 或挪票",
+                "ship_not_found":  f"ship={candidate.optional_ship_name!r} 不在系统",
+                "no_open_lot":     "船有 batch 但 phase 不在 open(enriched/loading)集",
+            }.get(match_reason, match_reason)
             preview.skipped_reason = (
-                f"no release_batch found for ship={candidate.optional_ship_name} "
-                f"dest={candidate.destination}"
+                f"no open release_batch for ship={candidate.optional_ship_name} "
+                f"dest={candidate.destination} — {human_reason}"
             )
         else:
             preview.release_batch_id = rb["id"]
@@ -306,28 +364,114 @@ def run_departure_executor_chain(
             preview.wagon_planned_insert = wagon_result.planned_insert_count
             preview.wagon_actual_insert = wagon_result.inserted_count
 
+            # ── Step 4b: plan-aware allocation(#111 Phase 2 2026-06-06)──
+            # 集装箱多 lot 共存时,看 release_batch_dispatch_plan;有 plan 走
+            # box-level 分配 + per-event excel/upload,跨 lot 自动拆箱。无 plan
+            # 维持单 batch 老路径(适合 1 lot in_progress 的简单场景)。
+            plan_mode = False
+            event_wagon_ids: list[str] = []
+            try:
+                from sop_hub.sop.dispatch_plan import (
+                    list_active_plans, allocate_wagons,
+                )
+                ship_name = preview.release_batch_ship or rb.get("ship_name") or ""
+                project_id_local = candidate.project_id
+                active_plans = (
+                    list_active_plans(project_id_local, ship_name, db_path=db_path)
+                    if (project_id_local and ship_name)
+                    else []
+                )
+                if active_plans and wagon_result.status == "safe_to_apply":
+                    # 取本次刚 INSERT 的 wagons:car_nos 来自 wagon_result.plans 里
+                    # action='insert' 的;再 + match source_message_id 当幂等关键
+                    inserted_car_nos = [
+                        p.wagon_no for p in wagon_result.plans
+                        if p.action in ("insert", "skip_existing")
+                        and p.wagon_no
+                    ]
+                    if inserted_car_nos:
+                        import sqlite3 as _sql
+                        _c = _sql.connect(str(db_path))
+                        _c.row_factory = _sql.Row
+                        in_ph = ",".join("?" * len(inserted_car_nos))
+                        # 取属于这个 release_batch 的、刚插的车 IDs
+                        rows = _c.execute(
+                            f"SELECT id FROM wagon_shipments "
+                            f"WHERE car_no IN ({in_ph}) AND batch_id=?",
+                            (*inserted_car_nos, preview.release_batch_id),
+                        ).fetchall()
+                        event_wagon_ids = [r["id"] for r in rows]
+                        _c.close()
+                        if event_wagon_ids:
+                            # force_overwrite=True:本次新 INSERT 的 wagon,
+                            # step 3 给了 placeholder batch_id(指向 active plan
+                            # 的一个 lot),allocate_wagons 老的幂等检查会误判
+                            # 已分配 → 50 车全堆 placeholder lot。
+                            alloc = allocate_wagons(
+                                event_wagon_ids, project_id_local, ship_name,
+                                db_path=db_path, force_overwrite=True,
+                            )
+                            plan_mode = True
+                            preview.error += "" if not alloc.error else f"plan_alloc: {alloc.error}; "
+                            # #128 lifecycle 触发器:plan 装满了的 batch → all_loaded
+                            # (alloc.closed_batches 是本次 allocate 把 remaining
+                            # 装到 0 的那些 lot,plan 满意味着拒绝新装车通知)
+                            try:
+                                from sop_hub.sop.lifecycle_transition import advance_lifecycle
+                                for closed_bid in (alloc.closed_batches or []):
+                                    advance_lifecycle(
+                                        closed_bid, "all_loaded",
+                                        reason=f"plan 装满({ship_name})",
+                                        triggered_by="chain.step4b.allocate_wagons",
+                                        db_path=db_path,
+                                    )
+                                # 主 batch(还在装的)→ 至少推到 loading(若之前是
+                                # pending_freight/enriched)
+                                advance_lifecycle(
+                                    preview.release_batch_id, "loading",
+                                    reason=f"first wagons ingested into {ship_name}",
+                                    triggered_by="chain.step4.create_wagon_shipments",
+                                    db_path=db_path,
+                                )
+                            except Exception as exc:
+                                preview.error += f"lifecycle_advance: {exc}; "
+            except Exception as exc:
+                preview.error += f"plan_alloc: {exc}; "
+
             # ── Step 5: departure_excel + factory_upload(仅 safe_to_apply)─
             if wagon_result.status == "safe_to_apply":
-                # Trigger Excel + factory even if all wagons already exist
-                # (idempotent: create_wagon_shipments skips existing, but we
-                #  still want to re-generate Excel and re-upload)
                 try:
-                    from sop_hub.sop.departure_excel import generate_departure_excel
-                    excel_result = generate_departure_excel(
-                        preview.release_batch_id, db_path=db_path
-                    )
+                    if plan_mode and event_wagon_ids:
+                        # plan 分配后跨 lot:用 per-event excel(#107)
+                        from sop_hub.sop.departure_excel import generate_dispatch_event_excel
+                        excel_result = generate_dispatch_event_excel(
+                            wagon_ids=event_wagon_ids, db_path=db_path,
+                        )
+                    else:
+                        from sop_hub.sop.departure_excel import generate_departure_excel
+                        excel_result = generate_departure_excel(
+                            preview.release_batch_id, db_path=db_path,
+                        )
                     preview.excel_path = excel_result.output_path
-                    preview.excel_rows = excel_result.row_count
-                    preview.excel_wagons = excel_result.wagon_count
+                    preview.excel_rows = getattr(excel_result, "row_count", 0)
+                    preview.excel_wagons = getattr(excel_result, "wagon_count", 0)
                 except Exception as exc:
                     preview.error += f"excel: {exc}; "
 
                 try:
-                    from sop_hub.sop.factory_upload import upload_release_batch
-                    factory_result = upload_release_batch(
-                        preview.release_batch_id,
-                        db_path=db_path,
-                    )
+                    if plan_mode and event_wagon_ids:
+                        # plan 分配后跨 lot:用 per-event upload(#107)
+                        from sop_hub.sop.factory_upload import upload_dispatch_event_wagons
+                        factory_result = upload_dispatch_event_wagons(
+                            wagon_ids=event_wagon_ids,
+                            project_id=candidate.project_id,
+                            db_path=db_path,
+                        )
+                    else:
+                        from sop_hub.sop.factory_upload import upload_release_batch
+                        factory_result = upload_release_batch(
+                            preview.release_batch_id, db_path=db_path,
+                        )
                     preview.factory_login = factory_result.login_success
                     preview.factory_login_error = factory_result.login_error
                     preview.factory_payloads = factory_result.total_wagons
@@ -337,30 +481,54 @@ def run_departure_executor_chain(
                     preview.error += f"factory_upload: {exc}; "
 
                 # ── Step 5b: verify factory upload (R55) ──────────────
+                # plan 模式时按 order_identifier_groups 逐组 verify;否则单 batch verify
                 try:
                     from sop_hub.sop.factory_verify import verify_factory_upload
-                    batch_ord = preview.release_batch_id
-                    verify = verify_factory_upload(
-                        order_id="",
-                        release_batch_id=batch_ord,
-                    )
-                    preview.factory_verified = True
-                    preview.factory_verify_total_match = verify.total_match
-                    preview.factory_verify_boxes_ok = verify.all_boxes_found
-                    preview.factory_verify_api_total = verify.api_total
-                    if not verify.all_boxes_found:
-                        preview.error += (
-                            f"verify: total_match={verify.total_match} "
-                            f"missing={len(verify.missing_boxes)} "
-                            f"extra={len(verify.extra_boxes)}; "
+                    if plan_mode and hasattr(factory_result, "order_identifier_groups"):
+                        verify_total_match = True
+                        verify_all_boxes = True
+                        verify_api_total = 0
+                        for oid in factory_result.order_identifier_groups.keys():
+                            # 每个 order_identifier 反查一次(对应 1 个 release_batch)
+                            bids = factory_result.order_identifier_groups[oid]
+                            for bid in bids:
+                                v = verify_factory_upload(
+                                    order_id=oid, release_batch_id=bid,
+                                )
+                                verify_total_match = verify_total_match and v.total_match
+                                verify_all_boxes = verify_all_boxes and v.all_boxes_found
+                                verify_api_total += v.api_total
+                        preview.factory_verified = True
+                        preview.factory_verify_total_match = verify_total_match
+                        preview.factory_verify_boxes_ok = verify_all_boxes
+                        preview.factory_verify_api_total = verify_api_total
+                        if not verify_all_boxes:
+                            preview.error += "verify(per-event): some boxes missing; "
+                    else:
+                        verify = verify_factory_upload(
+                            order_id="", release_batch_id=preview.release_batch_id,
                         )
+                        preview.factory_verified = True
+                        preview.factory_verify_total_match = verify.total_match
+                        preview.factory_verify_boxes_ok = verify.all_boxes_found
+                        preview.factory_verify_api_total = verify.api_total
+                        if not verify.all_boxes_found:
+                            preview.error += (
+                                f"verify: total_match={verify.total_match} "
+                                f"missing={len(verify.missing_boxes)} "
+                                f"extra={len(verify.extra_boxes)}; "
+                            )
                 except Exception as exc:
                     preview.error += f"factory_verify: {exc}; "
 
                 # ── Step 6: send Excel to contact (R55) ──────────────
                 try:
                     from sop_hub.sop.send_excel import send_to_wechat
-                    target = "郭东北"
+                    # 2026-06-06:不再硬编码 "郭东北"。收件人由 jilin yaml
+                    # flows.report_delivery_flow.send_report.target_group 决定
+                    # (当前 ["GROUP013"] = 数据单发群)。yaml 缺配置才兜底。
+                    from sop_hub.sop.workflow_task_executor import _resolve_send_target
+                    target = _resolve_send_target("jilin_jingang_jinzhou") or "[GROUP013]"
                     batch_ship = preview.release_batch_ship
                     msg = f"吉林金钢发运数据 {batch_ship} lot02 {excel_result.wagon_count}车"
                     send_result = send_to_wechat(

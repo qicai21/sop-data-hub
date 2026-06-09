@@ -33,7 +33,8 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from sop_hub.sop.dashboard_payload_queue import build_dashboard_payload_queue, write_dashboard_payload_queue
-from sop_hub.sop.dashboard_state_preview import build_dashboard_state_preview, write_dashboard_state_preview
+# dashboard_state_preview removed 2026-06-06: 老 HTML 看板 JSON 预览已废,
+# CLI dashboard 直查 sop_agent.db,中间 JSON 不需要了
 from sop_hub.sop.monitoring_plan_matcher import match_message_event
 from sop_hub.sop.monitoring_plan_preview import build_real_sop_monitoring_plan_preview
 from sop_hub.sop.executor_runner import run_departure_executor_chain_if_applicable
@@ -306,7 +307,6 @@ def _validate_startup(
     required_dirs = [
         runtime_root / "events",
         runtime_root / "dashboard_intents",
-        runtime_root / "dashboard_state",
     ]
     for d in required_dirs:
         d.mkdir(parents=True, exist_ok=True)
@@ -318,19 +318,40 @@ def _validate_startup(
 
 # ── R59.1: waiting_media index (retry for images whose download completes later) ──
 
+# 2026-06-06(#109):key 改为 group_name:month_stem:local_id 复合键。
+# 旧用 event.message_id (wx_<seq>),seq 每月归 0,跨月撞同名 → retry path 拿到
+# 过期月份的 source_file → 永远找不到 payload → 死循环 retry。
+# 新 key 直接锁定 jsonl 文件 + 文件内 local_id,全局唯一,无碰撞。
+# 同时加 max_retries 阈值,超阈值直接标 abandoned,避免历史死任务占用 retry 轮。
+_WAITING_MEDIA_MAX_RETRIES = 200
+
+
 def _waiting_media_index_path(runtime_root: Path) -> Path:
     return runtime_root / "waiting_media_index.json"
+
+
+def _compute_todo_key(source_file: str | Path, local_id: Any) -> str:
+    """Globally-unique key for a waiting_media entry.
+
+    格式 ``<group_name>:<jsonl_stem>:<local_id>``,例:
+    ``铁晟业务工作群:2026-06:313``。group + month + local_id 三段唯一锁定一条消息。
+    """
+    p = Path(str(source_file)) if source_file else Path("")
+    group_name = p.parent.name if p.parent.name and p.parent.name != "." else ""
+    stem = p.stem if p.name else ""
+    lid_str = "" if local_id is None else str(local_id)
+    return f"{group_name}:{stem}:{lid_str}"
 
 
 def _load_waiting_media_index(runtime_root: Path) -> dict[str, Any]:
     path = _waiting_media_index_path(runtime_root)
     if not path.exists():
-        return {"version": 1, "items": {}}
+        return {"version": 2, "items": {}}
     try:
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
-        return {"version": 1, "items": {}}
+        return {"version": 2, "items": {}}
 
 
 def _save_waiting_media_index(runtime_root: Path, index: dict[str, Any]) -> Path:
@@ -346,16 +367,19 @@ def _save_waiting_media_index(runtime_root: Path, index: dict[str, Any]) -> Path
 def _add_to_waiting_media_index(runtime_root: Path, event: Any, logger: logging.Logger) -> None:
     """Record a waiting_media event so it can be retried when the image becomes available."""
     index = _load_waiting_media_index(runtime_root)
-    mid = event.message_id
-    if mid in index.get("items", {}):
-        entry = index["items"][mid]
+    source_file = event.metadata.get("source_file", "")
+    local_id = event.metadata.get("local_id")
+    todo_key = _compute_todo_key(source_file, local_id)
+    if todo_key in index.get("items", {}):
+        entry = index["items"][todo_key]
         entry["retries"] = entry.get("retries", 0) + 1
         entry["last_checked_at"] = _utc_now_iso()
     else:
-        index["items"][mid] = {
-            "message_id": mid,
-            "source_file": event.metadata.get("source_file", ""),
-            "local_id": event.metadata.get("local_id"),
+        index["items"][todo_key] = {
+            "todo_key": todo_key,
+            "message_id": event.message_id,
+            "source_file": source_file,
+            "local_id": local_id,
             "group_name": event.metadata.get("group_name", ""),
             "image_md5": event.metadata.get("image_md5", ""),
             "msg_path": event.metadata.get("msg_path", ""),
@@ -364,20 +388,20 @@ def _add_to_waiting_media_index(runtime_root: Path, event: Any, logger: logging.
             "retries": 0,
             "status": "waiting",
         }
-        logger.info("waiting_media_index: added message_id=%s", mid)
-    index["items"][mid]["last_checked_at"] = _utc_now_iso()
+        logger.info("waiting_media_index: added todo_key=%s message_id=%s", todo_key, event.message_id)
+    index["items"][todo_key]["last_checked_at"] = _utc_now_iso()
     _save_waiting_media_index(runtime_root, index)
 
 
-def _mark_waiting_media_done(runtime_root: Path, message_id: str, logger: logging.Logger, index: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Mark a waiting_media entry as done in-place, or load/save if no index provided."""
+def _mark_waiting_media_done(runtime_root: Path, todo_key: str, logger: logging.Logger, index: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Mark a waiting_media entry as done. ``todo_key`` 是 items dict 的真实 key。"""
     if index is None:
         index = _load_waiting_media_index(runtime_root)
-    if message_id in index.get("items", {}):
-        index["items"][message_id]["status"] = "done"
-        index["items"][message_id]["resolved_at"] = _utc_now_iso()
+    if todo_key in index.get("items", {}):
+        index["items"][todo_key]["status"] = "done"
+        index["items"][todo_key]["resolved_at"] = _utc_now_iso()
         _save_waiting_media_index(runtime_root, index)
-        logger.info("waiting_media_index: marked done message_id=%s", message_id)
+        logger.info("waiting_media_index: marked done todo_key=%s", todo_key)
     return index
 
 
@@ -400,13 +424,25 @@ def _retry_waiting_media(
     watcher = WxOpsSourceWatcher(chat_records_root=chat_records_root)
 
     for mid, entry in list(items.items()):
-        if entry.get("status") == "done":
+        if entry.get("status") in ("done", "abandoned"):
+            continue
+
+        # #109:retry 超阈值 → 标 abandoned。绝大多数死任务是跨月 source_file 撞名
+        # (旧版 wx_<seq> key)或 jsonl 已轮转 — 无脑 retry 永远不会成功。
+        retries_now = int(entry.get("retries") or 0)
+        if retries_now >= _WAITING_MEDIA_MAX_RETRIES:
+            logger.warning(
+                "waiting_media_retry: max retries reached (%d) for mid=%s, marking abandoned",
+                retries_now, mid,
+            )
+            entry["status"] = "abandoned"
+            entry["abandoned_at"] = _utc_now_iso()
             continue
 
         source_file = entry.get("source_file", "")
         local_id = entry.get("local_id")
         if not source_file:
-            logger.warning("waiting_media_retry: no source_file for message_id=%s, marking done", mid)
+            logger.warning("waiting_media_retry: no source_file for mid=%s, marking done", mid)
             _mark_waiting_media_done(runtime_root, mid, logger)
             continue
 
@@ -433,7 +469,7 @@ def _retry_waiting_media(
 
         if payload is None:
             # Payload not found — skip, keep in index for now
-            entry["retries"] = entry.get("retries", 0) + 1
+            entry["retries"] = retries_now + 1
             entry["last_checked_at"] = _utc_now_iso()
             continue
 
@@ -445,7 +481,7 @@ def _retry_waiting_media(
         if new_ps != "waiting_media":
             # Media is now available — process it
             logger.info(
-                "waiting_media_retry: media ready message_id=%s media_status=%s -> %s",
+                "waiting_media_retry: media ready mid=%s media_status=%s -> %s",
                 mid, entry.get("media_status"), new_ms,
             )
             process_event_once(
@@ -460,10 +496,10 @@ def _retry_waiting_media(
             index = _mark_waiting_media_done(runtime_root, mid, logger, index=index)
             retried += 1
         else:
-            entry["retries"] = entry.get("retries", 0) + 1
+            entry["retries"] = retries_now + 1
             entry["last_checked_at"] = _utc_now_iso()
             entry["media_status"] = new_ms
-            logger.debug("waiting_media_retry: still waiting message_id=%s retries=%d", mid, entry["retries"])
+            logger.debug("waiting_media_retry: still waiting mid=%s retries=%d", mid, entry["retries"])
 
     if retried:
         # Reload index to get the latest state (avoid overwriting done marks)
@@ -545,8 +581,22 @@ def _update_inbox_classification(
     conn.close()
 
 
+class InboxWriteRetryNeeded(Exception):
+    """#117: message_inbox upsert / text_router 失败时抛出。
+
+    调用方(_poll_sources)接住后:不前进 cursor,下一轮 polling 重试。
+    """
+
+
 def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: Path, logger: logging.Logger, apply_mode: bool = False, cursor: dict[str, Any] | None = None, cursor_path_override: Path | None = None, write_message_inbox: bool = True) -> dict[str, Any]:
     # R61: optionally write to message_inbox before any processing
+    # #117 (2026-06-07): inbox upsert / text_router classify 之前是 try/except 吞掉
+    # warning,cursor 仍单调推进 → 这条消息**永远不会被重试**。当 daemon 自锁/
+    # sqlite locked 等瞬态故障来临时,SOP 会跳过本应触发的链(蓝鳍 wx_367 / 中唐
+    # 鞍子河 inbox 88 都是这条根因)。
+    # 新规则:write_message_inbox=True 时,upsert 或 text_router 任一失败 → 抛
+    # InboxWriteRetryNeeded,调用方(_poll_sources)负责不前进 cursor,下一轮重试。
+    inbox_write_failed_reason: str | None = None
     if write_message_inbox:
         try:
             from sop_hub.sop.message_inbox import ensure_message_inbox_schema, upsert_message_inbox_event
@@ -554,9 +604,11 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
             upsert_message_inbox_event(event)
         except Exception as exc:
             logger.warning("message_inbox: upsert failed for %s: %s", event.message_id, exc)
+            inbox_write_failed_reason = f"upsert failed: {exc}"
 
     # R67: text routing — classify text messages and write SOP fields back
-    if write_message_inbox and event.message_type == "text" and event.text:
+    if (write_message_inbox and event.message_type == "text" and event.text
+            and inbox_write_failed_reason is None):
         try:
             from sop_hub.sop.text_router import classify_text_message, update_message_inbox_with_route
             route = classify_text_message(event)
@@ -572,6 +624,13 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
             )
         except Exception as exc:
             logger.warning("text_router: failed for %s: %s", event.message_id, exc)
+            inbox_write_failed_reason = f"text_router failed: {exc}"
+
+    if inbox_write_failed_reason is not None:
+        # 关键:不推 cursor、不生成 workflow_task,留给下一轮重试
+        raise InboxWriteRetryNeeded(
+            f"message_id={event.message_id}: {inbox_write_failed_reason}"
+        )
 
     # R59: check for waiting_media — skip OCR/VLM/executor but record event and advance cursor
     processing_status = event.metadata.get("processing_status", "ready")
@@ -654,6 +713,12 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
                             "image_auto: inbox update failed for %s: %s",
                             event.message_id, _inbox_exc,
                         )
+                        # #117: inbox 写失败 → 不推 cursor,让下一轮重试。
+                        # 否则 classification/extraction 信息丢失,中唐 inbox 88
+                        # 的 sop_project_id / extraction_json_path 漏写就是这条根因。
+                        raise InboxWriteRetryNeeded(
+                            f"image_auto inbox update failed for {event.message_id}: {_inbox_exc}"
+                        )
             except Exception as exc:
                 logger.warning("image_auto: processing failed for %s: %s", event.message_id, exc)
                 image_auto_result = {"error": str(exc)}
@@ -671,20 +736,14 @@ def process_event_once(*, event, monitoring_plan: dict[str, Any], runtime_root: 
         output_dir=runtime_root / "dashboard_intents",
     )
     payload_paths = write_dashboard_payload_queue(payload_queue)
-
-    preview = build_dashboard_state_preview(
-        payload_queue,
-        updated_at=event.received_at or _utc_now_iso(),
-        output_dir=runtime_root / "dashboard_state",
-    )
-    state_paths = write_dashboard_state_preview(preview)
+    # 2026-06-06:删 build/write_dashboard_state_preview(老 HTML 看板配套)
+    state_paths: list = []
 
     logger.info(
-        "processed event message_id=%s group_id=%s payloads=%s states=%s event_path=%s",
+        "processed event message_id=%s group_id=%s payloads=%s event_path=%s",
         event.message_id,
         event.group_id,
         len(payload_paths),
-        len(state_paths),
         event_path,
     )
 
@@ -781,14 +840,22 @@ def run_once(
         if key in seen:
             continue
         seen.add(key)
-        process_event_once(
-            event=event, monitoring_plan=monitoring_plan, runtime_root=runtime_root,
-            logger=logger, apply_mode=apply_mode,
-            cursor=cursor if not ignore_cursor else None,
-            cursor_path_override=cursor_path_override,
-            write_message_inbox=write_message_inbox,
-        )
-        processed += 1
+        try:
+            process_event_once(
+                event=event, monitoring_plan=monitoring_plan, runtime_root=runtime_root,
+                logger=logger, apply_mode=apply_mode,
+                cursor=cursor if not ignore_cursor else None,
+                cursor_path_override=cursor_path_override,
+                write_message_inbox=write_message_inbox,
+            )
+            processed += 1
+        except InboxWriteRetryNeeded as exc:
+            # #117: inbox 写失败 → cursor 不前进,seen 也撤回让下一轮可重试。
+            # 否则瞬态 db lock 会让单条消息永久消失。
+            logger.warning("inbox_retry_needed: %s (cursor not advanced)", exc)
+            seen.discard(key)
+            # 不 break:同 poll 轮里别的 event 还能继续;cursor 由 _update_cursor_for_event
+            # 单条 advance,这条没 advance 就还在 last_local_id 后头,下轮自然重试。
 
     # ── R59.1: retry waiting_media whose images may now be available ───
     retried = _retry_waiting_media(
@@ -849,7 +916,6 @@ def run_live_service(
     logger.info("runtime_root=%s", runtime_root)
     logger.info("event_output=%s", runtime_root / "events")
     logger.info("dashboard_intents_output=%s", runtime_root / "dashboard_intents")
-    logger.info("dashboard_state_output=%s", runtime_root / "dashboard_state")
     logger.info("log_path=%s", log_path)
     logger.info("fixture_dir=%s", fixture_dir)
 
@@ -875,7 +941,6 @@ def run_live_service(
     runtime_root.mkdir(parents=True, exist_ok=True)
     (runtime_root / "events").mkdir(parents=True, exist_ok=True)
     (runtime_root / "dashboard_intents").mkdir(parents=True, exist_ok=True)
-    (runtime_root / "dashboard_state").mkdir(parents=True, exist_ok=True)
 
     # ── R26: initialize SOP watcher ──────────────────────────────────────
     sop_watcher = _get_sop_watcher(fixture_dir)

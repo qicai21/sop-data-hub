@@ -352,11 +352,16 @@ def run_departure_executor_chain(
             preview.query_total_candidates = query_result.total_candidates
 
             # ── Step 4: create_wagon_shipments(内部按 status 自我把关)──
+            # 2026-06-11 fix ②:allow_partial=True 接受 candidate_count < expected_car_count
+            # 业务事实:"煤六 61 节" 这种 lane 可能是混合列车(柔远空箱 55 + 蓝鳍重箱 6),
+            # 95306 反查只能命中本项目的 6 节;严格阈值会卡 chain → step 4-6 全停。
+            # 真正的完整性由 step 5b factory_verify 反查工厂 list API 担保,这里放过。
             wagon_result = create_wagon_shipments_from_candidates(
                 release_batch_id=preview.release_batch_id,
                 departure_candidate=candidate,
                 shipment_query_result=query_result,
                 db_path=db_path,
+                allow_partial=True,
             )
             wr_dict = wagon_result.to_dict()
             preview.wagon_result = wr_dict

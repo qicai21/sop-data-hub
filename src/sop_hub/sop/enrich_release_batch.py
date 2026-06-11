@@ -358,10 +358,29 @@ def auto_enrich_release_batches_from_freight_detail(
             if rows:
                 matched_by = "contract_no"
 
+        # 2026-06-11 fix ①:出港计划通知单建出的新 lot,contract_no/order_identifier
+        # 通常是空(图里没有这俩号),CGR/HNMC 永远查不到。此时 fallback 到业务身份:
+        # project + cargo_name(detail) + dispatch_status IN ('loading','pending_freight').
+        # 取最新一笔(notice_date DESC),把 CGR/HNMC 填进去。这是唯一合理 fallback —
+        # cargo "印粉" 是货物粒度,跟 release_batches.cargo_name="铁矿" 不一定一致,
+        # 所以用 project 当主键 + 状态过滤 + ORDER BY 取最新待补 batch.
+        if not rows and candidate.project_id:
+            rows = conn.execute(
+                """SELECT * FROM release_batches
+                   WHERE project=? AND dispatch_status IN ('loading','pending_freight')
+                     AND (contract_no='' OR contract_no IS NULL)
+                     AND (order_identifier='' OR order_identifier IS NULL)
+                   ORDER BY notice_date DESC, created_at DESC
+                   LIMIT 1""",
+                (candidate.project_id,),
+            ).fetchall()
+            if rows:
+                matched_by = "ship_cargo_status_fallback"
+
         if not rows:
             return {
                 "status": "no_match",
-                "reason": "no release_batch with matching CGR/HNMC",
+                "reason": "no release_batch with matching CGR/HNMC or ship/cargo/status fallback",
                 "candidate": candidate.to_dict(),
                 "results": [],
             }

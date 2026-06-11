@@ -1593,7 +1593,29 @@ class BusinessDataAgent:
         # 之前 dedup map 把 c600 (notice=5/11 lot01) 跟新 9918a9
         # (notice=5/29 lot01) 按 sequence='lot01' 互比 → 误报
         # review_needed("date/qty 不一致")。
-        if existing_batches and notice_date:
+        #
+        # 2026-06-11 fix ③:project policy 分流。
+        # chaoyang yaml 明示 do_not_merge_release_batches=true → 走 notice_date scope.
+        # jilin 没这配置,业务模型是"累计计划通知单"(一图含 7 次 remarks 累计),
+        # 跨 notice 同 sequence 应对账,不该 scope 清空。否则:6/10 新通知单包含
+        # 5/21/5/27/5/29 历史 remarks,这些 remark 的 batch_date 跟历史 lot 完全
+        # 一致,但 notice_date 不同 → existing 被清空 → 误建重复 lot。
+        _scope_by_notice = True  # 默认走原 chaoyang 行为(safer fallback)
+        try:
+            import yaml as _yaml
+            for _yml in PROJECT_SOPS_DIR.glob("*.yaml"):
+                with open(_yml, "r", encoding="utf-8") as _f:
+                    _y = _yaml.safe_load(_f) or {}
+                if _y.get("project_id") != project:
+                    continue
+                # 优先 release_batch_policy(顶层),其次 chaoyang 嵌在
+                # release_notice_flow.steps[].rule 里也有,简化只看顶层。
+                _pol = _y.get("release_batch_policy", {}) or {}
+                _scope_by_notice = bool(_pol.get("do_not_merge_release_batches", False))
+                break
+        except Exception:
+            pass
+        if _scope_by_notice and existing_batches and notice_date:
             scoped = [
                 eb for eb in existing_batches
                 if (eb.get("notice_date") or "") == notice_date

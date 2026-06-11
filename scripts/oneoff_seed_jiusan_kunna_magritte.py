@@ -151,15 +151,10 @@ def insert_container_shipments(conn, rail_conn, kc_matches, mc_matches,
             r95 = rows95.get(ydid)
             if not r95:
                 continue
-            boxes = boxes_map.get((cn, d_str), [])
-            # 兜底:从 95306 container_no_raw 拆
-            if not boxes and r95[3]:
-                box_chunks = []
-                for token in r95[3].split("/"):
-                    digits = "".join(c for c in token if c.isdigit())
-                    if digits:
-                        box_chunks.append(digits[-7:])
-                boxes = box_chunks
+            # box_no 一律取 95306 container_no_raw 的完整 11 位 ISO 箱号
+            # (manifest box_no 是 7 位裸数字,不要用作 box_no 字段值;
+            #  工厂端按 11 位归档,本地必须对齐 — 见 2026-06-10 box_no 一致性 fix)
+            boxes = [b.strip() for b in (r95[3] or "").split("/") if b.strip()]
             for pos, box_no in enumerate(boxes, 1):
                 row_id = stable_hash(cn, str(box_no), ydid)
                 sop_cur.execute("""

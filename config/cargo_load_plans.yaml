@@ -1,0 +1,65 @@
+# 各项目按车型/标载的装货配载吨台账
+#
+# 业务用途:
+#   - 整车散运项目算"应装吨"(中唐/朝钢)
+#   - 集装箱业务算"应装箱吨"(金钢)
+#   - 跟 95306 marked_weight (实际称重) 对账算"涨吨/亏吨"
+#   - 跟 release_batch.batch_quantity (放货计划) 对账算"超装/欠装"
+#
+# 维护:
+#   - 改值时同步在 docs/business-rules/cartype_load_plan_ledger.md 加变更行
+#   - 程序读 active 那条(date_now 在 effective_from~effective_to 之间)
+#
+# 匹配优先级(同项目内):
+#   1) car_model_pattern 命中(正则)
+#   2) marked_weight_eq 精确匹配
+#   3) 走 fallback
+
+projects:
+
+  chaoyang_steel:
+    description: 朝阳钢铁(鞍钢集团)铁矿散运,锦州港 → 朝阳西
+    unit: ton_per_wagon
+    car_load_plans:
+      - car_model_pattern: "^C70"
+        load_tons: 69.0
+        notes: 2026-06-12 用户跟港口确认(C70 整车一律 69)
+        effective_from: "2026-06-01"
+      - marked_weight_eq: 61
+        load_tons: 63.5
+        notes: 2026-06-12 用户口径
+        effective_from: "2026-06-01"
+      - marked_weight_eq: 60
+        load_tons: 62.5
+        notes: 2026-06-12 用户口径
+        effective_from: "2026-06-01"
+
+  zhongtang_special_steel:
+    description: 中唐特钢铁矿粉散运,锦州港 → 汐子
+    unit: ton_per_wagon
+    car_load_plans:
+      - car_model_pattern: "^C70"
+        load_tons: 70.0
+        notes: 2026-06-12 用户口径(C70 整车一律 70)
+        effective_from: "2026-06-01"
+      - marked_weight_eq: 61
+        load_tons: 64.5
+        notes: 2026-06-12 用户口径
+        effective_from: "2026-06-01"
+      - marked_weight_eq: 60
+        load_tons: 63.5
+        notes: 2026-06-12 用户口径
+        effective_from: "2026-06-01"
+
+  jilin_jingang_jinzhou:
+    description: 吉林金钢-锦州港铁矿运输,锦州港 → 四平
+    unit: ton_per_box
+    box_load_plan:
+      load_tons: 32.8
+      notes: 2026-06-12 用户口径,集装箱 box 维度,32.8 t/箱
+      effective_from: "2026-06-01"
+
+# fallback 兜底:任何项目任何车型,没匹配上时默认值
+fallback:
+  load_tons_70_series: 69.5
+  load_tons_60_series: 63.0

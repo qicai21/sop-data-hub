@@ -414,7 +414,15 @@ def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
         notice = _truncate_disp(b.get("batch_date") or "—", 11)
         planned = _num(b.get("batch_quantity"))
         shipped = _num(b.get("shipped_weight_tons"))
-        remain = _num(b.get("remaining_weight_tons"))
+        # 剩余防御:存值优先,NULL 时现算 计划-已发(防 batch 没及时 compute
+        # shipped_weight 就显 "—";已发0 时剩余应=计划,而非空)
+        remain_v = b.get("remaining_weight_tons")
+        if remain_v is None and b.get("batch_quantity") is not None:
+            try:
+                remain_v = float(b.get("batch_quantity")) - float(b.get("shipped_weight_tons") or 0)
+            except (ValueError, TypeError):
+                remain_v = None
+        remain = _num(remain_v)
         unit_count = str(
             (b.get("box_count") if is_container else b.get("actual_wagon_count"))
             or 0

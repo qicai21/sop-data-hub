@@ -673,6 +673,24 @@ def _execute_chaoyang_inspection_chain(
             str(r.get("car_no") or "").strip()
             for r in all_rows if r.get("car_no")
         ]
+        # #144:锚点票时间下界 = 通知时间 - 12h。同车同到站历史有旧票,
+        # 不带下界会锚到上一批的票,整窗错位。
+        min_ticketed_at = None
+        notice_ts = (
+            conn.execute(
+                "SELECT received_datetime FROM message_inbox WHERE id=?",
+                (inbox_id,),
+            ).fetchone() or [None]
+        )[0] or cand_d.get("created_at") or ""
+        if notice_ts:
+            from datetime import datetime as _dt, timedelta as _td
+            try:
+                parsed = _dt.strptime(
+                    str(notice_ts).replace("T", " ")[:19], "%Y-%m-%d %H:%M:%S")
+                min_ticketed_at = (parsed - _td(hours=12)).strftime(
+                    "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                min_ticketed_at = None
         recover = recover_loading_cars_via_window(
             rail_db_path=str(RAIL_DB),
             loading_car_nos=loading_car_nos,
@@ -681,6 +699,7 @@ def _execute_chaoyang_inspection_chain(
             cargo_pattern="%铁矿%",
             max_anchor_attempts=4,
             window_minutes=120,
+            min_ticketed_at=min_ticketed_at,
         )
         if recover["status"] == "no_ticket_yet":
             # 95306 还没制票 → 候选挂 pending_95306_match,延迟验证器后续重试

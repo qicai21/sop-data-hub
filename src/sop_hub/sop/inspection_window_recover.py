@@ -28,6 +28,7 @@ def recover_loading_cars_via_window(
     cargo_pattern: str = "%铁矿%",
     max_anchor_attempts: int = 4,
     window_minutes: int = 120,
+    min_ticketed_at: str | None = None,
 ) -> dict[str, Any]:
     """用通知单车号反推 95306 时间窗,返回窗内权威装车列表。
 
@@ -40,6 +41,9 @@ def recover_loading_cars_via_window(
       cargo_pattern: 货名 LIKE 模式(默认 "%铁矿%")。
       max_anchor_attempts: 找锚点最多尝试前几个 loading 车号(默认 4,业务约定)。
       window_minutes: 锚点 ticketed_at 前后各几分钟为窗(默认 120,即 ±2h)。
+      min_ticketed_at: 锚点票的时间下界(通常 = 通知时间 - 12h)。车皮会反复
+        发运,同车同到站历史上有旧票;不带下界时 ORDER BY DESC 会锚到**上一批
+        的旧票**,整个时间窗错位(#144 根因)。早于下界的票视为"本批还没制票"。
 
     Returns:
       {
@@ -84,13 +88,17 @@ def recover_loading_cars_via_window(
             if not c:
                 continue
             attempts += 1
-            r = rail.execute(
+            sql = (
                 "SELECT ticketed_at FROM shipments "
                 "WHERE car_no=? AND destination_name=? AND cargo_name LIKE ? "
                 "  AND ticketed_at IS NOT NULL AND ticketed_at != '' "
-                "ORDER BY ticketed_at DESC LIMIT 1",
-                (c, destination, cargo_pattern),
-            ).fetchone()
+            )
+            params: list[Any] = [c, destination, cargo_pattern]
+            if min_ticketed_at:
+                sql += "  AND ticketed_at >= ? "
+                params.append(min_ticketed_at)
+            sql += "ORDER BY ticketed_at DESC LIMIT 1"
+            r = rail.execute(sql, params).fetchone()
             if r and r["ticketed_at"]:
                 anchor_car = c
                 anchor_ts = r["ticketed_at"]

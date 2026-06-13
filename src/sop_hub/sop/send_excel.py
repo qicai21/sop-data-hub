@@ -6,10 +6,10 @@ Uses wx-ui-bridge's `python3 -m src.main <target> <message> [file]` CLI:
   3. Attaches file (if provided)
   4. Sends
 
-wx-ui-bridge repo: /Users/qicai21/projects/ai-tools/mcp/wx-ui-bridge
+wx-ui-bridge repo: /Users/qicai21/projects/repos/wx-ui-bridge
 
 Usage:
-  PYTHONPATH=src /Users/qicai21/projects/ai-tools/mcp/wx-ui-bridge/.venv/bin/python3 \\
+  PYTHONPATH=src /Users/qicai21/projects/repos/wx-ui-bridge/.venv/bin/python3 \\
     -m sop_hub.sop.send_excel \\
     --target "[GROUP013]" \\
     --message "吉林金钢发运数据 蓝鳍 lot02" \\
@@ -22,7 +22,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-WX_BRIDGE_DIR = Path("/Users/qicai21/projects/ai-tools/mcp/wx-ui-bridge")
+WX_BRIDGE_DIR = Path("/Users/qicai21/projects/repos/wx-ui-bridge")
 WX_BRIDGE_PYTHON = WX_BRIDGE_DIR / ".venv" / "bin" / "python3"
 
 
@@ -124,9 +124,16 @@ def _build_cli_parser():
 
 def main():
     args = _build_cli_parser().parse_args()
+    # 优先级修复:原写法 `args.message or X if args.file else ""` 被解析成
+    # `(args.message or X) if args.file else ""` —— 纯文本发送(无 --file)时
+    # message 被清成空,bridge 收到空消息发了个寂寞。括号锁死意图:
+    # 有 message 用 message;没有再按 file 兜底文案;都没有才空。
+    message = args.message or (
+        f"发运数据: {Path(args.file).name}" if args.file else ""
+    )
     result = send_to_wechat(
         target=args.target,
-        message=args.message or f"发运数据: {Path(args.file).name}" if args.file else "",
+        message=message,
         file_path=args.file,
         dry_run=args.dry_run,
     )

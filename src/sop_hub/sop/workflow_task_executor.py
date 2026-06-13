@@ -167,7 +167,8 @@ def run_workflow_task(
             # 中唐复用朝阳同一执行器(95306 反推 / wagon_shipments / excel / 发群
             # 结构完全同构)。朝阳鞍钢门户上传段在执行器内已自门控
             # (project_id == "chaoyang_steel"),中唐自动跳过。
-            result = _execute_chaoyang_inspection_chain(
+            # #145:走 _multi 包装层,一 inbox 多船候选时每船各跑各的。
+            result = _execute_chaoyang_inspection_chain_multi(
                 input_json, message_id, db_path=db, task_id=task_id,
             )
         elif task_type == "inspection_text_trigger" or task_type.startswith(
@@ -674,9 +675,10 @@ def _execute_inspection_text_trigger(
     finally:
         conn.close()
 
+    # #145:定向到本船触发器解析出的候选(多船图时别让核心 LIMIT 1 选错船)
     chain_res = _execute_chaoyang_inspection_chain(
         {"message_inbox_id": cand_inbox_id},
-        cand_msg_id, db_path=db_path, task_id=task_id,
+        cand_msg_id, db_path=db_path, task_id=task_id, candidate_id=cand_id,
     )
     # 附上文本侧预期车数做交叉校验
     out = chain_res.get("output_json") or {}
@@ -690,14 +692,88 @@ def _execute_inspection_text_trigger(
     return chain_res
 
 
-def _execute_chaoyang_inspection_chain(
+def _execute_chaoyang_inspection_chain_multi(
     input_json: dict[str, Any],
     message_id: str,
     *,
     db_path: Path,
     task_id: int = 0,
 ) -> dict[str, Any]:
+    """#145:一 inbox 多候选(多船检车单图拆 N 组)时,对每个候选各跑一次链。
+
+    根因:`_execute_chaoyang_inspection_chain` 老行为 LIMIT 1 只跑首候选(wx_753
+    4 船图只跑首船,宝腾海当时靠手工补)。本包装层找该 inbox 全部 status='candidate'
+    的候选,逐个 candidate_id 定向跑核心链。单候选时退化为直接调核心(零行为变化)。
+
+    候选级重试仍归 pending_match_verifier(按 candidate_id 各自重试),本层只负责
+    首轮把每船都 kick 一次。
+    """
+    import sqlite3 as _sql
+
+    inbox_id = input_json.get("message_inbox_id")
+    if not inbox_id:
+        return {"action": "failed", "status": "failed",
+                "error_message": "no message_inbox_id in input_json"}
+
+    conn = _sql.connect(str(db_path))
+    conn.row_factory = _sql.Row
+    try:
+        cands = conn.execute(
+            "SELECT id, ship_name FROM inspection_ingestion_candidates "
+            "WHERE (message_id = (SELECT message_id FROM message_inbox WHERE id=?) "
+            "   OR id IN (SELECT inspection_candidate_id FROM message_inbox WHERE id=?)) "
+            "   AND candidate_status='candidate' "
+            "ORDER BY created_at ASC",
+            (inbox_id, inbox_id),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    # 0 或 1 个 → 退化为老路径(0 个时核心返回 no candidate 的 failed,保持原语义)
+    if len(cands) <= 1:
+        return _execute_chaoyang_inspection_chain(
+            input_json, message_id, db_path=db_path, task_id=task_id,
+        )
+
+    per_candidate = []
+    any_failed = False
+    for c in cands:
+        r = _execute_chaoyang_inspection_chain(
+            input_json, message_id, db_path=db_path, task_id=task_id,
+            candidate_id=c["id"],
+        )
+        per_candidate.append({
+            "candidate_id": c["id"], "ship": c["ship_name"],
+            "status": r.get("status"),
+            "stage": (r.get("output_json") or {}).get("stage"),
+            "error": r.get("error_message"),
+        })
+        if r.get("status") == "failed":
+            any_failed = True
+
+    return {
+        "action": "executed",
+        "status": "failed" if any_failed else "succeeded",
+        "output_json": {
+            "stage": "multi_candidate_fanout",
+            "candidate_count": len(cands),
+            "per_candidate": per_candidate,
+        },
+    }
+
+
+def _execute_chaoyang_inspection_chain(
+    input_json: dict[str, Any],
+    message_id: str,
+    *,
+    db_path: Path,
+    task_id: int = 0,
+    candidate_id: str | None = None,
+) -> dict[str, Any]:
     """R78: 朝阳钢铁检装车通知单 → release_batch 匹配 → wagon_shipments → excel。
+
+    #145:candidate_id 显式定向单个候选(多船图一 inbox 多候选时,每船各跑各的);
+    不传则沿用老行为(按 inbox 选 status='candidate' 的 LIMIT 1)。
 
     #98 一体化:进来即真跑(写库 / 写文件)。多/无匹配 → candidate 标 pending_review
     并 task 退 skipped(这就是人工 review 入口)。步骤:
@@ -729,26 +805,34 @@ def _execute_chaoyang_inspection_chain(
     conn.row_factory = _sql.Row
     try:
         # ── 1. Find candidate ──────────────────────────────────────
-        # #130:多组 candidate(复合检车单按 ship rule 拆 N 组)时,优先取
-        # candidate_status='candidate' 的(已成功匹配 release_batch),跳过
-        # pending_review 的兜底组。仍 LIMIT 1 — 同 inbox 多组并发跑由后续做。
-        cand = conn.execute(
-            "SELECT * FROM inspection_ingestion_candidates "
-            "WHERE (message_id = (SELECT message_id FROM message_inbox WHERE id=?) "
-            "   OR id IN (SELECT inspection_candidate_id FROM message_inbox WHERE id=?)) "
-            "   AND candidate_status='candidate' "
-            "ORDER BY created_at DESC LIMIT 1",
-            (inbox_id, inbox_id),
-        ).fetchone()
-        if not cand:
-            # 兜底:没 matched candidate,也试 pending(老行为)
+        # #145:candidate_id 显式定向 → 直接取该候选(多船图每船各跑各的)。
+        if candidate_id:
+            cand = conn.execute(
+                "SELECT * FROM inspection_ingestion_candidates WHERE id=?",
+                (candidate_id,),
+            ).fetchone()
+        else:
+            # #130:多组 candidate(复合检车单按 ship rule 拆 N 组)时,优先取
+            # candidate_status='candidate' 的(已成功匹配 release_batch),跳过
+            # pending_review 的兜底组。LIMIT 1 — 多组并发由 _multi 包装层循环
+            # candidate_id 处理(#145)。
             cand = conn.execute(
                 "SELECT * FROM inspection_ingestion_candidates "
-                "WHERE message_id = (SELECT message_id FROM message_inbox WHERE id=?) "
-                "   OR id IN (SELECT inspection_candidate_id FROM message_inbox WHERE id=?) "
+                "WHERE (message_id = (SELECT message_id FROM message_inbox WHERE id=?) "
+                "   OR id IN (SELECT inspection_candidate_id FROM message_inbox WHERE id=?)) "
+                "   AND candidate_status='candidate' "
                 "ORDER BY created_at DESC LIMIT 1",
                 (inbox_id, inbox_id),
             ).fetchone()
+            if not cand:
+                # 兜底:没 matched candidate,也试 pending(老行为)
+                cand = conn.execute(
+                    "SELECT * FROM inspection_ingestion_candidates "
+                    "WHERE message_id = (SELECT message_id FROM message_inbox WHERE id=?) "
+                    "   OR id IN (SELECT inspection_candidate_id FROM message_inbox WHERE id=?) "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (inbox_id, inbox_id),
+                ).fetchone()
         if not cand:
             return {"action": "failed", "status": "failed",
                     "error_message": f"no inspection candidate for inbox {inbox_id}"}

@@ -134,10 +134,13 @@ def _retry_chain(
     )
     # 2026-06-06:删 apply=True kwarg —— #98 收敛后 chain 默认即 apply,
     # 旧 apply= 参数早从签名里去掉了,留着这里调用导致 verifier 一直 TypeError。
+    # #145:verifier 按 candidate_id 重试,必须把它定向传给链 —— 否则多船图时
+    # 重试候选 X 但链 LIMIT 1 跑了候选 Y(首个),pending 的那船永远不前进。
     return _execute_chaoyang_inspection_chain(
         input_json={"message_inbox_id": inbox_id},
         message_id=message_id,
         db_path=Path(db_path),
+        candidate_id=candidate_id,
     )
 
 

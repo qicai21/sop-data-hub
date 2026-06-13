@@ -83,7 +83,7 @@ def run_lifecycle_closeout(
 
     result: dict[str, Any] = {
         "scanned": 0, "advanced": 0, "skipped_pending": 0, "errors": [],
-        "advances": [],
+        "advances": [], "rejected": [],
     }
     placeholders = ",".join("?" * len(_ACTIVE_PHASES_TO_SCAN))
     conn = sqlite3.connect(str(db))
@@ -112,6 +112,8 @@ def run_lifecycle_closeout(
                 if r.get("action") == "advanced":
                     result["advanced"] += 1
                     result["advances"].append({"batch_id": bid, **r})
+                elif r.get("action") == "rejected":
+                    result["rejected"].append({"batch_id": bid, **r})
                 continue
 
             # 默认 mode (full_track_to_received): 看 wagon 全收货才推
@@ -126,6 +128,8 @@ def run_lifecycle_closeout(
                 if r.get("action") == "advanced":
                     result["advanced"] += 1
                     result["advances"].append({"batch_id": bid, **r})
+                elif r.get("action") == "rejected":
+                    result["rejected"].append({"batch_id": bid, **r})
             else:
                 result["skipped_pending"] += 1
     except Exception as exc:

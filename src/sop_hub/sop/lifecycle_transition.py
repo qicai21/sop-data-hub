@@ -39,7 +39,11 @@ SOP_DB = REPO_ROOT / "data" / "sop_agent.db"
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     lc.PENDING_FREIGHT: frozenset({lc.PENDING_FREIGHT, lc.ENRICHED, lc.LOADING}),
     lc.ENRICHED:        frozenset({lc.ENRICHED, lc.LOADING, lc.ALL_LOADED}),
-    lc.LOADING:         frozenset({lc.LOADING, lc.ALL_LOADED, lc.TRACKING, lc.DELIVERED}),
+    # LOADING 允许直跳 CONFIRMED_RECEIVED:plan 未满/没触发 all_loaded 但 95306
+    # 全车已交付的 batch(loading→delivered→confirmed_received 两步各自合法,
+    # closeout 合并为一跳)
+    lc.LOADING:         frozenset({lc.LOADING, lc.ALL_LOADED, lc.TRACKING, lc.DELIVERED,
+                                    lc.CONFIRMED_RECEIVED}),
     lc.ALL_LOADED:      frozenset({lc.ALL_LOADED, lc.TRACKING, lc.DELIVERED,
                                     lc.CONFIRMED_RECEIVED, lc.CLOSED}),
     lc.TRACKING:        frozenset({lc.TRACKING, lc.DELIVERED, lc.CONFIRMED_RECEIVED, lc.CLOSED}),

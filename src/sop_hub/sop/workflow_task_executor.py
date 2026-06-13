@@ -1330,7 +1330,15 @@ def run_pending_workflow_tasks(
     conn = sqlite3.connect(str(db))
     conn.row_factory = sqlite3.Row
 
-    if task_type:
+    if task_type and task_type.endswith(":"):
+        # #143:前缀匹配一族 task_type(如 "inspection_text_trigger:" 匹配所有
+        # 后缀船名的扇出 task)。末尾冒号是前缀约定。
+        rows = conn.execute(
+            "SELECT id FROM workflow_task_db WHERE task_status = 'pending' "
+            "AND task_type LIKE ? ORDER BY id LIMIT ?",
+            (task_type + "%", limit),
+        ).fetchall()
+    elif task_type:
         rows = conn.execute(
             "SELECT id FROM workflow_task_db WHERE task_status = 'pending' AND task_type = ? ORDER BY id LIMIT ?",
             (task_type, limit),

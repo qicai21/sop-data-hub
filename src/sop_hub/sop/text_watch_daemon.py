@@ -61,6 +61,9 @@ EXTERNAL_CHAIN_TASK_TYPES = (
     "chaoyang_inspection_chain",
     "zhongtang_inspection_chain",
     "create_release_batch",
+    # #143:文本触发器(扇出后 task_type 后缀船名)。末尾 ':' = 前缀匹配整族。
+    # 委托检验链含工厂上传 → 归 --run-chains 门控。
+    "inspection_text_trigger:",
 )
 
 

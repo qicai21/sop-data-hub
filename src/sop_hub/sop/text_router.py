@@ -17,8 +17,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from sop_hub.sop.departure_text_parser import parse_departure_text
+from sop_hub.sop.departure_text_parser import (
+    _RE_CAR_COUNT,
+    _strip_chinese_quotes,
+    parse_departure_text,
+)
 from sop_hub.sop.monitoring_plan_matcher import MessageEvent
+
+# ── 检验类项目(检装车通知单驱动)──────────────────────────────────────
+# 文本只当触发器:提供 ship + 预期车数;车号顺序 / lot 归属的权威仍归
+# 检装车通知单 JSON。只对这些项目的 yaml known_ships 做触发(#143)。
+_INSPECTION_PROJECTS = ("chaoyang_steel", "zhongtang_special_steel")
 
 # ── Known destination → project mapping ──────────────────────────────────
 _DEST_PROJECT = {
@@ -156,6 +165,114 @@ def _build_summary(
     return " ".join(parts)
 
 
+def _inspection_ship_project_map() -> dict[str, str]:
+    """从 yaml project_meta.known_ships 建 ship → project 映射,只收检验类项目。
+
+    yaml known_ships 是 per-project 权威清单(宝腾海→chaoyang,鞍子河/丰收散运/
+    马兰探险/贝拉→zhongtang)。歧义船名(如 长航滨海,可能走四平镍/jilin)不在
+    检验类 yaml 里,自然不被收 → 保守不触发,避免错误的工厂上传。
+    """
+    mapping: dict[str, str] = {}
+    try:
+        import yaml as _yaml
+        from pathlib import Path as _Path
+        ypdir = _Path(__file__).resolve().parents[3] / "config" / "project_sops"
+        for f in ypdir.glob("*.yaml"):
+            d = _yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+            pm = d.get("project_meta") or {}
+            proj = str(pm.get("project_id") or pm.get("id") or "").strip()
+            # yaml 文件名兜底(project_meta 没显式 project_id 时)
+            if proj not in _INSPECTION_PROJECTS:
+                fname = f.stem
+                guess = {
+                    "chaoyang": "chaoyang_steel",
+                    "zhongtang": "zhongtang_special_steel",
+                }.get(fname, "")
+                proj = guess or proj
+            if proj not in _INSPECTION_PROJECTS:
+                continue
+            for s in pm.get("known_ships") or []:
+                if s:
+                    mapping[str(s).strip()] = proj
+    except Exception:
+        pass
+    return mapping
+
+
+def _project_default_dest(project_id: str) -> str:
+    """读 yaml project_meta.destination_station 作为该项目默认到站。"""
+    try:
+        import yaml as _yaml
+        from sop_hub.sop.departure_excel import _find_yaml_for_project
+        yp = _find_yaml_for_project(project_id)
+        d = _yaml.safe_load(yp.read_text(encoding="utf-8")) or {}
+        return str((d.get("project_meta") or {}).get("destination_station") or "").strip()
+    except Exception:
+        return ""
+
+
+def extract_inspection_text_triggers(text: str) -> list[dict[str, Any]]:
+    """从(可能复合多船的)发运文本里抽出检验类触发器段。
+
+    每段返回 {project_id, ship, destination, expected_count, segment}。文本只做
+    触发 + 预期车数,**不**决定车号顺序或 lot 归属(那是检装车通知单的活)。
+
+    保守原则:
+      - 只认 yaml known_ships 里属于检验类项目的船名(歧义船不猜)。
+      - 每个船名取其后到下一个船名之间的第一个 "N节/N车";前向找不到再
+        在船名前 8 字符内回找一次(兼容 "15节宝腾海" 这种数量前置写法)。
+      - 同船多次出现只保留第一段。
+    """
+    raw = text or ""
+    if not raw.strip():
+        return []
+    norm = _strip_chinese_quotes(raw)
+    ship_map = _inspection_ship_project_map()
+    if not ship_map:
+        return []
+
+    # 找所有船名出现位置
+    occ: list[tuple[int, str, str]] = []
+    for ship, proj in ship_map.items():
+        start = norm.find(ship)
+        while start != -1:
+            occ.append((start, ship, proj))
+            start = norm.find(ship, start + 1)
+    if not occ:
+        return []
+    occ.sort(key=lambda x: x[0])
+
+    triggers: list[dict[str, Any]] = []
+    seen_ships: set[str] = set()
+    dest_cache: dict[str, str] = {}
+    for i, (pos, ship, proj) in enumerate(occ):
+        if ship in seen_ships:
+            continue
+        seg_end = occ[i + 1][0] if i + 1 < len(occ) else len(norm)
+        forward = norm[pos + len(ship):seg_end]
+        m = _RE_CAR_COUNT.search(forward)
+        if not m:
+            # 兼容数量前置:在船名前 8 字符内回找
+            back = norm[max(0, pos - 8):pos]
+            m = _RE_CAR_COUNT.search(back)
+        if not m:
+            continue
+        count = int(m.group(1))
+        if count <= 0:
+            continue
+        if proj not in dest_cache:
+            dest_cache[proj] = _project_default_dest(proj)
+        triggers.append({
+            "project_id": proj,
+            "ship": ship,
+            "destination": dest_cache[proj],
+            "expected_count": count,
+            "segment": norm[pos:seg_end].strip(),
+        })
+        seen_ships.add(ship)
+    return triggers
+
+
 def _infer_project_from_text(text: str) -> str:
     """Infer project_id from freight detail keywords."""
     if any(kw in text for kw in ("四平", "吉林金钢", "入场合同", "入场合同号", "红土镍矿")):
@@ -193,6 +310,29 @@ def classify_text_message(event: MessageEvent) -> TextRouteResult:
             is_sop_msg=False,
             processing_status="ignored",
             summary="[empty] no text content",
+        )
+
+    # Rule 0: 检验类文本触发器(#143)。复合多船文本或单船 chaoyang/zhongtang
+    # 发运文本里,认得出 yaml known_ships 的船 + 车数 → 标 inspection_text_trigger。
+    # 任务创建时按段扇出成 N 个触发器 task,各自与检装车通知单 rendezvous。
+    # 优先级最高:必须先于 chaoyang_context / departure_text,否则会被它们吞掉。
+    insp_triggers = extract_inspection_text_triggers(text)
+    if insp_triggers:
+        projects = {t["project_id"] for t in insp_triggers}
+        ships = "/".join(
+            f"{t['ship']}{t['expected_count']}节" for t in insp_triggers
+        )
+        summary = _build_summary("inspection_text_trigger", text, ships)
+        return TextRouteResult(
+            message_id=message_id,
+            group_id=group_id,
+            is_sop_msg=True,
+            # 多项目混合时 project 留空,各段 task 自带 project_id
+            sop_project_id=next(iter(projects)) if len(projects) == 1 else "",
+            sop_flow="inspection_text_trigger_flow",
+            sop_node="inspection_text_trigger",
+            summary=summary,
+            processing_status="matched_sop",
         )
 
     # Rule 1: Departure text

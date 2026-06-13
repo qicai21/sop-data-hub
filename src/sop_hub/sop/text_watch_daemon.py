@@ -176,6 +176,18 @@ def _ingest_one_row(row: dict[str, Any], *, db_path: str | Path) -> dict[str, An
                 error_message=str(exc),
             )
             return {"action": "error", "message_id": message_id, "error": str(exc)}
+        # #143:复合文本触发器扇出成多个 task → db_record_ids 记全部 id
+        if res.get("action") == "created_multi":
+            ids = [str(i) for i in (res.get("ids") or [])]
+            _mark_ingest_result(
+                db_path, inbox_id, db_action="text_ingest_workflow_task",
+                db_record_ids=ids,
+            )
+            return {
+                "action": "workflow_tasks_created", "message_id": message_id,
+                "task_ids": ids, "task_type": res.get("task_type"),
+                "created": len(ids),
+            }
         task_id = res.get("id")
         # db_action keeps the 'text_ingest_' prefix so the fetch query treats the
         # row as processed and won't re-pick it next pass.

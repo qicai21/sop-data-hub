@@ -131,10 +131,17 @@ def _resolve_task_type(project_id: str, flow_name: str, node_name: str) -> str:
     _KNOWN_HANDLED_FLOWS = {
         "freight_detail_flow",                    # 通用 enrichment
         "inspection_flow", "inspection_notice_flow",  # 朝阳/中唐
+        "inspection_text_trigger_flow",           # #143 文本触发器(多项目,project 可空)
     }
     if (flow_name not in _KNOWN_HANDLED_FLOWS
             and not _project_has_flow(project_id, flow_name)):
         return SKIP_TASK_TYPE_SENTINEL
+
+    # #143:复合/单船检装车文本触发器。task 创建时按段扇出(见
+    # create_task_from_message_inbox),这里只标 task_type。
+    if (flow_name == "inspection_text_trigger_flow"
+            and node_name == "inspection_text_trigger"):
+        return "inspection_text_trigger"
 
     if (project_id == "jilin_jingang_jinzhou"
             and flow_name == "departure_flow"
@@ -221,6 +228,63 @@ def create_task_from_message_inbox(
         }
     input_json = _build_input_json(row_dict)
     now = _now_iso()
+
+    # #143:检装车文本触发器 → 按段扇出成 N 个 task(复合多船一条文本拆 N 个),
+    # 每个 task 自带 {project, ship, dest, expected_count}。各段与检装车通知单
+    # 候选 rendezvous(执行器 _execute_inspection_text_trigger)。文本只提供触发
+    # + 预期车数;车号顺序 / lot 归属仍归通知单。
+    if task_type == "inspection_text_trigger":
+        from sop_hub.sop.text_router import extract_inspection_text_triggers
+        segs = extract_inspection_text_triggers(row_dict.get("text_content") or "")
+        if not segs:
+            conn.close()
+            return {
+                "action": "skipped", "reason": "no_inspection_segment",
+                "message_inbox_id": message_inbox_id, "task_type": task_type,
+            }
+        created, skipped = [], []
+        for seg in segs:
+            # UNIQUE(message_inbox_id, task_type) 要求每船 task_type 唯一 →
+            # 后缀船名;dispatch 侧按 "inspection_text_trigger" 前缀匹配。
+            seg_task_type = f"{task_type}:{seg['ship']}"
+            dup = conn.execute(
+                "SELECT id, task_status FROM workflow_task_db "
+                "WHERE message_inbox_id = ? AND task_type = ?",
+                (message_inbox_id, seg_task_type),
+            ).fetchone()
+            if dup:
+                skipped.append({"ship": seg["ship"], "id": dup["id"],
+                                "task_status": dup["task_status"]})
+                continue
+            seg_input = {
+                **input_json,
+                "trigger_project": seg["project_id"],
+                "trigger_ship": seg["ship"],
+                "trigger_dest": seg["destination"],
+                "trigger_expected_count": seg["expected_count"],
+                "trigger_segment": seg["segment"],
+            }
+            conn.execute(
+                """INSERT INTO workflow_task_db
+                   (message_inbox_id, message_id, project_id, flow_name, node_name,
+                    task_type, task_status, input_json, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
+                (message_inbox_id, row_dict.get("message_id", ""),
+                 seg["project_id"], flow_name, node_name, seg_task_type,
+                 json.dumps(seg_input, ensure_ascii=False), now, now),
+            )
+            created.append({"ship": seg["ship"],
+                            "id": conn.execute("SELECT last_insert_rowid()").fetchone()[0],
+                            "expected_count": seg["expected_count"]})
+        conn.commit()
+        conn.close()
+        return {
+            "action": "created_multi" if created else "skipped",
+            "reason": "all_duplicate" if not created else "",
+            "message_inbox_id": message_inbox_id, "task_type": task_type,
+            "ids": [c["id"] for c in created],
+            "created": created, "skipped": skipped,
+        }
 
     existing = conn.execute(
         "SELECT id, task_status, created_at FROM workflow_task_db "

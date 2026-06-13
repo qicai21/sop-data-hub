@@ -170,6 +170,13 @@ def run_workflow_task(
             result = _execute_chaoyang_inspection_chain(
                 input_json, message_id, db_path=db, task_id=task_id,
             )
+        elif task_type == "inspection_text_trigger" or task_type.startswith(
+            "inspection_text_trigger:"
+        ):
+            # #143:扇出后 task_type 后缀船名("inspection_text_trigger:鞍子河")
+            result = _execute_inspection_text_trigger(
+                input_json, message_id, db_path=db, task_id=task_id,
+            )
         elif task_type == "freight_detail_enrichment":
             result = _execute_freight_detail_enrichment(
                 input_json, message_id, db_path=db,
@@ -525,6 +532,162 @@ def _execute_freight_detail_enrichment(
         "status": "succeeded",
         "output_json": res,
     }
+
+
+# #143:文本触发器等检装车通知单的超时窗(文本常先于通知单图到达)
+_INSPECTION_TEXT_TRIGGER_TIMEOUT_HOURS = 12.0
+# 检装车候选里"可被链消费"的状态(排除归档/作废/被取代);其余都算活跃
+_INACTIVE_CANDIDATE_STATUSES = (
+    "archived", "cancelled_legacy", "superseded", "timeout_manual_review",
+)
+
+
+def _find_candidate_inbox(
+    conn, candidate_id: str, candidate_message_id: str,
+) -> tuple[int | None, str]:
+    """找指向某检装车候选的 message_inbox 行(图片那条,非文本触发那条)。"""
+    row = conn.execute(
+        "SELECT id, message_id FROM message_inbox "
+        "WHERE inspection_candidate_id=? ORDER BY id DESC LIMIT 1",
+        (candidate_id,),
+    ).fetchone()
+    if row:
+        return int(row[0]), str(row[1] or "")
+    if candidate_message_id:
+        row = conn.execute(
+            "SELECT id, message_id FROM message_inbox "
+            "WHERE message_id=? ORDER BY id DESC LIMIT 1",
+            (candidate_message_id,),
+        ).fetchone()
+        if row:
+            return int(row[0]), str(row[1] or "")
+    return None, ""
+
+
+def _execute_inspection_text_trigger(
+    input_json: dict[str, Any],
+    message_id: str,
+    *,
+    db_path: Path,
+    task_id: int = 0,
+) -> dict[str, Any]:
+    """#143:检装车文本触发器 → 与检装车通知单候选 rendezvous → 委托既有检验链。
+
+    业务定位:微信文本("汐子铁鞍子河5节")只当**触发器 + 预期车数**。车号顺序
+    与 lot 归属的权威仍归检装车通知单 JSON。本执行器:
+      1. 按 trigger_ship + trigger_dest 找活跃检装车候选(图片侧产生的)。
+      2. 找到 → 指向候选的 inbox 跑 _execute_chaoyang_inspection_chain(它内部做
+         95306 时间窗反推 + 与通知单比对 + 入库 + excel + 上传)。把文本预期车数
+         作为交叉校验 note 附上。
+      3. 没找到 → 通知单图还没到。任务保持 pending(下一轮重试),超 12h → skipped
+         + 发群通知人工。
+    """
+    import sqlite3 as _sql
+
+    project = (input_json.get("trigger_project") or "").strip()
+    ship = (input_json.get("trigger_ship") or "").strip()
+    dest = (input_json.get("trigger_dest") or "").strip()
+    expected = int(input_json.get("trigger_expected_count") or 0)
+
+    if not ship:
+        return {"action": "failed", "status": "failed",
+                "error_message": "inspection_text_trigger 缺 trigger_ship"}
+
+    conn = _sql.connect(str(db_path))
+    conn.row_factory = _sql.Row
+    try:
+        # 候选匹配:ship + dest,活跃状态,最新一条
+        q = (
+            "SELECT id, message_id, candidate_status FROM inspection_ingestion_candidates "
+            "WHERE ship_name=? "
+            f"  AND candidate_status NOT IN ({','.join('?' * len(_INACTIVE_CANDIDATE_STATUSES))}) "
+        )
+        params: list[Any] = [ship, *_INACTIVE_CANDIDATE_STATUSES]
+        if dest:
+            q += "  AND (destination=? OR destination='' OR destination IS NULL) "
+            params.append(dest)
+        q += "ORDER BY created_at DESC LIMIT 1"
+        cand = conn.execute(q, params).fetchone()
+
+        if not cand:
+            # rendezvous 等待:通知单图还没到。看任务已等多久。
+            trow = conn.execute(
+                "SELECT created_at FROM workflow_task_db WHERE id=?", (task_id,),
+            ).fetchone()
+            elapsed_h = float("inf")
+            if trow and trow[0]:
+                from sop_hub.utils.time import BEIJING_TZ, parse_any_timestamp
+                try:
+                    created = parse_any_timestamp(str(trow[0]))
+                    now = datetime.now(BEIJING_TZ)
+                    elapsed_h = (now - created).total_seconds() / 3600.0
+                except Exception:
+                    elapsed_h = 0.0
+            if elapsed_h <= _INSPECTION_TEXT_TRIGGER_TIMEOUT_HOURS:
+                return {
+                    "action": "executed", "status": "pending",
+                    "output_json": {
+                        "stage": "waiting_inspection_notice",
+                        "ship": ship, "destination": dest,
+                        "expected_count": expected,
+                        "elapsed_hours": round(elapsed_h, 2),
+                        "note": "检装车通知单图未到,保持 pending 等下一轮",
+                    },
+                }
+            # 超时:发群通知,task 退 skipped
+            try:
+                from sop_hub.sop.send_excel import send_to_wechat
+                send_to_wechat(
+                    target="[GROUP013]",
+                    message=(
+                        f"⚠️ 检装车文本触发器超时未等到通知单\n"
+                        f"{ship} {dest} 预期 {expected} 节\n"
+                        f"已等 {elapsed_h:.1f} 小时,通知单图未到,需人工排查"
+                    ),
+                    file_path=None,
+                )
+            except Exception:
+                pass
+            return {
+                "action": "executed", "status": "skipped",
+                "output_json": {
+                    "stage": "waiting_inspection_notice_timeout",
+                    "ship": ship, "destination": dest,
+                    "expected_count": expected,
+                    "elapsed_hours": round(elapsed_h, 2),
+                },
+            }
+
+        # 找到候选 → 指向候选的 inbox 跑既有检验链
+        cand_id = cand["id"]
+        cand_inbox_id, cand_msg_id = _find_candidate_inbox(
+            conn, cand_id, str(cand["message_id"] or ""))
+        if not cand_inbox_id:
+            return {
+                "action": "executed", "status": "pending",
+                "output_json": {
+                    "stage": "candidate_found_no_inbox",
+                    "candidate_id": cand_id, "ship": ship,
+                    "note": "候选无 inbox 链接,等下一轮(可能图还在入库)",
+                },
+            }
+    finally:
+        conn.close()
+
+    chain_res = _execute_chaoyang_inspection_chain(
+        {"message_inbox_id": cand_inbox_id},
+        cand_msg_id, db_path=db_path, task_id=task_id,
+    )
+    # 附上文本侧预期车数做交叉校验
+    out = chain_res.get("output_json") or {}
+    if isinstance(out, dict):
+        out["text_trigger"] = {
+            "ship": ship, "destination": dest,
+            "expected_count": expected,
+            "delegated_to_candidate": cand_id,
+        }
+        chain_res["output_json"] = out
+    return chain_res
 
 
 def _execute_chaoyang_inspection_chain(

@@ -90,14 +90,21 @@ def run_lifecycle_closeout(
     conn.row_factory = sqlite3.Row
     try:
         batches = conn.execute(
-            f"SELECT id, project, ship_name, batch_sequence, dispatch_status "
+            f"SELECT id, project, ship_name, batch_sequence, dispatch_status, "
+            f"       dispatch_status_note "
             f"FROM release_batches WHERE dispatch_status IN ({placeholders})",
             _ACTIVE_PHASES_TO_SCAN,
         ).fetchall()
         result["scanned"] = len(batches)
+        result.setdefault("held", 0)
 
         for b in batches:
             bid = b["id"]; project = b["project"] or ""; phase = b["dispatch_status"]
+            # 手动保留:dispatch_status_note 含 HOLD 标记 → 跳过自动结算
+            # (业务上还有车待发,人工压住,等补完车再手动放开)
+            if "HOLD" in (b["dispatch_status_note"] or ""):
+                result["held"] += 1
+                continue
             mode = _yaml_lifecycle_mode(project)
             summary = _batch_wagon_stage_summary(conn, bid)
 

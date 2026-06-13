@@ -201,9 +201,9 @@ def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
                 ), 0)
               END AS box_count
             FROM release_batches rb
-            -- #125 lifecycle 新枚举:dashboard 默认活跃区
+            -- #125 lifecycle 新枚举:dashboard 只显示活跃区(已结算 confirmed_received/closed
+            -- 不再展示,看板只关注在跑的 lot)
             WHERE rb.dispatch_status IN ('pending_freight','enriched','loading','all_loaded','tracking','delivered')
-               OR (rb.dispatch_status IN ('confirmed_received','closed') AND date(rb.updated_at) >= date('now','-7 days'))
             ORDER BY
               CASE rb.dispatch_status
                 WHEN 'loading' THEN 0

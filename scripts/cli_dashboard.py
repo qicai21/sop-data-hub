@@ -489,10 +489,32 @@ def panel_system() -> list[str]:
         lines.append(f"  95306: {_red(rail.get('msg', '?'))}")
     cands = query_pending_candidate_counts()
     if cands:
-        lines.append("  检装车候选:")
-        for st, n in sorted(cands.items()):
-            sym = _yellow("→") if "pending" in st else _green("→")
-            lines.append(f"    {sym} {st:<28} {n:>4}")
+        # 横排打包:挂起态优先(黄)、终态其后(灰),按盒宽折行,省竖向空间
+        OPEN = {"candidate", "pending_match", "pending_review",
+                "pending_95306_match", "timeout_manual_review"}
+        open_n = sum(n for st, n in cands.items() if st in OPEN)
+        head = "  检装车候选(挂起 " + (_yellow(str(open_n)) if open_n else _green("0")) + "):  "
+        # 排序:挂起态在前,然后按数量降序
+        ordered = sorted(cands.items(), key=lambda kv: (kv[0] not in OPEN, -kv[1], kv[0]))
+        items = [
+            (f"{_yellow(st)} {_yellow(str(n))}" if st in OPEN else f"{_dim(st)} {n}")
+            for st, n in ordered
+        ]
+        content_w = PANEL_WIDTH - 4
+        indent = " " * 16  # 续行缩进,跟首行内容对齐
+        sep, sep_w = "  ·  ", 5
+        cur = head
+        cur_w = _disp_width(_strip_ansi(cur))
+        for i, it in enumerate(items):
+            it_w = _disp_width(_strip_ansi(it))
+            add_w = it_w if i == 0 else sep_w + it_w
+            if cur_w + add_w > content_w and cur.strip():
+                lines.append(cur)
+                cur, cur_w = indent + it, _disp_width(indent) + it_w
+            else:
+                cur += (it if cur.endswith("  ") else sep + it)
+                cur_w += add_w
+        lines.append(cur)
     return _box(f"系统状态  ({now_iso_beijing_compact()})", lines)
 
 

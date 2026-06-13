@@ -438,6 +438,21 @@ def create_wagon_shipments_from_candidates(
 
         for plan in insert_plans:
             wagon_id = _gen_wagon_id(plan.ydid, release_batch_id)
+            # cargo_count = 该车箱数。shipped_weight_rule(集装箱业务)按
+            # `cargo_count × 单箱重` 算已发重量,不写这个字段 → 已发恒为 0、
+            # 看板显示不全(2026-06-13 吉林金钢复盘根因)。从 container_numbers_json
+            # 数箱,fallback container_no 按 "/" 拆。整车业务无箱 → 0,其规则也不用它。
+            import json as _cc_json
+            _raw_cnj = getattr(plan, "container_numbers_json", "") or ""
+            _boxes: list[str] = []
+            if _raw_cnj:
+                try:
+                    _boxes = [b for b in _cc_json.loads(_raw_cnj) if b]
+                except Exception:
+                    _boxes = []
+            if not _boxes and plan.container_no:
+                _boxes = [b.strip() for b in str(plan.container_no).split("/") if b.strip()]
+            cargo_count = len(_boxes)
             try:
                 # #123 (2026-06-07): 把 ydid 一起写进去
                 # 老代码漏了 ydid,导致 jilin lot06 39 车 ydid 全空,新表迁移失败。
@@ -448,17 +463,17 @@ def create_wagon_shipments_from_candidates(
                         cargo_name, origin_name, destination_name,
                         ticketed_at, departed_at, arrived_at,
                         delivered_at, confirmed_received_at,
-                        container_no, waybill_no, ydid,
+                        container_no, waybill_no, ydid, cargo_count,
                         project_id, ship_name, dispatch_status,
                         source_message_id, source_group_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         wagon_id, departure_id, release_batch_id,
                         plan.wagon_no, "",
                         plan.cargo_name, plan.origin_station, plan.destination_station,
                         plan.ticketed_at, plan.departed_at, plan.arrived_at,
                         plan.delivered_at, "",
-                        plan.container_no, plan.waybill_no, plan.ydid,
+                        plan.container_no, plan.waybill_no, plan.ydid, cargo_count,
                         departure_candidate.project_id, ship_name, "pending",
                         departure_candidate.message_id, departure_candidate.group_id,
                     ),

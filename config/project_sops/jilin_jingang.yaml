@@ -14,6 +14,13 @@ project_meta:
   dashboard: "normal_freight"
   origin_station: "高桥镇"
   destination_station: "四平"
+  # 发车文本解析器靠 known_ships 认船名(空则解析出空船名→链 skip,2026-06-14
+  # 马兰希望55车 wx_959 没自动处理的根因)。jilin 活跃船登记在此。
+  known_ships:
+    - "马兰希望"
+    - "春日莲花"
+    - "蓝鳍"
+    - "长航滨海"
   cargo_names:
     - "红土镍矿"
     - "镍矿"

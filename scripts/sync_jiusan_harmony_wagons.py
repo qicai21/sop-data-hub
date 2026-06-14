@@ -53,6 +53,7 @@ def fetch_rail_tickets() -> list[dict]:
           AND destination_name = '新台子'
           AND transport_mode_name LIKE '%集装箱%'
           AND ticketed_at >= ?
+          AND car_no IS NOT NULL AND car_no != ''
         ORDER BY ticketed_at, car_no
         """,
         (SINCE,),

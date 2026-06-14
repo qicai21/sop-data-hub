@@ -51,6 +51,15 @@ def test_extract_count_prefix_form():
     assert trs[0]["expected_count"] == 15
 
 
+def test_extract_count_far_before_ship():
+    # wx_931 形态:车数前置 + 中间夹"朝阳西铁",船名在最后(超 8 字符回找窗)
+    trs = extract_inspection_text_triggers("14道52节  朝阳西铁  中联发")
+    assert len(trs) == 1
+    assert trs[0]["ship"] == "中联发"
+    assert trs[0]["expected_count"] == 52
+    assert trs[0]["project_id"] == "chaoyang_steel"
+
+
 def test_extract_jilin_not_captured():
     # 吉林四平蓝鳍属 jilin,不是检验类 → 不抽
     assert extract_inspection_text_triggers("煤六 四平铁 蓝鳍 53节") == []

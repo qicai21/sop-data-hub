@@ -248,13 +248,17 @@ def extract_inspection_text_triggers(text: str) -> list[dict[str, Any]]:
     for i, (pos, ship, proj) in enumerate(occ):
         if ship in seen_ships:
             continue
+        # 本船的"领地"= 上一个船名之后 ~ 下一个船名之前。车数优先在船名后
+        # (常态 "鞍子河5节"),没有再到船名前回找(数量前置,如
+        # "14道52节 朝阳西铁 中联发" —— 52节 在前、隔了"朝阳西铁")。
+        seg_start = (occ[i - 1][0] + len(occ[i - 1][1])) if i > 0 else 0
         seg_end = occ[i + 1][0] if i + 1 < len(occ) else len(norm)
         forward = norm[pos + len(ship):seg_end]
         m = _RE_CAR_COUNT.search(forward)
         if not m:
-            # 兼容数量前置:在船名前 8 字符内回找
-            back = norm[max(0, pos - 8):pos]
-            m = _RE_CAR_COUNT.search(back)
+            # 回找整个船名前领地(不再限 8 字符),取最靠近本船的(最后一个)车数
+            backs = list(_RE_CAR_COUNT.finditer(norm[seg_start:pos]))
+            m = backs[-1] if backs else None
         if not m:
             continue
         count = int(m.group(1))

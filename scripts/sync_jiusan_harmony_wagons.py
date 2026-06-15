@@ -30,6 +30,8 @@ BATCH_ID = "e96f4b3b83c74b4891c6b0957f6989bb827de45b"  # jiusan|和谐1|lot01|20
 SINCE = "2026-06-09"
 WINDOW_GAP_HOURS = 2
 OVERLAP_THRESHOLD = 0.6
+# 装车重量(28.4/箱)已收口到 config/project_sops/jiusan.yaml 的 shipped_weight_rule,
+# 本脚本不再硬算,落库后统一调 compute_for_release_batch(单一真相)。
 
 
 def stable_hash(*parts: str) -> str:
@@ -215,10 +217,11 @@ def recompute_counters(conn: sqlite3.Connection, now: str) -> None:
         "SELECT count(DISTINCT ydid), count(*) FROM wagon_container_shipments WHERE batch_id=?",
         (BATCH_ID,),
     ).fetchone()
+    # batch_count 与车票数同步;装车重量 / actual_wagon_count 走统一 yaml 规则,
+    # 由 main() commit 后调 compute_for_release_batch 落,本处不再硬算。
     conn.execute(
-        """UPDATE release_batches SET batch_count=?, actual_wagon_count=?, updated_at=?
-           WHERE id=?""",
-        (n_ydid, n_ydid, now, BATCH_ID),
+        "UPDATE release_batches SET batch_count=?, updated_at=? WHERE id=?",
+        (n_ydid, now, BATCH_ID),
     )
     print(f"  release_batch 计数:{n_ydid} 车票 / {n_box} box")
 
@@ -246,6 +249,11 @@ def main() -> None:
         recompute_counters(conn, now)
         conn.commit()
         print(f"COMMIT ✓ 新增 {total_new} box,刷新 {total_refresh} box")
+        # 装车重量统一走 yaml shipped_weight_rule(独立连接,需先 commit)
+        from sop_hub.sop.shipped_weight import compute_for_release_batch
+        sw = compute_for_release_batch(BATCH_ID, db_path=SOP_DB)
+        print(f"  装车重量(yaml container 28.4/箱):已发 {sw.get('shipped_weight_tons')}t / "
+              f"剩余 {sw.get('remaining_weight_tons')}t")
     finally:
         conn.close()
 

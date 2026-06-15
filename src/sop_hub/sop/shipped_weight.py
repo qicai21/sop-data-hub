@@ -115,16 +115,42 @@ def _compute_inner(release_batch_id: str, conn: sqlite3.Connection,
     project_id = batch.get("project") or ""
 
     rule = _load_project_rule(project_id, sop_dir)
-    if not rule or "per_wagon" not in rule:
+    if not rule:
         return {"ok": False, "error": "no_shipped_weight_rule",
                 "release_batch_id": release_batch_id, "project": project_id}
 
-    per_wagon = rule["per_wagon"]
+    # 规则两种格式:
+    #  旧 flat:{per_wagon: ...}                 → sum over wagon_shipments(整车/散粮)
+    #  新嵌套:{container: {...}, bulk: {...}}   → 按本 lot 运输方式选子规则
+    #          集装箱业务数据在 wagon_container_shipments(box 级),走 container 源;
+    #          整车/散粮在 wagon_shipments,走 bulk 源。
+    is_container = False
+    if "container" in rule or "bulk" in rule:
+        tmode = batch.get("transport_mode") or ""
+        is_container = "集装箱" in tmode
+        sub = rule.get("container") if is_container else rule.get("bulk")
+        if not sub:
+            return {"ok": False, "error": "no_shipped_weight_rule",
+                    "release_batch_id": release_batch_id, "project": project_id}
+        each = sub.get("per_box") or sub.get("per_wagon")
+        source = sub.get("source") or (
+            "wagon_container_shipments_in_release_batch" if is_container
+            else "wagon_shipments_in_release_batch")
+        per_wagon = each
+    elif "per_wagon" in rule:
+        per_wagon = rule["per_wagon"]
+        source = "wagon_shipments_in_release_batch"
+    else:
+        return {"ok": False, "error": "no_shipped_weight_rule",
+                "release_batch_id": release_batch_id, "project": project_id}
+
+    # 集装箱按 box 级写,不回填 wagon_shipments 的逐车 basis
+    capture = write_basis and not is_container
     sum_expr = {
         "op": "sum_over",
-        "source": "wagon_shipments_in_release_batch",
+        "source": source,
         "each": per_wagon,
-        "capture_basis": write_basis,
+        "capture_basis": capture,
     }
     ctx = {"db_conn": conn, "release_batch": {"id": release_batch_id}}
     result = evaluate(sum_expr, ctx)
@@ -148,10 +174,17 @@ def _compute_inner(release_batch_id: str, conn: sqlite3.Connection,
 
     # actual_wagon_count 与已发车数同步(去重 by car_no)。手动 re-link / 回填
     # 路径下 create_wagon_shipments hook 不会触发,这里兜底刷新。
-    actual_wagons = conn.execute(
-        "SELECT COUNT(DISTINCT car_no) FROM wagon_shipments WHERE batch_id=?",
-        (release_batch_id,),
-    ).fetchone()[0]
+    # 集装箱业务车号在 wagon_container_shipments,按 ydid(=货票=车)去重。
+    if is_container:
+        actual_wagons = conn.execute(
+            "SELECT COUNT(DISTINCT ydid) FROM wagon_container_shipments WHERE batch_id=?",
+            (release_batch_id,),
+        ).fetchone()[0]
+    else:
+        actual_wagons = conn.execute(
+            "SELECT COUNT(DISTINCT car_no) FROM wagon_shipments WHERE batch_id=?",
+            (release_batch_id,),
+        ).fetchone()[0]
 
     conn.execute(
         "UPDATE release_batches SET "
@@ -165,7 +198,7 @@ def _compute_inner(release_batch_id: str, conn: sqlite3.Connection,
          unresolved, int(actual_wagons or 0), release_batch_id),
     )
 
-    if write_basis:
+    if capture:
         basis_list = result.get("basis_per_item") or []
         # Need to rebuild basis with wagon row for nice audit string
         wagons = {row["id"]: dict(row) for row in conn.execute(

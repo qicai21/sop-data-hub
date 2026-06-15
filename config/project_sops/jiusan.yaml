@@ -27,6 +27,23 @@ project_meta:
   lifecycle:
     mode: "full_track_to_received"
     rationale: "粮食结算依赖到货时间;wagon 全部到货才标 confirmed_received"
+  # 装车重量(2026-06-15 收口,替代 sync 脚本里的硬算常量):
+  #   集装箱 lot(transport_mode 含"集装箱")→ box 数 × 28.4t,数据在
+  #     wagon_container_shipments(box 级)→ 走 container 源。
+  #   散粮/整车 lot → 按车型标载:L70=69t,其余(L16/L18)=61t,数据在
+  #     wagon_shipments → 走 bulk 源(默认)。
+  shipped_weight_rule:
+    container:
+      per_box:
+        op: to_float
+        value: 28.4
+    bulk:
+      per_wagon:
+        op: lookup_by_prefix
+        value: "$wagon.car_model"
+        prefix_map:
+          L70: 69
+        on_miss: 61
 
 rail95306:
   account: "xts"

@@ -163,6 +163,46 @@ def _connect(db_path: Path):
     return conn
 
 
+_last_sw_recompute = 0.0
+
+
+def refresh_active_shipped_weights(throttle_s: int = 30) -> None:
+    """看板刷新前,对活跃 batch 重算装车重量,保证任何入库路径(含手工补车、
+    backfill 脚本)后看板都显示准确值 —— 否则补车没重算就会偏小、失真,
+    影响请车统计(2026-06-15 宝腾海 14942.5 漏 15 车实证)。
+
+    write_basis=False → 只刷 batch 级合计,廉价。无 yaml 规则的项目(如 jiusan)
+    compute 直接返回不写,保留 sync 脚本落的值,互不干扰。节流最多每 throttle_s 秒
+    一次;任何异常静默,看板绝不因此崩。
+    """
+    global _last_sw_recompute
+    now = time.time()
+    if now - _last_sw_recompute < throttle_s:
+        return
+    _last_sw_recompute = now
+    conn = _connect(DB_PATH)
+    if conn is None:
+        return
+    try:
+        ids = [r[0] for r in conn.execute(
+            "SELECT id FROM release_batches "
+            "WHERE dispatch_status NOT IN ('confirmed_received','closed')"
+        ).fetchall()]
+    except sqlite3.Error:
+        return
+    finally:
+        conn.close()
+    try:
+        from sop_hub.sop.shipped_weight import compute_for_release_batch
+    except Exception:
+        return
+    for bid in ids:
+        try:
+            compute_for_release_batch(bid, db_path=DB_PATH, write_basis=False)
+        except Exception:
+            continue
+
+
 def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
     """按 project 分组,取所有 in_progress + completed in last 7 days 的 batch。
     顺手补一列 box_count(集装箱业务用,从 wagon_shipments.container_numbers_json
@@ -543,6 +583,9 @@ def panel_paths() -> list[str]:
 
 def render_once() -> str:
     out_lines: list[str] = []
+
+    # 刷新前先把活跃 batch 的装车重量重算准(任何入库路径都兜底)
+    refresh_active_shipped_weights()
 
     # 头部
     out_lines.append(_bold(

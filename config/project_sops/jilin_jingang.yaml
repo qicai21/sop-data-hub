@@ -54,6 +54,11 @@ project_meta:
   # 业务模式标志:集装箱发运(dashboard 按"箱数"显示而不是"车数")
   is_container_business: true
 
+  # 发运对齐延迟门(2026-06-16):发运文本("六道 四平铁 马兰希望 55车")到群时,
+  # 95306 往往还在制单 —— 此刻对齐 95306 会抓到空车号/不全的票(06-16 马兰希望
+  # 发错 excel 的导火索)。配置延迟 N 小时再对齐、出表、上传。0 = 关闭延迟。
+  dispatch_alignment_delay_hours: 2
+
 scope:
   description:
     - 从微信群接收放货信息、货运信息、装车发运通知

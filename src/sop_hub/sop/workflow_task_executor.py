@@ -209,16 +209,21 @@ def run_workflow_task(
     output = result.get("output_json")
     error = result.get("error_message")
 
-    _mark_task(
-        db, task_id, status,
-        output_json=json.dumps(output, ensure_ascii=False) if output else None,
-        error_message=error,
-        retry_count=(rd.get("retry_count") or 0) + 1,
-    )
+    # 发运延迟门:deferred 只是"还没到点"的轮询,不算一次真尝试,不累加
+    # retry_count(否则 2 小时窗口里每轮 +1,污染重试语义)。
+    _mark_kwargs: dict[str, Any] = {
+        "output_json": json.dumps(output, ensure_ascii=False) if output else None,
+        "error_message": error,
+    }
+    if result.get("action") != "deferred":
+        _mark_kwargs["retry_count"] = (rd.get("retry_count") or 0) + 1
+    _mark_task(db, task_id, status, **_mark_kwargs)
 
-    # Update message_inbox
-    mi_status = MESSAGE_INBOX_STATUS_MAP.get(status, "task_failed")
-    _update_message_inbox_status(db, message_id, mi_status)
+    # Update message_inbox(deferred 不改 inbox 状态:任务仍 pending 待下一轮,
+    # 别把它误标 task_failed/skipped)
+    if result.get("action") != "deferred":
+        mi_status = MESSAGE_INBOX_STATUS_MAP.get(status, "task_failed")
+        _update_message_inbox_status(db, message_id, mi_status)
 
     return {
         "task_id": task_id,
@@ -289,6 +294,19 @@ def _execute_jljg_departure(
     )
 
     output = preview.to_dict()
+
+    # ── 发运对齐延迟门(2026-06-16):本轮在延迟窗口内 → 不规划/不执行任何
+    # 对外动作,任务保持 pending,下一轮 daemon 再判。等过点后正常跑全链。
+    if getattr(preview, "deferred", False):
+        return {
+            "action": "deferred",
+            "status": "pending",
+            "output_json": {
+                **output,
+                "deferred_until": preview.deferred_until,
+                "skip_reason": preview.skipped_reason,
+            },
+        }
 
     # ── R70: plan external actions with idempotency keys ──────────────
     external_actions: list[dict[str, Any]] = []

@@ -950,10 +950,15 @@ def generate_dispatch_event_excel(
 
     if filename_override:
         filename = filename_override
+    elif tpl.file_pattern and "{car_count}" in tpl.file_pattern:
+        # per-event 也走 yaml file_naming.pattern —— 业务侧文件名必须是项目正名
+        # (如「吉林金钢_发运数据_{yyyymmdd}_{car_count}车.xlsx」),car_count = 本次
+        # 事件车数。不再吐 {project}_event_… 内部名(2026-06-16 修:发运 excel
+        # 文件名车数错 = 退化成整批 + 内部命名两个 bug 叠加)。
+        filename = _resolve_filename(tpl.file_pattern,
+                                      car_count=wagon_count, batch_id="")
     else:
         today = datetime.now().strftime("%Y%m%d")
-        # event excel 默认命名:{project}_event_{yyyymmdd}_{N}cars.xlsx,
-        # 跟单 batch 的 {project}_{N}cars 区分,看文件名能立刻判断是事件 vs 单 batch
         filename = f"{resolved_project}_event_{today}_{wagon_count}cars.xlsx"
     filepath = out_dir / filename
 

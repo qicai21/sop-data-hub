@@ -85,6 +85,8 @@ class ExecutionPreview:
     # Overall
     error: str = ""
     skipped_reason: str = ""
+    deferred: bool = False          # 在发运延迟窗口内,本轮不跑,等下一轮(任务保持 pending)
+    deferred_until: str = ""        # 可跑的最早时刻(ISO Beijing)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -137,7 +139,57 @@ class ExecutionPreview:
             },
             "error": self.error,
             "skipped_reason": self.skipped_reason,
+            "deferred": self.deferred,
+            "deferred_until": self.deferred_until,
         }
+
+
+# ── 发运对齐延迟门(2026-06-16)─────────────────────────────────────────
+
+def _dispatch_delay_hours(project_id: str) -> float:
+    """读 yaml project_meta.dispatch_alignment_delay_hours(默认 2,0=关)。"""
+    if not project_id:
+        return 0.0
+    try:
+        import yaml as _yaml
+        from sop_hub.sop.departure_excel import _find_yaml_for_project
+        raw = _yaml.safe_load(
+            _find_yaml_for_project(project_id).read_text(encoding="utf-8")
+        ) or {}
+        pm = raw.get("project_meta") or {}
+        val = pm.get("dispatch_alignment_delay_hours", 2)
+        return float(val) if val is not None else 0.0
+    except Exception:
+        return 2.0  # 读不到 yaml 时保守延迟,避免抓制单中数据
+
+
+def _dispatch_delay_gate(project_id: str, ref_time: str) -> tuple[str, bool]:
+    """判断本次发运是否还在对齐延迟窗口内。
+
+    Returns (ok_at_iso, should_defer)。ok_at = ref_time + delay_hours。
+    ref_time 解析失败 / delay<=0 → 不延迟(("", False))。
+    """
+    hours = _dispatch_delay_hours(project_id)
+    if hours <= 0 or not ref_time:
+        return "", False
+    from datetime import datetime, timedelta
+    raw = str(ref_time).strip().replace("T", " ")[:19]
+    parsed = None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            parsed = datetime.strptime(raw, fmt)
+            break
+        except ValueError:
+            continue
+    if parsed is None:
+        return "", False  # 解析不了文本时间,不卡链(宁可跑,别永久挂起)
+    ok_at = parsed + timedelta(hours=hours)
+    now_raw = now_iso_beijing_compact()[:19].replace("T", " ")
+    try:
+        now_dt = datetime.strptime(now_raw, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return "", False
+    return ok_at.isoformat(sep=" "), now_dt < ok_at
 
 
 # ── DB helpers ──────────────────────────────────────────────────────────
@@ -320,6 +372,23 @@ def run_departure_executor_chain(
             preview.release_batch_id = rb["id"]
             preview.release_batch_ship = rb["ship_name"]
 
+            # ── Step 2.5: 发运对齐延迟门(2026-06-16 设定)────────────
+            # 业务事实:发运文本("六道 四平铁 马兰希望 55车")到群时,95306
+            # 往往还在制单 —— 此刻对齐会抓到空车号/不全的票(就是 06-16
+            # 马兰希望 发错 excel 的导火索)。配置延迟 N 小时,未到点本轮
+            # 不跑 Step3-6,任务保持 pending,等下一轮重判。延迟时长走 yaml
+            # project_meta.dispatch_alignment_delay_hours(默认 2,0=关)。
+            _ref = candidate.message_time or getattr(event, "received_at", "") or ""
+            ok_at, defer = _dispatch_delay_gate(candidate.project_id, _ref)
+            if defer:
+                preview.deferred = True
+                preview.deferred_until = ok_at
+                preview.skipped_reason = (
+                    f"deferred: 发运对齐延迟窗口内(文本 {_ref[:16]},"
+                    f"{ok_at[:16]} 后再与 95306 对齐),等 95306 制单完成"
+                )
+                return preview
+
             # ── Step 3: query 95306 ───────────────────────────────────
             origin = "高桥镇"
             dest = candidate.destination or "四平"
@@ -375,6 +444,35 @@ def run_departure_executor_chain(
             # 维持单 batch 老路径(适合 1 lot in_progress 的简单场景)。
             plan_mode = False
             event_wagon_ids: list[str] = []
+            # ── 本次发车事件的 wagon_ids ──────────────────────────────
+            # = 这条消息刚 INSERT(或幂等命中)的、有车号的车。与有无
+            # dispatch_plan 无关 —— 发运 excel/upload 必须 per-event,单 lot
+            # 项目(无 active plan)也走事件口径,绝不退化成整批。
+            # 2026-06-16 修:马兰希望(无 plan)历来落整批兜底,把 lot 累计
+            # 181 车全导出 = 发运 excel 三宗错(lot 标签/车数/全列)的总根。
+            # 空车号(95306 制单未完)会被 `and p.wagon_no` 滤空 → event 为空
+            # → 下面 step5 拒绝出表/上传,而不是吐整批。
+            if wagon_result.status == "safe_to_apply":
+                inserted_car_nos = [
+                    p.wagon_no for p in wagon_result.plans
+                    if p.action in ("insert", "skip_existing") and p.wagon_no
+                ]
+                if inserted_car_nos:
+                    import sqlite3 as _sql
+                    _c = _sql.connect(str(db_path))
+                    _c.row_factory = _sql.Row
+                    in_ph = ",".join("?" * len(inserted_car_nos))
+                    rows = _c.execute(
+                        f"SELECT id FROM wagon_shipments "
+                        f"WHERE car_no IN ({in_ph}) AND batch_id=?",
+                        (*inserted_car_nos, preview.release_batch_id),
+                    ).fetchall()
+                    event_wagon_ids = [r["id"] for r in rows]
+                    _c.close()
+
+            # ── Step 4b: plan-aware allocation(#111 Phase 2 2026-06-06)──
+            # 仅多 lot 共存(有 active plan)时需要按 box 拆分到各 lot;无 plan
+            # 的单 lot 项目不分配,但上面已拿到 event_wagon_ids 照样走 per-event。
             try:
                 from sop_hub.sop.dispatch_plan import (
                     list_active_plans, allocate_wagons,
@@ -386,102 +484,77 @@ def run_departure_executor_chain(
                     if (project_id_local and ship_name)
                     else []
                 )
-                if active_plans and wagon_result.status == "safe_to_apply":
-                    # 取本次刚 INSERT 的 wagons:car_nos 来自 wagon_result.plans 里
-                    # action='insert' 的;再 + match source_message_id 当幂等关键
-                    inserted_car_nos = [
-                        p.wagon_no for p in wagon_result.plans
-                        if p.action in ("insert", "skip_existing")
-                        and p.wagon_no
-                    ]
-                    if inserted_car_nos:
-                        import sqlite3 as _sql
-                        _c = _sql.connect(str(db_path))
-                        _c.row_factory = _sql.Row
-                        in_ph = ",".join("?" * len(inserted_car_nos))
-                        # 取属于这个 release_batch 的、刚插的车 IDs
-                        rows = _c.execute(
-                            f"SELECT id FROM wagon_shipments "
-                            f"WHERE car_no IN ({in_ph}) AND batch_id=?",
-                            (*inserted_car_nos, preview.release_batch_id),
-                        ).fetchall()
-                        event_wagon_ids = [r["id"] for r in rows]
-                        _c.close()
-                        if event_wagon_ids:
-                            # force_overwrite=True:本次新 INSERT 的 wagon,
-                            # step 3 给了 placeholder batch_id(指向 active plan
-                            # 的一个 lot),allocate_wagons 老的幂等检查会误判
-                            # 已分配 → 50 车全堆 placeholder lot。
-                            alloc = allocate_wagons(
-                                event_wagon_ids, project_id_local, ship_name,
-                                db_path=db_path, force_overwrite=True,
+                if active_plans and event_wagon_ids:
+                    # force_overwrite=True:本次新 INSERT 的 wagon,step 3 给了
+                    # placeholder batch_id(指向 active plan 的一个 lot),
+                    # allocate_wagons 老幂等检查会误判已分配 → 全堆 placeholder lot。
+                    alloc = allocate_wagons(
+                        event_wagon_ids, project_id_local, ship_name,
+                        db_path=db_path, force_overwrite=True,
+                    )
+                    plan_mode = True
+                    preview.error += "" if not alloc.error else f"plan_alloc: {alloc.error}; "
+                    # #128 lifecycle 触发器:plan 装满的 batch → all_loaded
+                    try:
+                        from sop_hub.sop.lifecycle_transition import advance_lifecycle
+                        for closed_bid in (alloc.closed_batches or []):
+                            advance_lifecycle(
+                                closed_bid, "all_loaded",
+                                reason=f"plan 装满({ship_name})",
+                                triggered_by="chain.step4b.allocate_wagons",
+                                db_path=db_path,
                             )
-                            plan_mode = True
-                            preview.error += "" if not alloc.error else f"plan_alloc: {alloc.error}; "
-                            # #128 lifecycle 触发器:plan 装满了的 batch → all_loaded
-                            # (alloc.closed_batches 是本次 allocate 把 remaining
-                            # 装到 0 的那些 lot,plan 满意味着拒绝新装车通知)
-                            try:
-                                from sop_hub.sop.lifecycle_transition import advance_lifecycle
-                                for closed_bid in (alloc.closed_batches or []):
-                                    advance_lifecycle(
-                                        closed_bid, "all_loaded",
-                                        reason=f"plan 装满({ship_name})",
-                                        triggered_by="chain.step4b.allocate_wagons",
-                                        db_path=db_path,
-                                    )
-                                # 主 batch(还在装的)→ 至少推到 loading(若之前是
-                                # pending_freight/enriched)
-                                advance_lifecycle(
-                                    preview.release_batch_id, "loading",
-                                    reason=f"first wagons ingested into {ship_name}",
-                                    triggered_by="chain.step4.create_wagon_shipments",
-                                    db_path=db_path,
-                                )
-                            except Exception as exc:
-                                preview.error += f"lifecycle_advance: {exc}; "
+                        # 主 batch(还在装的)→ 至少推到 loading
+                        advance_lifecycle(
+                            preview.release_batch_id, "loading",
+                            reason=f"first wagons ingested into {ship_name}",
+                            triggered_by="chain.step4.create_wagon_shipments",
+                            db_path=db_path,
+                        )
+                    except Exception as exc:
+                        preview.error += f"lifecycle_advance: {exc}; "
             except Exception as exc:
                 preview.error += f"plan_alloc: {exc}; "
 
             # ── Step 5: departure_excel + factory_upload(仅 safe_to_apply)─
+            excel_result = None
+            factory_result = None
             if wagon_result.status == "safe_to_apply":
                 try:
-                    if plan_mode and event_wagon_ids:
-                        # plan 分配后跨 lot:用 per-event excel(#107)
+                    if event_wagon_ids:
+                        # 发运 excel 永远 per-event(#107):本次事件涉及的
+                        # wagon_ids,跨 lot 合并一张表。不再有"整批兜底"。
                         from sop_hub.sop.departure_excel import generate_dispatch_event_excel
                         excel_result = generate_dispatch_event_excel(
                             wagon_ids=event_wagon_ids, db_path=db_path,
                         )
+                        preview.excel_path = excel_result.output_path
+                        preview.excel_rows = getattr(excel_result, "row_count", 0)
+                        preview.excel_wagons = getattr(excel_result, "wagon_count", 0)
                     else:
-                        from sop_hub.sop.departure_excel import generate_departure_excel
-                        excel_result = generate_departure_excel(
-                            preview.release_batch_id, db_path=db_path,
-                        )
-                    preview.excel_path = excel_result.output_path
-                    preview.excel_rows = getattr(excel_result, "row_count", 0)
-                    preview.excel_wagons = getattr(excel_result, "wagon_count", 0)
+                        # 本次事件无可识别车号(95306 制单未完/车号为空/未匹配)。
+                        # 退化成整批 excel 是历史大坑(发错表),宁可不出表 + 报错。
+                        preview.error += ("excel_skipped: 本次发车无有效车号,"
+                                          "拒绝出整批表(等 95306 车号齐再重跑); ")
                 except Exception as exc:
                     preview.error += f"excel: {exc}; "
 
                 try:
-                    if plan_mode and event_wagon_ids:
-                        # plan 分配后跨 lot:用 per-event upload(#107)
+                    if event_wagon_ids:
+                        # 工厂上传同样 per-event:只传本次事件的箱,不传整批。
                         from sop_hub.sop.factory_upload import upload_dispatch_event_wagons
                         factory_result = upload_dispatch_event_wagons(
                             wagon_ids=event_wagon_ids,
                             project_id=candidate.project_id,
                             db_path=db_path,
                         )
+                        preview.factory_login = factory_result.login_success
+                        preview.factory_login_error = factory_result.login_error
+                        preview.factory_payloads = factory_result.total_wagons
+                        preview.factory_success = factory_result.success_count
+                        preview.factory_failure = factory_result.failure_count
                     else:
-                        from sop_hub.sop.factory_upload import upload_release_batch
-                        factory_result = upload_release_batch(
-                            preview.release_batch_id, db_path=db_path,
-                        )
-                    preview.factory_login = factory_result.login_success
-                    preview.factory_login_error = factory_result.login_error
-                    preview.factory_payloads = factory_result.total_wagons
-                    preview.factory_success = factory_result.success_count
-                    preview.factory_failure = factory_result.failure_count
+                        preview.error += "factory_upload_skipped: 本次发车无有效车号; "
                 except Exception as exc:
                     preview.error += f"factory_upload: {exc}; "
 
@@ -489,7 +562,9 @@ def run_departure_executor_chain(
                 # plan 模式时按 order_identifier_groups 逐组 verify;否则单 batch verify
                 try:
                     from sop_hub.sop.factory_verify import verify_factory_upload
-                    if plan_mode and hasattr(factory_result, "order_identifier_groups"):
+                    if factory_result is None:
+                        pass  # 上传被跳过(本次无有效车号),无可反查
+                    elif plan_mode and hasattr(factory_result, "order_identifier_groups"):
                         verify_total_match = True
                         verify_all_boxes = True
                         verify_api_total = 0
@@ -527,7 +602,9 @@ def run_departure_executor_chain(
                     preview.error += f"factory_verify: {exc}; "
 
                 # ── Step 6: send Excel to contact (R55) ──────────────
-                try:
+                # 只在本次事件真出了表时才发;没出表(车号缺失)不发空消息。
+                if excel_result is not None and getattr(excel_result, "output_path", ""):
+                  try:
                     from sop_hub.sop.send_excel import send_to_wechat
                     # 2026-06-06:不再硬编码 "郭东北"。收件人由 jilin yaml
                     # flows.report_delivery_flow.send_report.target_group 决定
@@ -535,7 +612,11 @@ def run_departure_executor_chain(
                     from sop_hub.sop.workflow_task_executor import _resolve_send_target
                     target = _resolve_send_target("jilin_jingang_jinzhou") or "[GROUP013]"
                     batch_ship = preview.release_batch_ship
-                    msg = f"吉林金钢发运数据 {batch_ship} lot02 {excel_result.wagon_count}车"
+                    # lot 标签用 release_batch 真实 batch_sequence,不再硬编码 lot02
+                    # (2026-06-16 修:文本报告 lot 永远显示 lot02);车数 = 本次事件车数。
+                    lot_label = (rb.get("batch_sequence") or "lot01").strip()
+                    msg = (f"吉林金钢发运数据 {batch_ship} {lot_label} "
+                           f"{excel_result.wagon_count}车")
                     send_result = send_to_wechat(
                         target=target,
                         message=msg,
@@ -545,7 +626,7 @@ def run_departure_executor_chain(
                     preview.excel_target = target
                     if not send_result.success:
                         preview.error += f"send_excel: {send_result.error}; "
-                except Exception as exc:
+                  except Exception as exc:
                     preview.error += f"send_excel: {exc}; "
 
     # ── Write execution preview (all code paths) ──────────────────────

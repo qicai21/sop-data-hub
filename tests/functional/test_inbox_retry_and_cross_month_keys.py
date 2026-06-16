@@ -114,6 +114,39 @@ def test_cross_month_jsonl_same_message_id_both_insert(temp_db):
     assert "蓝鳍" in rows[1][2]
 
 
+# ── 2026-06-16: 内容去重(朝阳中联发刷屏回归)──────────────────────
+def test_same_group_same_text_content_deduped(temp_db):
+    """同群同文本 12h 内重读(新 message_id)→ 内容去重拦截,不新建。
+
+    回归:wechat-ops-agent 把同一条消息每轮重复 append(每次新 wx_<seq>),
+    按 message_id 去重失效 → 反复建 inbox/task → excel 发送刷屏。
+    """
+    from sop_hub.sop.message_inbox import (
+        ensure_message_inbox_schema,
+        upsert_message_inbox_event,
+    )
+
+    ensure_message_inbox_schema(db_path=str(temp_db))
+    ev1 = _make_event(message_id="wx_189", text="中联发 第二列 53车")
+    assert upsert_message_inbox_event(ev1, db_path=str(temp_db))["action"] == "inserted"
+
+    # 同群同文本,但被赋了新 message_id(模拟重读)
+    ev2 = _make_event(message_id="wx_191", text="中联发 第二列 53车")
+    r2 = upsert_message_inbox_event(ev2, db_path=str(temp_db))
+    assert r2["action"] == "duplicate_content", "同群同文本重读应被内容去重拦"
+
+    # 不同文本不受影响,正常新建
+    ev3 = _make_event(message_id="wx_193", text="中联发 工人清车皮")
+    assert upsert_message_inbox_event(ev3, db_path=str(temp_db))["action"] == "inserted"
+
+    conn = sqlite3.connect(str(temp_db))
+    n = conn.execute(
+        "SELECT count(*) FROM message_inbox WHERE text_content='中联发 第二列 53车'"
+    ).fetchone()[0]
+    conn.close()
+    assert n == 1, "同文本只应有 1 行"
+
+
 # ── #118 idempotency: 同 source_file 再 upsert 仍是 UPDATE ────────
 def test_same_source_file_upsert_is_update(temp_db):
     from sop_hub.sop.message_inbox import ensure_message_inbox_schema, upsert_message_inbox_event

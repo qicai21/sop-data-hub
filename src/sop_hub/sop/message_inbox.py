@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -263,6 +263,30 @@ def upsert_message_inbox_event(
             "message_id": mid,
             "created_at": existing["created_at"],
         }
+
+    # 内容去重(2026-06-16,朝阳中联发刷屏实证):wechat-ops-agent 会把同一条消息
+    # 每轮重复 append(每次新 wx_<seq> message_id),按 (agent,group,file,mid) 唯一键
+    # 去重必然失效 → 同文本反复建 inbox → 反复建 task → excel 发送刷屏。
+    # 兜底:文本消息,同群同文本 12h 内已有行 → 视为同一条的重读,只刷 last_seen,不新建。
+    _txt = (row.get("text_content") or "").strip()
+    if _txt:
+        try:
+            _thr = (datetime.fromisoformat(_now_iso()) - timedelta(hours=12)).isoformat()
+        except Exception:
+            _thr = ""
+        _dup = conn.execute(
+            "SELECT id FROM message_inbox WHERE group_id = ? AND text_content = ? "
+            "AND created_at >= ? ORDER BY id DESC LIMIT 1",
+            (gid, row.get("text_content"), _thr),
+        ).fetchone()
+        if _dup:
+            conn.execute(
+                "UPDATE message_inbox SET last_seen_at = ? WHERE id = ?",
+                (_now_iso(), _dup[0]),
+            )
+            conn.commit()
+            conn.close()
+            return {"action": "duplicate_content", "id": _dup[0], "message_id": mid}
 
     columns = list(row.keys())
     placeholders = ", ".join("?" for _ in columns)

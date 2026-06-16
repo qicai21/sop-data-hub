@@ -436,6 +436,19 @@ def create_wagon_shipments_from_candidates(
         from sop_hub.utils.time import now_iso_beijing_compact
         now = now_iso_beijing_compact()
 
+        # 装车线路(2026-06-16 设定):发运文本 lane_or_track 归一为中文大写正名
+        # (六道/6道/煤6 → 煤六;港7/7道 → 七道),整列同一次发车共用。只落车级表。
+        from sop_hub.sop.departure_text_parser import canonicalize_loading_line
+        loading_line = canonicalize_loading_line(
+            getattr(departure_candidate, "lane_or_track", "") or ""
+        )
+        try:
+            _wcols = {r[1] for r in sop_conn.execute("PRAGMA table_info(wagon_shipments)")}
+            if "loading_line" not in _wcols:
+                sop_conn.execute("ALTER TABLE wagon_shipments ADD COLUMN loading_line TEXT")
+        except Exception as _exc:
+            result.warnings.append(f"ensure loading_line column failed: {_exc}")
+
         for plan in insert_plans:
             wagon_id = _gen_wagon_id(plan.ydid, release_batch_id)
             # cargo_count = 该车箱数。shipped_weight_rule(集装箱业务)按
@@ -465,8 +478,8 @@ def create_wagon_shipments_from_candidates(
                         delivered_at, confirmed_received_at,
                         container_no, waybill_no, ydid, cargo_count,
                         project_id, ship_name, dispatch_status,
-                        source_message_id, source_group_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        source_message_id, source_group_id, loading_line
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         wagon_id, departure_id, release_batch_id,
                         plan.wagon_no, "",
@@ -476,6 +489,7 @@ def create_wagon_shipments_from_candidates(
                         plan.container_no, plan.waybill_no, plan.ydid, cargo_count,
                         departure_candidate.project_id, ship_name, "pending",
                         departure_candidate.message_id, departure_candidate.group_id,
+                        loading_line,
                     ),
                 )
                 inserted += 1

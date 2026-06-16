@@ -45,7 +45,7 @@ CANONICAL_COLUMNS = [
     "container_no", "waybill_no", "ydid", "czydid", "cargo_count",
     "transport_mode_code", "transport_mode_name", "project_id", "ship_name",
     "dispatch_status", "source_message_id", "source_group_id",
-    "created_at", "updated_at",
+    "loading_line", "created_at", "updated_at",
 ]
 
 # 落库后用这些字段在「已有行」上刷新 95306 状态(幂等 re-sync,保留 created_at)
@@ -95,6 +95,7 @@ def build_wagon_row(
     source_message_id: str = "",
     source_group_id: str = "",
     departure_id: str = "",
+    loading_line: str = "",
 ) -> dict:
     """从一张 95306 货票 dict 构造一行 canonical wagon_shipments。"""
     ydid = ticket.get("ydid") or ""
@@ -141,6 +142,8 @@ def build_wagon_row(
         "dispatch_status": ds,
         "source_message_id": source_message_id,
         "source_group_id": source_group_id,
+        # 装车线路:调用方归一好传进来(canonicalize_loading_line),或 ticket 自带
+        "loading_line": loading_line or (ticket.get("loading_line") or ""),
         "created_at": now,
         "updated_at": now,
     }
@@ -148,6 +151,10 @@ def build_wagon_row(
 
 def upsert_wagons(conn: sqlite3.Connection, rows: list[dict], batch_id: str) -> tuple[int, int]:
     """新行 INSERT;已有行只刷 95306 状态(幂等)。返回 (新增, 刷新)。"""
+    # 老库迁移:确保 loading_line 列存在(2026-06-16 新增)
+    _cols = {r[1] for r in conn.execute("PRAGMA table_info(wagon_shipments)")}
+    if "loading_line" not in _cols:
+        conn.execute("ALTER TABLE wagon_shipments ADD COLUMN loading_line TEXT")
     existing = {r[0] for r in conn.execute(
         "SELECT id FROM wagon_shipments WHERE batch_id=?", (batch_id,))}
     new_n = 0
@@ -178,6 +185,7 @@ def ingest_wagons(
     dispatch_status: str = "loading",
     source_message_id: str = "",
     source_group_id: str = "",
+    loading_line: str = "",
     recompute: bool = True,
     now: str | None = None,
 ) -> dict:
@@ -185,6 +193,7 @@ def ingest_wagons(
 
     recompute=True(默认)落库后必调 compute_for_release_batch —— 这正是散落
     脚本最常漏的一步。无 yaml shipped_weight_rule 的项目 compute 会安全跳过。
+    loading_line:装车线路,调用方先 canonicalize_loading_line 归一(煤六/七道…)。
     """
     if now is None:
         from sop_hub.utils.time import now_iso_beijing_compact
@@ -192,7 +201,7 @@ def ingest_wagons(
     rows = [build_wagon_row(
         t, batch_id=batch_id, project_id=project_id, ship_name=ship_name, now=now,
         dispatch_status=dispatch_status, source_message_id=source_message_id,
-        source_group_id=source_group_id,
+        source_group_id=source_group_id, loading_line=loading_line,
     ) for t in tickets]
 
     conn = sqlite3.connect(str(db_path))

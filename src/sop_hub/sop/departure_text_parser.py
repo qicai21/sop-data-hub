@@ -82,6 +82,70 @@ _DESTINATION_PROJECT = {
     "汐子": "zhongtang_special_steel",
 }
 
+# ── 装车线路归一(2026-06-16 设定)──────────────────────────────────────
+# 同一条物理线在文本里有多种写法(煤6/煤六/6道/六道/港6),必须收敛成单一
+# 中文大写正名后再入库,否则统计/核对时同线被拆成多个。
+# 规则(用户确认):取线路号 n —— 1~6 号 → 「煤<中文>」(煤一..煤六);
+# 7 号及以上 → 「<中文>道」(七道/八道/.../十四道)。所以 六道/6道/煤6 → 煤六。
+_CN_DIGITS = "零一二三四五六七八九"
+
+
+def _int_to_cn(n: int) -> str:
+    """1→一 … 10→十 … 14→十四 … 20→二十 … 21→二十一(站线号,几十足够)。"""
+    if n <= 0:
+        return str(n)
+    if n < 10:
+        return _CN_DIGITS[n]
+    if n < 20:
+        return "十" + (_CN_DIGITS[n % 10] if n % 10 else "")
+    tens, ones = divmod(n, 10)
+    return _CN_DIGITS[tens] + "十" + (_CN_DIGITS[ones] if ones else "")
+
+
+def _cn_to_int(s: str) -> int | None:
+    """中文数字 → int(支持 一..九十九);纯阿拉伯也接。失败 None。"""
+    s = s.strip()
+    if s.isdigit():
+        return int(s)
+    if not s:
+        return None
+    if s == "十":
+        return 10
+    total, section = 0, 0
+    for ch in s:
+        d = _CN_DIGITS.find(ch)
+        if ch == "十":
+            section = (section or 1) * 10
+        elif d >= 0:
+            section += d
+        else:
+            return None
+    return total + section
+
+
+_RE_LANE_NUM = re.compile(r"(?:煤|港|线|号|道|第)*\s*([0-9]+|[一二三四五六七八九十]+)\s*(?:道|线|号)*")
+
+
+def canonicalize_loading_line(raw: str | None) -> str:
+    """装车线路文本 → 中文大写正名(煤一..煤六 / 七道、八道…)。
+
+    例:六道/6道/煤6/煤六/港6 → 煤六;港7/7道/七道 → 七道;十四道/14道 → 十四道。
+    解析不出线路号时,返回去空格的原文(宁可留痕,不丢数据)。
+    """
+    if not raw:
+        return ""
+    txt = str(raw).strip().replace(" ", "").replace("　", "")
+    if not txt:
+        return ""
+    m = _RE_LANE_NUM.search(txt)
+    if not m:
+        return txt
+    n = _cn_to_int(m.group(1))
+    if n is None or n <= 0:
+        return txt
+    return f"煤{_int_to_cn(n)}" if n <= 6 else f"{_int_to_cn(n)}道"
+
+
 # ── regex fragments ────────────────────────────────────────────────────
 # Lane/track: 煤六, 九道, 十四道, 6道, etc.
 _RE_LANE = re.compile(r"((?:煤[一二三四五六七八九])|(?:[一二三四五六七八九十百千]+)|(?:\d+))?\s*(?:道)")

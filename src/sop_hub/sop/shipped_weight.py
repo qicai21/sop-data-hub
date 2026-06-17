@@ -172,9 +172,11 @@ def _compute_inner(release_batch_id: str, conn: sqlite3.Connection,
         planned = 0.0
     remaining = planned - shipped if planned else None
 
-    # actual_wagon_count 与已发车数同步(去重 by car_no)。手动 re-link / 回填
-    # 路径下 create_wagon_shipments hook 不会触发,这里兜底刷新。
-    # 集装箱业务车号在 wagon_container_shipments,按 ydid(=货票=车)去重。
+    # actual_wagon_count = 已发"车次"(= 货票数),按 ydid 去重 —— **不是按车号**。
+    # 车号会复用(散粮 K 车循环:同一台车隔几天再装一趟 = 2 张货票 = 2 车次;
+    # 集装箱循环列同理)。按 car_no 去重会把复用车次吞掉(2026-06-17 九三散粮
+    # lot02 200 车次被算成 150 台车、看板失真实证)。货票(ydid)才是发运唯一单位。
+    # 手动 re-link / 回填路径下 create_wagon_shipments hook 不触发,这里兜底刷新。
     if is_container:
         actual_wagons = conn.execute(
             "SELECT COUNT(DISTINCT ydid) FROM wagon_container_shipments WHERE batch_id=?",
@@ -182,7 +184,7 @@ def _compute_inner(release_batch_id: str, conn: sqlite3.Connection,
         ).fetchone()[0]
     else:
         actual_wagons = conn.execute(
-            "SELECT COUNT(DISTINCT car_no) FROM wagon_shipments WHERE batch_id=?",
+            "SELECT COUNT(DISTINCT ydid) FROM wagon_shipments WHERE batch_id=?",
             (release_batch_id,),
         ).fetchone()[0]
 

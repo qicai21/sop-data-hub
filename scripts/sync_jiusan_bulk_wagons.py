@@ -155,8 +155,10 @@ def upsert_rows(conn: sqlite3.Connection, rows: list[dict]) -> tuple[int, int]:
 def update_counts(conn: sqlite3.Connection, now: str) -> dict:
     """更新 batch_count(车票数);装车重量 / actual_wagon_count 走统一 yaml 规则,
     由 main() commit 后调 compute_for_release_batch 落。"""
+    # cars = 已发"车次"= 货票数,按 ydid 去重(**不是 car_no**)。散粮 K 车循环
+    # 复用,按车号去重会吞掉复用车次(6/14 那 50 台 6/16 再装一趟 = 多 50 车次)。
     agg = conn.execute(
-        """SELECT COUNT(*) n, COUNT(DISTINCT car_no) cars,
+        """SELECT COUNT(*) n, COUNT(DISTINCT ydid) cars,
                   SUM(CASE WHEN dispatch_status='confirmed_received' THEN 1 ELSE 0 END) delivered
            FROM wagon_shipments WHERE batch_id=?""",
         (BATCH_ID,),

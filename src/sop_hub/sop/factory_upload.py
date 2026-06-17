@@ -442,11 +442,10 @@ class DispatchEventUploadResult:
     release_batch_ids: list[str] = field(default_factory=list)
     # 按 order_identifier 分组的反查指引:caller 用 verify_factory_upload 逐组反查
     order_identifier_groups: dict[str, list[str]] = field(default_factory=dict)
-    # 2026-06-17:上传前校验结果 + 上传后台账查重
+    # 2026-06-17:上传前校验结果 + 上传后门户ID回填箱级记录
     validation: dict[str, Any] = field(default_factory=dict)
     validation_blocked: bool = False        # 校验没过 → 没上传
-    ledger_recorded: int = 0                 # 落台账的 箱→门户ID 观测条数
-    duplicate_alerts: list[dict] = field(default_factory=list)  # 查重告警
+    portal_backfilled: int = 0               # 回填了门户ID的箱级行数
 
     @property
     def all_success(self) -> bool:
@@ -733,47 +732,53 @@ def upload_dispatch_event_wagons(
             )
         time.sleep(0.3)
 
-    # ── 步骤2:上传后反查门户,把「箱号→门户ID」落审计台账并查重 ──────
+    # ── 步骤2:上传后反查门户,把「门户ID」回填到箱级记录(随记录走)──────
     try:
-        _record_upload_ledger(result, payloads, project_id=project_id)
+        _backfill_portal_ids(result, db_path=db_path)
     except Exception as exc:
-        logger.warning("upload_ledger record failed: %s", exc)
+        logger.warning("portal_id backfill failed: %s", exc)
     return result
 
 
-def _record_upload_ledger(result, payloads, *, project_id: str) -> None:
-    """反查每个 order 的门户列表,记 箱号→门户ID 到审计台账,顺带查重告警。"""
-    from sop_hub.sop import factory_upload_ledger as _ledger
+def _backfill_portal_ids(result, *, db_path: str | Path | None = None) -> None:
+    """上传后反查门户,把 门户ID 回填到 wagon_container_shipments.portal_id。
+
+    2026-06-17:对方系统主键(门户ID)随箱级记录走,取代独立 ledger 库。
+    按 (box_no, batch_id) 精确回填 —— 集装箱跨 batch/项目复用同箱号,必须按
+    batch 限定,否则串号(实证:同箱在九三玛格丽特+吉林马兰希望各有不同门户ID)。
+    """
     from sop_hub.sop.factory_remove import fetch_order_rows
     from sop_hub.sop.factory_verify import _login as _verify_login
+    from sop_hub.utils.time import now_iso_beijing
 
-    box_meta = {w.container_no: w for w in payloads}
-    trip_label = (result.validation or {}).get("trip_label", "")
-    obs: list[dict] = []
-    order_ids = list(result.order_identifier_groups.keys())
+    # order_identifier → 本次涉及的 batch_id 列表
+    groups = result.order_identifier_groups or {}
+    if not groups:
+        return
     tok, _ = _verify_login()
     if not tok:
         return
-    for oid in order_ids:
-        for row in fetch_order_rows(oid, tok):
-            box = str(row.get("boxNumber") or "")
-            if box not in box_meta:
-                continue  # 只记本次传的箱
-            w = box_meta[box]
-            obs.append({
-                "box_no": box, "portal_id": row.get("id"),
-                "car_no": w.wagon_no, "order_id": oid,
-                "ship_name": (w.payload.get("boatName") or ""),
-                "project_id": project_id, "trip_label": trip_label,
-            })
-    if obs:
-        rec = _ledger.record_observations(obs)
-        result.ledger_recorded = rec.get("inserted", 0)
-    # 查重:本次涉及的 order 里有没有箱号攒到多门户ID
-    alerts: list[dict] = []
-    for oid in order_ids:
-        alerts.extend(_ledger.find_duplicates(oid))
-    result.duplicate_alerts = alerts
+    now = now_iso_beijing()
+    sop_path = Path(db_path) if db_path else SOP_DB_PATH
+    conn = sqlite3.connect(str(sop_path))
+    try:
+        n = 0
+        for oid, batch_ids in groups.items():
+            rows = fetch_order_rows(oid, tok)
+            for row in rows:
+                box = str(row.get("boxNumber") or "")
+                pid = row.get("id")
+                if not box or pid is None:
+                    continue
+                for bid in batch_ids:
+                    n += conn.execute(
+                        "UPDATE wagon_container_shipments SET portal_id=?, "
+                        "portal_uploaded_at=? WHERE box_no=? AND batch_id=?",
+                        (pid, now, box, bid)).rowcount
+        conn.commit()
+        result.portal_backfilled = n
+    finally:
+        conn.close()
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────

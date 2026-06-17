@@ -79,12 +79,26 @@ def validate_dispatch_event_upload(
     try:
         in_ph = ",".join("?" * len(wagon_ids))
         rows = conn.execute(
-            f"SELECT car_no, ydid, batch_id, source_message_id "
+            f"SELECT car_no, ydid, hph, marked_weight, batch_id, source_message_id "
             f"FROM wagon_shipments WHERE id IN ({in_ph})", wagon_ids,
         ).fetchall()
         if not rows:
             v.errors.append(f"{len(wagon_ids)} 个 wagon_id 在库里查不到")
             return v
+
+        # 必备字段完整性(2026-06-17):缺字段 → 挂起,不上传。95306 一定会补齐,
+        # 只是早晚 —— 等下一轮 sync 填上再放行。
+        _REQUIRED = {"car_no": "车号", "ydid": "需求号", "hph": "货票号",
+                     "marked_weight": "标重"}
+        _missing: dict[str, int] = {}
+        for r in rows:
+            for f in _REQUIRED:
+                val = r[f]
+                if val is None or (isinstance(val, str) and not val.strip()):
+                    _missing[f] = _missing.get(f, 0) + 1
+        if _missing:
+            detail = ",".join(f"{_REQUIRED[f]}缺{n}" for f, n in _missing.items())
+            v.errors.append(f"必备字段不全({detail})→ 挂起待 95306 补齐,暂不上传")
 
         cars = {r["car_no"] for r in rows if r["car_no"]}
         ydids = {r["ydid"] for r in rows if r["ydid"]}

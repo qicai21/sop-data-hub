@@ -45,7 +45,7 @@ CANONICAL_COLUMNS = [
     "container_no", "waybill_no", "ydid", "czydid", "cargo_count",
     "transport_mode_code", "transport_mode_name", "project_id", "ship_name",
     "dispatch_status", "source_message_id", "source_group_id",
-    "loading_line", "created_at", "updated_at",
+    "loading_line", "hph", "created_at", "updated_at",
 ]
 
 # 落库后用这些字段在「已有行」上刷新 95306 状态(幂等 re-sync,保留 created_at)
@@ -82,6 +82,23 @@ def _f(x: Any) -> float | None:
         return float(x)
     except (TypeError, ValueError):
         return None
+
+
+def extract_hph(ticket: dict) -> str:
+    """货票号 hph:优先 ticket 顶层,否则从 raw_core_json/detail_json 取。"""
+    h = ticket.get("hph")
+    if h:
+        return str(h)
+    for k in ("raw_core_json", "detail_json"):
+        raw = ticket.get(k)
+        if raw:
+            try:
+                v = (json.loads(raw) if isinstance(raw, str) else raw).get("hph")
+                if v:
+                    return str(v)
+            except Exception:
+                pass
+    return ""
 
 
 def build_wagon_row(
@@ -144,6 +161,7 @@ def build_wagon_row(
         "source_group_id": source_group_id,
         # 装车线路:调用方归一好传进来(canonicalize_loading_line),或 ticket 自带
         "loading_line": loading_line or (ticket.get("loading_line") or ""),
+        "hph": extract_hph(ticket),   # 货票号(全项目必备,2026-06-17)
         "created_at": now,
         "updated_at": now,
     }
@@ -151,10 +169,14 @@ def build_wagon_row(
 
 def upsert_wagons(conn: sqlite3.Connection, rows: list[dict], batch_id: str) -> tuple[int, int]:
     """新行 INSERT;已有行只刷 95306 状态(幂等)。返回 (新增, 刷新)。"""
-    # 老库迁移:确保 loading_line 列存在(2026-06-16 新增)
+    # 老库迁移:确保新列存在(loading_line 2026-06-16;hph/trip_seq 2026-06-17)
     _cols = {r[1] for r in conn.execute("PRAGMA table_info(wagon_shipments)")}
     if "loading_line" not in _cols:
         conn.execute("ALTER TABLE wagon_shipments ADD COLUMN loading_line TEXT")
+    if "hph" not in _cols:
+        conn.execute("ALTER TABLE wagon_shipments ADD COLUMN hph TEXT")
+    if "trip_seq" not in _cols:
+        conn.execute("ALTER TABLE wagon_shipments ADD COLUMN trip_seq INTEGER")
     existing = {r[0] for r in conn.execute(
         "SELECT id FROM wagon_shipments WHERE batch_id=?", (batch_id,))}
     new_n = 0
@@ -173,6 +195,24 @@ def upsert_wagons(conn: sqlite3.Connection, rows: list[dict], batch_id: str) -> 
             )
             new_n += 1
     return new_n, len(rows) - new_n
+
+
+def recompute_trip_seq(conn: sqlite3.Connection, batch_id: str) -> int:
+    """重算该 batch 各趟「列序号」trip_seq:按各 source 的 min(ticketed_at) 排序。
+
+    每次入库重算(像装车重量一样自愈),修「上传时临时算列序号会算错」。落到
+    每行 wagon_shipments.trip_seq,excel/对账/报送直接带,不再临时算。
+    """
+    srcs = [r[0] for r in conn.execute(
+        "SELECT source_message_id FROM wagon_shipments "
+        "WHERE batch_id=? AND source_message_id IS NOT NULL AND source_message_id!='' "
+        "GROUP BY source_message_id ORDER BY MIN(ticketed_at) ASC", (batch_id,))]
+    n = 0
+    for i, src in enumerate(srcs, 1):
+        n += conn.execute(
+            "UPDATE wagon_shipments SET trip_seq=? WHERE batch_id=? AND source_message_id=?",
+            (i, batch_id, src)).rowcount
+    return n
 
 
 def ingest_wagons(
@@ -207,12 +247,13 @@ def ingest_wagons(
     conn = sqlite3.connect(str(db_path))
     try:
         new_n, ref_n = upsert_wagons(conn, rows, batch_id)
+        trip_n = recompute_trip_seq(conn, batch_id)   # 列序号自愈重算
         conn.commit()
     finally:
         conn.close()
 
     out: dict = {"new": new_n, "refreshed": ref_n, "total": len(rows),
-                 "batch_id": batch_id}
+                 "batch_id": batch_id, "trip_seq_rows": trip_n}
     if recompute:
         from sop_hub.sop.shipped_weight import compute_for_release_batch
         sw = compute_for_release_batch(batch_id, db_path=db_path)

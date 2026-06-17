@@ -442,6 +442,11 @@ class DispatchEventUploadResult:
     release_batch_ids: list[str] = field(default_factory=list)
     # 按 order_identifier 分组的反查指引:caller 用 verify_factory_upload 逐组反查
     order_identifier_groups: dict[str, list[str]] = field(default_factory=dict)
+    # 2026-06-17:上传前校验结果 + 上传后台账查重
+    validation: dict[str, Any] = field(default_factory=dict)
+    validation_blocked: bool = False        # 校验没过 → 没上传
+    ledger_recorded: int = 0                 # 落台账的 箱→门户ID 观测条数
+    duplicate_alerts: list[dict] = field(default_factory=list)  # 查重告警
 
     @property
     def all_success(self) -> bool:
@@ -642,14 +647,30 @@ def upload_dispatch_event_wagons(
     project_id: str = "jilin_jingang_jinzhou",
     preview: bool = False,
     db_path: str | Path | None = None,
+    validate: bool = True,
 ) -> DispatchEventUploadResult:
     """Upload wagons of a per-dispatch-event to factory system.
 
     跨 batch 的 wagon 集合一次上传,login 只跑 1 次,POST per wagon。返回 results
     + order_identifier_groups,caller 按 group 逐个调 verify_factory_upload。
+
+    validate=True(默认,2026-06-17):上传前强制校验(单一发车事件 + 车数/箱数
+    对齐 95306,堵整批);校验不过直接拒传。手工部分补传传 validate=False 绕过。
+    上传后把「箱号→门户ID」落审计台账并查重。
     """
     config = _load_factory_config(project_id)
     result = DispatchEventUploadResult(project_id=project_id, preview=preview)
+
+    # ── 步骤1:上传前校验(堵整批 + 核车数/箱数)──────────────────
+    if validate:
+        from sop_hub.sop.upload_validation import validate_dispatch_event_upload
+        sop_path0 = Path(db_path) if db_path else SOP_DB_PATH
+        v = validate_dispatch_event_upload(wagon_ids, db_path=sop_path0)
+        result.validation = v.to_dict()
+        if not v.ok:
+            result.validation_blocked = True
+            result.login_error = "上传前校验未过: " + "; ".join(v.errors)
+            return result
 
     token, login_error = login_to_factory(config)
     if login_error:
@@ -711,7 +732,48 @@ def upload_dispatch_event_wagons(
                 w.wagon_no, r.http_status, r.error or r.response_body[:100],
             )
         time.sleep(0.3)
+
+    # ── 步骤2:上传后反查门户,把「箱号→门户ID」落审计台账并查重 ──────
+    try:
+        _record_upload_ledger(result, payloads, project_id=project_id)
+    except Exception as exc:
+        logger.warning("upload_ledger record failed: %s", exc)
     return result
+
+
+def _record_upload_ledger(result, payloads, *, project_id: str) -> None:
+    """反查每个 order 的门户列表,记 箱号→门户ID 到审计台账,顺带查重告警。"""
+    from sop_hub.sop import factory_upload_ledger as _ledger
+    from sop_hub.sop.factory_remove import fetch_order_rows
+    from sop_hub.sop.factory_verify import _login as _verify_login
+
+    box_meta = {w.container_no: w for w in payloads}
+    trip_label = (result.validation or {}).get("trip_label", "")
+    obs: list[dict] = []
+    order_ids = list(result.order_identifier_groups.keys())
+    tok, _ = _verify_login()
+    if not tok:
+        return
+    for oid in order_ids:
+        for row in fetch_order_rows(oid, tok):
+            box = str(row.get("boxNumber") or "")
+            if box not in box_meta:
+                continue  # 只记本次传的箱
+            w = box_meta[box]
+            obs.append({
+                "box_no": box, "portal_id": row.get("id"),
+                "car_no": w.wagon_no, "order_id": oid,
+                "ship_name": (w.payload.get("boatName") or ""),
+                "project_id": project_id, "trip_label": trip_label,
+            })
+    if obs:
+        rec = _ledger.record_observations(obs)
+        result.ledger_recorded = rec.get("inserted", 0)
+    # 查重:本次涉及的 order 里有没有箱号攒到多门户ID
+    alerts: list[dict] = []
+    for oid in order_ids:
+        alerts.extend(_ledger.find_duplicates(oid))
+    result.duplicate_alerts = alerts
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────

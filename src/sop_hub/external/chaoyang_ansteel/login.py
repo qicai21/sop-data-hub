@@ -29,26 +29,22 @@ import requests
 
 LOGIN_URL = "https://56.ansteel.com.cn/api/encryptLogin"
 
-# 来自 chaoyang_steel_system_guid.md(2026-06-02 抓包)
-PLAINTEXT_USERNAME = "CWL20085"
-PLAINTEXT_PASSWORD = "Zhufeng123!"
-
-# 抓包里的加密 payload — 当前作为"重放"用,如果服务端不严格校验时间戳就 OK
-# 如果失败,我们再研究 RSA 公钥+自加密
-CAPTURED_ENCRYPTED_USERNAME = (
-    "nkiCFDpIyjBOAb+BjznGsgDcK94oo3Vk3EPuhn9gFjHFQ+HirdVREWPzXn8Sl4MN"
-    "kJhrLADWyz4r3V5WKB4KhS+OHAf3toEvcd0CjeJ2+kDWsJOxvQa2ez4sP5iejPl1"
-    "bYuOHRupwad3u0TWWMpGpDdZzHSDS78T53v3cloLXEM="
+# 凭据/密文/公钥/加密 集中在 auth_config(2026-06-17 去脆化)。这里仅别名引用,
+# 保持本模块原符号名不变(CLI、payload 仍用这些名字)。
+from sop_hub.external.chaoyang_ansteel.auth_config import (  # noqa: E402
+    APP_NAME,
+    CAPTURED_ENCRYPTED_PASSWORD,
+    CAPTURED_ENCRYPTED_USERNAME,
+    COMPANY_CODE,
+    COMPANY_NAME,
+    resolve_login_credentials,
 )
-CAPTURED_ENCRYPTED_PASSWORD = (
-    "itAR9fVHzSMjV+fxKWiBtLXETvN1qPGSyVxwVkT2xWCVlQGOt1QJ5PaTGLSm6VVx"
-    "aEyW930bHN2a80QIdMu+bmWSfemhf4oOkTNEvgGazlJBbFteyPWl1iWbtCr9JOlA"
-    "kNHEoL+nwD6NXw9K5650zE8zENjzxd6z0GO2KHRFxpQ="
+from sop_hub.external.chaoyang_ansteel.auth_config import (  # noqa: E402
+    PASSWORD as PLAINTEXT_PASSWORD,
 )
-
-COMPANY_CODE = "00020001"
-COMPANY_NAME = "鞍钢股份有限公司"
-APP_NAME = "AGMPM1"
+from sop_hub.external.chaoyang_ansteel.auth_config import (  # noqa: E402
+    USERNAME as PLAINTEXT_USERNAME,
+)
 
 DEFAULT_HEADERS = {
     "Accept": "application/json, text/plain, */*",
@@ -113,14 +109,23 @@ class LoginResult:
 def login(
     *,
     session: requests.Session | None = None,
-    encrypted_username: str = CAPTURED_ENCRYPTED_USERNAME,
-    encrypted_password: str = CAPTURED_ENCRYPTED_PASSWORD,
+    encrypted_username: str | None = None,
+    encrypted_password: str | None = None,
     timeout: int = 30,
 ) -> tuple[LoginResult, requests.Session]:
     """登录鞍钢门户,返回 (LoginResult, Session)。
 
+    凭据来源:显式传入 > auth_config.resolve_login_credentials()
+    (配了 RSA 公钥则实时加密 mode='live',否则抓包重放 mode='replay')。
     Session 已带 cookies,后续业务调用直接复用即可。
     """
+    if encrypted_username is None or encrypted_password is None:
+        enc_u, enc_p, auth_mode = resolve_login_credentials()
+        encrypted_username = encrypted_username or enc_u
+        encrypted_password = encrypted_password or enc_p
+    else:
+        auth_mode = "explicit"
+
     if session is None:
         session = requests.Session()
         session.headers.update(DEFAULT_HEADERS)
@@ -159,11 +164,17 @@ def login(
     msg = (sys_info.get("Msg") or "").strip()
 
     if flag != 0:
+        hint = ""
+        if auth_mode == "replay":
+            # 抓包密文被拒 —— 服务端很可能加了防重放/密文过期。这就是该切实时加密的信号。
+            hint = ("  ⚠ 当前用的是 2026-06-02 抓包密文重放;若提示认证/解密失败,"
+                    "说明门户已加防重放 —— 需配置 ANSTEEL_RSA_PUBKEY 走实时加密"
+                    "(见 auth_config / docs/改造清单-20260617.md #7)")
         return LoginResult(
             success=False,
             flag=flag,
             msg=msg,
-            error=f"login_failed_flag={flag} msg={msg!r}",
+            error=f"login_failed_flag={flag} mode={auth_mode} msg={msg!r}{hint}",
             raw_response=body,
         ), session
 

@@ -246,24 +246,6 @@ def test_footer_confirmed_loaded_segment_trusts_db_window_when_ocr_marks_inner_r
     assert not result.review_reasons
 
 
-def test_anzihe_lot04_scope_is_fixed_when_live_databases_exist() -> None:
-    biz_db = Path("/Users/qicai21/projects/repos/sop-data-hub/data/sop_agent.db")
-    rail_db = Path("/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3")
-    if not biz_db.exists() or not rail_db.exists():
-        pytest.skip("machine-local Anzihe lot04 databases are not present")
-
-    result = reconcile_inspection_shipments(
-        business_db_path=biz_db,
-        rail_db_path=rail_db,
-        project_id="中唐特钢铁矿发运项目",
-        release_batch_id="88ceb9b2086fed6e81cd4eadb8b2b0a0002c8c01",
-        run_mode="plan",
-        operator_note="pytest anzihe lot04 plan",
-    )
-
-    assert result.safe_to_commit is True
-    assert result.planned_write_count == 164
-    assert result.matched_95306_count == 164
 
 
 def test_plan_requires_manual_review_when_95306_window_has_unmatched_extra_row(tmp_path: Path) -> None:

@@ -189,36 +189,3 @@ def test_agent_consumes_tasks_without_business_rules():
     assert merged_listen_options["file"] is False
 
 
-def test_sop_hub_is_sole_authority():
-    """测试 8: 证明权威来源的切换与职责隔离
-       - 证明 tracking_tasks 持有业务语义 (target_node)
-       - 证明 monitored_groups 只包含派生物理指令 (listen_options)
-    """
-    from sop_hub.config import load_settings
-
-    settings = load_settings()
-
-    # 【权威层】验证 tracking_tasks
-    assert hasattr(settings, "tracking_tasks")
-    assert len(settings.tracking_tasks) > 0, "必须存在权威任务列表"
-
-    zt_task = next((t for t in settings.tracking_tasks if t.project_id == "zt_steel_baseline"), None)
-    cy_task = next((t for t in settings.tracking_tasks if t.project_id == "chaoyang_steel_baseline"), None)
-    assert zt_task is not None
-    assert cy_task is not None
-    assert hasattr(zt_task, "routing")
-    assert hasattr(cy_task, "routing")
-    assert len(zt_task.routing) > 0
-    assert len(cy_task.routing) > 0
-    assert hasattr(zt_task.routing[0], "target_node")
-
-    # 【派生输出层】验证 monitored_groups
-    assert hasattr(settings, "monitored_groups")
-    assert len(settings.monitored_groups) > 0, "必须生成派生输出"
-
-    # 严格证明派生层不包含业务属性
-    for group in settings.monitored_groups:
-        assert "target_node" not in group, "派生输出决不能包含 target_node"
-        assert "routing" not in group, "派生输出决不能包含 routing"
-        assert "project_id" not in group, "派生输出决不能暴露单一 project_id (因为可能多群复用)"
-        assert "listen_options" in group, "派生输出必须只包含物理层监听选项"

@@ -36,10 +36,19 @@ CAPTURED_ENCRYPTED_PASSWORD = (
     "kNHEoL+nwD6NXw9K5650zE8zENjzxd6z0GO2KHRFxpQ="
 )
 
-# ── 实时加密用的 RSA 公钥(PEM)。空 = 还没拿到,走重放 ───────────────
-# 形如:
-# -----BEGIN PUBLIC KEY-----\nMIIBI...\n-----END PUBLIC KEY-----
-RSA_PUBLIC_KEY_PEM = os.getenv("ANSTEEL_RSA_PUBKEY", "")
+# ── 实时加密用的 RSA 公钥 ────────────────────────────────────────────
+# 2026-06-17 从鞍钢登录页前端 JS(app.f2a5a6ca.js 的 setPublicKey)提取,
+# 实时加密登录已实测 flag=0 成功(朱峰/鞍钢汽车运输)→ **默认走实时加密,重放退役**。
+# env ANSTEEL_RSA_PUBKEY 可覆盖(门户换钥时改 env,不必动码)。
+_DEFAULT_ANSTEEL_PUBKEY = (
+    "-----BEGIN PUBLIC KEY-----\n"
+    "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCq2eyKwS0nzbzyS05aqw8ljxEo\n"
+    "EEaIRpZqLImLYp7UehRfmQFpBm/xUOsPGhY72GWiZNlETFgihzU1e676etdrpU0L\n"
+    "YIzaxnLnjELlsIiCEQ0Qbwxz1Xltan3+f+CC0CGvw5C9WAytNDjpxc10dN16P4ZG\n"
+    "zl8+QNDZYrekcv7i7wIDAQAB\n"
+    "-----END PUBLIC KEY-----"
+)
+RSA_PUBLIC_KEY_PEM = os.getenv("ANSTEEL_RSA_PUBKEY", _DEFAULT_ANSTEEL_PUBKEY)
 
 # 登录公司域(鞍钢母公司)
 COMPANY_CODE = "00020001"

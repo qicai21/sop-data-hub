@@ -23,12 +23,19 @@ def _keypair():
     return priv, pub_pem
 
 
-def test_default_is_replay_unchanged():
-    """没配公钥 → 用抓包密文重放(保住当前能跑的链路)。"""
+def test_default_is_live_now():
+    """2026-06-17 起内置鞍钢公钥 → 默认实时加密(replay 已退役)。"""
+    u, p, mode = auth_config.resolve_login_credentials()
+    assert mode == "live"
+    assert u != auth_config.CAPTURED_ENCRYPTED_USERNAME  # 每次新密文
+
+
+def test_replay_fallback_when_key_cleared(monkeypatch):
+    """公钥清空(门户换钥/异常)→ 安全回退抓包重放,不让登录直接崩。"""
+    monkeypatch.setattr(auth_config, "RSA_PUBLIC_KEY_PEM", "")
     u, p, mode = auth_config.resolve_login_credentials()
     assert mode == "replay"
     assert u == auth_config.CAPTURED_ENCRYPTED_USERNAME
-    assert p == auth_config.CAPTURED_ENCRYPTED_PASSWORD
 
 
 def test_live_encryption_roundtrips():
@@ -57,7 +64,8 @@ def test_resolve_uses_live_when_key_present(monkeypatch):
     assert u != auth_config.CAPTURED_ENCRYPTED_USERNAME
 
 
-def test_encrypt_without_key_raises():
+def test_encrypt_without_key_raises(monkeypatch):
     import pytest
+    monkeypatch.setattr(auth_config, "RSA_PUBLIC_KEY_PEM", "")  # 清空内置默认
     with pytest.raises(ValueError):
         auth_config.encrypt_credential("x", "")

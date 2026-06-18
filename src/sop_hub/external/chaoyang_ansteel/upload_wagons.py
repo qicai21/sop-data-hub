@@ -315,6 +315,7 @@ def upload_and_verify(
     db_path: str | Path,
     batch_id: str,
     ship_name: str,
+    transport_plan_no: str | None = None,
     car_nos: list[str] | None = None,
     date_prefix: str | None = None,
     verify_sleep_seconds: int = 2,
@@ -328,25 +329,32 @@ def upload_and_verify(
     if not auth.success:
         return UploadResult(success=False, error=f"login failed: {auth.error}")
 
-    # 2. wmwm01 找 plan(时间窗给宽 30 天,覆盖大多数实际场景)
+    # 2. wmwm01 找 plan
+    #   优先回运计划号(transport_plan_no)直查 —— 木森17 这类按船名+日期窗口
+    #   查不到的,用回运计划号精确定位(2026-06-18 新增)。否则按 30 天窗口 + 船名匹配。
     from datetime import datetime, timedelta
-    today = datetime.now()
-    begin = (today - timedelta(days=30)).strftime("%Y%m%d")
-    end = (today + timedelta(days=1)).strftime("%Y%m%d")
-    plans, _ = query_wmwm01(
-        session=session, date_begin=begin, date_end=end,
-    )
-    target_plan = None
-    for p in plans:
-        if p.ship_cname == ship_name:
-            target_plan = p
-            break
-    if target_plan is None:
-        return UploadResult(
-            success=False,
-            error=f"wmwm01 找不到 ship_name={ship_name!r} 的 plan,只有 "
-                  f"{[p.ship_cname for p in plans]}",
-        )
+    if transport_plan_no:
+        plans, _ = query_wmwm01(session=session, date_begin="", date_end="",
+                                transport_plan_no=transport_plan_no)
+        # 回运计划号唯一定位;有多条再按船名收敛
+        target_plan = next((p for p in plans if p.ship_cname == ship_name), None) or (plans[0] if plans else None)
+        if target_plan is None:
+            return UploadResult(
+                success=False,
+                error=f"wmwm01 按回运计划号 {transport_plan_no!r} 查不到 plan",
+            )
+    else:
+        today = datetime.now()
+        begin = (today - timedelta(days=30)).strftime("%Y%m%d")
+        end = (today + timedelta(days=1)).strftime("%Y%m%d")
+        plans, _ = query_wmwm01(session=session, date_begin=begin, date_end=end)
+        target_plan = next((p for p in plans if p.ship_cname == ship_name), None)
+        if target_plan is None:
+            return UploadResult(
+                success=False,
+                error=f"wmwm01 找不到 ship_name={ship_name!r} 的 plan,只有 "
+                      f"{[p.ship_cname for p in plans]}",
+            )
 
     # 3. DB 拉车
     wagons = fetch_wagons(

@@ -25,6 +25,25 @@ project_meta:
     same_ship_can_have_multiple_release_batches: true
     do_not_merge_release_batches: true
 
+  # ── 货运信息(2026-06-18 变更)─────────────────────────────────
+  # 原规定:朝阳钢铁项目【无货运信息】。现改为【有货运信息】,由用户**单独手工提供**
+  # 下列 3 字段(不从消息文本/图片自动抽取)。
+  freight_info:
+    has_freight_info: true
+    source: "manual_user_provided"        # 用户单独提供,非自动抽取
+    fields:
+      contract_no:                         # 合同号,如 DL000748089_19051(= 95306 tyrjzsx 里的运单号)
+        example: "DL000748089_19051"
+        maps_to: "release_batches.contract_no"
+      order_identifier:                    # 订单识别号 = 回运计划号
+        alias: "回运计划号"
+        example: "HY26052002"
+        maps_to: "release_batches.order_identifier"
+        usage: "鞍钢门户(56.ansteel)查 plan + 上传数据用 = upload_and_verify(transport_plan_no=...)"
+      cargo_name:                          # 货物品名,如 PB粉
+        example: "PB粉"
+        maps_to: "release_batches.cargo_name"
+
   # ── 候选推断提示(infer_candidate_context 用) ─────────────────
   # 用于检装车通知单 candidate 无 ship_name 时的兜底证据打分
   daoxian_keywords: ["十四道", "十二道"]

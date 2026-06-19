@@ -555,6 +555,9 @@ def _execute_freight_detail_enrichment(
 
 # #143:文本触发器等检装车通知单的超时窗(文本常先于通知单图到达)
 _INSPECTION_TEXT_TRIGGER_TIMEOUT_HOURS = 12.0
+# #issue-20260619 Fix C:等满此宽限期仍无候选,朝钢从 95306 反查合成候选(给真通知单先到的机会)
+_INSPECTION_TEXT_TRIGGER_SYNTH_GRACE_HOURS = 3.0
+_RAIL_DB_PATH = "/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3"
 # 检装车候选里"可被链消费"的状态(排除归档/作废/被取代);其余都算活跃
 _INACTIVE_CANDIDATE_STATUSES = (
     "archived", "cancelled_legacy", "superseded", "timeout_manual_review",
@@ -628,6 +631,7 @@ def _execute_inspection_text_trigger(
         q += "ORDER BY created_at DESC LIMIT 1"
         cand = conn.execute(q, params).fetchone()
 
+        synth_cand_id = None  # Fix C:非空=本次靠 95306 合成的候选(链 skip_upload)
         if not cand:
             # rendezvous 等待:通知单图还没到。看任务已等多久。
             trow = conn.execute(
@@ -642,7 +646,37 @@ def _execute_inspection_text_trigger(
                     elapsed_h = (now - created).total_seconds() / 3600.0
                 except Exception:
                     elapsed_h = 0.0
-            if elapsed_h <= _INSPECTION_TEXT_TRIGGER_TIMEOUT_HOURS:
+            # #issue-20260619 Fix C:朝钢等满宽限期仍无候选 → 从 95306 反查权威车
+            # 合成候选,跑链到 ingest/match(skip_upload,不自动上传鞍钢)。给真通知单
+            # 先到的机会(宽限期内仍 pending),仅 chaoyang_steel(靠 tyrjzsx 船锚)。
+            synth_msg = ""
+            if (project == "chaoyang_steel"
+                    and elapsed_h >= _INSPECTION_TEXT_TRIGGER_SYNTH_GRACE_HOURS):
+                trigger_ts = (input_json.get("received_datetime") or "")
+                if not trigger_ts:
+                    _r = conn.execute(
+                        "SELECT received_datetime FROM message_inbox WHERE id=?",
+                        (input_json.get("message_inbox_id"),)).fetchone()
+                    trigger_ts = (_r[0] if _r else "") or ""
+                from sop_hub.sop.inspection_95306_synthesize import (
+                    synthesize_candidate_from_95306,
+                )
+                synth = synthesize_candidate_from_95306(
+                    conn, project_id=project, ship=ship, dest=dest,
+                    expected=expected, trigger_ts=str(trigger_ts),
+                    group_name=str(input_json.get("group_name") or ""),
+                    message_id=message_id, rail_db_path=_RAIL_DB_PATH,
+                )
+                synth_msg = synth.get("message", "")
+                if synth.get("status") == "ok":
+                    synth_cand_id = synth.get("candidate_id")
+
+            if synth_cand_id:
+                # 合成成功:指向触发器自己的 inbox 跑链(skip_upload)
+                cand_inbox_id = input_json.get("message_inbox_id")
+                cand_id = synth_cand_id
+                cand_msg_id = message_id
+            elif elapsed_h <= _INSPECTION_TEXT_TRIGGER_TIMEOUT_HOURS:
                 return {
                     "action": "executed", "status": "pending",
                     "output_json": {
@@ -650,53 +684,59 @@ def _execute_inspection_text_trigger(
                         "ship": ship, "destination": dest,
                         "expected_count": expected,
                         "elapsed_hours": round(elapsed_h, 2),
+                        "synth_attempt": synth_msg,
                         "note": "检装车通知单图未到,保持 pending 等下一轮",
                     },
                 }
-            # 超时:发群通知,task 退 skipped
-            try:
-                from sop_hub.sop.send_excel import send_to_wechat
-                send_to_wechat(
-                    target="[GROUP013]",
-                    message=(
-                        f"⚠️ 检装车文本触发器超时未等到通知单\n"
-                        f"{ship} {dest} 预期 {expected} 节\n"
-                        f"已等 {elapsed_h:.1f} 小时,通知单图未到,需人工排查"
-                    ),
-                    file_path=None,
-                )
-            except Exception:
-                pass
-            return {
-                "action": "executed", "status": "skipped",
-                "output_json": {
-                    "stage": "waiting_inspection_notice_timeout",
-                    "ship": ship, "destination": dest,
-                    "expected_count": expected,
-                    "elapsed_hours": round(elapsed_h, 2),
-                },
-            }
-
-        # 找到候选 → 指向候选的 inbox 跑既有检验链
-        cand_id = cand["id"]
-        cand_inbox_id, cand_msg_id = _find_candidate_inbox(
-            conn, cand_id, str(cand["message_id"] or ""))
-        if not cand_inbox_id:
-            return {
-                "action": "executed", "status": "pending",
-                "output_json": {
-                    "stage": "candidate_found_no_inbox",
-                    "candidate_id": cand_id, "ship": ship,
-                    "note": "候选无 inbox 链接,等下一轮(可能图还在入库)",
-                },
-            }
+            else:
+                # 超时且合成也未成:发群通知,task 退 skipped
+                try:
+                    from sop_hub.sop.send_excel import send_to_wechat
+                    send_to_wechat(
+                        target="[GROUP013]",
+                        message=(
+                            f"⚠️ 检装车文本触发器超时未等到通知单\n"
+                            f"{ship} {dest} 预期 {expected} 节\n"
+                            f"已等 {elapsed_h:.1f} 小时,通知单图未到,需人工排查\n"
+                            f"95306合成:{synth_msg}"
+                        ),
+                        file_path=None,
+                    )
+                except Exception:
+                    pass
+                return {
+                    "action": "executed", "status": "skipped",
+                    "output_json": {
+                        "stage": "waiting_inspection_notice_timeout",
+                        "ship": ship, "destination": dest,
+                        "expected_count": expected,
+                        "elapsed_hours": round(elapsed_h, 2),
+                        "synth_attempt": synth_msg,
+                    },
+                }
+        else:
+            # 找到候选 → 指向候选的 inbox 跑既有检验链
+            cand_id = cand["id"]
+            cand_inbox_id, cand_msg_id = _find_candidate_inbox(
+                conn, cand_id, str(cand["message_id"] or ""))
+            if not cand_inbox_id:
+                return {
+                    "action": "executed", "status": "pending",
+                    "output_json": {
+                        "stage": "candidate_found_no_inbox",
+                        "candidate_id": cand_id, "ship": ship,
+                        "note": "候选无 inbox 链接,等下一轮(可能图还在入库)",
+                    },
+                }
     finally:
         conn.close()
 
     # #145:定向到本船触发器解析出的候选(多船图时别让核心 LIMIT 1 选错船)
+    # Fix C:合成候选 → skip_upload(只 ingest/match,不自动上传鞍钢)
     chain_res = _execute_chaoyang_inspection_chain(
         {"message_inbox_id": cand_inbox_id},
         cand_msg_id, db_path=db_path, task_id=task_id, candidate_id=cand_id,
+        skip_upload=bool(synth_cand_id),
     )
     # 附上文本侧预期车数做交叉校验
     out = chain_res.get("output_json") or {}
@@ -705,8 +745,25 @@ def _execute_inspection_text_trigger(
             "ship": ship, "destination": dest,
             "expected_count": expected,
             "delegated_to_candidate": cand_id,
+            "candidate_source": "95306_synthesized" if synth_cand_id else "inspection_notice",
+            "auto_upload": not bool(synth_cand_id),
         }
         chain_res["output_json"] = out
+    # Fix C:合成路径成功 ingest/match 后,发群提醒"已自动从95306恢复,待人工确认上传"
+    if synth_cand_id and chain_res.get("status") in ("succeeded", "skipped"):
+        try:
+            from sop_hub.sop.send_excel import send_to_wechat
+            send_to_wechat(
+                target="[GROUP013]",
+                message=(
+                    f"✅ 检装车通知单未到,已从 95306 自动反查合成入库\n"
+                    f"{ship} {dest} 预期 {expected} 节\n"
+                    f"已 ingest/match,⚠️未自动上传鞍钢——请人工核对后再走标准上传+反查"
+                ),
+                file_path=None,
+            )
+        except Exception:
+            pass
     return chain_res
 
 
@@ -787,6 +844,7 @@ def _execute_chaoyang_inspection_chain(
     db_path: Path,
     task_id: int = 0,
     candidate_id: str | None = None,
+    skip_upload: bool = False,
 ) -> dict[str, Any]:
     """R78: 朝阳钢铁检装车通知单 → release_batch 匹配 → wagon_shipments → excel。
 
@@ -861,9 +919,29 @@ def _execute_chaoyang_inspection_chain(
         cargo = (cand_d.get("cargo_name") or "").strip()
         project_id = (cand_d.get("project_id") or "").strip()
         if not (ship and dest and project_id):
-            return {"action": "failed", "status": "failed",
-                    "error_message": f"candidate missing fields: "
-                                     f"ship={ship!r} dest={dest!r} project={project_id!r}"}
+            # #issue-20260619:ship/dest/project 推不出来 ≠ 硬失败。候选此前 infer
+            # 已挂 pending_review(no-ship 必挂起铁律),链应**优雅跳过**、保住候选给
+            # 人工/后续 infer 接管,而不是把 task 标 failed 污染状态、看着像系统崩了。
+            # 与下方 match 失败(907-913)同一姿势:挂 pending_review + skipped。
+            conn.execute(
+                "UPDATE inspection_ingestion_candidates "
+                "SET candidate_status='pending_review', "
+                "    reason='candidate_missing_ship_dest_project', "
+                "    updated_at=datetime('now') WHERE id=?",
+                (candidate_id,),
+            )
+            conn.commit()
+            return {
+                "action": "executed",
+                "status": "skipped",
+                "output_json": {
+                    "stage": "candidate_field_check",
+                    "candidate_id": candidate_id,
+                    "candidate_status": "pending_review",
+                    "reason": "candidate_missing_ship_dest_project",
+                    "missing": {"ship": ship, "dest": dest, "project": project_id},
+                },
+            }
 
         # ── 2. Read rows ──────────────────────────────────────────
         # #130 (2026-06-08):优先 candidate.payload_json(split 后的 sub_payload,
@@ -1269,7 +1347,12 @@ def _execute_chaoyang_inspection_chain(
         # chaoyang_upload_verify.md)。upload_and_verify 内置 verify。
         # 跟 6b 不冲突 — 发 excel 给微信群是给人看,上传 ansteel 是给收货系统。
         upload_info: dict[str, Any] = {"skipped": True}
-        if project_id == "chaoyang_steel" and loading_car_nos:
+        if skip_upload:
+            # #issue-20260619 Fix C:合成候选(从 95306 反查、无人工通知单)只跑到
+            # ingest/match,**不自动对外上传鞍钢**,留人工确认后再走标准上传。
+            upload_info = {"skipped": True,
+                           "reason": "skip_upload(95306合成候选,待人工确认再上传)"}
+        elif project_id == "chaoyang_steel" and loading_car_nos:
             try:
                 from sop_hub.external.chaoyang_ansteel.upload_wagons import (
                     upload_and_verify,

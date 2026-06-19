@@ -102,7 +102,8 @@ def db(tmp_path):
     conn.execute(
         "CREATE TABLE inspection_ingestion_candidates ("
         " id TEXT PRIMARY KEY, message_id TEXT, ship_name TEXT,"
-        " destination TEXT, candidate_status TEXT, created_at TEXT)"
+        " destination TEXT, candidate_status TEXT, created_at TEXT,"
+        " reason TEXT, updated_at TEXT)"  # Fix A 挂起会写 reason/updated_at
     )
     conn.commit()
     conn.close()

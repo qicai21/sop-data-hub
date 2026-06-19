@@ -662,6 +662,15 @@ def render_once() -> str:
         batches = by_project.get(proj, [])
         out_lines.extend(panel_project(proj, batches))
         out_lines.append("")
+        # 九三紧跟其 release_batch 面板,补一张「箱循环流水线」示意图(只读)
+        if proj == "jiusan":
+            try:
+                import jiusan_cycle_board as _jcb
+                out_lines.extend(_jcb.render_lines())
+                out_lines.append("")
+            except Exception as _exc:  # 子面板出错不拖垮整看板
+                out_lines.append(_dim(f"  (九三箱循环图渲染失败: {_exc})"))
+                out_lines.append("")
 
     out_lines.extend(panel_system())
     return "\n".join(out_lines)

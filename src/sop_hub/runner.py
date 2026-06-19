@@ -755,6 +755,10 @@ def _infer_sop_project_token(payload: dict[str, Any], *, category: str) -> str:
             return "chaoyang_steel"
         if any(token in text for token in ("汐子", "鞍子河", "丰收散运", "丰收", "沱子", "中唐", "赤峰中唐", "ZLZT")):
             return "zhongtang_special_steel"
+        # #issue-20260619 九三大豆(诚信/和谐1…→新台子):此前漏了 jiusan 分支,
+        # 九三通知单一律 no_sop_project_match 卡 _pending。新台子/大豆/九三船名为强锚。
+        if any(token in text for token in ("新台子", "九三", "大豆", "和谐1", "诚信", "昆娜", "玛格丽特")):
+            return "jiusan"
         if any(token in text for token in ("四平",)):
             return "jilin_jingang_jinzhou"
         return ""
@@ -763,6 +767,8 @@ def _infer_sop_project_token(payload: dict[str, Any], *, category: str) -> str:
             return "chaoyang_steel"
         if any(token in text for token in ("汐子", "鞍子河", "中唐", "赤峰中唐")):
             return "zhongtang_special_steel"
+        if any(token in text for token in ("新台子", "九三", "大豆", "和谐1", "诚信", "昆娜", "玛格丽特")):
+            return "jiusan"
         return ""
     return ""
 

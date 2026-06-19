@@ -20,6 +20,12 @@ project_meta:
     - "大豆"
   transport_modes:
     - "铁路"
+  # 已见过的循环船名(#issue-20260619 补;船名一致性核对/项目识别用)。
+  known_ships:
+    - "和谐1"
+    - "诚信"
+    - "昆娜"
+    - "玛格丽特"
   has_inspection_notice: false
   departure_confirmation_source: "rail95306_xts_account"
   # 全程跟踪到 confirmed_received。九三大豆结算同样依赖到货,跟 jilin/中唐

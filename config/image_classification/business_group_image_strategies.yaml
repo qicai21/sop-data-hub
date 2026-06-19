@@ -1,0 +1,224 @@
+{
+  "groups": [
+    {
+      "name": "铁晟业务工作群",
+      "wxid": "18919596289@chatroom",
+      "enabled": true,
+      "classifier_prompt_version": "v1",
+      "fallback_category": "other",
+      "routes": {
+        "出港计划通知单": {
+          "bucket": "table",
+          "action": "departure_plan_extract",
+          "output_subdir": "出港计划通知单",
+          "enabled": true
+        },
+        "耗材统计表": {
+          "bucket": "table",
+          "action": "materials_extract",
+          "output_subdir": "耗材统计表",
+          "enabled": true
+        },
+        "检装车通知单": {
+          "bucket": "table",
+          "action": "inspection_slip_extract",
+          "output_subdir": "检装车通知单",
+          "enabled": true
+        },
+        "请车表": {
+          "bucket": "table",
+          "action": "save_only",
+          "output_subdir": "请车表",
+          "enabled": true
+        },
+        "日现场工作记录表": {
+          "bucket": "table",
+          "action": "save_only",
+          "output_subdir": "日现场工作记录表",
+          "enabled": true
+        },
+        "手写箱号车号表": {
+          "bucket": "handwritten",
+          "action": "save_only",
+          "output_subdir": "手写箱号车号表",
+          "enabled": true
+        },
+        "手写记录": {
+          "bucket": "handwritten",
+          "action": "save_only",
+          "output_subdir": "手写记录",
+          "enabled": true
+        },
+        "照片-敞车内部情况和作业": {
+          "bucket": "photo",
+          "action": "save_only",
+          "output_subdir": "照片-敞车内部情况和作业",
+          "enabled": true
+        },
+        "照片-火车涂写mark": {
+          "bucket": "photo",
+          "action": "save_only",
+          "output_subdir": "照片-火车涂写mark",
+          "enabled": true
+        },
+        "照片-货垛": {
+          "bucket": "photo",
+          "action": "save_only",
+          "output_subdir": "照片-货垛",
+          "enabled": true
+        },
+        "照片-集装箱内情况和作业": {
+          "bucket": "photo",
+          "action": "save_only",
+          "output_subdir": "照片-集装箱内情况和作业",
+          "enabled": true
+        },
+        "照片-检查工人": {
+          "bucket": "photo",
+          "action": "save_only",
+          "output_subdir": "照片-检查工人",
+          "enabled": true
+        },
+        "照片-装卸现场情况": {
+          "bucket": "photo",
+          "action": "save_only",
+          "output_subdir": "照片-装卸现场情况",
+          "enabled": true
+        },
+        "照片-杂物垃圾-塑料布": {
+          "bucket": "photo",
+          "action": "save_only",
+          "output_subdir": "照片-杂物垃圾-塑料布",
+          "enabled": true
+        },
+        "other": {
+          "bucket": "other",
+          "action": "save_only",
+          "output_subdir": "other",
+          "enabled": true
+        }
+      }
+    },
+    {
+      "name": "中唐特钢发运群",
+      "wxid": "38739555499@chatroom",
+      "enabled": true,
+      "classifier_prompt_version": "v1",
+      "fallback_category": "other",
+      "routes": {
+        "出港计划通知单": {
+          "bucket": "table",
+          "action": "departure_plan_extract",
+          "output_subdir": "出港计划通知单",
+          "enabled": true
+        },
+        "耗材统计表": {
+          "bucket": "table",
+          "action": "materials_extract",
+          "output_subdir": "耗材统计表",
+          "enabled": true
+        },
+        "检装车通知单": {
+          "bucket": "table",
+          "action": "inspection_slip_extract",
+          "output_subdir": "检装车通知单",
+          "enabled": true
+        },
+        "请车表": {
+          "bucket": "table",
+          "action": "save_only",
+          "output_subdir": "请车表",
+          "enabled": true
+        },
+        "日现场工作记录表": {
+          "bucket": "table",
+          "action": "save_only",
+          "output_subdir": "日现场工作记录表",
+          "enabled": true
+        },
+        "手写箱号车号表": {
+          "bucket": "handwritten",
+          "action": "save_only",
+          "output_subdir": "手写箱号车号表",
+          "enabled": true
+        },
+        "手写记录": {
+          "bucket": "handwritten",
+          "action": "save_only",
+          "output_subdir": "手写记录",
+          "enabled": true
+        },
+        "照片-敞车内部情况和作业": {
+          "bucket": "photo",
+          "action": "save_only",
+          "output_subdir": "照片-敞车内部情况和作业",
+          "enabled": true
+        },
+        "照片-火车涂写mark": {
+          "bucket": "photo",
+          "action": "save_only",
+          "output_subdir": "照片-火车涂写mark",
+          "enabled": true
+        },
+        "照片-货垛": {
+          "bucket": "photo",
+          "action": "save_only",
+          "output_subdir": "照片-货垛",
+          "enabled": true
+        },
+        "照片-集装箱内情况和作业": {
+          "bucket": "photo",
+          "action": "save_only",
+          "output_subdir": "照片-集装箱内情况和作业",
+          "enabled": true
+        },
+        "照片-检查工人": {
+          "bucket": "photo",
+          "action": "save_only",
+          "output_subdir": "照片-检查工人",
+          "enabled": true
+        },
+        "照片-装卸现场情况": {
+          "bucket": "photo",
+          "action": "save_only",
+          "output_subdir": "照片-装卸现场情况",
+          "enabled": true
+        },
+        "照片-杂物垃圾-塑料布": {
+          "bucket": "photo",
+          "action": "save_only",
+          "output_subdir": "照片-杂物垃圾-塑料布",
+          "enabled": true
+        },
+        "other": {
+          "bucket": "other",
+          "action": "save_only",
+          "output_subdir": "other",
+          "enabled": true
+        }
+      }
+    },
+    {
+      "name": "龙虾测试群",
+      "wxid": "56842512942@chatroom",
+      "enabled": true,
+      "routes": {
+        "检装车通知单": {
+          "bucket": "table",
+          "action": "inspection_slip_extract",
+          "enabled": true
+        },
+        "出港计划通知单": {
+          "bucket": "table",
+          "action": "departure_plan_extract",
+          "enabled": true
+        },
+        "发车通知单": {
+          "bucket": "table",
+          "action": "save_only",
+          "enabled": true
+        }
+      }
+    }
+  ]
+}

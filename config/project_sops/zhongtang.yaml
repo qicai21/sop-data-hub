@@ -71,6 +71,34 @@ project_meta:
         "60": 63.5
       on_miss: pending_review
 
+# ── 费用结构(单一真相)#P001-billing 2026-06-18 ───────────────────
+# 发完车 → billing_generate 按本块逐项生成 billing_cost_item。
+# base: railway_billing_weight=铁路计费重量(标载和) | settlement_weight=结算重量(工厂入场过磅) | car_count=车数
+# side: income=向客户(中唐特钢)收 | cost=对外付 | passthrough=代收代付(收支相抵不计利润)
+# settle_party 多为数据驱动(随结算台账/船),config 给默认值;car 级变更走 billing_settle_override。
+cost_structure:
+  currency: "CNY"
+  default_base: "railway_billing_weight"
+  # 包干费(含税)37.02 元/吨 = income 四项之和
+  items:
+    # ① 收入(向客户收)
+    - {code: nrf_income,   name: "国铁运费(收)",   side: income, rate: 19.59, base: railway_billing_weight, tax: 0.09, invoice_type: "9%专票"}
+    - {code: logistics_fee, name: "物流服务费",     side: income, rate: 7.20,  base: railway_billing_weight, tax: 0.06, invoice_type: "6%专票", note: "待合同核实"}
+    - {code: rcf_income,   name: "铁路建设基金(收)", side: income, rate: 3.73,  base: railway_billing_weight, tax: 0.00, invoice_type: "不征税普票"}
+    - {code: arrival_handling_income, name: "到站装卸费(代收)", side: income, rate: 6.50, base: railway_billing_weight, tax: 0.06, invoice_type: "6%专票", passthrough_of: "arrival_handling"}
+    # ② 运营成本(对外付)
+    - {code: nrf_cost,     name: "国铁运费(付)",   side: cost, rate: 17.46, base: railway_billing_weight, tax: 0.09, settle_party: "中国铁路沈阳局集团有限公司"}
+    - {code: rcf_cost,     name: "铁路建设基金(付)", side: cost, rate: 3.73, base: railway_billing_weight, tax: 0.00, settle_party: "中国铁路沈阳局集团有限公司"}
+    - {code: metro_fee,    name: "地铁费",         side: cost, rate: 4.20, base: railway_billing_weight, tax: 0.06, settle_party: "锦州高天铁路有限责任公司", note: "加权 煤4-5线70%×4.50+14/15道30%×3.50"}
+    - {code: track_scale,  name: "轨道衡费",       side: cost, rate: 0.70, base: railway_billing_weight, tax: 0.06, settle_party: "中铁外服锦州分公司"}
+    # ★ 到站装卸费(代付):结算方默认铁发,可被 billing_settle_override 改到中唐特钢(运达7 实证)
+    - {code: arrival_handling, name: "到站装卸费(付)", side: passthrough, rate: 6.50, base: railway_billing_weight, tax: 0.06, settle_party: "铁发", note: "结算方可变更;运达7 起部分船改直接结中唐特钢"}
+    - {code: wagon_occupancy, name: "货车占用费",   side: cost, rate: 0.64, base: railway_billing_weight, tax: 0.06, settle_party: "锦州高天铁路有限责任公司", note: "≥300万吨档"}
+    # ③ 辅助作业费(元/车,转二级公司,利润分配工具)
+    - {code: aux_inspection, name: "车辆检查服务(检车)",   side: cost, rate: 74.75, base: car_count, tax: 0.06, settle_party: "二级公司"}
+    - {code: aux_marking,    name: "装车划线服务",         side: cost, rate: 74.75, base: car_count, tax: 0.06, settle_party: "二级公司"}
+    - {code: aux_sealing,    name: "堵漏封堵服务",         side: cost, rate: 32.50, base: car_count, tax: 0.06, settle_party: "二级公司"}
+
 # ── 流程编排(主要给 departure_excel 提供模板;executor 是 hard-coded)─
 flows:
   # 发运 excel 生成 + 发到指定群

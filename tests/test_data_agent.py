@@ -6,9 +6,11 @@ import pytest
 
 from sop_hub.data_agent.agent import (
     BusinessDataAgent,
+    canonicalize_ship_text,
     normalize_chinese_date,
     parse_destination_station,
     parse_remarks,
+    project_known_ships,
     hash_text,
 )
 
@@ -243,6 +245,69 @@ class TestBusinessDataAgent:
         records = agent.list_release_batches()
         assert len(records) == 1  # upsert, not duplicate
 
+    def test_completed_batch_locked_against_notice_resend(self, tmp_db):
+        """#jilin-resend 2026-06-18:已 confirmed_received 的 lot,通知单重发
+        (数量漂移)绝不能被改写——锁死。
+
+        旧 bug:累计出港通知单重发把历史 lot 又带回来,OCR 数量噪声触发
+        date命中+qty不符 → review_needed → ON CONFLICT 重写已收货完成的批次
+        (updated_at 翻新、群里误报"新建放货批次")。
+        """
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "header_info": {"通知日期": "2026年6月1日"},
+            "business_info": {"船名": "蓝鳍", "发货单位": "", "收货单位": ""},
+            "cargo_info": {"货物名称": "铁矿粉", "运输方式": "铁路"},
+            "special_matter": "到站:四平",
+            "remarks": [
+                {"date": "6月1日", "sequence": "1", "plan": "9000吨", "raw_line": "9000吨"},
+                {"date": "6月2日", "sequence": "2", "plan": "9000吨", "raw_line": "9000吨"},
+            ],
+        }
+        recs = agent.ingest_release_batch(payload, source_file_name="lanqi_v1.json")
+        assert len(recs) == 2
+        first = recs[0]
+        assert first.batch_quantity == 9000
+
+        # 第一条 lot 收货完成(终态)
+        assert agent.update_release_dispatch_status(first.id, "confirmed_received")
+
+        # 通知单重发:该 lot 数量漂移 9000→8888(date 命中 qty 不符,旧逻辑会重写)
+        payload_resend = json.loads(json.dumps(payload))
+        payload_resend["remarks"][0]["plan"] = "8888吨"
+        payload_resend["remarks"][0]["raw_line"] = "8888吨"
+        agent.ingest_release_batch(payload_resend, source_file_name="lanqi_resend.json")
+
+        after = {r.id: r for r in agent.list_release_batches()}
+        assert len(after) == 2                                   # 无重复行
+        locked = after[first.id]
+        assert locked.dispatch_status == "confirmed_received"    # 状态没被动
+        assert locked.batch_quantity == 9000                     # 数量没被改成 8888(锁死)
+
+    def test_in_progress_batch_not_locked_on_resend(self, tmp_db):
+        """对照组:loading(进行中)批次不在锁定集,重发不会被 lock 跳过——避免误伤。
+        (是否更新数量是既有 dedup 行为;这里只守"锁不误伤进行中批次、且不重复建"。)"""
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "header_info": {"通知日期": "2026年6月1日"},
+            "business_info": {"船名": "马兰希望", "发货单位": "", "收货单位": ""},
+            "cargo_info": {"货物名称": "铁矿粉", "运输方式": "铁路"},
+            "special_matter": "到站:四平",
+            "remarks": [{"date": "6月1日", "sequence": "1", "plan": "20000吨", "raw_line": "20000吨"}],
+        }
+        recs = agent.ingest_release_batch(payload, source_file_name="mlxw_v1.json")
+        lot01 = recs[0]
+        agent.update_release_dispatch_status(lot01.id, "loading")
+        payload_resend = json.loads(json.dumps(payload))
+        payload_resend["remarks"][0]["plan"] = "21000吨"
+        payload_resend["remarks"][0]["raw_line"] = "21000吨"
+        agent.ingest_release_batch(payload_resend, source_file_name="mlxw_resend.json")
+        after = {r.id: r for r in agent.list_release_batches()}
+        assert len(after) == 1                              # 不重复建
+        assert after[lot01.id].dispatch_status == "loading"  # 进行中批次未被锁逻辑破坏
+
     def test_ingest_business_text_does_not_create_when_lot_is_ambiguous(self, tmp_db):
         agent = BusinessDataAgent()
         payload = {
@@ -278,6 +343,76 @@ class TestBusinessDataAgent:
         assert audit["requires_manual_review"] == 1
 
 
+
+
+class TestCanonicalizeShip:
+    def test_live_ocr_confusion_lanqi(self):
+        # 2026-06-18 蓝鳍 被 VLM OCR 成 蓝嶂(嶂 生僻字)→ 归一回正名。
+        assert canonicalize_ship_text("蓝嶂") == "蓝鳍"
+
+    def test_strips_whitespace_before_mapping(self):
+        assert canonicalize_ship_text("  蓝嶂 ") == "蓝鳍"
+
+    def test_known_ship_unchanged(self):
+        assert canonicalize_ship_text("蓝鳍") == "蓝鳍"
+
+    def test_none_and_empty_passthrough(self):
+        assert canonicalize_ship_text(None) is None
+        assert canonicalize_ship_text("") == ""
+        assert canonicalize_ship_text("   ") == ""
+
+
+class TestProjectKnownShips:
+    def test_jilin_known_ships_loaded_from_yaml(self):
+        ships = project_known_ships("jilin_jingang_jinzhou")
+        assert "蓝鳍" in ships
+        assert "马兰希望" in ships
+
+    def test_unknown_project_returns_empty(self):
+        assert project_known_ships("不存在的项目") == set()
+        assert project_known_ships(None) == set()
+
+
+class TestShipNameOcrGuard:
+    def test_ocr_misread_ship_name_is_canonicalized_then_ingested(self, tmp_db):
+        # 蓝嶂(误读)归一为 蓝鳍 后,船名落在 jilin known_ships 内 → 正常建批次。
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "project": "jilin_jingang_jinzhou",
+            "header_info": {"通知日期": "2026年6月18日"},
+            "business_info": {"船名": "蓝嶂", "发货单位": "", "收货单位": ""},
+            "cargo_info": {"货物名称": "铁矿粉", "总重里": "5000", "运输方式": "铁路"},
+            "special_matter": "到站：四平",
+            "remarks": [{"date": "6月18日", "sequence": "第一次下达计划", "plan": "5000吨（铁路 四平）", "raw_line": ""}],
+        }
+
+        records = agent.ingest_release_batch(payload, source_file_name="lanqi_ocr_lot01.json")
+
+        assert len(records) == 1
+        assert records[0].ship_name == "蓝鳍"
+
+    def test_unknown_ship_name_skips_whole_group(self, tmp_db):
+        # 归一后仍不在 jilin known_ships → 疑似没覆盖的误读/未登记新船,
+        # 不建整组批次(避免整组空批次需人工删)。
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "project": "jilin_jingang_jinzhou",
+            "header_info": {"通知日期": "2026年6月18日"},
+            "business_info": {"船名": "幽灵号", "发货单位": "", "收货单位": ""},
+            "cargo_info": {"货物名称": "铁矿粉", "总重里": "5000", "运输方式": "铁路"},
+            "special_matter": "到站：四平",
+            "remarks": [
+                {"date": "6月18日", "sequence": "第一次下达计划", "plan": "5000吨（铁路 四平）", "raw_line": ""},
+                {"date": "6月18日", "sequence": "第二次下达计划", "plan": "5000吨（铁路 四平）", "raw_line": ""},
+            ],
+        }
+
+        records = agent.ingest_release_batch(payload, source_file_name="ghost_ship.json")
+
+        assert records == []
+        assert agent.list_release_batches() == []
 
 
 class TestHashText:

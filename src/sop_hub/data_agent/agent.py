@@ -16,6 +16,11 @@ from sop_hub.utils.time import now_iso_beijing as _now_iso_beijing_full
 WORKSPACE_DOCS_DIR = Path(__file__).resolve().parents[3] / "doc"
 PROJECT_SOPS_DIR = Path(__file__).resolve().parents[3] / "config" / "project_sops"
 NON_BUSINESS_SOP_HINTS = ("archive", "sandbox", "归档", "沙箱")
+# 2026-06-18 #jilin-resend:出港计划通知单重发去重时,处于这些"终态"的批次
+# 锁死不再改写(放货/装车阶段已结束,通知单重发只能新增 lot、不能动已完成的)。
+_LOCKED_DISPATCH_STATES = frozenset({
+    "all_loaded", "tracking", "delivered", "confirmed_received", "closed", "completed",
+})
 ZHONGTANG_PROJECT = "中唐特钢铁矿发运项目"
 WUGANG_PROJECT = "乌兰浩特钢铁铁矿发运项目"
 FALLBACK_BUSINESS_SOP_TOKENS = {
@@ -65,6 +70,48 @@ def canonicalize_shipper_text(text: Optional[str]) -> Optional[str]:
     if "锦州新" in raw and "物流" in raw and "新僡" not in raw:
         return "锦州新僡物流有限公司"
     return raw
+
+
+# 2026-06-18 #ocr-normalize 用户补:VLM 把 jilin 船名 "蓝鳍" OCR 成 "蓝嶂"
+# (嶂 是山字旁生僻字,模型把"鳍"误拼),出港计划通知单整组按错船名建了一批
+# 空 release_batch(蓝嶂 lot01-08),只能人工删。船名是独立 OCR 归一闭集
+# (与车站/发货单位分开;各项目活跃船登记在 yaml project_meta.known_ships)。
+# 所有从 OCR 取到 release_batches.ship_name 的入口都应过 canonicalize_ship_text。
+SHIP_OCR_CORRECTIONS = {
+    "蓝嶂": "蓝鳍",
+}
+
+
+def canonicalize_ship_text(text: Optional[str]) -> Optional[str]:
+    """归一进口船名 — 兜底 VLM OCR 不准(如 蓝鳍→蓝嶂)。"""
+    if not text:
+        return text
+    raw = str(text).strip()
+    if not raw:
+        return raw
+    return SHIP_OCR_CORRECTIONS.get(raw, raw)
+
+
+def project_known_ships(project_display: Optional[str]) -> set[str]:
+    """加载项目 yaml 的 project_meta.known_ships。
+
+    空集 = 该项目未登记 known_ships(或 yaml 找不到)→ 调用方应透明放行,
+    不对船名做未知拦截,避免破坏未登记船名的老项目。
+    """
+    if not project_display:
+        return set()
+    try:
+        from sop_hub.models.project_sop import PROJECT_ID_ALIASES
+        import yaml as _yaml
+        from sop_hub.sop.departure_excel import _find_yaml_for_project
+
+        project_id = PROJECT_ID_ALIASES.get(project_display, project_display)
+        yp = _find_yaml_for_project(project_id)
+        raw = _yaml.safe_load(yp.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return set()
+    pm = raw.get("project_meta") or {}
+    return {str(s).strip() for s in (pm.get("known_ships") or []) if s}
 
 
 @lru_cache(maxsize=1)
@@ -1551,7 +1598,28 @@ class BusinessDataAgent:
         plan_id = header_info.get("入场计划号") or header_info.get("计划号")
         order_id = header_info.get("订单标识号") or header_info.get("订单号")
 
-        ship_name = business_info.get("进口船名") or business_info.get("船名", "")
+        # #ocr-normalize 读时兜底:VLM 把船名拼错(蓝鳍→蓝嶂)→ 归一回正名。
+        ship_name = canonicalize_ship_text(
+            business_info.get("进口船名") or business_info.get("船名", "")
+        ) or ""
+
+        # ── 未知船名拦截(2026-06-18 蓝嶂 OCR 误读建空批次根因)──────────────
+        # canonicalize_ship_text 是第一道防线;这是第二道:若项目 yaml 登记了
+        # known_ships,而归一后船名仍不在其中,大概率是没收录的 OCR 误读(或真·
+        # 新船没登记)→ 不建整组 release_batch,只记日志待人工。比建出一堆错船名
+        # 的空批次再人工删要安全得多。仅当项目 known_ships 非空才启用,空集透明放行。
+        _known_ships = project_known_ships(project)
+        if ship_name and _known_ships and ship_name not in _known_ships:
+            import logging as _logging
+            _logging.getLogger("sop_hub.data_agent").warning(
+                "ingest_release_batch: ship_name=%r 不在 project=%r known_ships=%s "
+                "— 疑似 OCR 误读或未登记新船,跳过整组批次创建。修法:在 "
+                "canonicalize_ship_text 补归一映射,或在 yaml project_meta.known_ships "
+                "补登记后重跑。",
+                ship_name, project, sorted(_known_ships),
+            )
+            return []
+
         cargo_name = cargo_info.get("货物品类") or cargo_info.get("货物名称", "")
         cargo_product_name = cargo_info.get("货物品名") or normalized_payload.get("货物品名")
         # #112 #ocr-normalize 读时兜底:VLM 拼不准"锦州新僡"。
@@ -1631,11 +1699,14 @@ class BusinessDataAgent:
         if existing_batches:
             # Build lookup: sequence -> (batch_date, batch_quantity)
             existing_map: dict[str, tuple[str | None, float | None]] = {}
+            # 2026-06-18 #jilin-resend:seq -> dispatch_status,用于锁死已完成批次。
+            existing_status_map: dict[str, str] = {}
             for eb in existing_batches:
                 seq = eb.get("batch_sequence") or eb.get("sequence", "")
                 if not seq:
                     continue
                 existing_map[seq] = (eb.get("batch_date"), eb.get("batch_quantity"))
+                existing_status_map[seq] = (eb.get("dispatch_status") or "").strip().lower()
 
             # 2026-06-06 #105:date+qty fuzzy 反查表 —— 当 VLM 把 sequence 抽错
             # (长航滨海 lot01/lot03 case),seq 不在 existing_map,但 (date,qty)
@@ -1698,6 +1769,20 @@ class BusinessDataAgent:
 
                 # Sequence exists in DB — compare weight and date
                 db_date, db_qty = existing_map[seq]
+
+                # 2026-06-18 #jilin-resend:已进入终态的批次锁死。出港计划通知单
+                # 重发(尤其 jilin 累计通知单会把历史 lot 又带进来)绝不能再改写
+                # 已"收货/关闭/发完/到货/在途"的批次。否则 OCR 数量噪声触发
+                # date命中+qty不符 → review_needed → ON CONFLICT 重写 → updated_at
+                # 翻新、群里误报"新建放货批次"。锁死=直接跳过,不比对不重写。
+                if existing_status_map.get(seq, "") in _LOCKED_DISPATCH_STATES:
+                    import logging as _log
+                    _log.getLogger("sop_hub.data_agent").info(
+                        "release_batch dedup: seq=%r 已终态(%s),通知单重发锁死跳过",
+                        seq, existing_status_map.get(seq),
+                    )
+                    continue
+
                 remark_date = str(remark.get("date") or "")
                 remark_qty = remark.get("quantity")
 

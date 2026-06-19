@@ -39,6 +39,7 @@ if str(_ROOT / "src") not in sys.path:
 
 from sop_hub.utils.time import (
     BEIJING_TZ,
+    now_iso_beijing,
     now_iso_beijing_compact,
     parse_any_timestamp,
 )
@@ -203,6 +204,37 @@ def refresh_active_shipped_weights(throttle_s: int = 30) -> None:
             continue
 
 
+def _railway_plan_day_window() -> tuple[str, str]:
+    """铁路计划日窗口 [最近18点边界, +24h)。每天 18:00 清算:
+    now<18点 → [昨18点, 今18点);now>=18点 → [今18点, 明18点)。
+    返回 'YYYY-MM-DD HH:MM:SS' 串(北京时),与 ticketed_at 同格式可直接比较。"""
+    from datetime import datetime, timedelta
+    now = datetime.fromisoformat(now_iso_beijing())
+    anchor = now.replace(hour=18, minute=0, second=0, microsecond=0)
+    start = anchor if now >= anchor else anchor - timedelta(days=1)
+    end = start + timedelta(days=1)
+    fmt = "%Y-%m-%d %H:%M:%S"
+    return start.strftime(fmt), end.strftime(fmt)
+
+
+# 计划号取哪列:四平/朝钢=order_identifier(订单标识/回运批次号);中唐=plan_id(计划号)
+_PLAN_NO_FIELD = {
+    "jilin_jingang_jinzhou": "order_identifier",
+    "chaoyang_steel": "order_identifier",
+    "zhongtang_special_steel": "plan_id",
+}
+
+
+def _plan_no_for(project_id: str, b: dict[str, Any]) -> str:
+    field = _PLAN_NO_FIELD.get(project_id)
+    if field:
+        val = b.get(field)
+        if val:
+            return str(val)
+    # 兜底:任一非空
+    return str(b.get("plan_id") or b.get("order_identifier") or b.get("order_id") or "")
+
+
 def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
     """按 project 分组,取所有 in_progress + completed in last 7 days 的 batch。
     顺手补一列 box_count(集装箱业务用,从 wagon_shipments.container_numbers_json
@@ -211,6 +243,7 @@ def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
     conn = _connect(DB_PATH)
     if conn is None:
         return {}
+    ws, we = _railway_plan_day_window()
     try:
         rows = conn.execute(
             """
@@ -239,7 +272,18 @@ def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
                   FROM wagon_shipments ws, json_each(ws.container_batch_map) j
                   WHERE ws.container_batch_map IS NOT NULL AND j.value=rb.id
                 ), 0)
-              END AS box_count
+              END AS box_count,
+              -- 计划号(四平=order_identifier订单标识 / 中唐=plan_id计划号 /
+              -- 朝钢=order_identifier回运批次号);panel 端按项目选列
+              rb.plan_id, rb.order_identifier, rb.order_id,
+              -- 当日(铁路计划日 18点清算)发运量:ticketed_at 落在
+              -- [最近18点, +24h) 窗口的车/箱数。不影响总数,仅标 (+N)。
+              (SELECT COUNT(*) FROM wagon_container_shipments wcs2
+                 WHERE wcs2.batch_id=rb.id
+                   AND wcs2.ticketed_at>=:ws AND wcs2.ticketed_at<:we) AS today_box,
+              (SELECT COUNT(*) FROM wagon_shipments ws3
+                 WHERE ws3.batch_id=rb.id
+                   AND ws3.ticketed_at>=:ws AND ws3.ticketed_at<:we) AS today_wagon
             FROM release_batches rb
             -- #125 lifecycle 新枚举:dashboard 只显示活跃区(已结算 confirmed_received/closed
             -- 不再展示,看板只关注在跑的 lot)
@@ -257,7 +301,8 @@ def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
                 ELSE 9
               END,
               rb.batch_date DESC
-            """
+            """,
+            {"ws": ws, "we": we},
         ).fetchall()
     finally:
         conn.close()
@@ -402,7 +447,7 @@ def list_daemons() -> list[dict[str, Any]]:
 # ── 渲染 panel ────────────────────────────────────────────────────────
 
 
-PANEL_WIDTH = 92
+PANEL_WIDTH = 112
 
 
 def _box(title: str, lines: list[str], width: int = PANEL_WIDTH) -> list[str]:
@@ -441,8 +486,9 @@ def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
         + _pad_disp("计划t", 8, "right")
         + _pad_disp("已发t", 8, "right")
         + _pad_disp("剩 t", 8, "right")
-        + _pad_disp(unit_label, 5, "right")
-        + "  状态"
+        + _pad_disp(f"{unit_label}(+当日)", 12, "right")
+        + "  " + _pad_disp("状态", 19)
+        + "  " + _pad_disp("计划号", 16)
     )
     lines.append(_dim(header))
     for b in batches[:8]:  # 最多 8 条/项目
@@ -463,14 +509,20 @@ def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
             except (ValueError, TypeError):
                 remain_v = None
         remain = _num(remain_v)
-        unit_count = str(
-            (b.get("box_count") if is_container else b.get("actual_wagon_count"))
-            or 0
+        base_count = int(
+            (b.get("box_count") if is_container else b.get("actual_wagon_count")) or 0
         )
+        # 当日(铁路计划日)发运量:不并入总数,只在后面标 (+N) 绿色
+        today = int((b.get("today_box") if is_container else b.get("today_wagon")) or 0)
+        unit_plain = f"{base_count} (+{today})" if today > 0 else str(base_count)
+        unit_cell = _pad_disp(unit_plain, 12, "right")
+        if today > 0:
+            unit_cell = unit_cell.replace(f"(+{today})", _green(f"(+{today})"))
         status = b.get("dispatch_status") or "—"
         # status 列固定 19 cell — 容纳 pending_completion 全名,所有行右
         # 边框自然对齐(_color_status 改成 strip 后判颜色,pad 不影响)
         status_colored = _color_status(_pad_disp(status, 19))
+        plan_no = _truncate_disp(_plan_no_for(project_id, b) or "—", 16)
         lines.append(
             _pad_disp(ship, 14)
             + _pad_disp(lot, 7)
@@ -478,8 +530,9 @@ def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
             + _pad_disp(planned, 8, "right")
             + _pad_disp(shipped, 8, "right")
             + _pad_disp(remain, 8, "right")
-            + _pad_disp(unit_count, 5, "right")
+            + unit_cell
             + "  " + status_colored
+            + "  " + _pad_disp(plan_no, 16)
         )
     if len(batches) > 8:
         lines.append(_dim(f"  …还有 {len(batches) - 8} 条未显示"))

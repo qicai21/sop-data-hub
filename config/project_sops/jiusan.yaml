@@ -115,3 +115,34 @@ listening_tasks:
         trigger_condition: "manual_designation_required"
         target_node: "archive_for_manual_release_setup"
         save_db: true
+
+  # 九三大豆发运群(2026-06-21 接入)。两类跟踪目标:发运晨报 + 薛雪红发运报表。
+  - group_id: "GROUP093"
+    group_lookup_id: "[GROUP093]"
+    group_name: "九三大豆发运群"
+    wxid: "18894028363@chatroom"   # 2026-06-21 从 WeChat contact.db 检索(remark=九三大豆发运群-[GROUP093] 确认)
+    listen_options:
+      text: true
+      file: true
+      image: true
+    pull_image: false
+    pull_file: true
+    routing:
+      # ① 发运晨报(发送人:营口铁晟-魏庆凯)。锚点:"截止" + "【锦州港口装车情况】"(含"*日")。
+      #    内容=当日装车/发运/在途/港内剩余重空箱/承认车 situational 汇总。
+      - message_type: "text"
+        sender_name: "营口铁晟-魏庆凯"
+        match_any: ["截止", "【锦州港口装车情况】"]
+        target_node: "capture_jiusan_morning_report"
+        save_db: true
+        note: "晨报入库存档(situational);95306 仍为发运数据权威,晨报供盘点对照"
+      # ② 发运报表 xlsx(发送人:铁晟 薛雪红)。文件名:<船名> 散粮车<日期>.xlsx。
+      #    每 sheet=日期、列=序号|车型|车号|净重|标重,提供散粮**分船分票**事实源。
+      - message_type: "file"
+        sender_name: "铁晟 薛雪红"
+        filename_match: "散粮车"
+        filename_ext: ".xlsx"
+        target_node: "ingest_bulk_loading_notice"
+        handler: "scripts/ingest_bulk_loading_notice.py"
+        save_db: true
+        note: "落 bulk_loading_notice_wagon(船名取自文件名,car_no+日期反查95306 ydid),随后 sync 按船重路由。⚠️95306 数据权威最高,本表只提供分票"

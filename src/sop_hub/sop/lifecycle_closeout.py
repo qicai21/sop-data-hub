@@ -49,6 +49,19 @@ def _yaml_lifecycle_mode(project_id: str) -> str:
     return str((pm.get("lifecycle") or {}).get("mode") or "full_track_to_received")
 
 
+# 散粮(无 dispatch_plan)lot 自动完成的计划吨位闸:剩余 > 此值(约1.5车)视为
+# "还在装",不自动推 confirmed_received。集装箱 lot 有 dispatch_plan 管满,不走此闸。
+_BULK_REMAINING_TOLERANCE_T: float = 100.0
+
+
+def _batch_has_dispatch_plan(conn: sqlite3.Connection, batch_id: str) -> bool:
+    """该 batch 是否有 dispatch_plan 行(=集装箱按箱计划管满;无则为散粮按吨兜底)。"""
+    return conn.execute(
+        "SELECT 1 FROM release_batch_dispatch_plan WHERE release_batch_id=? LIMIT 1",
+        (batch_id,),
+    ).fetchone() is not None
+
+
 def _batch_wagon_stage_summary(conn: sqlite3.Connection, batch_id: str) -> dict[str, Any]:
     """Return {'total': N, 'received': K, 'all_received': bool}."""
     row = conn.execute(
@@ -91,12 +104,13 @@ def run_lifecycle_closeout(
     try:
         batches = conn.execute(
             f"SELECT id, project, ship_name, batch_sequence, dispatch_status, "
-            f"       dispatch_status_note "
+            f"       dispatch_status_note, remaining_weight_tons, batch_quantity "
             f"FROM release_batches WHERE dispatch_status IN ({placeholders})",
             _ACTIVE_PHASES_TO_SCAN,
         ).fetchall()
         result["scanned"] = len(batches)
         result.setdefault("held", 0)
+        result.setdefault("held_underfilled", 0)
 
         for b in batches:
             bid = b["id"]; project = b["project"] or ""; phase = b["dispatch_status"]
@@ -123,8 +137,17 @@ def run_lifecycle_closeout(
                     result["rejected"].append({"batch_id": bid, **r})
                 continue
 
-            # 默认 mode (full_track_to_received): 看 wagon 全收货才推
+            # 默认 mode (full_track_to_received): 看 wagon 全收货才推。
+            # 散粮闸(#issue-20260621):散粮 lot(无 dispatch_plan)按吨位增量装,
+            # 趟间"当前车全交付"≠ lot 装完。计划吨位远没到的不准自动完成,否则
+            # 诚信 lot02 这类(5096/17000t,30%)会被误判收货、从看板 loading 消失。
+            # 集装箱 lot 有 dispatch_plan 按箱管满,不受此闸影响。
             if summary["all_received"]:
+                rem = b["remaining_weight_tons"]
+                if (rem is not None and float(rem) > _BULK_REMAINING_TOLERANCE_T
+                        and not _batch_has_dispatch_plan(conn, bid)):
+                    result["held_underfilled"] += 1
+                    continue
                 r = advance_lifecycle(
                     bid, lc.CONFIRMED_RECEIVED,
                     reason=(f"95306 stage_key 全 received "

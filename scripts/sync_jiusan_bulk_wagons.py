@@ -1,18 +1,21 @@
-"""九三和谐1 散粮车(整车运输)95306 → sop 同步(可重复跑,幂等)。
+"""九三散粮车(整车运输)95306 → sop 同步,**多船拆分版**(可重复跑,幂等)。
+
+#issue-20260620-散粮sync按船拆分:原版写死 SHIP="和谐1",多船并行期(诚信+和谐1
+同列发出)把诚信的散粮全算进和谐1 → 和谐1 lot02 超发(剩余 -2072t)、诚信 lot02=0。
+95306 货票里诚信/和谐1 到站(新台子)、收货人全相同,**无字段能区分船**;唯一事实源
+= 港方每趟「简装车通知单」(落在 `bulk_loading_notice_wagon` 表,标了船名+逐车ydid)。
+
+本版改为**按 ydid 查通知单台账分船路由**:
+1. 拉 rail DB 高桥镇→新台子 大豆「整车运输」票(2026-06-09 起)
+2. 每票 id=sha1("bulk"|ydid)(船无关,故重路由不换 id);按 ydid 查台账定 ship→lot02 batch
+3. **命中台账**:路由到该船 lot02;已存在但挂错船的 → **重路由纠正**(自愈)
+4. **未命中**:已存在行原样保留(grandfather,历史单船期和谐1不动);全新行暂落和谐1 + WARN
+   —— 通知单一入台账,下趟 sync 自动把它纠正,污染临时且自消
+5. 按**每条被改动的 batch** 分别重算 batch_count + 装车重量(yaml shipped_weight_rule.bulk)
 
 集装箱走 sync_jiusan_harmony_wagons.py;散粮车(整车/L 型敞车)走本脚本。
-散粮一节车 = 一张货票 = wagon_shipments 一行(无 box)。
 
-每天散粮车发车后 95306 出新票,跑本脚本即可:
-1. 拉 rail DB 高桥镇→新台子 大豆「整车运输」票(2026-06-09 起)
-2. 每票一行 wagon_shipments(id=sha1("bulk"|ydid),与昆娜/玛格丽特散粮一致)
-3. 新行 INSERT;已有行只刷 95306 状态(幂等,保留 created_at/source)
-4. 重算 lot02 计数:actual_wagon_count / batch_count / shipped_weight_tons
-   (装车重量按业务标载:L70=69t/车,其余 L16/L18=61t/车,非 95306 标重;
-    jiusan 无 yaml shipped_weight_rule,故本脚本直接落重量,
-    不走 shipped_weight.compute_for_release_batch。95306 marked_weight 仍原样留存)
-
-用法:python scripts/sync_jiusan_bulk_wagons.py            # 干跑预览
+用法:python scripts/sync_jiusan_bulk_wagons.py            # 干跑预览(分船)
       python scripts/sync_jiusan_bulk_wagons.py --apply    # 真正提交
 """
 from __future__ import annotations
@@ -20,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -30,15 +34,12 @@ SOP_DB = REPO / "data" / "sop_agent.db"
 RAIL_DB = Path("/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3")
 
 PROJECT = "jiusan"
-SHIP = "和谐1"
-BATCH_ID = "9d9d6e8364df7448119d2b28186c497b846a1cbb"  # jiusan|和谐1|lot02 散粮车
 SINCE = "2026-06-09"
 CONSIGNOR = "锦州港物流发展有限公司"
 CONSIGNEE = "九三集团铁岭大豆科技有限公司"
-
-# 装车重量(L70=69t/车、其余 L16/L18=61t/车)已收口到
-# config/project_sops/jiusan.yaml 的 shipped_weight_rule.bulk,本脚本不再硬算,
-# 落库 commit 后统一调 compute_for_release_batch(单一真相)。
+# 未命中台账的全新散粮车的兜底落点(单船期/通知单未到时)。命中台账的会自愈纠正,
+# 故此兜底只是临时落点;不要因此放弃 WARN。
+FALLBACK_SHIP = "和谐1"
 
 
 def stable_hash(*parts: str) -> str:
@@ -89,13 +90,36 @@ def fetch_rail_tickets() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def build_row(t: dict, now: str) -> dict:
+def load_ship_batches(conn: sqlite3.Connection) -> dict[str, str]:
+    """九三各船 lot02 散粮 batch:ship_name → release_batches.id(单一事实源,不硬编码)。"""
+    return {
+        r["ship_name"]: r["id"]
+        for r in conn.execute(
+            "SELECT id, ship_name FROM release_batches "
+            "WHERE project=? AND batch_sequence='lot02' AND ship_name IS NOT NULL",
+            (PROJECT,),
+        )
+    }
+
+
+def load_notice_ship_map(conn: sqlite3.Connection) -> dict[str, str]:
+    """简装车通知单台账:ydid → ship_name(拆船唯一事实源)。"""
+    return {
+        r["ydid"]: r["ship_name"]
+        for r in conn.execute(
+            "SELECT ydid, ship_name FROM bulk_loading_notice_wagon "
+            "WHERE ydid IS NOT NULL AND ydid != ''"
+        )
+    }
+
+
+def build_row(t: dict, now: str, ship: str, batch_id: str) -> dict:
     ds = map_dispatch_status(t["status_name"] or "")
     confirmed_at = t["delivered_at"] if ds == "confirmed_received" else None
     car_model = t["car_model"] or ""
     return {
         "id": stable_hash("bulk", t["ydid"]),
-        "batch_id": BATCH_ID,
+        "batch_id": batch_id,
         "car_no": t["car_no"], "car_model": car_model,
         "cargo_name": t["cargo_name"] or "大豆",
         "shipper_name": t["shipper_name"] or CONSIGNOR,
@@ -113,35 +137,90 @@ def build_row(t: dict, now: str) -> dict:
         "ydid": t["ydid"], "czydid": t["czydid"],
         "transport_mode_code": t["transport_mode_code"],
         "transport_mode_name": t["transport_mode_name"],
-        "project_id": PROJECT, "ship_name": SHIP,
+        "project_id": PROJECT, "ship_name": ship,
         "dispatch_status": ds,
-        "source_message_id": f"auto_harmony1_bulk_sync_{t['ticketed_at'][:10]}",
+        "source_message_id": f"auto_jiusan_bulk_sync_{ship}_{(t['ticketed_at'] or '')[:10]}",
         "source_group_id": "",
         "confirmed_received_at": confirmed_at,
         "created_at": now, "updated_at": now,
     }
 
 
-def upsert_rows(conn: sqlite3.Connection, rows: list[dict]) -> tuple[int, int]:
-    existing = {r[0] for r in conn.execute(
-        "SELECT id FROM wagon_shipments WHERE batch_id=?", (BATCH_ID,))}
-    new_n = 0
-    for r in rows:
-        if r["id"] in existing:
-            # 已有行只刷 95306 状态字段(在途→到站→交付的推进),保留 created_at。
-            # computed_loading_weight/weight_rule_basis 由 compute_for_release_batch 填。
-            conn.execute(
-                """UPDATE wagon_shipments SET
-                   status_name=?, latest_stage_key=?, latest_stage_name=?,
-                   latest_event_time=?, departed_at=?, arrived_at=?, delivered_at=?,
-                   dispatch_status=?, confirmed_received_at=?, marked_weight=?,
-                   updated_at=? WHERE id=?""",
-                (r["status_name"], r["latest_stage_key"], r["latest_stage_name"],
-                 r["latest_event_time"], r["departed_at"], r["arrived_at"],
-                 r["delivered_at"], r["dispatch_status"], r["confirmed_received_at"],
-                 r["marked_weight"], r["updated_at"], r["id"]),
-            )
+def resolve_routing(
+    tickets: list[dict], notice_map: dict[str, str], ship_batches: dict[str, str]
+) -> list[tuple[dict, str, str, bool]]:
+    """每票 → (ticket, ship, batch_id, matched)。matched=命中简装车通知单台账(按ydid)。"""
+    routed = []
+    for t in tickets:
+        ship = notice_map.get(t["ydid"])
+        if ship and ship in ship_batches:
+            routed.append((t, ship, ship_batches[ship], True))
         else:
+            routed.append((t, FALLBACK_SHIP, ship_batches.get(FALLBACK_SHIP, ""), False))
+    return routed
+
+
+# 刷新已有行的 95306 状态字段(在途→到站→交付推进),不动 batch/ship。
+_STATUS_SET = (
+    "status_name=?, latest_stage_key=?, latest_stage_name=?, latest_event_time=?, "
+    "departed_at=?, arrived_at=?, delivered_at=?, dispatch_status=?, "
+    "confirmed_received_at=?, marked_weight=?, updated_at=?"
+)
+
+
+def _status_vals(r: dict) -> list:
+    return [
+        r["status_name"], r["latest_stage_key"], r["latest_stage_name"],
+        r["latest_event_time"], r["departed_at"], r["arrived_at"], r["delivered_at"],
+        r["dispatch_status"], r["confirmed_received_at"], r["marked_weight"], r["updated_at"],
+    ]
+
+
+def upsert_rows(
+    conn: sqlite3.Connection, routed: list[tuple[dict, str, str, bool]],
+    now: str, ship_batches: dict[str, str],
+) -> dict:
+    # 现有九三散粮行当前所在 batch(跨全部九三 lot02,以便发现"诚信票错挂和谐1")。
+    jb = [b for b in ship_batches.values() if b]
+    existing: dict[str, str] = {}
+    if jb:
+        qm = ",".join("?" * len(jb))
+        for r in conn.execute(
+            f"SELECT id, batch_id FROM wagon_shipments WHERE batch_id IN ({qm})", jb
+        ):
+            existing[r["id"]] = r["batch_id"]
+
+    new_n = reroute_n = refresh_n = 0
+    touched: set[str] = set()
+    warn_new_unmatched: list[tuple] = []
+
+    for t, ship, batch_id, matched in routed:
+        rid = stable_hash("bulk", t["ydid"])
+        r = build_row(t, now, ship, batch_id)
+        if rid in existing:
+            cur = existing[rid]
+            if matched and batch_id and batch_id != cur:
+                # 命中台账但当前挂错船 → 重路由纠正(连 ship_name/source 一起改)。
+                conn.execute(
+                    f"UPDATE wagon_shipments SET batch_id=?, ship_name=?, "
+                    f"source_message_id=?, {_STATUS_SET} WHERE id=?",
+                    [batch_id, ship, r["source_message_id"], *_status_vals(r), rid],
+                )
+                reroute_n += 1
+                touched.add(cur)
+                touched.add(batch_id)
+            else:
+                # 已在正确处,或未命中(grandfather 保留原 batch):仅刷状态。
+                conn.execute(
+                    f"UPDATE wagon_shipments SET {_STATUS_SET} WHERE id=?",
+                    [*_status_vals(r), rid],
+                )
+                refresh_n += 1
+                touched.add(cur)
+        else:
+            # 全新行。未命中台账 → 暂落兜底船 + 记 WARN(待通知单到达自愈)。
+            if not matched:
+                warn_new_unmatched.append((t["ydid"], t["car_no"], (t["ticketed_at"] or "")[:10]))
             cols = list(r.keys())
             conn.execute(
                 f"INSERT INTO wagon_shipments ({','.join(cols)}) "
@@ -149,26 +228,32 @@ def upsert_rows(conn: sqlite3.Connection, rows: list[dict]) -> tuple[int, int]:
                 [r[c] for c in cols],
             )
             new_n += 1
-    return new_n, len(rows) - new_n
+            touched.add(batch_id)
+
+    touched.discard("")
+    return {
+        "new": new_n, "reroute": reroute_n, "refresh": refresh_n,
+        "touched": touched, "warn_new_unmatched": warn_new_unmatched,
+    }
 
 
-def update_counts(conn: sqlite3.Connection, now: str) -> dict:
-    """更新 batch_count(车票数);装车重量 / actual_wagon_count 走统一 yaml 规则,
-    由 main() commit 后调 compute_for_release_batch 落。"""
-    # cars = 已发"车次"= 货票数,按 ydid 去重(**不是 car_no**)。散粮 K 车循环
-    # 复用,按车号去重会吞掉复用车次(6/14 那 50 台 6/16 再装一趟 = 多 50 车次)。
-    agg = conn.execute(
-        """SELECT COUNT(*) n, COUNT(DISTINCT ydid) cars,
-                  SUM(CASE WHEN dispatch_status='confirmed_received' THEN 1 ELSE 0 END) delivered
-           FROM wagon_shipments WHERE batch_id=?""",
-        (BATCH_ID,),
-    ).fetchone()
-    n, cars, delivered = agg[0], agg[1], agg[2]
-    conn.execute(
-        "UPDATE release_batches SET batch_count=?, updated_at=? WHERE id=?",
-        (cars, now, BATCH_ID),
-    )
-    return {"wagons": n, "cars": cars, "delivered": delivered}
+def recompute_batches(conn: sqlite3.Connection, batch_ids: set[str], now: str) -> dict:
+    """对每个被改动的 batch 各自重算 batch_count(=COUNT(DISTINCT ydid),散粮循环车号复用
+    不能按 car_no)。装车重量由 main() commit 后按 yaml 规则统一算。"""
+    res = {}
+    for bid in batch_ids:
+        agg = conn.execute(
+            "SELECT COUNT(*), COUNT(DISTINCT ydid), "
+            "SUM(CASE WHEN dispatch_status='confirmed_received' THEN 1 ELSE 0 END) "
+            "FROM wagon_shipments WHERE batch_id=?",
+            (bid,),
+        ).fetchone()
+        conn.execute(
+            "UPDATE release_batches SET batch_count=?, updated_at=? WHERE id=?",
+            (agg[1], now, bid),
+        )
+        res[bid] = {"wagons": agg[0], "cars": agg[1], "delivered": agg[2]}
+    return res
 
 
 def main(apply: bool = False) -> None:
@@ -177,35 +262,53 @@ def main(apply: bool = False) -> None:
     if not tickets:
         print("rail DB 无散粮票")
         return
-    from collections import defaultdict
-    byday = defaultdict(lambda: [0, 0.0])
-    for t in tickets:
-        d = (t["ticketed_at"] or "")[:10]
-        byday[d][0] += 1
-        byday[d][1] += _f(t["marked_weight"])
-    print(f"95306 散粮票 {len(tickets)} 张:")
-    for d in sorted(byday):
-        print(f"  制票日 {d}: {byday[d][0]} 车 / 标重 {byday[d][1]:.1f}t")
 
     conn = sqlite3.connect(str(SOP_DB))
+    conn.row_factory = sqlite3.Row
     try:
-        rows = [build_row(t, now) for t in tickets]
-        new_n, ref_n = upsert_rows(conn, rows)
-        counts = update_counts(conn, now)
+        ship_batches = load_ship_batches(conn)
+        notice_map = load_notice_ship_map(conn)
+        if FALLBACK_SHIP not in ship_batches:
+            print(f"⚠ 缺 {FALLBACK_SHIP} lot02 批次(release_batches),中止")
+            return
+        id2ship = {v: k for k, v in ship_batches.items()}
+        routed = resolve_routing(tickets, notice_map, ship_batches)
+
+        # 预览:按船路由分布
+        byship = defaultdict(lambda: [0, 0])  # ship -> [票数, 命中台账数]
+        for t, ship, _bid, matched in routed:
+            byship[ship][0] += 1
+            byship[ship][1] += 1 if matched else 0
+        print(f"95306 散粮票 {len(tickets)} 张,按船路由:")
+        for ship in sorted(byship):
+            n, m = byship[ship]
+            print(f"  {ship}: {n} 票(命中通知单台账 {m},未命中 {n - m})")
+
+        stats = upsert_rows(conn, routed, now, ship_batches)
+        counts = recompute_batches(conn, stats["touched"], now)
+
+        if stats["warn_new_unmatched"]:
+            print(f"\n⚠ WARN:{len(stats['warn_new_unmatched'])} 个**全新且未命中通知单**的散粮车,"
+                  f"暂落 {FALLBACK_SHIP}(请尽快入简装车通知单台账,下趟 sync 自动纠正):")
+            for ydid, car, day in stats["warn_new_unmatched"][:20]:
+                print(f"    {day}  车号 {car}  ydid {ydid}")
+
+        print(f"\n改动:新增 {stats['new']} / 重路由 {stats['reroute']} / 刷新 {stats['refresh']}")
+        for bid in sorted(stats["touched"], key=lambda b: id2ship.get(b, b)):
+            c = counts[bid]
+            print(f"  [{id2ship.get(bid, bid)}] lot02: {c['cars']} 车(已交付 {c['delivered']})")
+
         if apply:
             conn.commit()
-            # 装车重量统一走 yaml shipped_weight_rule.bulk(独立连接,需先 commit)
             from sop_hub.sop.shipped_weight import compute_for_release_batch
-            sw = compute_for_release_batch(BATCH_ID, db_path=SOP_DB)
-            print(f"\nCOMMIT ✓ 新增 {new_n} 车 / 刷新 {ref_n} 车")
-            print(f"  lot02: {counts['cars']} 车,已发运 {sw.get('shipped_weight_tons')}t "
-                  f"(已交付 {counts['delivered']} 车,yaml L70=69/其余=61),"
-                  f"剩余 {sw.get('remaining_weight_tons')}t")
+            print("\nCOMMIT ✓ 装车重量按 yaml(L70=69/其余=61)分船重算:")
+            for bid in sorted(stats["touched"], key=lambda b: id2ship.get(b, b)):
+                sw = compute_for_release_batch(bid, db_path=SOP_DB)
+                print(f"  [{id2ship.get(bid, bid)}] 已发 {sw.get('shipped_weight_tons')}t,"
+                      f"剩余 {sw.get('remaining_weight_tons')}t")
         else:
             conn.rollback()
-            print(f"\nDRY-RUN(加 --apply 提交)新增 {new_n} 车 / 刷新 {ref_n} 车")
-            print(f"  lot02: {counts['cars']} 车(已交付 {counts['delivered']});"
-                  f"装车重量在 --apply 时按 yaml 规则计算")
+            print("\nDRY-RUN(加 --apply 提交;装车重量在 --apply 时按 yaml 规则分船计算)")
     finally:
         conn.close()
 

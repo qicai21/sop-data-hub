@@ -63,34 +63,52 @@ def _osa(script: str, timeout: int = 130) -> str:
     return r.stdout.decode("utf-8", "replace").strip()
 
 
-def get_next_unread() -> dict | None:
-    """收件箱里第一封 未读 且 白名单发件人 的邮件。返回 {id,sender,subject,body} 或 None。"""
+def list_whitelist_recent(limit: int = 15) -> list[dict]:
+    """最近 limit 封里白名单发件人的邮件(**不分读/未读**;去重靠 message-id 状态文件)。
+    不用 activate(后台 launchd 里 activate 会卡 → -1712)。返回 [{id,sender,subject}]。"""
     addrs = " or ".join(f'snd contains "{a}"' for a in WHITELIST)
     script = f'''
-with timeout of 120 seconds
+with timeout of 90 seconds
   tell application "Mail"
-    activate
     set msgs to messages of inbox
-    set lim to 40
+    set lim to {limit}
     if (count of msgs) < lim then set lim to (count of msgs)
+    set out to ""
     repeat with i from 1 to lim
       set m to item i of msgs
+      set snd to ""
       try
-        set isread to (read status of m)
-      on error
-        set isread to true
+        set snd to (sender of m)
       end try
-      if isread is false then
-        try
-          set snd to (sender of m)
-        on error
-          set snd to ""
-        end try
-        if {addrs} then
-          set bod to (content of m)
-          if (length of bod) > 4000 then set bod to (text 1 thru 4000 of bod)
-          return (message id of m) & "{FIELD_SEP}" & snd & "{FIELD_SEP}" & (subject of m) & "{FIELD_SEP}" & bod
-        end if
+      if {addrs} then
+        set out to out & (message id of m) & "{FIELD_SEP}" & snd & "{FIELD_SEP}" & (subject of m) & linefeed
+      end if
+    end repeat
+    return out
+  end tell
+end timeout
+'''
+    res = []
+    for ln in _osa(script).splitlines():
+        if FIELD_SEP in ln:
+            p = ln.split(FIELD_SEP)
+            res.append({"id": p[0], "sender": p[1], "subject": p[2] if len(p) > 2 else ""})
+    return res
+
+
+def get_message(msg_id: str) -> dict | None:
+    """按 message id 取正文(+sender/subject)。"""
+    script = f'''
+with timeout of 90 seconds
+  tell application "Mail"
+    set msgs to messages of inbox
+    repeat with i from 1 to 60
+      if i > (count of msgs) then exit repeat
+      set m to item i of msgs
+      if (message id of m) is "{msg_id}" then
+        set bod to (content of m)
+        if (length of bod) > 4000 then set bod to (text 1 thru 4000 of bod)
+        return (sender of m) & "{FIELD_SEP}" & (subject of m) & "{FIELD_SEP}" & bod
       end if
     end repeat
     return ""
@@ -100,10 +118,9 @@ end timeout
     out = _osa(script)
     if not out:
         return None
-    parts = out.split(FIELD_SEP, 3)
-    if len(parts) < 4:
-        return None
-    return {"id": parts[0], "sender": parts[1], "subject": parts[2], "body": parts[3].strip()}
+    p = out.split(FIELD_SEP, 2)
+    return {"id": msg_id, "sender": p[0], "subject": p[1] if len(p) > 1 else "",
+            "body": (p[2] if len(p) > 2 else "").strip()}
 
 
 def send_mail(to_addr: str, subject: str, body: str) -> None:
@@ -112,7 +129,6 @@ def send_mail(to_addr: str, subject: str, body: str) -> None:
     script = f'''
 with timeout of 120 seconds
   tell application "Mail"
-    activate
     set newMsg to make new outgoing message with properties {{subject:"{subj_as}", content:"{body_as}", visible:false}}
     tell newMsg
       make new to recipient with properties {{address:"{to_addr}"}}
@@ -202,21 +218,22 @@ def _save_state(ids: set) -> None:
 # ── core ─────────────────────────────────────────────────────────────────
 
 def _reply_subject(subject: str) -> str:
-    s = subject.strip()
+    s = (subject or "").strip()
+    if not s:
+        return "业务查询答复"
     return s if s.lower().startswith("re:") else f"Re: {s}"
 
 
 def process_once(dry_run: bool = False, max_msgs: int = 10) -> int:
     done = _load_state()
     n = 0
-    for _ in range(max_msgs):
-        msg = get_next_unread()
-        if not msg:
+    for meta in list_whitelist_recent():
+        if n >= max_msgs:
             break
-        if msg["id"] in done:
-            # 已处理过但还显示未读(罕见)→ 标读跳过,避免死循环
-            if not dry_run:
-                mark_read_and_flag(msg["id"], flag=False)
+        if meta["id"] in done:
+            continue  # 已答过(按 message-id 去重,与读/未读无关)
+        msg = get_message(meta["id"])
+        if not msg or not msg["body"]:
             continue
         who = WHITELIST.get(next((a for a in WHITELIST if a in msg["sender"].lower()), ""), "白名单")
         kind, text = run_agent(msg["body"])
@@ -226,8 +243,8 @@ def process_once(dry_run: bool = False, max_msgs: int = 10) -> int:
             print(f"\n===[{who}] {msg['subject']} ===\n问: {msg['body']}\n"
                   f"--- {kind} ---\n{text}\n")
             _log({**rec, "dry_run": True})
-            done.add(msg["id"]); n += 1
-            continue
+            n += 1
+            continue  # dry-run 不写 state、不发
         if kind == "answer":
             send_mail(msg["sender"].split("<")[-1].strip(">").strip() or
                       next(a for a in WHITELIST if a in msg["sender"].lower()),
@@ -240,7 +257,8 @@ def process_once(dry_run: bool = False, max_msgs: int = 10) -> int:
             mark_read_and_flag(msg["id"], flag=True)  # flag 给郭东北看
         _log(rec)
         done.add(msg["id"]); n += 1
-    _save_state(done)
+    if not dry_run:
+        _save_state(done)
     return n
 
 

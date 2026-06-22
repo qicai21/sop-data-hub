@@ -30,6 +30,7 @@ sys.path.insert(0, str(REPO / "src"))
 from sop_hub.utils.time import now_iso_beijing  # noqa: E402
 
 SOP_DB = REPO / "data" / "sop_agent.db"
+RAIL_DB = Path("/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3")
 DESTINATION = "新台子"
 CONSIGNEE = "锦州新铁晟(代)"
 
@@ -66,13 +67,28 @@ def parse_xlsx(path: Path, year: int) -> dict[str, list[tuple]]:
     return out
 
 
-def _ydid_for(conn: sqlite3.Connection, car_no: str, date: str) -> tuple[str | None, int]:
-    """反查该车当日货票 ydid(从 wagon_shipments,已含 95306 同步)。返回 (ydid, 命中数)。"""
-    yds = [r[0] for r in conn.execute(
-        "SELECT DISTINCT ydid FROM wagon_shipments "
-        "WHERE car_no=? AND substr(ticketed_at,1,10)=?",
-        (car_no, date),
-    ).fetchall()]
+def _next_day(date: str) -> str:
+    from datetime import date as _d, timedelta
+    y, m, dd = map(int, date.split("-"))
+    return (_d(y, m, dd) + timedelta(days=1)).isoformat()
+
+
+def _ydid_for(rail: sqlite3.Connection, car_no: str, date: str) -> tuple[str | None, int]:
+    """从 95306(rail)反查该车货票 ydid。
+
+    直接查 95306(不查 wagon)——新车可能还没同步进 wagon。**跨日窗口** [date, date+1]:
+    装车日的车常次日才制票(rail-cross-day-ticketing),报表 sheet 日=装车日,95306
+    ticketed_at=制票日,可能差一天。限散粮路由(高桥镇→新台子 整车)避免串号。
+    窗口内唯一才返回(实测每车在窗口内 1:1,不会多义)。
+    """
+    rows = rail.execute(
+        "SELECT ydid FROM shipments "
+        "WHERE car_no=? AND substr(ticketed_at,1,10) IN (?,?) "
+        "AND origin_name='高桥镇' AND destination_name='新台子' "
+        "AND transport_mode_name LIKE '%整车%'",
+        (car_no, date, _next_day(date)),
+    ).fetchall()
+    yds = list({r[0] for r in rows})
     return (yds[0] if len(yds) == 1 else None), len(yds)
 
 
@@ -99,6 +115,7 @@ def main() -> None:
     now = now_iso_beijing()
     src = f"九三发运群[GROUP093]/薛雪红报表:{path.name}"
     conn = sqlite3.connect(str(SOP_DB))
+    rail = sqlite3.connect(str(RAIL_DB))
     total_ins = total_unmatched = total_multi = 0
     print(f"船={ship}  项目={a.project}  lot={a.lot}  文件={path.name}")
     for date in sorted(by_date):
@@ -113,7 +130,7 @@ def main() -> None:
         ins = unmatched = multi = 0
         miss = []
         for seq, model, car_no in rows:
-            ydid, n = _ydid_for(conn, car_no, date)
+            ydid, n = _ydid_for(rail, car_no, date)
             if n == 0:
                 unmatched += 1; miss.append(car_no)
             elif n > 1:
@@ -140,6 +157,7 @@ def main() -> None:
         conn.rollback()
         print(f"\nDRY-RUN(加 --apply 提交)共 {total_ins} 行")
     conn.close()
+    rail.close()
 
 
 if __name__ == "__main__":

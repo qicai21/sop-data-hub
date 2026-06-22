@@ -51,8 +51,8 @@ def _compose(parts: list[tuple[int, str]]) -> str:
 
 
 def _fetch(conn) -> tuple[dict, dict]:
-    cols = ["port_empty", "port_loaded", "transit_loaded", "line330_loaded",
-            "ground330_loaded", "ground330_empty", "transit_empty",
+    cols = ["port_empty", "port_loaded", "transit_loaded", "xtz_loaded",
+            "line330_loaded", "ground330_loaded", "ground330_empty", "transit_empty",
             "total_loaded", "total_empty", "total_pool", "snapshot_date", "note"]
     rows = conn.execute(
         f"SELECT {','.join(cols)} FROM container_pool_snapshot WHERE ship_name=? "
@@ -67,7 +67,7 @@ _CBATCH = "e96f4b3b83c74b4891c6b0957f6989bb827de45b"  # 和谐1 集装箱 batch
 _STATUS_POS = {
     "已制单": "port_loaded",      # 在港制票待发 = 港重(在装列)
     "已发车": "transit_loaded",   # 在途去程 = 途重
-    "已到达": "ground330",        # 到站卸 = 三三0
+    "已到达": "xtz",              # 到新台子站(待卸)= 新台子(到达列)
     "货物已交付": "transit_empty",  # 已卸返程 = 返空
 }
 
@@ -109,6 +109,18 @@ def _cycle_positions(conn) -> dict[str, dict]:
 _POS_LIE: dict[str, int] = {}
 
 
+def _bulk_active(conn) -> dict[str, int]:
+    """九三散粮(整车,诚信+和谐1)未交付活跃车,按 95306 status_name 计 distinct ydid。
+    已制单=在港待发 / 已发车=在途 / 已到达=到新台子站。散粮非循环、不进箱池,仅标状态。"""
+    rows = conn.execute(
+        "SELECT status_name, COUNT(DISTINCT ydid) FROM wagon_shipments "
+        "WHERE project_id='jiusan' AND cargo_name LIKE '%豆%' "
+        "AND transport_mode_name LIKE '%整车%' "
+        "AND status_name IN ('已制单','已发车','已到达') GROUP BY status_name",
+    ).fetchall()
+    return {r[0]: int(r[1]) for r in rows}
+
+
 def _hn(pos: dict, key: str) -> str:
     """该位置的 #N列 标签:优先运营对齐表,回退 95306 home_cycle 反推。"""
     n = _POS_LIE.get(key)
@@ -136,6 +148,7 @@ def render_lines() -> list[str]:
     try:
         t, y = _fetch(conn)
         pos = _cycle_positions(conn)
+        bulk = _bulk_active(conn)
     finally:
         conn.close()
     if not t:
@@ -143,12 +156,12 @@ def render_lines() -> list[str]:
                        [cd._dim("  (无 container_pool_snapshot 快照)")])
 
     g = lambda k: int(t.get(k) or 0)
-    # a 口径(全 live):循环列在载/在途/返程的箱数取 95306 实时(每号列当前趟);
-    # 港空/新台子/三三0 落地堆存池 95306 给不了实时,沿用最新晨报底(标 晨)。
-    lb = lambda node, fb: int((pos.get(node) or {}).get("boxes", fb) or 0)
-    n_portL = lb("port_loaded", g("port_loaded"))      # 港重=在装列(live)
-    n_tranL = lb("transit_loaded", 0)                  # 途重=在途列(live,无则0)
-    n_ret = lb("transit_empty", g("transit_empty"))    # 返空=返程列(live)
+    # 节点箱数一律取 container_pool_snapshot(晨报盘点 = 权威池底);95306 只用于
+    # 叠加"哪号列在该节点"(hn)。此前混口径(箱数走95306在装列)致港重显100而非
+    # 晨报165、新台子错读 line330_loaded——已收口为纯晨报池。
+    n_portL = g("port_loaded")   # 港重(港内待发重箱)
+    n_tranL = g("transit_loaded")  # 途重(在途去程)
+    n_ret = g("transit_empty")   # 返空(返程)
     g330 = g("ground330_loaded") + g("ground330_empty")
     y330 = (int(y.get("ground330_loaded") or 0) + int(y.get("ground330_empty") or 0)) if y else None
     d330 = ""
@@ -162,7 +175,7 @@ def render_lines() -> list[str]:
     A = "──▶"   # 去程箭头
     hn = lambda k: _hn(pos, k)   # 该位置的 #N列 标签
 
-    xtz_lbl = cd._bold("新台子") + f" {g('line330_loaded')}"
+    xtz_lbl = cd._bold("新台子") + f" {g('xtz_loaded')}"
     xtz_end = COL_XTZ + _w(xtz_lbl) - 1
     ret_hn = hn("transit_empty")
     ret_lbl = cd._bold("返空") + f" {n_ret}" + (f" {ret_hn}" if ret_hn else "")
@@ -183,15 +196,20 @@ def render_lines() -> list[str]:
     tran_hn = hn("transit_loaded") or cd._dim("(无在途列)")
     plat_hn = hn("port_loaded")
     g330_hn = hn("ground330")
-    # R1 港空(晨报底)增量 + 途重#列 + 右竖线
+    # R1 附属①:集装箱列号(港重在装列 / 途重在途列 / 新台子到达列)+ 港空增量 + 右竖线
     L.append(_compose([
         (COL_PORT_E, _delta(t, y, "port_empty")),
+        (COL_PORT_L, (f"{plat_hn} " if plat_hn else "") + cd._dim("装·pm发")),
         (COL_TRAN_L, tran_hn),
+        (COL_XTZ, hn("xtz")),
         (RV, "│"),
     ]))
-    # R2 港重在装列标记 + 右竖线
+    # R2 附属②:散粮车状态(非循环/不进箱池,仅标)——港=待发 途=在途 新台子=到站
+    bk = lambda lbl, k: cd._dim(f"散·{lbl}{bulk.get(k, 0)}")
     L.append(_compose([
-        (COL_PORT_L, (f"{plat_hn} " if plat_hn else "") + cd._dim("装·pm发")),
+        (COL_PORT_L, bk("待发", "已制单")),
+        (COL_TRAN_L, bk("在途", "已发车")),
+        (COL_XTZ, bk("到站", "已到达")),
         (RV, "▼"),
     ]))
     # R3 左▲ + 三三0总
@@ -216,9 +234,9 @@ def render_lines() -> list[str]:
     date = str(t.get("snapshot_date") or "")
     now_hm = cd.now_iso_beijing_compact()[:16].replace("T", " ")
     title = (f"{SHIP} 箱循环 · 现状 {now_hm}   "
-             f"循环列=95306实时 · 落地池=晨报{date}底(池 {g('total_pool')})")
+             f"箱数=晨报{date}盘点池 {g('total_pool')} · #号列=95306实时位置")
 
-    legend = cd._dim("  港空/新台子/三三0=晨报落地池底;港重/途重/返空=95306 列实时箱数")
+    legend = cd._dim("  箱数=晨报盘点池;#N号列=95306循环列位置;散·待发/在途/到站=95306散粮车状态(非循环、不进箱池)")
     body = [""] + L + ["", legend]
     return cd._box(title, body)
 

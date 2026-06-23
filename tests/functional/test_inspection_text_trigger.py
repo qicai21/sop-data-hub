@@ -103,7 +103,7 @@ def db(tmp_path):
         "CREATE TABLE inspection_ingestion_candidates ("
         " id TEXT PRIMARY KEY, message_id TEXT, ship_name TEXT,"
         " destination TEXT, candidate_status TEXT, created_at TEXT,"
-        " reason TEXT, updated_at TEXT)"  # Fix A 挂起会写 reason/updated_at
+        " reason TEXT, updated_at TEXT, wagon_count INTEGER)"  # Fix A reason/updated_at;e30a067 wagon_count(车数闸)
     )
     conn.commit()
     conn.close()
@@ -184,12 +184,14 @@ def test_rendezvous_delegates_when_candidate_exists(db):
     """有匹配候选 → 委托既有检验链;结果带 text_trigger 交叉校验标注。"""
     from sop_hub.sop.workflow_task_executor import run_workflow_task
 
-    # 放一个匹配候选 + 指向它的 inbox 行(图片侧)
+    # 放一个匹配候选 + 指向它的 inbox 行(图片侧)。
+    # e30a067 起候选匹配加三道闸:未消费(candidate)+ 车数对齐(±4)+ 临近(24h内)。
+    # 故 fixture 必须 wagon_count 对齐触发预期(5节)、created_at 用 datetime('now')。
     conn = sqlite3.connect(str(db))
     conn.execute(
         "INSERT INTO inspection_ingestion_candidates "
-        "(id, message_id, ship_name, destination, candidate_status, created_at) "
-        "VALUES ('cand1','wx_img_1','鞍子河','汐子','candidate','2026-06-13 09:00:00')"
+        "(id, message_id, ship_name, destination, candidate_status, wagon_count, created_at) "
+        "VALUES ('cand1','wx_img_1','鞍子河','汐子','candidate',5, datetime('now'))"
     )
     conn.execute(
         "INSERT INTO message_inbox (id, message_id, group_name, received_datetime, "

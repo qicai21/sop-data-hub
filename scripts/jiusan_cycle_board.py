@@ -193,13 +193,23 @@ def render_lines() -> list[str]:
         (COL_XTZ, xtz_lbl),
         hbar(xtz_end + 2, RV, "┐"),
     ]))
-    tran_hn = hn("transit_loaded") or cd._dim("(无在途列)")
-    plat_hn = hn("port_loaded")
+    # §八 口径对齐:晨报"途重"有箱(已发车),但 95306 还显该列在港(已制单=制票滞后)
+    # → 把港位列号**右移到途重位**、港重不再标"装·pm发"(那列其实发走了,95306没出票而已)。
+    _plat_pos = pos.get("port_loaded")
+    _tran_pos = pos.get("transit_loaded")
+    if n_tranL > 0 and _tran_pos is None and _plat_pos is not None:
+        tran_hn = cd._dim(f"#{_plat_pos['cyc']}号列发")   # 列号随实际发车右移到途重
+        plat_hn = ""
+        port_load_note = cd._dim("(在装列已发)")
+    else:
+        tran_hn = hn("transit_loaded") or cd._dim("(无在途列)")
+        plat_hn = hn("port_loaded")
+        port_load_note = cd._dim("装·pm发")
     g330_hn = hn("ground330")
     # R1 附属①:集装箱列号(港重在装列 / 途重在途列 / 新台子到达列)+ 港空增量 + 右竖线
     L.append(_compose([
         (COL_PORT_E, _delta(t, y, "port_empty")),
-        (COL_PORT_L, (f"{plat_hn} " if plat_hn else "") + cd._dim("装·pm发")),
+        (COL_PORT_L, (f"{plat_hn} " if plat_hn else "") + port_load_note),
         (COL_TRAN_L, tran_hn),
         (COL_XTZ, hn("xtz")),
         (RV, "│"),

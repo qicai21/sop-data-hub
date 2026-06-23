@@ -449,6 +449,13 @@ class BusinessDataAgent:
                 # Already exists — skip.
                 inserted.append(existing)
                 continue
+            # OCR容错(#release-batch-robustness 缺口1):疑似放货日期误读
+            # → 归并到现存 OPEN 同序号批 + 告警(不建重复批、不破坏第N批→lotN)。
+            misread_into = self._find_open_batch_same_sequence(normalized)
+            if misread_into is not None:
+                self._merge_suspected_date_misread(misread_into, normalized.get("batch_date"))
+                inserted.append(self.get_by_batch_key(misread_into.batch_key) or misread_into)
+                continue
             self.db.execute(
                 """
                 INSERT INTO release_batches (
@@ -787,6 +794,56 @@ class BusinessDataAgent:
             (batch_key,),
         ).fetchone()
         return hydrate_row(row) if row else None
+
+    # OCR容错(#release-batch-robustness 缺口1):疑似放货日期误读检测。
+    # 合法的"不同航次同序号 lot"只会在旧批 closed 之后才出现;若新批与某仍 OPEN 的
+    # 同(项目,船,货,到站,序号)批次仅日期不同 → 几乎必是 VLM 把放货日期读错(如 6.23→5.23)。
+    # 仅 OPEN 状态触发,确保 closed 后的合法新航次(如 5/11 与 5/29 双 lot01)不被误并。
+    _OPEN_DISPATCH_STATUSES = ("loading", "enriched", "pending", "review_needed")
+
+    def _find_open_batch_same_sequence(
+        self, normalized: dict
+    ) -> Optional[ReleaseBatchRecord]:
+        seq = normalized.get("batch_sequence")
+        if not seq:
+            return None
+        placeholders = ",".join("?" for _ in self._OPEN_DISPATCH_STATUSES)
+        row = self.db.execute(
+            f"""SELECT * FROM release_batches
+                WHERE IFNULL(project,'') = IFNULL(?,'')
+                  AND IFNULL(ship_name,'') = IFNULL(?,'')
+                  AND IFNULL(cargo_name,'') = IFNULL(?,'')
+                  AND IFNULL(destination_station,'') = IFNULL(?,'')
+                  AND batch_sequence = ?
+                  AND IFNULL(batch_date,'') != IFNULL(?,'')
+                  AND dispatch_status IN ({placeholders})
+                ORDER BY updated_at DESC LIMIT 1""",
+            (
+                normalized.get("project"), normalized.get("ship_name"),
+                normalized.get("cargo_name"), normalized.get("destination_station"),
+                seq, normalized.get("batch_date"), *self._OPEN_DISPATCH_STATUSES,
+            ),
+        ).fetchone()
+        return hydrate_row(row) if row else None
+
+    def _merge_suspected_date_misread(
+        self, existing: ReleaseBatchRecord, incoming_date: Optional[str]
+    ) -> None:
+        warn = (
+            f"疑似放货日期误读: 通知单日期 {incoming_date or '空'} 与现存 lot 日期 "
+            f"{existing.batch_date or '空'} 不符,已忽略本次日期、并入现存批次(未建重复批),请人工核。"
+        )
+        self.db.execute(
+            """UPDATE release_batches
+               SET tail_cargo_remark = TRIM(IFNULL(tail_cargo_remark,'') || ' | ' || ?, ' |'),
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE batch_key = ?""",
+            (warn, existing.batch_key),
+        )
+        import logging as _logging
+        _logging.getLogger("sop_hub.data_agent").warning(
+            "OCR容错·疑似日期误读: %s (batch_key=%s)", warn, existing.batch_key
+        )
 
     def list_release_batches(self) -> List[ReleaseBatchRecord]:
         rows = self.db.execute(

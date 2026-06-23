@@ -308,6 +308,58 @@ class TestBusinessDataAgent:
         assert len(after) == 1                              # 不重复建
         assert after[lot01.id].dispatch_status == "loading"  # 进行中批次未被锁逻辑破坏
 
+    def test_misread_release_date_merges_into_open_same_sequence_lot(self, tmp_db):
+        """OCR容错 #release-batch-robustness 缺口1:放货日期被 VLM 误读(6.23→5.23),
+        与某 OPEN 同序号 lot 仅日期不同 → 归并到现存批 + 告警,绝不建重复批、不破坏第N批→lotN。"""
+        agent = BusinessDataAgent()
+        base = {
+            "is_target": True,
+            "header_info": {"通知日期": "2026年6月23日"},
+            "business_info": {"船名": "诚信", "发货单位": "", "收货单位": ""},
+            "cargo_info": {"货物名称": "大豆", "运输方式": "铁路"},
+            "special_matter": "到站:新台子",
+            "remarks": [{"date": "6月23日", "sequence": "1", "plan": "9000吨", "raw_line": "9000吨"}],
+        }
+        recs = agent.ingest_release_batch(base, source_file_name="cx_v1.json")
+        assert len(recs) == 1
+        lot01 = recs[0]
+        agent.update_release_dispatch_status(lot01.id, "loading")  # OPEN
+
+        misread = json.loads(json.dumps(base))                     # 同票,放货日期误读成 5月23日
+        misread["header_info"]["通知日期"] = "2026年5月23日"
+        misread["remarks"][0]["date"] = "5月23日"
+        agent.ingest_release_batch(misread, source_file_name="cx_misread.json")
+
+        after = agent.list_release_batches()
+        assert len(after) == 1                        # 没建重复批
+        merged = after[0]
+        assert merged.id == lot01.id                  # 还是原 lot01
+        assert merged.batch_date == lot01.batch_date  # 现存日期保留(没被误读日覆盖)
+        assert "疑似放货日期误读" in (merged.tail_cargo_remark or "")  # 告警可见
+
+    def test_closed_lot_allows_legit_new_voyage_same_sequence(self, tmp_db):
+        """回归保护:旧 lot01 已 confirmed_received(航次结束)后,新航次合法复用 lot01
+        (如 5/11 与 5/29 双 lot01)→ 必须建新批,不能被误读检测并掉。"""
+        agent = BusinessDataAgent()
+        base = {
+            "is_target": True,
+            "header_info": {"通知日期": "2026年5月11日"},
+            "business_info": {"船名": "和谐1", "发货单位": "", "收货单位": ""},
+            "cargo_info": {"货物名称": "大豆", "运输方式": "铁路"},
+            "special_matter": "到站:新台子",
+            "remarks": [{"date": "5月11日", "sequence": "1", "plan": "9000吨", "raw_line": "9000吨"}],
+        }
+        recs = agent.ingest_release_batch(base, source_file_name="hx_v1.json")
+        agent.update_release_dispatch_status(recs[0].id, "confirmed_received")  # 航次结束
+
+        v2 = json.loads(json.dumps(base))                          # 新航次合法复用 lot01
+        v2["header_info"]["通知日期"] = "2026年5月29日"
+        v2["remarks"][0]["date"] = "5月29日"
+        agent.ingest_release_batch(v2, source_file_name="hx_v2.json")
+
+        after = agent.list_release_batches()
+        assert len(after) == 2  # 合法双 lot01,各自成批,未被误并
+
     def test_ingest_business_text_does_not_create_when_lot_is_ambiguous(self, tmp_db):
         agent = BusinessDataAgent()
         payload = {

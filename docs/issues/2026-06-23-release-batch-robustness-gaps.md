@@ -13,6 +13,17 @@
   - (c)VLM 日期与表头/上下文交叉校验(月份跳变检测)。
 - **待办**:用户定策略 → 实现 + 守门测试(含 c600/9918a9 合法双 lot01 不被误合的回归保护)。
 
+### ✅ 结案(缺口1,2026-06-23)— 采策略(a)归并+告警
+- **决策**:用户选 **(a) 归并到现存 OPEN 同序号批 + 告警**。
+- **实现**(`data_agent/agent.py`):
+  - 新增 `_OPEN_DISPATCH_STATUSES=("loading","enriched","pending","review_needed")` + `_find_open_batch_same_sequence(normalized)`:查同(项目,船,货,到站,序号)、**仅日期不同**、且 **dispatch_status 仍 OPEN** 的批次(NULL 安全比较)。
+  - 新增 `_merge_suspected_date_misread()`:命中即把告警追加进 `tail_cargo_remark`(`疑似放货日期误读: 通知X vs 现存Y…`)+ WARN 日志,**不覆盖现存日期/数量、不建重复批**。
+  - ingest 循环在 `get_by_batch_key` 未命中后插入该检测分支(误读→归并 continue,否则照常 INSERT)。
+- **回归保护**:仅 OPEN 触发——旧批 `confirmed_received`(航次结束)后,新航次合法复用同序号 lot 照常建新批(5/11 与 5/29 双 lot01 不被误并)。
+- **守门测试**(`tests/test_data_agent.py`):`test_misread_release_date_merges_into_open_same_sequence_lot`(误读归并、日期保留、告警可见)、`test_closed_lot_allows_legit_new_voyage_same_sequence`(closed 后合法双 lot01 各自成批)。全量 33 + 相关 94 绿。
+- **残留**:仅 OPEN 重叠的罕见真航次重叠会被并(已打告警供人工核),符合既定取舍。
+- **缺口2(中唐货运提取器)仍挂起**——需真实中唐发运群货运文本样本,见下;故本工单暂不归档。
+
 ## 缺口2:中唐特钢"货运信息"文本无自动提取器(B-中唐)
 - **现状**:`extract_freight_detail`(`freight_detail_extractor.py:35`)强制 `订单标识 CGR\d+`,否则 no_match —— 这是**朝阳/吉林**格式(订单标识 CGR + 合同 HNMC)。中唐格式不同(合同 ZLDSZT、供方、到港船/进口船 import_ship_name、X港-Y港),走 `create_release_batch` 路,**补充货运消息→import_ship_name 的自动提取目前没有**(运达7 合并是人工)。吉林货运有测试(`test_freight_detail_*`),中唐 0 覆盖。
 - **yaml 已要求**(zhongtang.yaml:32-33):补充货运消息船名≠出港通知单船名时,`import_ship_name <- 补充货运消息船名`。

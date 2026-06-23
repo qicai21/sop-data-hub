@@ -233,10 +233,29 @@ def render_lines() -> list[str]:
     # 标题栏(a 口径:现状·循环列实时;落地池=最新晨报底)
     date = str(t.get("snapshot_date") or "")
     now_hm = cd.now_iso_beijing_compact()[:16].replace("T", " ")
-    title = (f"{SHIP} 箱循环 · 现状 {now_hm}   "
-             f"箱数=晨报{date}盘点池 {g('total_pool')} · #号列=95306实时位置")
+    today = cd.now_iso_beijing_compact()[:10]
+    # §八.2 自保:箱数取最新手动快照,若快照不是今天→别拿旧数冒充"现状",醒目标过时。
+    stale_days = 0
+    try:
+        from datetime import date as _d
+        sy, sm, sd = (int(x) for x in date.split("-"))
+        ty, tm, td = (int(x) for x in today.split("-"))
+        stale_days = (_d(ty, tm, td) - _d(sy, sm, sd)).days
+    except Exception:
+        stale_days = 0
+    if stale_days >= 1:
+        title = (f"{SHIP} 箱循环 · {now_hm}  "
+                 f"{cd._red(f'⚠箱数=晨报{date}(已{stale_days}天·非现状)')}"
+                 f" 池{g('total_pool')} · #列=95306实时")
+    else:
+        title = (f"{SHIP} 箱循环 · 现状 {now_hm}   "
+                 f"箱数=晨报{date}盘点池 {g('total_pool')} · #号列=95306实时位置")
 
-    legend = cd._dim("  箱数=晨报盘点池;#N号列=95306循环列位置;散·待发/在途/到站=95306散粮车状态(非循环、不进箱池)")
+    legend_extra = (cd._red("  ⚠ 箱数节点(港重/港空/三三0…)停在 " + date +
+                            " 手动快照,需补今日晨报 record;#号列/散粮状态=95306 实时")
+                    if stale_days >= 1 else
+                    cd._dim("  箱数=晨报盘点池;#N号列=95306循环列位置;散·待发/在途/到站=95306散粮车状态(非循环、不进箱池)"))
+    legend = legend_extra
     body = [""] + L + ["", legend]
     return cd._box(title, body)
 

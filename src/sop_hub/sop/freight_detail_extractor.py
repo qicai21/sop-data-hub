@@ -89,6 +89,10 @@ class FreightDetailCandidate:
     quantity_tons: int = -1
     contract_no: str = ""
     order_identifier: str = ""
+    # 中唐特钢货运专用(键值标签格式;朝阳/吉林为空)
+    plan_no: str = ""        # 计划号(如 90260600075)
+    ship_name: str = ""      # 船名(中唐:可能是进口段大船 → enrich 落 import_ship_name)
+    supplier: str = ""       # 供方(含括号公司全名)
     status: str = "no_match"
     binding_status: str = "needs_manual_binding"
     source: str = "freight_detail_extractor"
@@ -105,6 +109,9 @@ class FreightDetailCandidate:
             "quantity_tons": self.quantity_tons,
             "contract_no": self.contract_no,
             "order_identifier": self.order_identifier,
+            "plan_no": self.plan_no,
+            "ship_name": self.ship_name,
+            "supplier": self.supplier,
             "status": self.status,
             "binding_status": self.binding_status,
             "source": self.source,

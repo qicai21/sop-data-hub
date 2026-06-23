@@ -885,9 +885,8 @@ def _execute_chaoyang_inspection_chain(
         match_release_batch_by_ship_destination_cargo,
     )
 
-    RAIL_DB = Path(
-        "/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3"
-    )
+    # 用模块常量(而非内联硬编码)→ 可被测试 monkeypatch _RAIL_DB_PATH 注入 fixture 95306。
+    RAIL_DB = Path(_RAIL_DB_PATH)
 
     inbox_id = input_json.get("message_inbox_id")
     if not inbox_id:

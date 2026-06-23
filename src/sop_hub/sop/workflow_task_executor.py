@@ -485,6 +485,15 @@ def _execute_freight_detail_enrichment(
         if st == "no_match":
             # 合同号/计划号没在 release_batches 里 — 通知单还没来,留 skipped 重试
             return {"action": "skipped", "status": "skipped", "output_json": res}
+        if st == "suspended":
+            # 用户口径:船名歧义(多个同船缺计划号)/ 对不上到港船(进口大船/转水)→ 挂起
+            # 人工指定,绝不自动错填。终态(succeeded 不重试,避免人工填一个后另一个被错填)
+            # + WARN surface。
+            import logging as _logging
+            _logging.getLogger("sop_hub.sop").warning(
+                "中唐货运挂起待人工: %s", res.get("reason", "")
+            )
+            return {"action": "suspended", "status": "succeeded", "output_json": res}
         return {
             "action": "executed",
             "status": "succeeded",

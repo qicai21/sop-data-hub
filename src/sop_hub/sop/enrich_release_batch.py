@@ -518,35 +518,52 @@ def auto_enrich_release_batches_from_zhongtang_supplement(
                 "results": [],
             }
 
-        # 匹配:contract_no 先,plan_id 兜底
-        rows: list[sqlite3.Row] = []
-        matched_by = ""
-        if contract:
-            rows = conn.execute(
-                "SELECT * FROM release_batches WHERE contract_no=?",
-                (contract,),
-            ).fetchall()
-            if rows:
-                matched_by = "contract_no"
-        if not rows and plan_id and "plan_id" in available:
-            rows = conn.execute(
-                "SELECT * FROM release_batches WHERE plan_id=?",
-                (plan_id,),
-            ).fetchall()
-            if rows:
-                matched_by = "plan_id"
-
-        if not rows:
-            return {
-                "status": "no_match",
-                "reason": "无 release_batch 匹配 contract_no/plan_id",
-                "candidate": candidate.to_dict() if hasattr(candidate, "to_dict") else {},
-                "results": [],
-            }
-
         from sop_hub.utils.time import now_iso_beijing_compact
         now = now_iso_beijing_compact()
         supplement_ship = (getattr(candidate, "ship_name", "") or "").strip()
+
+        # 匹配(用户 2026-06-23 口径):按**船名**找在途批次中"缺计划号"的,一眼能 match
+        # 的就填、拿不准的挂起等人工:
+        #   规则1:同船名在途批次中缺计划号的——唯一一个→填;多个→挂起(人工指定 lot)。
+        #   规则2:货运船名对不上任何在途到港船→挂起(疑似进口大船/转水,人工说明对应到港船)。
+        _OPEN_FREIGHT_STATES = ("loading", "enriched", "pending", "pending_freight")
+        if not supplement_ship:
+            return {"status": "no_match", "reason": "货运候选无船名,无法按船名匹配",
+                    "results": []}
+        ph = ",".join("?" for _ in _OPEN_FREIGHT_STATES)
+        same_ship = conn.execute(
+            f"SELECT * FROM release_batches "
+            f"WHERE project='zhongtang_special_steel' AND ship_name=? "
+            f"  AND dispatch_status IN ({ph})",
+            (supplement_ship, *_OPEN_FREIGHT_STATES),
+        ).fetchall()
+        if not same_ship:
+            return {  # 规则2:对不上到港船 → 进口大船/转水,挂起人工指认
+                "status": "suspended",
+                "reason": (f"货运船名「{supplement_ship}」对不上任何在途中唐到港船 → 疑似进口大船/转水,"
+                           f"待人工说明对应到港船后填入(指认时 import_ship_name={supplement_ship})"),
+                "supplement_ship_name": supplement_ship,
+                "plan_id": plan_id, "contract_no": contract, "results": [],
+            }
+        need = [r for r in same_ship
+                if not _is_non_empty(r["plan_id"] if "plan_id" in available else None)]
+        if len(need) > 1:
+            return {  # 规则1:多个同船批次缺计划号 → 歧义,挂起人工指定
+                "status": "suspended",
+                "reason": (f"船名「{supplement_ship}」有 {len(need)} 个在途批次都缺计划号 → 歧义,"
+                           f"待人工指定计划号 {plan_id} 归哪个 lot"),
+                "supplement_ship_name": supplement_ship,
+                "candidate_batch_ids": [r["id"] for r in need],
+                "plan_id": plan_id, "contract_no": contract, "results": [],
+            }
+        if not need:
+            return {  # 同船在途批次计划号都已填 → 无可填(多半重复消息)
+                "status": "no_op",
+                "reason": f"船名「{supplement_ship}」在途批次计划号均已填,无可填目标",
+                "results": [],
+            }
+        rows = need                              # 唯一缺计划号的同船批次 → 填
+        matched_by = "ship_name_unique_missing_plan"
 
         results: list[dict[str, Any]] = []
         for row in rows:

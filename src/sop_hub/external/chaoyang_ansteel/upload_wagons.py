@@ -369,6 +369,27 @@ def upload_and_verify(
                   f"date={date_prefix} 没车",
         )
 
+    # 3.5 幂等闸(#issue-20260623):上传前先查门户已有车,只传门户上没有的;全有则跳过。
+    # 防任何任务异常重跑导致重复上传(今早中联发因老代码反复抓 matched 候选被传了 3 次,
+    # 缺的就是这道闸)。best-effort:查门户失败则照常上传(不因闸失败而挡正常发运)。
+    try:
+        _pre = _wagons_from_query_response(
+            call_query_wmwm19(session=session, plan_raw=target_plan.raw))
+        _pre_carnos = {w["wagonno"] for w in _pre if w.get("wagonno")}
+    except Exception:
+        _pre_carnos = set()
+    if _pre_carnos:
+        _already = [w for w in wagons if w.car_no in _pre_carnos]
+        wagons = [w for w in wagons if w.car_no not in _pre_carnos]
+        if not wagons:
+            return UploadResult(
+                success=True,
+                uploaded_count=0,
+                verified_count=len(_already),
+                upload_response_msg=f"幂等跳过:{len(_already)} 车门户已存在,无需重复上传",
+                plan_summary=f"{ship_name} / WAYBILL={target_plan.waybill_no}",
+            )
+
     # 4. 上传
     payload = build_upload_payload(plan_raw=target_plan.raw, wagons=wagons)
     upload_body = call_upload(session=session, payload=payload)

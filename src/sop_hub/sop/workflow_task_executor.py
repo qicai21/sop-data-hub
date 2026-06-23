@@ -558,10 +558,16 @@ _INSPECTION_TEXT_TRIGGER_TIMEOUT_HOURS = 12.0
 # #issue-20260619 Fix C:等满此宽限期仍无候选,朝钢从 95306 反查合成候选(给真通知单先到的机会)
 _INSPECTION_TEXT_TRIGGER_SYNTH_GRACE_HOURS = 3.0
 _RAIL_DB_PATH = "/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3"
-# 检装车候选里"可被链消费"的状态(排除归档/作废/被取代);其余都算活跃
+# 检装车候选里"可被链消费"的状态(排除归档/作废/被取代/**已匹配入库**);其余才算活跃。
+# #issue-20260623:'matched' 漏在外面 → 已消费的旧候选被新发车触发器再抓(rendezvous 退化,
+# 今早中联发发车抓了 6 天前 matched 的 44 车候选)。已匹配=已消费,必须排除。
 _INACTIVE_CANDIDATE_STATUSES = (
-    "archived", "cancelled_legacy", "superseded", "timeout_manual_review",
+    "archived", "cancelled_legacy", "superseded", "timeout_manual_review", "matched",
 )
+# 触发器"预期车数"与候选车数的容差;超出视为不是同一趟 → 不抓该候选(防数量对不上还硬配)
+_INSPECTION_TEXT_TRIGGER_COUNT_TOL = 4
+# 候选"临近窗":只认触发器前 这个小时数内产生的检装车候选,不抓陈年旧候选
+_INSPECTION_TEXT_TRIGGER_CANDIDATE_MAX_AGE_H = 24.0
 
 
 def _find_candidate_inbox(
@@ -618,13 +624,24 @@ def _execute_inspection_text_trigger(
     conn = _sql.connect(str(db_path))
     conn.row_factory = _sql.Row
     try:
-        # 候选匹配:ship + dest,活跃状态,最新一条
+        # 候选匹配:ship + dest + 活跃状态 + **车数对得上** + **临近时间窗** 的最新一条。
+        # #issue-20260623:仅 ship+dest+latest 会抓到已 matched / 车数对不上 / 陈年的旧候选
+        # (今早中联发发车 50 节抓了 6 天前 44 车的 matched 候选)。加三道闸:
+        #   ① 状态排除已消费('matched' 等,见 _INACTIVE_CANDIDATE_STATUSES)
+        #   ② 车数交叉校验:|候选车数 − 触发预期| ≤ 容差(expected=0 未知时跳过)
+        #   ③ 时间窗:只认 MAX_AGE_H 小时内产生的候选,不抓陈年旧候选
         q = (
             "SELECT id, message_id, candidate_status FROM inspection_ingestion_candidates "
             "WHERE ship_name=? "
             f"  AND candidate_status NOT IN ({','.join('?' * len(_INACTIVE_CANDIDATE_STATUSES))}) "
+            "  AND created_at >= datetime('now', ?) "
+            "  AND (? = 0 OR ABS(COALESCE(wagon_count, 0) - ?) <= ?) "
         )
-        params: list[Any] = [ship, *_INACTIVE_CANDIDATE_STATUSES]
+        params: list[Any] = [
+            ship, *_INACTIVE_CANDIDATE_STATUSES,
+            f"-{_INSPECTION_TEXT_TRIGGER_CANDIDATE_MAX_AGE_H} hours",
+            expected, expected, _INSPECTION_TEXT_TRIGGER_COUNT_TOL,
+        ]
         if dest:
             q += "  AND (destination=? OR destination='' OR destination IS NULL) "
             params.append(dest)

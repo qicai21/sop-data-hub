@@ -1308,21 +1308,16 @@ def _execute_chaoyang_inspection_chain(
         )
         conn.commit()
 
-        # "第几列" = 当前 candidate 时间点之前(含当前)的已落实候选总数。
-        # 状态包含 matched / matched_by_inference(2026-06-03 宝腾海漏数
-        # matched_by_inference 算成"第二列"修过);created_at 时序过滤是
-        # 2026-06-04 丰收散运 56 车场景修的(#103):之前数所有候选不分
-        # 时序,先发的检装车通知单 chain 跑时看到后续推断候选,被误算成
-        # "第二列",实际是第一列。pending_review / pending_95306_match
-        # 等还没落实的不算。
-        current_created_at = cand_d.get("created_at") or ""
+        # "第几列" = 该批次的**实际发车趟次**(wagon_shipments 不同制票日去重)。
+        # #issue-20260623:旧逻辑数 matched 候选数 → 有的趟走 95306 同步/合成没留
+        # matched 候选(或留了 0 车垃圾候选)就漏数:今早实际第 5 列被数成"第三列"
+        # (中联发 5 趟 6-12/14/16/19/23,但只有 3 条 matched 候选)。改按真实发车日去重,
+        # 与发运事实一致。(cross-day 制票罕见;朝阳西短链各趟单日,够用。)
         try:
             nth = conn.execute(
-                "SELECT COUNT(*) FROM inspection_ingestion_candidates "
-                "WHERE release_batch_id=? AND candidate_status IN "
-                "      ('matched','matched_by_inference') "
-                "  AND created_at <= ?",
-                (matched_batch_id, current_created_at),
+                "SELECT COUNT(DISTINCT substr(ticketed_at, 1, 10)) "
+                "FROM wagon_shipments WHERE batch_id=?",
+                (matched_batch_id,),
             ).fetchone()[0]
             if nth <= 0:
                 nth = 1

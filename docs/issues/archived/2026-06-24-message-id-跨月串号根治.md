@@ -25,3 +25,13 @@ message_id = `wx_{local_id}`,而 `local_id` 取自 ledger 的 `seq`(见 `source_
 
 ## 关联
 本工单是 [[2026-06-24-wx-ops-agent-hardening]] 收口时定位的共同根因;另与历史 `sop_pipeline_bugs_2026_06_07`(跨月 message_id 冲突)同源。
+
+## ✅ 结案(2026-06-24,采方案 A)
+- **① message_id 加月份**:`source_watcher._build_event` → `wx_{source_file月}_{seq}`(月取自 ledger 文件名,权威)→ 跨月唯一。先核实**全仓无代码解析 message_id**(只 1 处 print),改格式安全。
+- **② inbox 去重键解耦**:`upsert_message_inbox_event` 主匹配键 `message_id` → `(agent, group, source_file, local_id)`。local_id(=seq)+ 文件是真身份;改格式后存量行仍按 local_id 命中、只 UPDATE(message_id 顺带刷新),**不产生重复**(实测 inbox 3880→3880 不爆炸)。
+- **真实重发兜底**:每轮重 append 拿新 seq=新 local_id → 主键不命中 → 落既有"12h 同文本内容去重"。守门测试已校正为真实 local_id 语义。
+- **测试**:21 inbox/watcher + 291 functional 全绿;live-service 重启健康。
+- **存量**:历史 1600 abandoned 多为旧串号牺牲品,**作历史保留不回迁**(go-forward 修复未来串号即达根治目的;逐条回迁旧 message_id 风险高、价值低)。新消息起 message_id 跨月唯一,幽灵触发器/钉错月/retry abandoned 不再复发。
+- **commit**:source_watcher + message_inbox + 2 测试。
+
+> 根因已根治(go-forward)。本工单结案。

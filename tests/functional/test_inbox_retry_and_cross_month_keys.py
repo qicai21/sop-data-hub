@@ -26,6 +26,7 @@ def _make_event(
     source_file: str = "/repo/铁晟业务工作群/2026-06.jsonl",
     text: str = "煤六 50节 四平铁 蓝鳍",
     received_at: str = "2026-06-06 21:28:40",
+    local_id: int = 367,
 ) -> Any:
     raw_bundle = SimpleNamespace(
         message_id=message_id,
@@ -50,7 +51,7 @@ def _make_event(
         text=text,
         raw_asset_bundle=raw_bundle,
         metadata={
-            "local_id": 367,
+            "local_id": local_id,
             "server_id": None,
             "message_key": "",
             "image_md5": "",
@@ -127,16 +128,17 @@ def test_same_group_same_text_content_deduped(temp_db):
     )
 
     ensure_message_inbox_schema(db_path=str(temp_db))
-    ev1 = _make_event(message_id="wx_189", text="中联发 第二列 53车")
+    # 真实重发:wx-ops 每轮重 append 同消息会拿**新 seq**(= 新 local_id),故 message_id
+    # 与 local_id 都变 → 主键(local_id)不命中 → 落内容去重(12h 同文本)兜底。
+    ev1 = _make_event(message_id="wx_189", local_id=189, text="中联发 第二列 53车")
     assert upsert_message_inbox_event(ev1, db_path=str(temp_db))["action"] == "inserted"
 
-    # 同群同文本,但被赋了新 message_id(模拟重读)
-    ev2 = _make_event(message_id="wx_191", text="中联发 第二列 53车")
+    ev2 = _make_event(message_id="wx_191", local_id=191, text="中联发 第二列 53车")
     r2 = upsert_message_inbox_event(ev2, db_path=str(temp_db))
     assert r2["action"] == "duplicate_content", "同群同文本重读应被内容去重拦"
 
     # 不同文本不受影响,正常新建
-    ev3 = _make_event(message_id="wx_193", text="中联发 工人清车皮")
+    ev3 = _make_event(message_id="wx_193", local_id=193, text="中联发 工人清车皮")
     assert upsert_message_inbox_event(ev3, db_path=str(temp_db))["action"] == "inserted"
 
     conn = sqlite3.connect(str(temp_db))
@@ -571,8 +573,9 @@ def test_lifecycle_closeout_advances_when_all_wagons_delivered(temp_db, monkeypa
     conn.execute("""CREATE TABLE release_batches (
         id TEXT PRIMARY KEY, project TEXT, ship_name TEXT, batch_sequence TEXT,
         dispatch_status TEXT NOT NULL, dispatch_status_note TEXT,
-        dispatch_status_updated_at TEXT, updated_at TEXT
-    )""")
+        dispatch_status_updated_at TEXT, updated_at TEXT,
+        remaining_weight_tons REAL, batch_quantity REAL
+    )""")  # cc1922f:lifecycle_closeout SELECT 加了这两列(散粮吨位闸)
     conn.execute("""CREATE TABLE wagon_shipments (
         id TEXT PRIMARY KEY, batch_id TEXT, latest_stage_key TEXT
     )""")
@@ -629,8 +632,9 @@ def test_lifecycle_closeout_shipped_is_completed_mode_skips_to_closed(temp_db, m
     conn.execute("""CREATE TABLE release_batches (
         id TEXT PRIMARY KEY, project TEXT, ship_name TEXT, batch_sequence TEXT,
         dispatch_status TEXT NOT NULL, dispatch_status_note TEXT,
-        dispatch_status_updated_at TEXT, updated_at TEXT
-    )""")
+        dispatch_status_updated_at TEXT, updated_at TEXT,
+        remaining_weight_tons REAL, batch_quantity REAL
+    )""")  # cc1922f:lifecycle_closeout SELECT 加了这两列(散粮吨位闸)
     conn.execute("CREATE TABLE wagon_shipments (id TEXT, batch_id TEXT, latest_stage_key TEXT)")
     conn.execute(
         "INSERT INTO release_batches (id, project, ship_name, batch_sequence, dispatch_status) "

@@ -196,7 +196,12 @@ class WxOpsSourceWatcher:
         local_id = _coerce_int(payload.get("local_id"))
         if local_id is None:
             local_id = _coerce_int(payload.get("seq")) or 0
-        message_id = f"wx_{local_id}"
+        # message_id 跨月串号根治(#message-id-跨月串号):seq 在 wx-ops 逐群逐月各自从 1
+        # 自增 → 跨月同 seq 必撞,旧 `wx_{seq}` 跨月串号(铁证:wx_1 满天飞、检装单图被
+        # 钉错月、幽灵触发器)。加月份维度(取 source_file 的月,权威)→ 跨月唯一。
+        # 无代码解析 message_id(已核实),改格式安全。
+        _ym = source_path.stem or ""
+        message_id = f"wx_{_ym}_{local_id}" if _ym else f"wx_{local_id}"
 
         group_name = _normalize_text(payload.get("group_name") or source_path.parent.name)
         group_id = _normalize_text(payload.get("group_wxid") or payload.get("group_id") or group_name)

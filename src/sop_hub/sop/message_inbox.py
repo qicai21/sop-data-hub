@@ -230,11 +230,15 @@ def upsert_message_inbox_event(
         except sqlite3.OperationalError:
             pass  # index may already exist
 
-    # Check existing
+    # 去重键(#message-id-跨月串号):由 message_id 改为 **local_id**。local_id(=ledger
+    # seq)+ source_file 才是消息真身份;message_id 现在带月份(wx_{月}_{seq}),但用 local_id
+    # 匹配让去重与 message_id 格式解耦 —— 改格式后存量行仍按 (agent,group,source_file,local_id)
+    # 命中、只 UPDATE(message_id 顺带刷成新格式),不会因格式变化产生重复行。
+    lid = row.get("local_id")
     cur = conn.execute(
         "SELECT id, created_at FROM message_inbox "
-        "WHERE source_agent = ? AND group_id = ? AND source_file = ? AND message_id = ?",
-        (sa, gid, sf, mid),
+        "WHERE source_agent = ? AND group_id = ? AND source_file = ? AND local_id = ?",
+        (sa, gid, sf, lid),
     )
     existing = cur.fetchone()
 

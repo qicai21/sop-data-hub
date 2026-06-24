@@ -41,7 +41,8 @@ def test_wx_ops_source_watcher_emits_message_events_with_metadata_and_image_path
     assert events
 
     first = events[0]
-    assert first.message_id == "wx_1"
+    # message_id 现在带月份维度(#message-id-跨月串号):wx_{月}_{seq},跨月唯一
+    assert first.message_id == "wx_2026-05_1"
     assert first.channel == "wechat"
     assert first.source_agent == "wx-ops-agent"
     assert first.group_id == "铁晟业务工作群"
@@ -50,7 +51,7 @@ def test_wx_ops_source_watcher_emits_message_events_with_metadata_and_image_path
     assert "message_key" in first.metadata
     assert "image_md5" in first.metadata
 
-    image_event = next(event for event in events if event.message_id == "wx_13")
+    image_event = next(event for event in events if event.message_id == "wx_2026-05_13")
     assert image_event.metadata["local_id"] == 13
     assert image_event.metadata["image_md5"] == "5f120e462f4d46a6362f9a39fa19ebfc"
     assert image_event.raw_asset_bundle is not None

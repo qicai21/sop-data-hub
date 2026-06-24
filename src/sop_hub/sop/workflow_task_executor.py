@@ -1074,8 +1074,8 @@ def _execute_chaoyang_inspection_chain(
             conn.execute(
                 "UPDATE inspection_ingestion_candidates "
                 "SET candidate_status='pending_95306_match', "
-                "    reason=?, updated_at=datetime('now') WHERE id=?",
-                (recover["message"], candidate_id),
+                "    reason=?, updated_at=? WHERE id=?",
+                (recover["message"], _now_iso(), candidate_id),
             )
             conn.commit()
             return {

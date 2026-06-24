@@ -13,6 +13,8 @@ import hashlib
 import json
 import sqlite3
 from datetime import datetime, timedelta
+
+from sop_hub.utils.time import now_iso_beijing as _now_iso_beijing
 from typing import Any
 
 
@@ -102,17 +104,17 @@ def synthesize_candidate_from_95306(
           id, source_file_name, status, reason, group_name, message_id,
           project_id, ship_name, destination, cargo_name, candidate_status,
           wagon_count, car_numbers_json, payload_json, created_at, updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET
           candidate_status='candidate', payload_json=excluded.payload_json,
           wagon_count=excluded.wagon_count, car_numbers_json=excluded.car_numbers_json,
-          cargo_name=excluded.cargo_name, updated_at=CURRENT_TIMESTAMP
+          cargo_name=excluded.cargo_name, updated_at=excluded.updated_at
         """,
         (cand_id, f"95306_synth:{ship}", "candidate",
          "synthesized_from_95306_no_inspection_notice", group_name, message_id,
          project_id, ship, dest, cargo_name, "candidate",
          len(car_nos), json.dumps(car_nos, ensure_ascii=False),
-         json.dumps(payload, ensure_ascii=False), trigger_ts),
+         json.dumps(payload, ensure_ascii=False), trigger_ts, _now_iso_beijing()),
     )
     conn.commit()
     return {"status": "ok", "candidate_id": cand_id, "car_nos": car_nos,

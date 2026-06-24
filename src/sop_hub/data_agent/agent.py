@@ -1240,12 +1240,13 @@ class BusinessDataAgent:
         if release_batch_ids:
             candidate_payload["_candidate_release_batch_ids"] = release_batch_ids
         candidate_id = hash_text(f"inspection|{source_file_name}|{','.join(car_numbers)}|{reason}")
+        _cand_now = _now_iso_beijing_full()  # TZ铁律:候选时间戳走北京,绝不 CURRENT_TIMESTAMP(UTC)
         self.db.execute(
             """
             INSERT INTO inspection_ingestion_candidates (
               id, source_file_name, status, reason, group_name, release_batch_id,
-              wagon_count, car_numbers_json, payload_json, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+              wagon_count, car_numbers_json, payload_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               status=excluded.status,
               reason=excluded.reason,
@@ -1254,7 +1255,7 @@ class BusinessDataAgent:
               wagon_count=excluded.wagon_count,
               car_numbers_json=excluded.car_numbers_json,
               payload_json=excluded.payload_json,
-              updated_at=CURRENT_TIMESTAMP
+              updated_at=excluded.updated_at
             """,
             (
                 candidate_id,
@@ -1266,6 +1267,8 @@ class BusinessDataAgent:
                 len(car_numbers),
                 json.dumps(car_numbers, ensure_ascii=False),
                 write_json(candidate_payload, pretty=False),
+                _cand_now,
+                _cand_now,
             ),
         )
         self.db.commit()

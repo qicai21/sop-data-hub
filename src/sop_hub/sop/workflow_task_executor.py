@@ -1335,32 +1335,65 @@ def _execute_chaoyang_inspection_chain(
         # ── 6b. Send excel via wx-ui-bridge ─────────────────────────
         # 发到 yaml flows.report_delivery_flow.send_report.target_group。
         # 不区分"测试 / 生产"阶段 — 程序只看配置,要换收件方改 yaml 即可。
+        # 幂等闸(#中唐贝拉连发4次事件 2026-06-24):同 (项目,批次,车数) 的发运 excel
+        # 只发一次。复用 jilin/朝阳同套 external_action_log;重复任务(如 message_id 串号
+        # 生的 5 个 wx_33 任务)算出**同 key** → 第一个发+标 executed,其余见 executed 跳过,
+        # 不再 spam。key 含 batch_id 故每个发车单子独立、不误拦别的船。
         send_info: dict[str, Any] = {"skipped": True}
         if excel_info.get("path") and not excel_info.get("error"):
-            try:
-                from sop_hub.sop.send_excel import send_to_wechat
-                target = _resolve_send_target(project_id)
-                if target:
-                    msg = f"{ship} 第{_cn_num(nth)}列 {excel_info['wagon_count']}车"
-                    sr = send_to_wechat(
-                        target=target,
-                        message=msg,
-                        file_path=excel_info["path"],
-                    )
-                    send_info = {
-                        "skipped": False,
-                        "target": target,
-                        "message": msg,
-                        "success": sr.success,
-                        "output_tail": (sr.output or "")[-300:],
-                        "error": sr.error,
-                    }
-                else:
-                    send_info = {"skipped": True,
-                                 "reason": "no send_report target_group/"
-                                           "target_contact in yaml"}
-            except Exception as exc:
-                send_info = {"skipped": False, "error": str(exc)}
+            from sop_hub.sop.external_action_log import (
+                build_idempotency_key, _biz_key_wechat,
+                get_action_by_key, plan_external_action,
+                mark_external_action_executed,
+            )
+            _wc = int(excel_info.get("wagon_count") or 0)
+            _idem = build_idempotency_key(
+                project_id, "send_shipping_excel_wechat",
+                _biz_key_wechat(matched_batch_id, _wc),
+            )
+            _prev = get_action_by_key(_idem, db_path=db_path)
+            if _prev and str(_prev.get("action_status")) == "executed":
+                send_info = {"skipped": True, "idempotency_key": _idem,
+                             "reason": "发运excel已发过(幂等跳过,防重复任务连发)"}
+            else:
+                try:
+                    from sop_hub.sop.send_excel import send_to_wechat
+                    target = _resolve_send_target(project_id)
+                    if target:
+                        plan_external_action(
+                            db_path=db_path, workflow_task_id=task_id,
+                            message_id=message_id or "", project_id=project_id,
+                            action_type="send_shipping_excel_wechat",
+                            idempotency_key=_idem, target_system="wechat",
+                            artifact_path=excel_info.get("path") or "",
+                        )
+                        msg = f"{ship} 第{_cn_num(nth)}列 {excel_info['wagon_count']}车"
+                        sr = send_to_wechat(
+                            target=target,
+                            message=msg,
+                            file_path=excel_info["path"],
+                        )
+                        if sr.success:
+                            mark_external_action_executed(
+                                _idem, db_path=db_path,
+                                response_json={"sent": True, "target": target},
+                                artifact_path=excel_info.get("path") or "",
+                            )
+                        send_info = {
+                            "skipped": False,
+                            "target": target,
+                            "message": msg,
+                            "success": sr.success,
+                            "output_tail": (sr.output or "")[-300:],
+                            "error": sr.error,
+                            "idempotency_key": _idem,
+                        }
+                    else:
+                        send_info = {"skipped": True,
+                                     "reason": "no send_report target_group/"
+                                               "target_contact in yaml"}
+                except Exception as exc:
+                    send_info = {"skipped": False, "error": str(exc)}
 
         # ── 6c. 上传到鞍钢门户(朝阳钢铁专属)+ 立即反查 ──────────
         # 业务铁律:每次上传必须紧跟一次查询验证(详见 docs/business-rules/

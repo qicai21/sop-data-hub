@@ -390,26 +390,6 @@ def query_pending_candidate_counts() -> dict[str, int]:
     return {r["candidate_status"] or "(空)": r["n"] for r in rows}
 
 
-def query_rail95306_freshness() -> dict[str, Any]:
-    conn = _connect(RAIL_DB_PATH)
-    if conn is None:
-        return {"ok": False, "msg": "DB 缺"}
-    try:
-        row = conn.execute(
-            "SELECT MAX(ticketed_at) AS latest, COUNT(*) AS total "
-            "FROM shipments WHERE destination_name LIKE '%朝阳%' OR destination_name LIKE '%四平%'"
-        ).fetchone()
-    finally:
-        conn.close()
-    latest_dt = parse_any_timestamp(row["latest"]) if row and row["latest"] else None
-    return {
-        "ok": True,
-        "latest": row["latest"] if row else "",
-        "latest_beijing": latest_dt.isoformat(timespec="seconds") if latest_dt else "—",
-        "total": row["total"] if row else 0,
-    }
-
-
 # ── 进程发现 ──────────────────────────────────────────────────────────
 
 
@@ -580,14 +560,6 @@ def panel_system() -> list[str]:
             sym = _red("○")
             lines.append(f"  {sym} {d['label']:<15} {_red('NOT RUNNING')}")
     lines.append("")
-    rail = query_rail95306_freshness()
-    if rail.get("ok"):
-        lines.append(
-            f"  95306 最新票: {_cyan(rail['latest_beijing'])} "
-            f"({_num(rail['total'])} 票)"
-        )
-    else:
-        lines.append(f"  95306: {_red(rail.get('msg', '?'))}")
     cands = query_pending_candidate_counts()
     if cands:
         # 横排打包:挂起态优先(黄)、终态其后(灰),按盒宽折行,省竖向空间

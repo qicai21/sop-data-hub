@@ -63,42 +63,48 @@ def _fetch(conn) -> tuple[dict, dict]:
 
 
 _CBATCH = "e96f4b3b83c74b4891c6b0957f6989bb827de45b"  # 和谐1 集装箱 batch
-# 95306 状态 → 循环位置(箱态推进)
-_STATUS_POS = {
-    "已制单": "port_loaded",      # 在港制票待发 = 港重(在装列)
-    "已发车": "transit_loaded",   # 在途去程 = 途重
-    "已到达": "xtz",              # 到新台子站(待卸)= 新台子(到达列)
-    "货物已交付": "transit_empty",  # 已卸返程 = 返空
-}
 
 
 def _cycle_positions(conn) -> dict[str, dict]:
-    """每号列最近一趟主导状态 → 当前位置。返回 {position: {cyc, boxes}}。
-    位置键:port_loaded/transit_loaded/ground330/transit_empty。
-    口径:95306 wagon_container_shipments 实时状态(循环列复用,按 home_cycle_no)。"""
+    """每号列当前位置 → {position: {cyc, boxes}}。位置键:port_loaded/transit_loaded/
+    xtz/transit_empty。
+
+    #issue-20260623 问题2 修复:原靠 95306 status_name(已制单→港重),但制票滞后,
+    刚物理装车没出票的在装列认不到 → 港重列号常错。改用**节点时间戳推进**(港发车
+    departed→新台子到达 arrived→三三0交付 delivered),按 home_cycle 取每列最近一趟:
+      - 已交付:返港重装中。多列已交付时,**交付最早(返港最久)的 = 在装列(港重)**,
+        其余 = 返空(返程在途)。这一步不依赖制票,解决在装列滞后失显。
+      - 已到达未交付:新台子(到达/卸)。
+      - 已发车未到达:在途去程(途重)。
+    在装列精确时刻仍可由晨报「港内配车 N道M节」进一步校准(留待 §八 合并)。"""
     rows = conn.execute(
         """
         WITH t AS (
-          SELECT wbp.home_cycle_no cyc, wcs.box_no, wcs.status_name,
-                 substr(wcs.ticketed_at,1,10) d
+          SELECT wbp.home_cycle_no cyc, min(wcs.departed_at) dep,
+                 min(wcs.arrived_at) arr, min(NULLIF(wcs.delivered_at,'')) deliv,
+                 count(DISTINCT wcs.box_no) boxes
           FROM wagon_container_shipments wcs
           JOIN wagon_body_pool wbp ON wcs.car_no=wbp.car_no AND wbp.project='jiusan'
-          WHERE wcs.batch_id=? AND wcs.ticketed_at>='2026-06-15'),
-        lt AS (SELECT cyc, MAX(d) md FROM t GROUP BY cyc)
-        SELECT t.cyc, t.status_name, COUNT(DISTINCT t.box_no) boxes
-        FROM t JOIN lt ON t.cyc=lt.cyc AND t.d=lt.md
-        GROUP BY t.cyc, t.status_name
+          WHERE wcs.batch_id=? AND wcs.departed_at!='' GROUP BY cyc, substr(wcs.departed_at,1,10)),
+        lt AS (SELECT cyc, MAX(dep) md FROM t GROUP BY cyc)
+        SELECT t.cyc, t.dep, t.arr, t.deliv, t.boxes
+        FROM t JOIN lt ON t.cyc=lt.cyc AND t.dep=lt.md
         """, (_CBATCH,)).fetchall()
-    # 每号列取最近一趟里箱数最多的状态为主导
-    dom: dict[int, tuple[str, int]] = {}
-    for cyc, st, boxes in rows:
-        if cyc not in dom or boxes > dom[cyc][1]:
-            dom[cyc] = (st, boxes)
     pos: dict[str, dict] = {}
-    for cyc, (st, boxes) in dom.items():
-        node = _STATUS_POS.get(st)
-        if node:
-            pos[node] = {"cyc": cyc, "boxes": boxes}
+    delivered: list[tuple] = []  # (cyc, deliv, boxes)
+    for cyc, dep, arr, deliv, boxes in rows:
+        if deliv:
+            delivered.append((cyc, deliv, boxes))
+        elif arr:
+            pos["xtz"] = {"cyc": cyc, "boxes": boxes}
+        elif dep:
+            pos["transit_loaded"] = {"cyc": cyc, "boxes": boxes}
+    # 已交付的列:交付最早(返港最久)→ 在装列;其余 → 返空
+    delivered.sort(key=lambda x: x[1])
+    if delivered:
+        pos["port_loaded"] = {"cyc": delivered[0][0], "boxes": delivered[0][2]}
+        for cyc, deliv, boxes in delivered[1:]:
+            pos["transit_empty"] = {"cyc": cyc, "boxes": boxes}
     return pos
 
 

@@ -1,13 +1,19 @@
-"""九三和谐1 集装箱车票 95306 → sop 同步(可重复跑,幂等)。
+"""九三集装箱车票 95306 → sop 同步(多船拆分版,可重复跑,幂等)。
 
-每天循环列发车后 95306 出新票,跑本脚本即可:
-1. 拉 rail DB 高桥镇→新台子 大豆集装箱票(2026-06-09 起)
-2. 按制票时间聚类成"发车窗口"(间隔 > 2h 分组)
-3. 每窗口按车号集合与既有 cycle 成员重合度(>=60%)归属循环列;无匹配则新建列
-4. box 行 INSERT OR REPLACE(同 hash 键,顺带刷新已有行的 95306 状态)
-5. 从 wagon 行重算 cycle_trains / cycle_train_membership / release_batch 计数
+#issue-20260623:原版写死 SHIP="和谐1"+BATCH_ID,诚信集装箱一开发箱子全灌和谐1、
+诚信恒0、和谐1超发。与散粮 sync 同病。本版按 **container_loading_notice 台账**
+(box 级:ydid+box_no → ship,源自港方逐船货票清单 + 对账脚本)分船路由:
+
+1. 拉 rail DB 高桥镇→新台子 大豆集装箱票(SINCE 起)。
+2. 按制票时间聚类发车窗口(间隔 > 2h)。
+3. **每个 box 按台账定船**;命中台账 → 该船 lot01;未命中 → 默认 DEFAULT_SHIP + WARN
+   (grandfather,等下次对账脚本据新货票清单纠正)。
+4. 窗口内按船拆子组,各船子组独立归循环列(ship_scope=该船)。
+5. box 行 INSERT OR 自愈:id=sha1(car|box|ydid) 船无关 → 挂错船的箱**重路由纠正**。
+6. 各船 batch 重算 cycle / 计数 / shipped_weight。
 
 用法:python scripts/sync_jiusan_harmony_wagons.py
+台账由 scripts/reconcile_jiusan_containers.py 据港方货票清单维护。
 """
 from __future__ import annotations
 
@@ -15,6 +21,7 @@ import hashlib
 import json
 import sqlite3
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -25,68 +32,67 @@ SOP_DB = REPO / "data" / "sop_agent.db"
 RAIL_DB = Path("/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3")
 
 PROJECT = "jiusan"
-SHIP = "和谐1"
-BATCH_ID = "e96f4b3b83c74b4891c6b0957f6989bb827de45b"  # jiusan|和谐1|lot01|2026-06-09
+DEFAULT_SHIP = "和谐1"   # 未命中台账的全新箱兜底(命中台账的会自愈纠正)
 SINCE = "2026-06-09"
 WINDOW_GAP_HOURS = 2
 OVERLAP_THRESHOLD = 0.6
-# 装车重量(28.4/箱)已收口到 config/project_sops/jiusan.yaml 的 shipped_weight_rule,
-# 本脚本不再硬算,落库后统一调 compute_for_release_batch(单一真相)。
 
 
 def stable_hash(*parts: str) -> str:
     return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()
 
 
+def load_ship_batches(conn) -> dict[str, str]:
+    """九三各船 lot01 集装箱 batch:ship_name → release_batches.id(单一事实源)。"""
+    return {r[1]: r[0] for r in conn.execute(
+        "SELECT id, ship_name FROM release_batches "
+        "WHERE project=? AND batch_sequence='lot01' AND ship_name IS NOT NULL", (PROJECT,))}
+
+
+def load_taizhang(conn) -> dict[tuple[str, str], str]:
+    """box 级船归属台账:(ydid, box_no) → ship_name。"""
+    try:
+        return {(r[0], r[1]): r[2] for r in conn.execute(
+            "SELECT ydid, box_no, ship_name FROM container_loading_notice")}
+    except sqlite3.OperationalError:
+        return {}  # 台账表还没建(首次)
+
+
 def fetch_rail_tickets() -> list[dict]:
     conn = sqlite3.connect(str(RAIL_DB))
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        """
-        SELECT ydid, czydid, car_no, car_model, container_numbers_json,
-               marked_weight, status_name, latest_stage_key, latest_stage_name,
-               latest_event_time, accepted_at, loaded_at, ticketed_at,
-               departed_at, arrived_at, delivered_at,
-               transport_mode_code, transport_mode_name,
-               origin_name, destination_name, cargo_name
-        FROM shipments
-        WHERE cargo_name LIKE '%豆%'
-          AND origin_name = '高桥镇'
-          AND destination_name = '新台子'
-          AND transport_mode_name LIKE '%集装箱%'
-          AND ticketed_at >= ?
-          AND car_no IS NOT NULL AND car_no != ''
-        ORDER BY ticketed_at, car_no
-        """,
-        (SINCE,),
-    ).fetchall()
+        """SELECT ydid, czydid, car_no, car_model, container_numbers_json,
+                  marked_weight, status_name, latest_stage_key, latest_stage_name,
+                  latest_event_time, accepted_at, loaded_at, ticketed_at,
+                  departed_at, arrived_at, delivered_at,
+                  transport_mode_code, transport_mode_name,
+                  origin_name, destination_name, cargo_name
+           FROM shipments
+           WHERE cargo_name LIKE '%豆%' AND origin_name='高桥镇' AND destination_name='新台子'
+             AND transport_mode_name LIKE '%集装箱%' AND ticketed_at >= ?
+             AND car_no IS NOT NULL AND car_no != ''
+           ORDER BY ticketed_at, car_no""", (SINCE,)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
 def group_windows(tickets: list[dict]) -> list[list[dict]]:
-    """按 ticketed_at 升序,间隔 > WINDOW_GAP_HOURS 切组。"""
     from datetime import datetime
-
-    groups: list[list[dict]] = []
-    prev_dt = None
+    groups, prev = [], None
     for t in tickets:
         dt = datetime.strptime(t["ticketed_at"], "%Y-%m-%d %H:%M:%S")
-        if prev_dt is None or (dt - prev_dt).total_seconds() > WINDOW_GAP_HOURS * 3600:
+        if prev is None or (dt - prev).total_seconds() > WINDOW_GAP_HOURS * 3600:
             groups.append([])
-        groups[-1].append(t)
-        prev_dt = dt
+        groups[-1].append(t); prev = dt
     return groups
 
 
-def assign_cycle(conn: sqlite3.Connection, window: list[dict], now: str) -> str:
-    """车号集合 vs 既有 cycle 成员重合度归属;无匹配新建列。"""
-    cars = {t["car_no"] for t in window}
+def assign_cycle(conn, cars: set[str], ship: str, first_date: str, now: str) -> str:
+    """某船该窗口车号集 vs 该船既有 cycle 重合度归属;无匹配新建。"""
     best_id, best_ratio = None, 0.0
     for cid, in conn.execute(
-        "SELECT id FROM cycle_trains WHERE project_id=? AND ship_scope=?",
-        (PROJECT, SHIP),
-    ):
+        "SELECT id FROM cycle_trains WHERE project_id=? AND ship_scope=?", (PROJECT, ship)):
         members = {r[0] for r in conn.execute(
             "SELECT car_no FROM cycle_train_membership WHERE cycle_id=?", (cid,))}
         ratio = len(cars & members) / len(cars) if cars else 0.0
@@ -94,166 +100,160 @@ def assign_cycle(conn: sqlite3.Connection, window: list[dict], now: str) -> str:
             best_id, best_ratio = cid, ratio
     if best_id and best_ratio >= OVERLAP_THRESHOLD:
         return best_id
-
-    next_no = (conn.execute(
+    next_no = conn.execute(
         "SELECT coalesce(max(cycle_no),0)+1 FROM cycle_trains WHERE project_id=? AND ship_scope=?",
-        (PROJECT, SHIP),
-    ).fetchone()[0])
-    cid = f"jiusan_{SHIP}_cycle{next_no}_{stable_hash(SHIP, str(next_no))[:8]}"
-    first_date = window[0]["ticketed_at"][:10]
+        (PROJECT, ship)).fetchone()[0]
+    cid = f"jiusan_{ship}_cycle{next_no}_{stable_hash(ship, str(next_no))[:8]}"
     conn.execute(
         """INSERT INTO cycle_trains
-           (id, project_id, ship_scope, cycle_name, cycle_no,
-            planned_member_count, actual_member_count, expected_box_per_dispatch,
-            first_dispatch_at, last_dispatch_at, total_dispatch_count, status,
-            detection_method, detection_confidence, created_at, updated_at)
+           (id, project_id, ship_scope, cycle_name, cycle_no, planned_member_count,
+            actual_member_count, expected_box_per_dispatch, first_dispatch_at, last_dispatch_at,
+            total_dispatch_count, status, detection_method, detection_confidence, created_at, updated_at)
            VALUES (?,?,?,?,?,?,?,?,?,?,0,'active','car_no_signature_inferred',?,?,?)""",
-        (cid, PROJECT, SHIP, f"{SHIP} {next_no}号列", next_no,
-         len(cars), len(cars), 2, first_date, first_date,
-         round(best_ratio, 2), now, now),
-    )
-    print(f"  新建循环列 {cid}({len(cars)} 车,与既有列最高重合 {best_ratio:.0%})")
+        (cid, PROJECT, ship, f"{ship} {next_no}号列", next_no, len(cars), len(cars), 2,
+         first_date, first_date, round(best_ratio, 2), now, now))
+    print(f"    新建循环列 {cid}({len(cars)}车,最高重合 {best_ratio:.0%})")
     return cid
 
 
-def build_box_rows(window: list[dict], cycle_id: str, now: str) -> list[dict]:
-    rows = []
-    for t in window:
-        boxes = json.loads(t["container_numbers_json"] or "[]")
-        label = f"auto_harmony1_sync_{t['ticketed_at'][:10]}"
-        for pos, box in enumerate(boxes, start=1):
-            rows.append({
-                "id": stable_hash(t["car_no"], box, t["ydid"]),
-                "car_no": t["car_no"], "box_no": box, "box_position": pos,
-                "ydid": t["ydid"], "czydid": t["czydid"], "waybill_no": "",
-                "batch_id": BATCH_ID,
-                "car_model": t["car_model"] or "",
-                "ticketed_at": t["ticketed_at"], "departed_at": t["departed_at"] or "",
-                "arrived_at": t["arrived_at"] or "", "delivered_at": t["delivered_at"] or "",
-                "accepted_at": t["accepted_at"] or "", "loaded_at": t["loaded_at"] or "",
-                "status_name": t["status_name"] or "",
-                "latest_stage_key": t["latest_stage_key"] or "",
-                "latest_stage_name": t["latest_stage_name"] or "",
-                "latest_event_time": t["latest_event_time"] or "",
-                "origin_name": t["origin_name"], "destination_name": t["destination_name"],
-                "transport_mode_code": t["transport_mode_code"],
-                "transport_mode_name": t["transport_mode_name"],
-                "cargo_name": t["cargo_name"],
-                "marked_weight": t["marked_weight"],
-                "project_id": PROJECT, "ship_name": SHIP,
-                "consignor": "锦州港物流发展有限公司",
-                "consignee": "国家粮食和物资储备局辽宁局三三0处",
-                "dispatch_status": "loading",
-                "source_message_id": label, "source_group_id": "",
-                "created_at": now, "updated_at": now,
-                "cycle_id": cycle_id,
-            })
-    return rows
+def build_box_row(t: dict, box: str, pos: int, ship: str, batch_id: str, cycle_id: str, now: str) -> dict:
+    return {
+        "id": stable_hash(t["car_no"], box, t["ydid"]),  # 船无关 → 重路由不换 id
+        "car_no": t["car_no"], "box_no": box, "box_position": pos,
+        "ydid": t["ydid"], "czydid": t["czydid"], "waybill_no": "", "batch_id": batch_id,
+        "car_model": t["car_model"] or "",
+        "ticketed_at": t["ticketed_at"], "departed_at": t["departed_at"] or "",
+        "arrived_at": t["arrived_at"] or "", "delivered_at": t["delivered_at"] or "",
+        "accepted_at": t["accepted_at"] or "", "loaded_at": t["loaded_at"] or "",
+        "status_name": t["status_name"] or "", "latest_stage_key": t["latest_stage_key"] or "",
+        "latest_stage_name": t["latest_stage_name"] or "", "latest_event_time": t["latest_event_time"] or "",
+        "origin_name": t["origin_name"], "destination_name": t["destination_name"],
+        "transport_mode_code": t["transport_mode_code"], "transport_mode_name": t["transport_mode_name"],
+        "cargo_name": t["cargo_name"], "marked_weight": t["marked_weight"],
+        "project_id": PROJECT, "ship_name": ship,
+        "consignor": "锦州港物流发展有限公司", "consignee": "国家粮食和物资储备局辽宁局三三0处",
+        "dispatch_status": "loading",
+        "source_message_id": f"auto_jiusan_sync_{t['ticketed_at'][:10]}", "source_group_id": "",
+        "created_at": now, "updated_at": now, "cycle_id": cycle_id,
+    }
 
 
-def upsert_rows(conn: sqlite3.Connection, rows: list[dict]) -> tuple[int, int]:
-    existing = {r[0] for r in conn.execute(
-        "SELECT id FROM wagon_container_shipments WHERE batch_id=?", (BATCH_ID,))}
-    new_n = sum(1 for r in rows if r["id"] not in existing)
+def upsert_rows(conn, rows: list[dict], existing: dict[str, str]) -> tuple[int, int, int]:
+    """existing: id → 当前 batch_id(全 jiusan lot01)。返回 (新增, 刷新, 重路由纠正)。"""
+    new_n = refresh_n = reroute_n = 0
     for r in rows:
-        if r["id"] in existing:
-            # 已有行只刷 95306 状态字段,保留原 created_at/source_message_id/cycle_id
-            conn.execute(
-                """UPDATE wagon_container_shipments SET
-                   status_name=?, latest_stage_key=?, latest_stage_name=?,
-                   latest_event_time=?, departed_at=?, arrived_at=?, delivered_at=?,
-                   updated_at=? WHERE id=?""",
-                (r["status_name"], r["latest_stage_key"], r["latest_stage_name"],
-                 r["latest_event_time"], r["departed_at"], r["arrived_at"],
-                 r["delivered_at"], r["updated_at"], r["id"]),
-            )
+        rid = r["id"]
+        if rid in existing:
+            if existing[rid] != r["batch_id"]:
+                # 挂错船 → 重路由纠正(自愈)+ 刷状态
+                conn.execute(
+                    """UPDATE wagon_container_shipments SET batch_id=?, ship_name=?,
+                       status_name=?, latest_stage_key=?, latest_stage_name=?, latest_event_time=?,
+                       departed_at=?, arrived_at=?, delivered_at=?, cycle_id=?, updated_at=? WHERE id=?""",
+                    (r["batch_id"], r["ship_name"], r["status_name"], r["latest_stage_key"],
+                     r["latest_stage_name"], r["latest_event_time"], r["departed_at"], r["arrived_at"],
+                     r["delivered_at"], r["cycle_id"], r["updated_at"], rid))
+                existing[rid] = r["batch_id"]; reroute_n += 1
+            else:
+                conn.execute(
+                    """UPDATE wagon_container_shipments SET status_name=?, latest_stage_key=?,
+                       latest_stage_name=?, latest_event_time=?, departed_at=?, arrived_at=?,
+                       delivered_at=?, updated_at=? WHERE id=?""",
+                    (r["status_name"], r["latest_stage_key"], r["latest_stage_name"],
+                     r["latest_event_time"], r["departed_at"], r["arrived_at"], r["delivered_at"],
+                     r["updated_at"], rid)); refresh_n += 1
         else:
             cols = list(r.keys())
-            conn.execute(
-                f"INSERT INTO wagon_container_shipments ({','.join(cols)}) "
-                f"VALUES ({','.join('?' * len(cols))})",
-                [r[c] for c in cols],
-            )
-    return new_n, len(rows) - new_n
+            conn.execute(f"INSERT INTO wagon_container_shipments ({','.join(cols)}) "
+                         f"VALUES ({','.join('?' * len(cols))})", [r[c] for c in cols])
+            existing[rid] = r["batch_id"]; new_n += 1
+    return new_n, refresh_n, reroute_n
 
 
-def recompute_counters(conn: sqlite3.Connection, now: str) -> None:
-    # membership:每车在该 cycle 的发运日集合
-    for cid, in conn.execute(
-        "SELECT id FROM cycle_trains WHERE project_id=? AND ship_scope=?",
-        (PROJECT, SHIP),
-    ):
-        per_car = conn.execute(
-            """SELECT car_no, count(DISTINCT date(ticketed_at)), min(date(ticketed_at)), max(date(ticketed_at))
-               FROM wagon_container_shipments WHERE cycle_id=? GROUP BY car_no""",
-            (cid,),
-        ).fetchall()
-        for car, n_disp, first_d, last_d in per_car:
-            conn.execute(
-                """INSERT INTO cycle_train_membership
-                   (id, cycle_id, car_no, joined_at, dispatch_count, last_dispatch_at,
-                    member_status, source, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,'active','auto_inferred_from_95306',?,?)
-                   ON CONFLICT(cycle_id, car_no) DO UPDATE SET
-                     dispatch_count=excluded.dispatch_count,
-                     last_dispatch_at=excluded.last_dispatch_at,
-                     updated_at=excluded.updated_at""",
-                (stable_hash(cid, car), cid, car, first_d, n_disp, last_d, now, now),
-            )
-        agg = conn.execute(
-            """SELECT count(DISTINCT date(ticketed_at)), min(date(ticketed_at)),
-                      max(date(ticketed_at)), count(DISTINCT car_no)
-               FROM wagon_container_shipments WHERE cycle_id=?""",
-            (cid,),
-        ).fetchone()
-        if agg and agg[0]:
-            conn.execute(
-                """UPDATE cycle_trains SET total_dispatch_count=?, first_dispatch_at=?,
-                   last_dispatch_at=?, actual_member_count=?, updated_at=? WHERE id=?""",
-                (agg[0], agg[1], agg[2], agg[3], now, cid),
-            )
-
-    n_ydid, n_box = conn.execute(
-        "SELECT count(DISTINCT ydid), count(*) FROM wagon_container_shipments WHERE batch_id=?",
-        (BATCH_ID,),
-    ).fetchone()
-    # batch_count 与车票数同步;装车重量 / actual_wagon_count 走统一 yaml 规则,
-    # 由 main() commit 后调 compute_for_release_batch 落,本处不再硬算。
-    conn.execute(
-        "UPDATE release_batches SET batch_count=?, updated_at=? WHERE id=?",
-        (n_ydid, now, BATCH_ID),
-    )
-    print(f"  release_batch 计数:{n_ydid} 车票 / {n_box} box")
+def recompute_counters(conn, ship_batches: dict[str, str], now: str) -> None:
+    for ship in ship_batches:
+        for cid, in conn.execute(
+            "SELECT id FROM cycle_trains WHERE project_id=? AND ship_scope=?", (PROJECT, ship)):
+            for car, n_disp, first_d, last_d in conn.execute(
+                """SELECT car_no, count(DISTINCT date(ticketed_at)), min(date(ticketed_at)),
+                          max(date(ticketed_at)) FROM wagon_container_shipments WHERE cycle_id=?
+                   GROUP BY car_no""", (cid,)).fetchall():
+                conn.execute(
+                    """INSERT INTO cycle_train_membership
+                       (id, cycle_id, car_no, joined_at, dispatch_count, last_dispatch_at,
+                        member_status, source, created_at, updated_at)
+                       VALUES (?,?,?,?,?,?,'active','auto_inferred_from_95306',?,?)
+                       ON CONFLICT(cycle_id, car_no) DO UPDATE SET
+                         dispatch_count=excluded.dispatch_count,
+                         last_dispatch_at=excluded.last_dispatch_at, updated_at=excluded.updated_at""",
+                    (stable_hash(cid, car), cid, car, first_d, n_disp, last_d, now, now))
+            agg = conn.execute(
+                """SELECT count(DISTINCT date(ticketed_at)), min(date(ticketed_at)),
+                          max(date(ticketed_at)), count(DISTINCT car_no)
+                   FROM wagon_container_shipments WHERE cycle_id=?""", (cid,)).fetchone()
+            if agg and agg[0]:
+                conn.execute(
+                    """UPDATE cycle_trains SET total_dispatch_count=?, first_dispatch_at=?,
+                       last_dispatch_at=?, actual_member_count=?, updated_at=? WHERE id=?""",
+                    (agg[0], agg[1], agg[2], agg[3], now, cid))
+        bid = ship_batches[ship]
+        n_ydid = conn.execute("SELECT count(DISTINCT ydid) FROM wagon_container_shipments WHERE batch_id=?",
+                              (bid,)).fetchone()[0]
+        conn.execute("UPDATE release_batches SET batch_count=?, updated_at=? WHERE id=?", (n_ydid, now, bid))
 
 
 def main() -> None:
     now = now_iso_beijing()
     tickets = fetch_rail_tickets()
     if not tickets:
-        print("rail DB 无票")
-        return
+        print("rail DB 无票"); return
     windows = group_windows(tickets)
     print(f"95306 票 {len(tickets)} 张 → {len(windows)} 个发车窗口")
 
     conn = sqlite3.connect(str(SOP_DB))
     try:
-        total_new = total_refresh = 0
+        ship_batches = load_ship_batches(conn)
+        taizhang = load_taizhang(conn)
+        existing = {r[0]: r[1] for r in conn.execute(
+            "SELECT id, batch_id FROM wagon_container_shipments WHERE batch_id IN ({})".format(
+                ",".join("?" * len(ship_batches))), list(ship_batches.values()))}
+        print(f"船 lot01: {list(ship_batches)} | 台账 {len(taizhang)} 箱 | 现有 {len(existing)} 箱")
+        if DEFAULT_SHIP not in ship_batches:
+            print(f"!! 默认船 {DEFAULT_SHIP} 无 lot01 batch,退出"); return
+
+        tot_new = tot_ref = tot_rr = 0
+        unmatched_boxes = 0
         for w in windows:
-            cid = assign_cycle(conn, w, now)
-            rows = build_box_rows(w, cid, now)
-            new_n, ref_n = upsert_rows(conn, rows)
-            total_new += new_n
-            total_refresh += ref_n
-            print(f"  窗口 {w[0]['ticketed_at']} ~ {w[-1]['ticketed_at']}"
-                  f"({len(w)} 车)→ {cid.split('_')[2]}  新增 {new_n} box / 刷新 {ref_n} box")
-        recompute_counters(conn, now)
+            # 1) 窗口内逐 box 定船(台账;未命中→默认)
+            ship_boxes: dict[str, list[tuple]] = defaultdict(list)  # ship → [(t, box, pos)]
+            for t in w:
+                for pos, box in enumerate(json.loads(t["container_numbers_json"] or "[]"), 1):
+                    ship = taizhang.get((t["ydid"], box))
+                    if ship is None:
+                        ship = DEFAULT_SHIP; unmatched_boxes += 1
+                    ship_boxes[ship].append((t, box, pos))
+            # 2) 各船子组:归循环列 + 建行 + upsert
+            for ship, items in ship_boxes.items():
+                if ship not in ship_batches:
+                    print(f"  !! 台账船 {ship} 无 lot01 batch,跳过 {len(items)} 箱"); continue
+                cars = {it[0]["car_no"] for it in items}
+                cid = assign_cycle(conn, cars, ship, w[0]["ticketed_at"][:10], now)
+                rows = [build_box_row(t, box, pos, ship, ship_batches[ship], cid, now)
+                        for (t, box, pos) in items]
+                n, rf, rr = upsert_rows(conn, rows, existing)
+                tot_new += n; tot_ref += rf; tot_rr += rr
+            print(f"  窗口 {w[0]['ticketed_at']}~{w[-1]['ticketed_at']} "
+                  f"({len(w)}车) 船分布={ {s: len(v) for s, v in ship_boxes.items()} }")
+        recompute_counters(conn, ship_batches, now)
         conn.commit()
-        print(f"COMMIT ✓ 新增 {total_new} box,刷新 {total_refresh} box")
-        # 装车重量统一走 yaml shipped_weight_rule(独立连接,需先 commit)
+        print(f"COMMIT ✓ 新增 {tot_new} / 刷新 {tot_ref} / 重路由纠正 {tot_rr} box")
+        if unmatched_boxes:
+            print(f"⚠️ 未命中台账(暂落{DEFAULT_SHIP}): {unmatched_boxes} box —— 待港方货票清单到后跑 reconcile 纠正")
         from sop_hub.sop.shipped_weight import compute_for_release_batch
-        sw = compute_for_release_batch(BATCH_ID, db_path=SOP_DB)
-        print(f"  装车重量(yaml container 28.4/箱):已发 {sw.get('shipped_weight_tons')}t / "
-              f"剩余 {sw.get('remaining_weight_tons')}t")
+        for ship, bid in ship_batches.items():
+            sw = compute_for_release_batch(bid, db_path=SOP_DB)
+            n = conn.execute("SELECT count(*) FROM wagon_container_shipments WHERE batch_id=?", (bid,)).fetchone()[0]
+            print(f"  {ship} lot01: {n}箱 已发 {sw.get('shipped_weight_tons')}t / 剩 {sw.get('remaining_weight_tons')}t")
     finally:
         conn.close()
 

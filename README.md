@@ -63,9 +63,8 @@ ps aux | grep -E "wechat_ops_agent|run_live_service|text_watch_daemon|run_sync_w
 |---|---|
 | Python | 3.14 (`/opt/homebrew/bin/python3.14`) |
 | 数据持久化 | SQLite(WAL 模式) — 业务库 `data/sop_agent.db`,只读引用 rail95306-sync 的 `~/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3` |
-| 主 VLM | Gemma-4(26B-A4B-IT) @ `localhost:8018` |
-| 补充 VLM | Qwen3-VL(8B) @ `localhost:8019` |
-| VLM 推理后端 | Apple MLX(mlx-lm + mlx-vlm) |
+| VLM(分类+抽取) | Qwen3.6-35B-A3B-4bit @ `localhost:8021`(OpenAI `/v1`,单模型兼两职;2026-06-26 起取代旧 VL-8B@8018 / 14B@8020) |
+| VLM 推理后端 | Apple MLX(mlx-vlm.server 0.6.3) |
 | 微信侧 | wx-ui-bridge(自动化 + 文件发送) |
 | 看板 | 终端(stdlib ANSI,无第三方依赖) |
 

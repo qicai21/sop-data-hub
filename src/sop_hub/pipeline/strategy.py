@@ -17,10 +17,10 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "config" / "business
 
 
 def _default_strategy() -> GroupImageStrategy:
-    # 2026-06 收敛为 4 类:仅"检装车通知单-敞车"和"出港计划通知单"触发抽取,
+    # 2026-06 收敛为 4 类:仅"检装车通知单"和"出港计划通知单"触发抽取,
     # 其余单据归"其他业务图片",照片归"现场作业照片",均 save_only。
     routes = {
-        "检装车通知单-敞车": CategoryRoute("检装车通知单-敞车", bucket="table", action="inspection_slip_extract", output_subdir="检装车通知单-敞车"),
+        "检装车通知单": CategoryRoute("检装车通知单", bucket="table", action="inspection_slip_extract", output_subdir="检装车通知单"),
         "出港计划通知单": CategoryRoute("出港计划通知单", bucket="table", action="departure_plan_extract", output_subdir="出港计划通知单"),
         "其他业务图片": CategoryRoute("其他业务图片", bucket="other", action="save_only", output_subdir="其他业务图片"),
         "现场作业照片": CategoryRoute("现场作业照片", bucket="photo", action="save_only", output_subdir="现场作业照片"),

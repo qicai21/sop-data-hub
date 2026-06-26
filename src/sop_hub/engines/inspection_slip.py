@@ -11,7 +11,7 @@ from PIL import Image, ImageOps
 
 logger = logging.getLogger(__name__)
 
-API_URL = "http://127.0.0.1:8018/generate"
+API_URL = "http://127.0.0.1:8021/v1/chat/completions"
 MAX_IMAGE_EDGE = 1600
 MAX_SHORT_EDGE = 1000
 

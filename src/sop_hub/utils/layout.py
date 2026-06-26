@@ -5,11 +5,11 @@ import time
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional
 
-import requests
+from sop_hub.vlm_client import call_vlm
 
 logger = logging.getLogger(__name__)
 
-API_URL = "http://127.0.0.1:8018/generate"
+API_URL = "http://127.0.0.1:8021/v1/chat/completions"
 
 LAYOUT_PROFILE_PROMPT = """你是表格版式分析助手。请只根据图片版式输出严格JSON，不要解释。
 JSON结构：
@@ -56,8 +56,9 @@ class TableLayoutAnalyzer:
     出港计划通知单、耗材统计表等不同表格。
     """
 
-    def __init__(self, service_url: str = API_URL) -> None:
+    def __init__(self, service_url: str = API_URL, openai_model: str | None = None) -> None:
         self.service_url = service_url
+        self.openai_model = openai_model
 
     def _extract_json_fragment(self, text: str) -> Any:
         text = text.strip()
@@ -82,18 +83,14 @@ class TableLayoutAnalyzer:
 
     def analyze(self, image_path: str, max_tokens: int = 260) -> TableLayoutProfile:
         started = time.perf_counter()
-        resp = requests.post(
+        text = call_vlm(
             self.service_url,
-            json={
-                "prompt": LAYOUT_PROFILE_PROMPT,
-                "image_path": image_path,
-                "max_tokens": max_tokens,
-                "temperature": 0.0,
-            },
+            LAYOUT_PROFILE_PROMPT,
+            image_path,
+            max_tokens,
+            openai_model=self.openai_model,
             timeout=180,
         )
-        resp.raise_for_status()
-        text = resp.json().get("text", "")
         logger.debug("[TableLayoutAnalyzer] Raw model output: %s", text)
         raw = self._extract_json_fragment(text)
         if not isinstance(raw, dict):

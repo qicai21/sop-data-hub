@@ -12,7 +12,7 @@ from PIL import Image, ImageOps
 from sop_hub.classifier.prompts import DEPARTURE_PLAN_EXTRACTION_PROMPT
 
 
-API_URL = "http://127.0.0.1:8018/generate"
+API_URL = "http://127.0.0.1:8021/v1/chat/completions"
 MAX_IMAGE_EDGE = 1400
 MAX_SHORT_EDGE = 900
 

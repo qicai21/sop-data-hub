@@ -84,7 +84,7 @@ def cmd_classify(args: argparse.Namespace) -> None:
 def cmd_inspect(args: argparse.Namespace) -> None:
     from sop_hub.engines.inspection_slip import InspectionSlipEngine
 
-    service_url = args.service_url or "http://127.0.0.1:8018/generate"
+    service_url = args.service_url or "http://127.0.0.1:8021/v1/chat/completions"
     engine = InspectionSlipEngine(service_url=service_url)
     result = engine.process_image(args.image)
     _output_result(result, args.output)
@@ -93,7 +93,7 @@ def cmd_inspect(args: argparse.Namespace) -> None:
 def cmd_departure(args: argparse.Namespace) -> None:
     from sop_hub.engines.departure_plan import DeparturePlanEngine
 
-    service_url = args.service_url or "http://127.0.0.1:8018/generate"
+    service_url = args.service_url or "http://127.0.0.1:8021/v1/chat/completions"
     engine = DeparturePlanEngine(service_url=service_url)
     result = engine.process_image(args.image)
     _output_result(result, args.output)
@@ -102,7 +102,7 @@ def cmd_departure(args: argparse.Namespace) -> None:
 def cmd_handwritten(args: argparse.Namespace) -> None:
     from sop_hub.engines.handwritten_list import HandwrittenListEngine
 
-    service_url = args.service_url or "http://127.0.0.1:8018/generate"
+    service_url = args.service_url or "http://127.0.0.1:8021/v1/chat/completions"
     engine = HandwrittenListEngine(service_url=service_url)
     result = engine.process_image(args.image)
     _output_result(result, args.output)
@@ -122,7 +122,7 @@ def cmd_fix_container(args: argparse.Namespace) -> None:
 def cmd_health(args: argparse.Namespace) -> None:
     from sop_hub.utils.image_utils import check_vlm_health
 
-    service_url = args.service_url or "http://127.0.0.1:8018"
+    service_url = args.service_url or "http://127.0.0.1:8021"
     results = check_vlm_health(service_url)
     for name, info in results.items():
         status = info["status"]
@@ -238,7 +238,7 @@ def main() -> None:
         description="运营数据枢纽 — 图像识别、数据处理与Agent自动化",
     )
     parser.add_argument("-c", "--config", help="配置文件路径 (默认加载 config/settings.yaml)")
-    parser.add_argument("--service-url", help="VLM 服务地址 (默认 http://127.0.0.1:8018/generate)")
+    parser.add_argument("--service-url", help="VLM 服务地址 (默认 http://127.0.0.1:8021/v1/chat/completions)")
     subparsers = parser.add_subparsers(dest="command", help="可用命令")
 
     # process

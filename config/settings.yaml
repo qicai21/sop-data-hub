@@ -23,8 +23,9 @@ agent_db_path: /Users/qicai21/projects/repos/sop-data-hub/data/sop_agent.db
 
 # ── VLM 服务 ─────────────────────────────────────────
 
-# Gemma-4 / Qwen3-VL 推理服务地址
-vlm_service_url: http://127.0.0.1:8018/generate
+# 2026-06-26 全迁单模型 35B@8021(OpenAI /v1);旧 VL-8B@8018 已退役删除。
+# call_vlm 按 url 含 /v1 自动用 base64 + chat/completions。
+vlm_service_url: http://127.0.0.1:8021/v1/chat/completions
 
 # ── 自动识别策略 ─────────────────────────────────────
 

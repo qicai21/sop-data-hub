@@ -765,7 +765,7 @@ def _infer_sop_project_token(payload: dict[str, Any], *, category: str) -> str:
         if any(token in text for token in ("四平",)):
             return "jilin_jingang_jinzhou"
         return ""
-    if category == "检装车通知单-敞车":
+    if category == "检装车通知单":
         if any(token in text for token in ("合远9", "朝阳西", "朝阳铁", "朝阳钢铁", "朝钢")):
             return "chaoyang_steel"
         if any(token in text for token in ("汐子", "鞍子河", "中唐", "赤峰中唐")):
@@ -800,7 +800,7 @@ def _run_extraction(category: str, image_path: str, settings: Settings, *, group
     service_url = settings.vlm_service_url
     openai_model = getattr(settings, "vlm_openai_model", None)
 
-    if category == "检装车通知单-敞车":
+    if category == "检装车通知单":
         from sop_hub.engines.inspection_slip import InspectionSlipEngine
         engine = InspectionSlipEngine(service_url=service_url, openai_model=openai_model)
         result = engine.process_image(image_path)
@@ -852,12 +852,12 @@ def _run_extraction(category: str, image_path: str, settings: Settings, *, group
 
     elif category == "手写箱号车号表":
         from sop_hub.engines.handwritten_list import HandwrittenListEngine
-        engine = HandwrittenListEngine(service_url=service_url)
+        engine = HandwrittenListEngine(service_url=service_url, openai_model=openai_model)
         return engine.process_image(image_path)
 
     elif category == "耗材统计表":
         from sop_hub.engines.materials_stats import MaterialsStatsEngine
-        engine = MaterialsStatsEngine(service_url=service_url)
+        engine = MaterialsStatsEngine(service_url=service_url, openai_model=openai_model)
         return engine.process_image(image_path)
 
     return {}

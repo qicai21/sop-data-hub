@@ -6,13 +6,13 @@ import time
 from pathlib import Path
 from typing import Any
 
-import requests
 from PIL import Image, ImageOps
 
 from sop_hub.utils.layout import TableLayoutAnalyzer
+from sop_hub.vlm_client import call_vlm
 
 
-API_URL = "http://127.0.0.1:8018/generate"
+API_URL = "http://127.0.0.1:8021/v1/chat/completions"
 MAX_IMAGE_EDGE = 1400
 MAX_SHORT_EDGE = 900
 
@@ -94,9 +94,10 @@ def _extract_json_fragment(text: str) -> Any:
 
 
 class MaterialsStatsEngine:
-    def __init__(self, service_url: str = API_URL, output_base: str | None = None) -> None:
+    def __init__(self, service_url: str = API_URL, output_base: str | None = None, openai_model: str | None = None) -> None:
         self.service_url = service_url
-        self.layout_analyzer = TableLayoutAnalyzer(service_url=service_url)
+        self.openai_model = openai_model
+        self.layout_analyzer = TableLayoutAnalyzer(service_url=service_url, openai_model=openai_model)
         self.output_base = Path(output_base) if output_base else None
 
     def _prepare_preview(self, image_path: Path) -> Path:
@@ -136,18 +137,14 @@ class MaterialsStatsEngine:
 
     def _call_api(self, prompt: str, image_path: str, max_tokens: int) -> tuple[Any, float]:
         started = time.perf_counter()
-        resp = requests.post(
+        text = call_vlm(
             self.service_url,
-            json={
-                "prompt": prompt,
-                "image_path": str(image_path),
-                "max_tokens": max_tokens,
-                "temperature": 0.0,
-            },
+            prompt,
+            image_path,
+            max_tokens,
+            openai_model=self.openai_model,
             timeout=180,
         )
-        resp.raise_for_status()
-        text = resp.json().get("text", "")
         return _extract_json_fragment(text), time.perf_counter() - started
 
     def _normalize_rows(self, raw_rows: Any, page_index: int, side_name: str) -> list[dict[str, Any]]:

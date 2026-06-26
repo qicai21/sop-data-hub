@@ -14,7 +14,7 @@ from sop_hub.pipeline.models import ClassificationResult
 from sop_hub.classifier.prompts import build_classify_prompt
 
 
-API_URL = "http://127.0.0.1:8018/generate"
+API_URL = "http://127.0.0.1:8021/v1/chat/completions"
 MAX_IMAGE_EDGE = 1200
 MAX_SHORT_EDGE = 780
 
@@ -37,10 +37,10 @@ DEFAULT_CATEGORY_CARDS = {
 }
 
 
-# 4 类对外输出(2026-06 收敛):细类 → 粗类。只有“检装车通知单-敞车”和
+# 4 类对外输出(2026-06 收敛):细类 → 粗类。只有“检装车通知单”和
 # “出港计划通知单”进抽取链;其余单据归“其他业务图片”,照片归“现场作业照片”。
 COARSE_CATEGORY_MAP = {
-    "检装车通知单": "检装车通知单-敞车",
+    "检装车通知单": "检装车通知单",
     "出港计划通知单": "出港计划通知单",
     "吨袋检装车通知单": "其他业务图片",
     "耗材统计表": "其他业务图片",

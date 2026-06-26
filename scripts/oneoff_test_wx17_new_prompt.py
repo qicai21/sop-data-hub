@@ -9,7 +9,7 @@ from sop_hub.engines.inspection_slip import InspectionSlipEngine
 
 IMG = "/Users/qicai21/Documents/bussiness-artifacts/wechat_images/_pending/2026-06/images/95_736fa64cbb6c00f90841fa0bef414f7b.jpg"
 
-engine = InspectionSlipEngine(service_url="http://127.0.0.1:8018/generate")
+engine = InspectionSlipEngine(service_url="http://127.0.0.1:8021/v1/chat/completions")
 res = engine.process_image(image_path=IMG)
 rows = res.get("rows") or []
 print(f"识别 rows = {len(rows)}")

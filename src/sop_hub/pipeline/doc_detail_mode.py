@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 DETAIL_DOC_TYPES = {
-    "检装车通知单-敞车",
+    "检装车通知单",
     "出港计划通知单",
     "耗材统计表",
 }

@@ -9,7 +9,7 @@ from sop_hub.pipeline.doc_detail_mode import normalize_doc_detail_mode, should_s
 class TestGroupImageStrategy:
     def test_default_strategy_has_all_categories(self):
         strategy = _default_strategy()
-        assert "检装车通知单-敞车" in strategy.routes
+        assert "检装车通知单" in strategy.routes
         assert "出港计划通知单" in strategy.routes
         assert "其他业务图片" in strategy.routes
         assert "现场作业照片" in strategy.routes
@@ -18,7 +18,7 @@ class TestGroupImageStrategy:
 
     def test_route_for_known_category(self):
         strategy = _default_strategy()
-        route = strategy.route_for("检装车通知单-敞车")
+        route = strategy.route_for("检装车通知单")
         assert route.action == "inspection_slip_extract"
 
     def test_route_for_unknown_falls_to_other(self):
@@ -39,10 +39,10 @@ class TestDocDetailMode:
         assert normalize_doc_detail_mode("invalid") == "shallow"
 
     def test_skip_deep_for_shallow_inspection(self):
-        assert should_skip_deep_detail("检装车通知单-敞车", "shallow") is True
+        assert should_skip_deep_detail("检装车通知单", "shallow") is True
 
     def test_no_skip_for_full_inspection(self):
-        assert should_skip_deep_detail("检装车通知单-敞车", "full") is False
+        assert should_skip_deep_detail("检装车通知单", "full") is False
 
     def test_no_skip_for_photo(self):
         assert should_skip_deep_detail("照片-敞车内部情况和作业", "shallow") is False
@@ -59,10 +59,10 @@ class TestLoadStrategies:
 class TestProcessResult:
     def test_basic_construction(self):
         result = ProcessResult(
-            category="检装车通知单-敞车",
+            category="检装车通知单",
             bucket="table",
             saved_image_path="/tmp/test.jpg",
         )
-        assert result.category == "检装车通知单-敞车"
+        assert result.category == "检装车通知单"
         assert result.should_notify is False
         assert result.payload == {}

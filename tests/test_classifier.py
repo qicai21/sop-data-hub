@@ -53,52 +53,39 @@ class TestClassifierCategoryRouting:
         # Should have at least 11 categories + other
         assert len(classifier.category_cards) >= 12
 
-    @patch("sop_hub.vlm_client.requests.post")
-    def test_classify_returns_result(self, mock_post, tmp_path):
-        # Create a tiny test image
+    # 迁移后 classify 走 self._call_vlm(→call_vlm→8021/v1 OpenAI 格式);
+    # 直接 mock _call_vlm 返回 json 文本,绕开 HTTP/响应格式差异。
+    @patch.object(BusinessGroupImageClassifier, "_call_vlm")
+    def test_classify_returns_result(self, mock_call, tmp_path):
         from PIL import Image
         img = Image.new("RGB", (100, 100), color="white")
         img_path = tmp_path / "test.jpg"
         img.save(img_path)
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {
-            "text": json.dumps({
-                "category": "检装车通知单",
-                "confidence": 0.95,
-                "detected_title": "锦州港检装车通知单",
-                "evidence": "标题可见"
-            }, ensure_ascii=False)
-        }
-        mock_post.return_value = mock_resp
+        mock_call.return_value = json.dumps({
+            "category": "检装车通知单",
+            "confidence": 0.95,
+            "detected_title": "锦州港检装车通知单",
+            "evidence": "标题可见"
+        }, ensure_ascii=False)
 
         classifier = BusinessGroupImageClassifier()
         result = classifier.classify(img_path)
-        # 4 类收敛:泛"货物"标题 → 检装车通知单-敞车
-        assert result.category == "检装车通知单-敞车"
+        # 4 类收敛:泛"货物"标题 → 检装车通知单
+        assert result.category == "检装车通知单"
         assert result.confidence == 0.95
 
-    @patch("sop_hub.vlm_client.requests.post")
-    def test_low_confidence_日现场_falls_to_other(self, mock_post, tmp_path):
+    @patch.object(BusinessGroupImageClassifier, "_call_vlm")
+    def test_low_confidence_日现场_falls_to_other(self, mock_call, tmp_path):
         from PIL import Image
         img = Image.new("RGB", (100, 100), color="white")
         img_path = tmp_path / "test2.jpg"
         img.save(img_path)
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {
-            "text": json.dumps({
-                "category": "日现场工作记录表",
-                "confidence": 0.5,
-                "detected_title": "",
-                "evidence": "不太确定"
-            }, ensure_ascii=False)
-        }
-        mock_post.return_value = mock_resp
+        mock_call.return_value = json.dumps({
+            "category": "日现场工作记录表",
+            "confidence": 0.5,
+            "detected_title": "",
+            "evidence": "不太确定"
+        }, ensure_ascii=False)
 
         classifier = BusinessGroupImageClassifier()
         result = classifier.classify(img_path)

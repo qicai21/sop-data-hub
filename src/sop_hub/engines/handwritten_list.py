@@ -6,13 +6,13 @@ import time
 from pathlib import Path
 from typing import Any
 
-import requests
 from PIL import Image, ImageOps
 
 from sop_hub.classifier.prompts import HANDWRITTEN_LIST_EXTRACTION_PROMPT
+from sop_hub.vlm_client import call_vlm
 
 
-API_URL = "http://127.0.0.1:8018/generate"
+API_URL = "http://127.0.0.1:8021/v1/chat/completions"
 MAX_IMAGE_EDGE = 1600
 MAX_SHORT_EDGE = 1200
 
@@ -39,8 +39,9 @@ def _extract_json_fragment(text: str) -> Any:
 
 
 class HandwrittenListEngine:
-    def __init__(self, service_url: str = API_URL) -> None:
+    def __init__(self, service_url: str = API_URL, openai_model: str | None = None) -> None:
         self.service_url = service_url
+        self.openai_model = openai_model
 
     def _prepare_preview(self, image_path: Path) -> Path:
         preview_path = image_path.parent / f"{image_path.stem}_vlm.jpg"
@@ -61,20 +62,15 @@ class HandwrittenListEngine:
         img_path = Path(image_path).resolve()
         preview_path = self._prepare_preview(img_path)
         started = time.perf_counter()
-        response = requests.post(
+        raw_text = call_vlm(
             self.service_url,
-            json={
-                "prompt": HANDWRITTEN_LIST_EXTRACTION_PROMPT,
-                "image_path": str(preview_path),
-                "max_tokens": max_tokens,
-                "temperature": 0.0,
-            },
+            HANDWRITTEN_LIST_EXTRACTION_PROMPT,
+            preview_path,
+            max_tokens,
+            openai_model=self.openai_model,
             timeout=300,
         )
-        response.raise_for_status()
-        payload = response.json()
         latency = time.perf_counter() - started
-        raw_text = payload.get("text", "")
         
         try:
             result = _extract_json_fragment(raw_text)

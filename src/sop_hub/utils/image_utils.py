@@ -116,33 +116,25 @@ def call_vlm_api(
     return extract_json_fragment(text), elapsed
 
 
-def check_vlm_health(service_url: str = "http://127.0.0.1:8018") -> dict[str, Any]:
-    """检查 VLM 服务健康状态"""
+def check_vlm_health(service_url: str = "http://127.0.0.1:8021") -> dict[str, Any]:
+    """检查 VLM 服务健康状态(35B@8021,OpenAI 兼容 /v1/models)"""
     results: dict[str, Any] = {}
 
-    # Check Gemma4 (port 8018)
+    base = service_url.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[: -len("/v1")]
+    models_url = f"{base}/v1/models"
     try:
-        resp = requests.get(f"{service_url}/health", timeout=5)
+        resp = requests.get(models_url, timeout=5)
         data = resp.json()
-        results["gemma4"] = {
+        models = [m.get("id") for m in data.get("data", [])]
+        results["qwen35b"] = {
             "status": "online",
-            "model_loaded": data.get("model_loaded", False),
-            "url": service_url,
+            "model_loaded": bool(models),
+            "models": models,
+            "url": models_url,
         }
     except Exception as e:
-        results["gemma4"] = {"status": "offline", "error": str(e), "url": service_url}
-
-    # Check Qwen3-VL (port 8019)
-    qwen_url = service_url.replace("8018", "8019")
-    try:
-        resp = requests.get(f"{qwen_url}/health", timeout=5)
-        data = resp.json()
-        results["qwen3vl"] = {
-            "status": "online",
-            "model_loaded": data.get("model_loaded", False),
-            "url": qwen_url,
-        }
-    except Exception as e:
-        results["qwen3vl"] = {"status": "offline", "error": str(e), "url": qwen_url}
+        results["qwen35b"] = {"status": "offline", "error": str(e), "url": models_url}
 
     return results

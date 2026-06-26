@@ -52,7 +52,7 @@ class Settings:
     # 分类命中这些类别后自动触发深度识别
     auto_extract_categories: list[str] = field(default_factory=lambda: [
         "出港计划通知单",
-        "检装车通知单-敞车",
+        "检装车通知单",
     ])
 
     # ── 处理策略 ─────────────────────────────────────

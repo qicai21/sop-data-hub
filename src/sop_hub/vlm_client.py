@@ -2,7 +2,8 @@
 
 - 含 ``/v1`` → OpenAI 兼容(mlx_vlm.server,如 35B@8021):base64 图 +
   /v1/chat/completions,带 ``enable_thinking=false`` 关思维链(避免思维链污染 JSON)。
-- 否则 → 旧自定义 ``/generate``(VL-8B@8018):传本地 image_path。
+- 否则 → 旧自定义 ``/generate`` 协议(传本地 image_path)。注:旧 VL-8B@8018
+  自定义 server 已于 2026-06-26 退役,此分支仅作通用兜底,现网不再触达。
 
 返回模型输出的纯文本(两种接口都归一为 str),下游解析逻辑不变。
 """

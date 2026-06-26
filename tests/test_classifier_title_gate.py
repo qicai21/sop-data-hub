@@ -24,11 +24,13 @@ class _Resp:
 
 
 def _classifier(monkeypatch, vlm_out):
+    # 迁移后 classify 走 self._call_vlm(→call_vlm→8021/v1);直接 mock 它返回 json 文本,
+    # 绕开读图+HTTP+响应格式(_prepare_preview 也短路,免 Pillow 开假路径)。
+    monkeypatch.setattr(BusinessGroupImageClassifier, "_prepare_preview", lambda self, p: p)
     monkeypatch.setattr(
-        BusinessGroupImageClassifier, "_prepare_preview",
-        lambda self, p: Path("/tmp/_x_vlm.jpg"),
+        BusinessGroupImageClassifier, "_call_vlm",
+        lambda self, prompt, image, max_tokens: json.dumps(vlm_out, ensure_ascii=False),
     )
-    monkeypatch.setattr(vlm_mod.requests, "post", lambda *a, **k: _Resp(vlm_out))
     return BusinessGroupImageClassifier()
 
 
@@ -43,12 +45,12 @@ def test_inspection_downgraded_without_title(monkeypatch):
 
 
 def test_inspection_kept_with_real_title(monkeypatch):
-    # 泛指"货物"标题 = 敞车 → 检装车通知单-敞车(进抽取链)
+    # 泛指"货物"标题 = 敞车 → 检装车通知单(进抽取链)
     c = _classifier(monkeypatch, {
         "category": "检装车通知单", "confidence": 0.9,
         "detected_title": "锦州港杂码公司火运货物疏港检、装车通知单", "evidence": "",
     })
-    assert c.classify("/tmp/whatever.jpg").category == "检装车通知单-敞车"
+    assert c.classify("/tmp/whatever.jpg").category == "检装车通知单"
 
 
 def test_inspection_title_normalized_match(monkeypatch):
@@ -57,7 +59,7 @@ def test_inspection_title_normalized_match(monkeypatch):
         "category": "检装车通知单", "confidence": 0.8,
         "detected_title": "检 、 装车通知单",
     })
-    assert c.classify("/tmp/whatever.jpg").category == "检装车通知单-敞车"
+    assert c.classify("/tmp/whatever.jpg").category == "检装车通知单"
 
 
 def test_tonbag_title_to_other(monkeypatch):

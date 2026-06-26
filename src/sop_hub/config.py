@@ -41,14 +41,18 @@ class Settings:
     # 测试专用数据库路径
     test_agent_db_path: str = "data/test_sop_agent.db"
 
-    # ── VLM 服务 ─────────────────────────────────────
-    vlm_service_url: str = "http://127.0.0.1:8018/generate"
+    # ── VLM 服务(2026-06-26 全迁 35B@8021 OpenAI /v1)─────────────
+    # 分类器 + 抽取引擎(检装车/出港)统一走 35B;call_vlm 按 /v1 自动用 base64+chat/completions
+    vlm_service_url: str = "http://127.0.0.1:8021/v1/chat/completions"
+    vlm_openai_model: str = "/Users/qicai21/models/Qwen3.6-35B-A3B-4bit"
+    classifier_service_url: str = "http://127.0.0.1:8021/v1/chat/completions"
+    classifier_openai_model: str = "/Users/qicai21/models/Qwen3.6-35B-A3B-4bit"
 
     # ── 自动识别策略 ─────────────────────────────────
     # 分类命中这些类别后自动触发深度识别
     auto_extract_categories: list[str] = field(default_factory=lambda: [
         "出港计划通知单",
-        "检装车通知单",
+        "检装车通知单-敞车",
     ])
 
     # ── 处理策略 ─────────────────────────────────────

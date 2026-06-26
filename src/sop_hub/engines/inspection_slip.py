@@ -163,8 +163,10 @@ class InspectionSlipEngine:
         self,
         service_url: str = API_URL,
         output_base: Optional[str] = None,
+        openai_model: Optional[str] = None,
     ) -> None:
         self.service_url = service_url
+        self._openai_model = openai_model
         self.output_base = Path(output_base) if output_base else None
         if self.output_base is not None:
             self.output_base.mkdir(parents=True, exist_ok=True)
@@ -205,19 +207,12 @@ class InspectionSlipEngine:
         return []
 
     def call_api(self, prompt: str, image_path: str, max_tokens: int) -> tuple[Any, float]:
+        from sop_hub.vlm_client import call_vlm
         started = time.perf_counter()
-        resp = requests.post(
-            self.service_url,
-            json={
-                "prompt": prompt,
-                "image_path": str(image_path),
-                "max_tokens": max_tokens,
-                "temperature": 0.0,
-            },
-            timeout=180,
+        text = call_vlm(
+            self.service_url, prompt, image_path, max_tokens,
+            openai_model=self._openai_model, timeout=180,
         )
-        resp.raise_for_status()
-        text = resp.json().get("text", "")
         logger.debug("[InspectionEngine] Raw model output for prompt %s...: %s", prompt[:40], text)
         return self._extract_json_fragment(text), time.perf_counter() - started
 

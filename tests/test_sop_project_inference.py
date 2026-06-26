@@ -42,4 +42,4 @@ def test_unknown_destination_no_match():
 
 def test_jiusan_inspection_inferred():
     p = _payload("和谐1", "新台子")
-    assert r._infer_sop_project_token(p, category="检装车通知单") == "jiusan"
+    assert r._infer_sop_project_token(p, category="检装车通知单-敞车") == "jiusan"

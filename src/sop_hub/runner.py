@@ -527,7 +527,7 @@ def process_new_image(
     # ── Step 1: 分类 ────────────────────────────────
     try:
         t0 = time.perf_counter()
-        classifier = _get_classifier(settings.vlm_service_url)
+        classifier = _get_classifier(settings.classifier_service_url, settings.classifier_openai_model)
         cls_result = classifier.classify(str(img))
         result.elapsed_classify = time.perf_counter() - t0
         result.category = cls_result.category
@@ -690,13 +690,16 @@ def batch_process(
 _classifier_cache: dict[str, Any] = {}
 
 
-def _get_classifier(service_url: str):
+def _get_classifier(service_url: str, openai_model: str | None = None):
     """获取分类器单例"""
     from sop_hub.classifier.classifier import BusinessGroupImageClassifier
 
-    if service_url not in _classifier_cache:
-        _classifier_cache[service_url] = BusinessGroupImageClassifier(service_url=service_url)
-    return _classifier_cache[service_url]
+    key = f"{service_url}|{openai_model or ''}"
+    if key not in _classifier_cache:
+        _classifier_cache[key] = BusinessGroupImageClassifier(
+            service_url=service_url, openai_model=openai_model
+        )
+    return _classifier_cache[key]
 
 
 @lru_cache(maxsize=1)
@@ -762,7 +765,7 @@ def _infer_sop_project_token(payload: dict[str, Any], *, category: str) -> str:
         if any(token in text for token in ("四平",)):
             return "jilin_jingang_jinzhou"
         return ""
-    if category == "检装车通知单":
+    if category == "检装车通知单-敞车":
         if any(token in text for token in ("合远9", "朝阳西", "朝阳铁", "朝阳钢铁", "朝钢")):
             return "chaoyang_steel"
         if any(token in text for token in ("汐子", "鞍子河", "中唐", "赤峰中唐")):
@@ -795,10 +798,11 @@ def _mark_sop_skip(payload: dict[str, Any], reason: str) -> dict[str, Any]:
 def _run_extraction(category: str, image_path: str, settings: Settings, *, group_name: str = "") -> dict[str, Any]:
     """根据分类结果调用对应识别引擎"""
     service_url = settings.vlm_service_url
+    openai_model = getattr(settings, "vlm_openai_model", None)
 
-    if category == "检装车通知单":
+    if category == "检装车通知单-敞车":
         from sop_hub.engines.inspection_slip import InspectionSlipEngine
-        engine = InspectionSlipEngine(service_url=service_url)
+        engine = InspectionSlipEngine(service_url=service_url, openai_model=openai_model)
         result = engine.process_image(image_path)
         if result and result.get("is_inspection"):
             if not _ensure_sop_project(result, category=category):
@@ -827,7 +831,7 @@ def _run_extraction(category: str, image_path: str, settings: Settings, *, group
 
     elif category == "出港计划通知单":
         from sop_hub.engines.departure_plan import DeparturePlanEngine
-        engine = DeparturePlanEngine(service_url=service_url)
+        engine = DeparturePlanEngine(service_url=service_url, openai_model=openai_model)
         result = engine.process_image(image_path)
 
         # 自动导入放货批次数据：仅 ProjectSOP 已登记项目允许写库。

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
 import time
@@ -21,7 +22,8 @@ MAX_SHORT_EDGE = 780
 DEFAULT_CATEGORY_CARDS = {
     "出港计划通知单": "标题明确为“锦州港货物出港计划通知单”；典型的物流报表版式，包含发货单位、收货单位、船名等表格信息；通常是完整的A4纸打印扫描件。",
     "耗材统计表": "无明显大标题；版式特征是“双栏结构”，左右各有序号、品名、尺寸、余量等列；颜色上常有红、黄背景高亮指示低库存。",
-    "检装车通知单": "**判定硬条件=标题**：必须看到“检、装车通知单”/“疏港检、装车通知单”大标题（常见“锦州港杂码公司火运…检、装车通知单”），并含品名、道线、日期、检车员等元信息、版式规整的打印表格。**没有该标题字样,无论版式多像,都不要判本类**(很可能是下面的日现场工作记录表/请车表)。",
+    "检装车通知单": "**敞车检装车单**。判定硬条件=标题含“检、装车通知单”/“疏港检、装车通知单”,且标题为**泛指“货物”**版式(“锦州港杂码公司火运**货物**疏港检、装车通知单”);列含**车皮号 + 装载高度**;品名、道线、日期、检车员等元信息、版式规整的打印表格。**没有该标题字样,无论版式多像,都不要判本类**(很可能是日现场工作记录表/请车表)。",
+    "吨袋检装车通知单": "同为“疏港检、装车通知单”大标题,但标题里嵌**具体货名**(如“锦州港**氧化铝/铜精矿**火运疏港检、装车通知单”,而非泛指“货物”);列含**篷布号、件数**(而非敞车的“装载高度”);用于吨袋包装货物,可能含右下角嵌套子表。",
     "请车表": "通常为宽表，**无大标题**。**核心识别特征**：最左侧一列必然出现“整车”（通常纵向排列）、“小计”和“集装箱”字样；约 11 列，表头含“日期、到站、品名、车型、需求、托运人、受理、装车地占、去向归、收货人、备注”。",
     "日现场工作记录表": "**无大标题**（与检装车通知单的根本区别就在这）；通常 8 列左右，表头常见“日期、到站、船名、品名、道线、车数、班组、备注”；是现场流程/工作记录日报，不是检车/装车业务通知单。没有“检、装车通知单”标题的同版式印刷表优先归本类或 other，**绝不要因为版式像就判成检装车通知单**。",
     "手写箱号车号表": "关键判定：顶部通常有打印的“检车清单”标题；内容是以手写数字为主的表格，包含：序号、车号（7位）、箱号1（7位）、箱号2（7位）；可能是一栏或多栏并排布局。",
@@ -33,6 +35,29 @@ DEFAULT_CATEGORY_CARDS = {
     "照片-装卸现场情况": "广角或远景照片；可见门机、正面吊、吊装作业、重卡等。**包含**：成堆存放的货物（货垛）、地面散落的塑料布、清扫出的垃圾、或者正在作业的繁忙场景。",
     "other": "图片内容模糊、信息量太少、或者不符合上述任何一类视觉特征的场景。",
 }
+
+
+# 4 类对外输出(2026-06 收敛):细类 → 粗类。只有“检装车通知单-敞车”和
+# “出港计划通知单”进抽取链;其余单据归“其他业务图片”,照片归“现场作业照片”。
+COARSE_CATEGORY_MAP = {
+    "检装车通知单": "检装车通知单-敞车",
+    "出港计划通知单": "出港计划通知单",
+    "吨袋检装车通知单": "其他业务图片",
+    "耗材统计表": "其他业务图片",
+    "请车表": "其他业务图片",
+    "日现场工作记录表": "其他业务图片",
+    "手写箱号车号表": "其他业务图片",
+    "手写记录": "其他业务图片",
+    "照片-敞车内部情况和作业": "现场作业照片",
+    "照片-火车涂写mark": "现场作业照片",
+    "照片-集装箱内情况和作业": "现场作业照片",
+    "照片-检查工人": "现场作业照片",
+    "照片-装卸现场情况": "现场作业照片",
+    "other": "其他业务图片",
+}
+
+# 标题含具体货名 = 吨袋(踢出敞车抽取链),泛指“货物” = 敞车。
+TONBAG_GOODS_KEYWORDS = ("氧化铝", "铜精矿", "锌精矿", "铅精矿", "镍精矿", "精矿", "吨袋")
 
 
 def _extract_json_fragment(text: str) -> Any:
@@ -71,9 +96,12 @@ class BusinessGroupImageClassifier:
         self,
         service_url: str = API_URL,
         category_cards: Mapping[str, str] | None = None,
+        openai_model: str | None = None,
     ) -> None:
         self.service_url = service_url
         self.category_cards = dict(category_cards or DEFAULT_CATEGORY_CARDS)
+        # OpenAI 兼容端点(/v1)需要的 model 字段;mlx_vlm.server 用模型绝对路径。
+        self._openai_model = openai_model
 
     def _prepare_preview(self, image_path: Path) -> Path:
         # VLM-optimised resized copy saved alongside the original (no _previews/ subdirectory)
@@ -90,6 +118,13 @@ class BusinessGroupImageClassifier:
                 img = img.resize(new_size, Image.Resampling.LANCZOS)
             img.save(preview_path, format="JPEG", quality=90, optimize=True)
         return preview_path
+
+    def _call_vlm(self, prompt: str, preview_path: Path, max_tokens: int) -> str:
+        from sop_hub.vlm_client import call_vlm
+        return call_vlm(
+            self.service_url, prompt, preview_path, max_tokens,
+            openai_model=self._openai_model,
+        )
 
     def classify(
         self,
@@ -108,20 +143,8 @@ class BusinessGroupImageClassifier:
             ),
         )
         started = time.perf_counter()
-        response = requests.post(
-            self.service_url,
-            json={
-                "prompt": prompt,
-                "image_path": str(preview_path),
-                "max_tokens": max_tokens,
-                "temperature": 0.0,
-            },
-            timeout=240,
-        )
-        response.raise_for_status()
-        payload = response.json()
+        raw_text = self._call_vlm(prompt, preview_path, max_tokens)
         elapsed_s = time.perf_counter() - started
-        raw_text = payload.get("text", "")
         result = _extract_json_fragment(raw_text)
         if not isinstance(result, dict):
             result = {}
@@ -157,13 +180,27 @@ class BusinessGroupImageClassifier:
             # Validate handwritten num table with title check as safeguard
             if not detected_title and float(result.get("confidence", 0.0)) < 0.7:
                 category = "手写记录"
+
+        # 敞车 vs 吨袋:标题嵌具体货名(氧化铝/铜精矿…)= 吨袋 → 不进敞车抽取链。
+        # 泛指“货物”或无货名 = 敞车,保持高召回(默认）。
+        _t_norm = detected_title
+        for _c in ("、", " ", "，", ",", "　"):
+            _t_norm = _t_norm.replace(_c, "")
+        fine_category = category
+        if category == "检装车通知单" and any(g in _t_norm for g in TONBAG_GOODS_KEYWORDS):
+            fine_category = "吨袋检装车通知单"
+
+        # 细类 → 4 类对外输出;细类保留在 evidence 便于排查。
+        coarse_category = COARSE_CATEGORY_MAP.get(fine_category, "其他业务图片")
+        evidence = f"[{fine_category}] {evidence}" if evidence else f"[{fine_category}]"
+
         try:
             confidence = float(result.get("confidence", 0.0))
         except Exception:
             confidence = 0.0
 
         return ClassificationResult(
-            category=category,
+            category=coarse_category,
             confidence=confidence,
             detected_title=detected_title,
             evidence=evidence,

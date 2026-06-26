@@ -17,21 +17,13 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "config" / "business
 
 
 def _default_strategy() -> GroupImageStrategy:
+    # 2026-06 收敛为 4 类:仅"检装车通知单-敞车"和"出港计划通知单"触发抽取,
+    # 其余单据归"其他业务图片",照片归"现场作业照片",均 save_only。
     routes = {
+        "检装车通知单-敞车": CategoryRoute("检装车通知单-敞车", bucket="table", action="inspection_slip_extract", output_subdir="检装车通知单-敞车"),
         "出港计划通知单": CategoryRoute("出港计划通知单", bucket="table", action="departure_plan_extract", output_subdir="出港计划通知单"),
-        "耗材统计表": CategoryRoute("耗材统计表", bucket="table", action="materials_extract", output_subdir="耗材统计表"),
-        "检装车通知单": CategoryRoute("检装车通知单", bucket="table", action="inspection_slip_extract", output_subdir="检装车通知单"),
-        "请车表": CategoryRoute("请车表", bucket="table", action="save_only", output_subdir="请车表"),
-        "日现场工作记录表": CategoryRoute("日现场工作记录表", bucket="table", action="save_only", output_subdir="日现场工作记录表"),
-        "手写箱号车号表": CategoryRoute("手写箱号车号表", bucket="handwritten", action="save_only", output_subdir="手写箱号车号表"),
-        "手写记录": CategoryRoute("手写记录", bucket="handwritten", action="save_only", output_subdir="手写记录"),
-        "照片-敞车内部情况和作业": CategoryRoute("照片-敞车内部情况和作业", bucket="photo", action="save_only", output_subdir="照片-敞车内部情况和作业"),
-        "照片-火车涂写mark": CategoryRoute("照片-火车涂写mark", bucket="photo", action="save_only", output_subdir="照片-火车涂写mark"),
-        "照片-货垛": CategoryRoute("照片-货垛", bucket="photo", action="save_only", output_subdir="照片-货垛"),
-        "照片-集装箱内情况和作业": CategoryRoute("照片-集装箱内情况和作业", bucket="photo", action="save_only", output_subdir="照片-集装箱内情况和作业"),
-        "照片-检查工人": CategoryRoute("照片-检查工人", bucket="photo", action="save_only", output_subdir="照片-检查工人"),
-        "照片-装卸现场情况": CategoryRoute("照片-装卸现场情况", bucket="photo", action="save_only", output_subdir="照片-装卸现场情况"),
-        "照片-杂物垃圾-塑料布": CategoryRoute("照片-杂物垃圾-塑料布", bucket="photo", action="save_only", output_subdir="照片-杂物垃圾-塑料布"),
+        "其他业务图片": CategoryRoute("其他业务图片", bucket="other", action="save_only", output_subdir="其他业务图片"),
+        "现场作业照片": CategoryRoute("现场作业照片", bucket="photo", action="save_only", output_subdir="现场作业照片"),
         "other": CategoryRoute("other", bucket="other", action="save_only", output_subdir="other"),
     }
     return GroupImageStrategy(

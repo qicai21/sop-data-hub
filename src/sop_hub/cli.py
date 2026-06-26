@@ -66,8 +66,11 @@ def cmd_batch(args: argparse.Namespace) -> None:
 def cmd_classify(args: argparse.Namespace) -> None:
     from sop_hub.classifier.classifier import BusinessGroupImageClassifier
 
-    service_url = args.service_url or "http://127.0.0.1:8018/generate"
-    classifier = BusinessGroupImageClassifier(service_url=service_url)
+    service_url = args.service_url or "http://127.0.0.1:8021/v1/chat/completions"
+    classifier = BusinessGroupImageClassifier(
+        service_url=service_url,
+        openai_model="/Users/qicai21/models/Qwen3.6-35B-A3B-4bit" if "/v1" in service_url else None,
+    )
     result = classifier.classify(args.image)
     output = {
         "category": result.category,

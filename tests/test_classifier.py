@@ -53,7 +53,7 @@ class TestClassifierCategoryRouting:
         # Should have at least 11 categories + other
         assert len(classifier.category_cards) >= 12
 
-    @patch("sop_hub.classifier.classifier.requests.post")
+    @patch("sop_hub.vlm_client.requests.post")
     def test_classify_returns_result(self, mock_post, tmp_path):
         # Create a tiny test image
         from PIL import Image
@@ -76,10 +76,11 @@ class TestClassifierCategoryRouting:
 
         classifier = BusinessGroupImageClassifier()
         result = classifier.classify(img_path)
-        assert result.category == "检装车通知单"
+        # 4 类收敛:泛"货物"标题 → 检装车通知单-敞车
+        assert result.category == "检装车通知单-敞车"
         assert result.confidence == 0.95
 
-    @patch("sop_hub.classifier.classifier.requests.post")
+    @patch("sop_hub.vlm_client.requests.post")
     def test_low_confidence_日现场_falls_to_other(self, mock_post, tmp_path):
         from PIL import Image
         img = Image.new("RGB", (100, 100), color="white")
@@ -101,5 +102,5 @@ class TestClassifierCategoryRouting:
 
         classifier = BusinessGroupImageClassifier()
         result = classifier.classify(img_path)
-        # Low confidence 日现场 should fall to other
-        assert result.category == "other"
+        # 低置信 日现场 → 降级 → 归"其他业务图片"(4 类收敛)
+        assert result.category == "其他业务图片"

@@ -80,12 +80,12 @@ def test_non_sop_inspection_slip_extracts_json_without_candidate(tmp_path: Path,
         extraction_output_dir=str(tmp_path / "legacy_extractions"),
         agent_db_path=str(test_db),
         test_agent_db_path=str(test_db),
-        auto_extract_categories=["检装车通知单"],
+        auto_extract_categories=["检装车通知单-敞车"],
     )
     monkeypatch.setenv("BUSINESS_DATA_AGENT_DB_PATH", str(test_db))
 
     classifier = MagicMock()
-    classifier.classify.return_value = MagicMock(category="检装车通知单", confidence=0.96)
+    classifier.classify.return_value = MagicMock(category="检装车通知单-敞车", confidence=0.96)
     inspection_payload = {
         "is_inspection": True,
         "project": "未登记测试项目",
@@ -128,11 +128,11 @@ def test_lobster_sandbox_non_sop_lingdong_kadi_stays_json_only(tmp_path: Path, m
         extraction_output_dir=str(tmp_path / "legacy_extractions"),
         agent_db_path=str(test_db),
         test_agent_db_path=str(test_db),
-        auto_extract_categories=["检装车通知单"],
+        auto_extract_categories=["检装车通知单-敞车"],
     )
     monkeypatch.setenv("BUSINESS_DATA_AGENT_DB_PATH", str(test_db))
     classifier = MagicMock()
-    classifier.classify.return_value = MagicMock(category="检装车通知单", confidence=0.96)
+    classifier.classify.return_value = MagicMock(category="检装车通知单-敞车", confidence=0.96)
     inspection_payload = {
         "is_inspection": True,
         "rows_count": 1,

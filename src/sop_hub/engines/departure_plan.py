@@ -39,8 +39,9 @@ def _extract_json_fragment(text: str) -> Any:
 
 
 class DeparturePlanEngine:
-    def __init__(self, service_url: str = API_URL) -> None:
+    def __init__(self, service_url: str = API_URL, openai_model: str | None = None) -> None:
         self.service_url = service_url
+        self._openai_model = openai_model
 
     def _prepare_preview(self, image_path: Path) -> Path:
         preview_path = image_path.parent / f"{image_path.stem}_vlm.jpg"
@@ -61,20 +62,12 @@ class DeparturePlanEngine:
         img_path = Path(image_path)
         preview_path = self._prepare_preview(img_path)
         started = time.perf_counter()
-        response = requests.post(
-            self.service_url,
-            json={
-                "prompt": DEPARTURE_PLAN_EXTRACTION_PROMPT,
-                "image_path": str(preview_path),
-                "max_tokens": max_tokens,
-                "temperature": 0.0,
-            },
-            timeout=300,
+        from sop_hub.vlm_client import call_vlm
+        raw_text = call_vlm(
+            self.service_url, DEPARTURE_PLAN_EXTRACTION_PROMPT, preview_path, max_tokens,
+            openai_model=self._openai_model, timeout=300,
         )
-        response.raise_for_status()
-        payload = response.json()
         _ = time.perf_counter() - started
-        raw_text = payload.get("text", "")
         result = _extract_json_fragment(raw_text)
         if not isinstance(result, dict):
             result = {"is_target": False, "reason": "unparseable output"}

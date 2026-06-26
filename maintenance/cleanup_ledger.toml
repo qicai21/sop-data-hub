@@ -20,7 +20,10 @@ paths = [
 size = "1.2G"
 deferred_on = "2026-06-03"
 ripe_after = "2026-06-10"        # 新服务跑稳一周后
-status = "pending"
+# 2026-06-26: openclaw 整套停用,**整个 ~/.openclaw + ~/.openclaw.backup(共~6G)已删**
+# (VL-8B@8018 早退役,现役单 35B@8021)。本条目目标已随之清除,下方 verify 已过时
+# (8018/旧 qwen3vl plist 都不存在了),无需再跑。
+status = "done"
 
   [[items.verify]]
   desc = "新 qwen3-vl 服务健康(8018,launchctl 托管,model_loaded)"

@@ -2361,7 +2361,9 @@ def parse_destination_station(text: str) -> Optional[str]:
 
 
 def parse_yard_location(text: str) -> Optional[str]:
-    match = re.search(r"货物在([^，。；]+)场地", str(text))
+    # 场地/库场/库 措辞不统一(如"333W库场" vs "239W场地"),都是同一个场地,
+    # 归一成"<X>场地"。非贪婪到第一个后缀,避免吞掉后续文字。
+    match = re.search(r"货物在([^，。；]+?)(?:场地|库场|库)", str(text))
     return f"{match.group(1).strip()}场地" if match else None
 
 

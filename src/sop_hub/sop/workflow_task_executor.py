@@ -308,6 +308,45 @@ def _execute_jljg_departure(
             },
         }
 
+    # ── 缺陷A 重试(2026-06-27 工单·发车识别):发运文本早于 95306 制票 → query 0
+    # candidates。不算完成,挂 **pending** 让 daemon 每轮回扫;rail sync 进了制票车后
+    # 下一轮自然跑通(与 deferred 同机制)。超 18h 仍 0 → failed + 数据单发群告警
+    # (⚠️ 前缀,text_router guard 防自激),杜绝无限等。本块在规划对外动作**之前**返回,
+    # 0 车时不规划/不执行任何对外动作。
+    _TICKET_WAIT_TIMEOUT_H = 18.0
+    if (not preview.error and not preview.skipped_reason
+            and (getattr(preview, "query_total_candidates", 0) or 0) == 0):
+        elapsed_h = None
+        try:
+            from sop_hub.utils.time import now_iso_beijing, parse_any_timestamp
+            _mt = getattr(event, "received_at", None)
+            _mt = parse_any_timestamp(_mt) if _mt else None
+            if _mt:
+                elapsed_h = (parse_any_timestamp(now_iso_beijing()) - _mt).total_seconds() / 3600.0
+        except Exception:
+            elapsed_h = None
+        if elapsed_h is not None and elapsed_h >= _TICKET_WAIT_TIMEOUT_H:
+            try:
+                from sop_hub.sop.send_excel import send_to_wechat
+                send_to_wechat(target="[GROUP013]", file_path=None, message=(
+                    f"⚠️ 吉林发运文本超时未等到 95306 制票\n"
+                    f"{(getattr(event, 'text', '') or '').strip()[:40]}\n"
+                    f"已等 {elapsed_h:.1f} 小时,需人工排查"))
+            except Exception as _exc:
+                output["timeout_notice_error"] = str(_exc)
+            return {
+                "action": "failed", "status": "failed",
+                "error_message": f"发运文本超时未等到95306制票 (已等{elapsed_h:.1f}h)",
+                "output_json": {**output, "waiting_reason": "95306_ticketing_timeout"},
+            }
+        return {
+            "action": "waiting_95306", "status": "pending",
+            "output_json": {
+                **output, "waiting_reason": "95306_ticketing",
+                "waited_hours": round(elapsed_h, 1) if elapsed_h is not None else None,
+            },
+        }
+
     # ── R70: plan external actions with idempotency keys ──────────────
     external_actions: list[dict[str, Any]] = []
     wagon_count = 0

@@ -481,6 +481,54 @@ def _execute_create_release_batch(
     }
 
 
+def _event_excel_batch_specs(
+    candidate_id: str, db_path: Path | str,
+) -> tuple[list[tuple[str, list[str] | None]], bool, list[str]]:
+    """发运 excel = **一张简装车通知单(source_image)的数据展现**(2026-06-27 用户确认,
+    全项目统一)。按 source_image_path 聚同单兄弟候选,返回:
+      - batch_specs: [(release_batch_id, car_nos), ...] 按候选顺序(每船一块);
+      - all_matched: 同单的船是否都已 matched(False → 调用方等齐再合成,不发半截);
+      - ship_names: 同单船名列表。
+    car_nos 取候选自带的 car_numbers_json(本次单子的车,非批次累计)。
+    """
+    import json as _json
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT source_image_path FROM inspection_ingestion_candidates WHERE id=?",
+            (candidate_id,),
+        ).fetchone()
+        src = row["source_image_path"] if row else None
+        q = ("SELECT ship_name, release_batch_id, car_numbers_json, candidate_status "
+             "FROM inspection_ingestion_candidates WHERE ")
+        if src:
+            sibs = conn.execute(q + "source_image_path=? ORDER BY id", (src,)).fetchall()
+        else:
+            sibs = conn.execute(q + "id=?", (candidate_id,)).fetchall()
+    finally:
+        conn.close()
+    _matched = ("matched", "matched_by_inference")
+    all_matched = bool(sibs) and all(s["candidate_status"] in _matched for s in sibs)
+    specs: list[tuple[str, list[str] | None]] = []
+    ships: list[str] = []
+    for s in sibs:
+        bid = s["release_batch_id"]
+        if not bid:
+            continue
+        cars = None
+        cnj = s["car_numbers_json"]
+        if cnj:
+            try:
+                cars = [str(x).strip() for x in _json.loads(cnj) if x]
+            except Exception:
+                cars = None
+        specs.append((bid, cars))
+        if s["ship_name"]:
+            ships.append(s["ship_name"])
+    return specs, all_matched, ships
+
+
 def _inbox_elapsed_hours(message_id: str, db_path: Path) -> float | None:
     """消息到现在多少小时(超时判断基准)。用 message_inbox.created_at(带 +08:00 时区,
     解析可靠);**不用 received_datetime**——那列是裸北京时间,parse_any_timestamp 会当 UTC
@@ -1453,68 +1501,71 @@ def _execute_chaoyang_inspection_chain(
         except Exception:
             nth = 1
 
-        # ── 6b. Send excel via wx-ui-bridge ─────────────────────────
-        # 发到 yaml flows.report_delivery_flow.send_report.target_group。
-        # 不区分"测试 / 生产"阶段 — 程序只看配置,要换收件方改 yaml 即可。
-        # 幂等闸(#中唐贝拉连发4次事件 2026-06-24):同 (项目,批次,车数) 的发运 excel
-        # 只发一次。复用 jilin/朝阳同套 external_action_log;重复任务(如 message_id 串号
-        # 生的 5 个 wx_33 任务)算出**同 key** → 第一个发+标 executed,其余见 executed 跳过,
-        # 不再 spam。key 含 batch_id 故每个发车单子独立、不误拦别的船。
+        # ── 6b. 发运 excel = 这张简装车通知单(source_image)的数据展现 ──────
+        # 全项目统一(2026-06-27 用户确认):同一张检装车单上的所有船 → 一张**分块** excel
+        # (每船一块:船名+列头+本次车号+该批次货运 footer),**一张单只发一次**。
+        # 逐船候选都 matched 后才合成发;没齐先等(不发半截)。幂等键 = 检装车单(source_image)。
+        import os as _os
         send_info: dict[str, Any] = {"skipped": True}
-        if excel_info.get("path") and not excel_info.get("error"):
-            from sop_hub.sop.external_action_log import (
-                build_idempotency_key, _biz_key_wechat,
-                get_action_by_key, plan_external_action,
-                mark_external_action_executed,
-            )
-            _wc = int(excel_info.get("wagon_count") or 0)
-            _idem = build_idempotency_key(
-                project_id, "send_shipping_excel_wechat",
-                _biz_key_wechat(matched_batch_id, _wc),
-            )
-            _prev = get_action_by_key(_idem, db_path=db_path)
-            if _prev and str(_prev.get("action_status")) == "executed":
-                send_info = {"skipped": True, "idempotency_key": _idem,
-                             "reason": "发运excel已发过(幂等跳过,防重复任务连发)"}
+        try:
+            _specs, _all_matched, _ships = _event_excel_batch_specs(candidate_id, db_path)
+            if not _specs:
+                send_info = {"skipped": True, "reason": "本检装车单无可导出的批次"}
+            elif not _all_matched:
+                send_info = {"skipped": True,
+                             "reason": f"同检装车单 {len(_ships)} 船未全 matched({'/'.join(_ships)}),等齐再合成发"}
             else:
-                try:
-                    from sop_hub.sop.send_excel import send_to_wechat
-                    target = _resolve_send_target(project_id)
-                    if target:
-                        plan_external_action(
-                            db_path=db_path, workflow_task_id=task_id,
-                            message_id=message_id or "", project_id=project_id,
-                            action_type="send_shipping_excel_wechat",
-                            idempotency_key=_idem, target_system="wechat",
-                            artifact_path=excel_info.get("path") or "",
-                        )
-                        msg = f"{ship} 第{_cn_num(nth)}列 {excel_info['wagon_count']}车"
-                        sr = send_to_wechat(
-                            target=target,
-                            message=msg,
-                            file_path=excel_info["path"],
-                        )
-                        if sr.success:
-                            mark_external_action_executed(
-                                _idem, db_path=db_path,
-                                response_json={"sent": True, "target": target},
-                                artifact_path=excel_info.get("path") or "",
-                            )
-                        send_info = {
-                            "skipped": False,
-                            "target": target,
-                            "message": msg,
-                            "success": sr.success,
-                            "output_tail": (sr.output or "")[-300:],
-                            "error": sr.error,
-                            "idempotency_key": _idem,
-                        }
+                from sop_hub.sop.departure_excel import generate_multibatch_departure_excel
+                _mb = generate_multibatch_departure_excel(
+                    _specs, project_id=project_id, db_path=str(db_path))
+                excel_info = {"path": _mb.output_path, "wagon_count": _mb.wagon_count,
+                              "error": _mb.error, "batches": len(_specs)}
+                if not _mb.output_path or _mb.error:
+                    send_info = {"skipped": False, "error": _mb.error or "multibatch excel 生成失败"}
+                else:
+                    from sop_hub.sop.external_action_log import (
+                        build_idempotency_key, get_action_by_key,
+                        plan_external_action, mark_external_action_executed,
+                    )
+                    _src_row = conn.execute(
+                        "SELECT source_image_path FROM inspection_ingestion_candidates WHERE id=?",
+                        (candidate_id,)).fetchone()
+                    _evt = _os.path.basename(
+                        (_src_row["source_image_path"] if _src_row else None) or (message_id or ""))
+                    _idem = build_idempotency_key(
+                        project_id, "send_shipping_excel_wechat",
+                        f"notice:{_evt}:{_mb.wagon_count}")
+                    _prev = get_action_by_key(_idem, db_path=db_path)
+                    if _prev and str(_prev.get("action_status")) == "executed":
+                        send_info = {"skipped": True, "idempotency_key": _idem,
+                                     "reason": "该检装车单发运excel已发(幂等跳过)"}
                     else:
-                        send_info = {"skipped": True,
-                                     "reason": "no send_report target_group/"
-                                               "target_contact in yaml"}
-                except Exception as exc:
-                    send_info = {"skipped": False, "error": str(exc)}
+                        from sop_hub.sop.send_excel import send_to_wechat
+                        target = _resolve_send_target(project_id)
+                        if not target:
+                            send_info = {"skipped": True, "reason": "no send_report target in yaml"}
+                        else:
+                            plan_external_action(
+                                db_path=db_path, workflow_task_id=task_id,
+                                message_id=message_id or "", project_id=project_id,
+                                action_type="send_shipping_excel_wechat",
+                                idempotency_key=_idem, target_system="wechat",
+                                artifact_path=_mb.output_path,
+                            )
+                            msg = (f"发运数据 {'+'.join(_ships)} 共{_mb.wagon_count}车"
+                                   f"(按批次分块,{len(_specs)}船)")
+                            sr = send_to_wechat(target=target, message=msg, file_path=_mb.output_path)
+                            if sr.success:
+                                mark_external_action_executed(
+                                    _idem, db_path=db_path,
+                                    response_json={"sent": True, "target": target},
+                                    artifact_path=_mb.output_path)
+                            send_info = {"skipped": False, "target": target, "message": msg,
+                                         "success": sr.success,
+                                         "output_tail": (sr.output or "")[-300:],
+                                         "error": sr.error, "idempotency_key": _idem}
+        except Exception as exc:
+            send_info = {"skipped": False, "error": str(exc)}
 
         # ── 6c. 上传到鞍钢门户(朝阳钢铁专属)+ 立即反查 ──────────
         # 业务铁律:每次上传必须紧跟一次查询验证(详见 docs/business-rules/

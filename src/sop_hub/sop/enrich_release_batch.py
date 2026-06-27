@@ -557,13 +557,25 @@ def auto_enrich_release_batches_from_zhongtang_supplement(
                 "plan_id": plan_id, "contract_no": contract, "results": [],
             }
         if not need:
-            return {  # 同船在途批次计划号都已填 → 无可填(多半重复消息)
-                "status": "no_op",
-                "reason": f"船名「{supplement_ship}」在途批次计划号均已填,无可填目标",
-                "results": [],
-            }
-        rows = need                              # 唯一缺计划号的同船批次 → 填
-        matched_by = "ship_name_unique_missing_plan"
+            # 同船批次计划号都已填 → **不再整体 no_op**(2026-06-27 丰收散运工单:那样
+            # 会漏填 品名/数量 等其它字段)。本货运对应 plan_id/contract 精确匹配的那个
+            # 批次,补它**缺的**其它字段(已填字段在下面循环按 _is_non_empty skip,不覆盖)。
+            _has_plan = "plan_id" in available
+            rows = [
+                r for r in same_ship
+                if (plan_id and _has_plan and (r["plan_id"] or "").strip() == plan_id)
+                or (contract and (r["contract_no"] or "").strip() == contract)
+            ]
+            if not rows:
+                return {  # 计划号都填了、又无 plan/contract 精确匹配 → 真无可填
+                    "status": "no_op",
+                    "reason": f"船名「{supplement_ship}」批次计划号均已填,且无 plan_id/contract 精确匹配批次",
+                    "results": [],
+                }
+            matched_by = "plan_or_contract_exact_fill_remaining"
+        else:
+            rows = need                          # 唯一缺计划号的同船批次 → 填
+            matched_by = "ship_name_unique_missing_plan"
 
         results: list[dict[str, Any]] = []
         for row in rows:

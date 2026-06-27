@@ -125,12 +125,20 @@ def test_enrich_ship_not_found_suspends(tmp_path: Path):
     assert not (_row(db, "b1")["plan_id"] or "")
 
 
-def test_enrich_same_ship_already_filled_noop(tmp_path: Path):
-    """同船在途批次计划号都已填 → no_op(多半重复消息)。"""
+def test_enrich_same_ship_planid_filled_fills_remaining(tmp_path: Path):
+    """同船批次计划号已填、但缺品名等其它字段 → **不再 no_op**,按 plan_id/contract
+    精确匹配那个批次,补它缺的字段(2026-06-27 丰收散运工单:no_op 短路漏填品名根因)。"""
     db = tmp_path / "t.db"
     _mk_db(db, [{"id": "b1", "ship_name": "鞍子河", "plan_id": "90260600006"}])
     res = enrich_zt(extract_zhongtang_freight_supplement(SAMPLE_ANZIHE), apply=True, db_path=db)
-    assert res["status"] == "no_op"
+    assert res["status"] == "applied"
+    import sqlite3 as _s
+    conn = _s.connect(str(db))
+    cpn = conn.execute("SELECT cargo_product_name FROM release_batches WHERE id='b1'").fetchone()[0]
+    plan = conn.execute("SELECT plan_id FROM release_batches WHERE id='b1'").fetchone()[0]
+    conn.close()
+    assert cpn == "印度粉"          # 品名补上了
+    assert plan == "90260600006"   # 已填的计划号不被覆盖
 
 
 def test_enrich_only_open_batches_considered(tmp_path: Path):

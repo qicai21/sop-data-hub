@@ -1169,7 +1169,8 @@ def _execute_chaoyang_inspection_chain(
                            container_no_raw, container_numbers_json,
                            origin_name, destination_name, ticketed_at, departed_at,
                            arrived_at, delivered_at, status_name, latest_stage_key,
-                           latest_stage_name, latest_event_time, accepted_at, loaded_at
+                           latest_stage_name, latest_event_time, accepted_at, loaded_at,
+                           raw_core_json
                     FROM shipments
                     WHERE car_no=? AND destination_name=?
                       AND cargo_name LIKE '%铁矿%'
@@ -1182,6 +1183,13 @@ def _execute_chaoyang_inspection_chain(
                 wid = hashlib.sha1(
                     f"{r['ydid']}|{matched_batch_id}".encode()
                 ).hexdigest()[:24]
+                # 提取时即写 hph + 标载(2026-06-27 统一口径,不取 rail 计费重量)
+                from sop_hub.sop.wagon_ingest import (
+                    marked_load_from_car_model as _mlf, extract_hph as _ehp,
+                )
+                _bz = _mlf(r['car_model'], int(r['cargo_count'] or 0) > 0)
+                if _bz is None:
+                    _bz = float(r['marked_weight']) if r['marked_weight'] else None
                 try:
                     conn.execute("""INSERT INTO wagon_shipments
                         (id, batch_id, car_no, ydid, czydid, car_model, marked_weight,
@@ -1192,11 +1200,11 @@ def _execute_chaoyang_inspection_chain(
                          transport_mode_code, transport_mode_name,
                          container_no, container_numbers_json,
                          project_id, ship_name, dispatch_status,
-                         source_message_id, source_group_id, created_at, updated_at)
+                         source_message_id, source_group_id, hph, created_at, updated_at)
                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-                                ?,?,?,?,?,datetime('now'),datetime('now'))""",
+                                ?,?,?,?,?,?,datetime('now'),datetime('now'))""",
                         (wid, matched_batch_id, cno, r['ydid'], r['czydid'],
-                         r['car_model'], float(r['marked_weight']) if r['marked_weight'] else None,
+                         r['car_model'], _bz,
                          int(r['cargo_count']) if r['cargo_count'] else None,
                          r['cargo_name'], "", "",
                          r['origin_name'], r['destination_name'], r['ticketed_at'],
@@ -1206,7 +1214,7 @@ def _execute_chaoyang_inspection_chain(
                          r['transport_mode_code'], r['transport_mode_name'],
                          r['container_no_raw'] or "", r['container_numbers_json'] or "",
                          project_id, ship, "completed",
-                         cand_d.get("message_id") or "", ""))
+                         cand_d.get("message_id") or "", "", _ehp(r)))
                     # match 表
                     mid = hashlib.sha1(
                         f"{matched_batch_id}|{r['ydid']}".encode()

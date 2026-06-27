@@ -101,19 +101,41 @@ def extract_hph(ticket: dict) -> str:
     return ""
 
 
+def marked_load_from_car_model(car_model: str, is_container: bool) -> int | None:
+    """标载(标记载重)从**车型**推,不取 95306 的 marked_weight(那是计费/装载重量,
+    同型号随货变,不是标载)。规则(2026-06-27 用户确认):
+      - 集装箱业务 / 平板车(X70·NX70 必拉箱)→ 64(敞顶箱)
+      - C70 系敞车 → 70    C64 系(C64K/C64H/C64T)→ 61    C60/C62 系 → 60
+      - 散粮车 L 系(L18/L70)→ 60
+    返回 None = 未知车型(调用方自行兜底/告警)。"""
+    cm = (car_model or "").upper().strip()
+    if is_container or cm.startswith("X70") or cm.startswith("NX70"):
+        return 64
+    if cm.startswith("C70"):
+        return 70
+    if cm.startswith("C64"):
+        return 61
+    if cm.startswith("C62") or cm.startswith("C60"):
+        return 60
+    if cm.startswith("L"):
+        return 60
+    return None
+
+
 def backfill_event_fields_from_95306(
     wagon_ids: list[str],
     *,
     db_path: str | Path,
     rail_db_path: str | Path | None = None,
 ) -> dict[str, int]:
-    """正式发运链(create_wagon_shipments)只写精简行,不落 marked_weight / hph;
-    upload 前校验缺这俩会挂起(「挂起待 95306 补齐」)。车一旦制票,这俩在 95306 就有,
-    本函数在链条 create_wagon 之后**立即按 ydid 从 95306 回填**,使同一 run 即可上传,
-    不必空等不存在的"后续 sync"。**idempotent**:只补缺,已有值不动。
-    返回 {"marked_weight": n, "hph": n}。
+    """正式发运链(create_wagon_shipments)只写精简行,不落 car_model / hph / 标重;
+    upload 前校验缺 hph/标重 会挂起。本函数在链条 create_wagon 之后**立即按 ydid 补齐**:
+      - car_model、hph ← 95306(rail);
+      - **marked_weight = 车型推标载**(marked_load_from_car_model,**不取 rail 的计费/装载
+        重量**;2026-06-27 起 marked_weight 语义统一为「标载」)。
+    **idempotent**:只补缺,已有值不动。返回 {"marked_weight","hph","car_model"} 各补几条。
     """
-    out = {"marked_weight": 0, "hph": 0}
+    out = {"marked_weight": 0, "hph": 0, "car_model": 0}
     if not wagon_ids:
         return out
     from sop_hub.sop.query_95306_shipments import _resolve_rail_db_path
@@ -125,7 +147,7 @@ def backfill_event_fields_from_95306(
     try:
         in_ph = ",".join("?" * len(wagon_ids))
         wagons = hub.execute(
-            f"SELECT id, ydid, marked_weight, hph FROM wagon_shipments WHERE id IN ({in_ph})",
+            f"SELECT id, ydid, car_model, marked_weight, hph FROM wagon_shipments WHERE id IN ({in_ph})",
             wagon_ids,
         ).fetchall()
         need = [
@@ -133,17 +155,24 @@ def backfill_event_fields_from_95306(
             if w["ydid"] and (
                 w["marked_weight"] in (None, 0, "")
                 or not (w["hph"] or "").strip()
+                or not (w["car_model"] or "").strip()
             )
         ]
         if not need:
             return out
         ydids = [w["ydid"] for w in need]
+        cy_ph = ",".join("?" * len(ydids))
+        container_ydids = {
+            r["ydid"] for r in hub.execute(
+                f"SELECT DISTINCT ydid FROM wagon_container_shipments WHERE ydid IN ({cy_ph})", ydids
+            )
+        }
         rail = sqlite3.connect(f"file:{rail_path}?mode=ro", uri=True)
         rail.row_factory = sqlite3.Row
         try:
             yph = ",".join("?" * len(ydids))
             rmap = {
-                r["ydid"]: (r["marked_weight"], extract_hph(dict(r)))
+                r["ydid"]: (r["car_model"], extract_hph(dict(r)))
                 for r in rail.execute(
                     f"SELECT * FROM shipments WHERE ydid IN ({yph})", ydids
                 )
@@ -151,13 +180,19 @@ def backfill_event_fields_from_95306(
         finally:
             rail.close()
         for w in need:
-            src = rmap.get(w["ydid"])
-            if not src:
-                continue
-            mw, hph = src
-            if w["marked_weight"] in (None, 0, "") and mw not in (None, 0, ""):
-                hub.execute("UPDATE wagon_shipments SET marked_weight=? WHERE id=?", (mw, w["id"]))
-                out["marked_weight"] += 1
+            rail_cm, hph = rmap.get(w["ydid"], ("", ""))
+            car_model = (w["car_model"] or rail_cm or "").strip()
+            # car_model 回填(标载推断的依据)
+            if not (w["car_model"] or "").strip() and rail_cm:
+                hub.execute("UPDATE wagon_shipments SET car_model=? WHERE id=?", (rail_cm, w["id"]))
+                out["car_model"] += 1
+            # marked_weight = **车型推标载**(不取 rail 计费重量;见 marked_load_from_car_model)
+            if w["marked_weight"] in (None, 0, ""):
+                bz = marked_load_from_car_model(car_model, w["ydid"] in container_ydids)
+                if bz is not None:
+                    hub.execute("UPDATE wagon_shipments SET marked_weight=? WHERE id=?", (bz, w["id"]))
+                    out["marked_weight"] += 1
+            # hph from 95306
             if not (w["hph"] or "").strip() and hph:
                 hub.execute("UPDATE wagon_shipments SET hph=? WHERE id=?", (hph, w["id"]))
                 out["hph"] += 1

@@ -578,16 +578,39 @@ def run_departure_executor_chain(
                         verify_total_match = True
                         verify_all_boxes = True
                         verify_api_total = 0
-                        for oid in factory_result.order_identifier_groups.keys():
-                            # 每个 order_identifier 反查一次(对应 1 个 release_batch)
-                            bids = factory_result.order_identifier_groups[oid]
-                            for bid in bids:
-                                v = verify_factory_upload(
-                                    order_id=oid, release_batch_id=bid,
-                                )
-                                verify_total_match = verify_total_match and v.total_match
-                                verify_all_boxes = verify_all_boxes and v.all_boxes_found
-                                verify_api_total += v.api_total
+                        # 2026-06-27 工单(plan 模式与非 plan 同款 scope 修):每个 (oid,bid)
+                        # 也只验**本次事件该批次的箱**,不传整批 release_batch_id(否则 verify
+                        # 从 lot 累计所有箱推 expected → 门户全量误报)。用 inserted_car_nos 收窄。
+                        import sqlite3 as _sqlp
+                        _cp = _sqlp.connect(str(db_path)); _cp.row_factory = _sqlp.Row
+
+                        def _event_boxes_for(_bid: str) -> set:
+                            if not inserted_car_nos:
+                                return set()
+                            _pph = ",".join("?" * len(inserted_car_nos))
+                            return {
+                                _r["box_no"] for _r in _cp.execute(
+                                    f"SELECT box_no FROM wagon_container_shipments "
+                                    f"WHERE batch_id=? AND car_no IN ({_pph})",
+                                    (_bid, *inserted_car_nos))
+                                if _r["box_no"]
+                            }
+                        try:
+                            for oid in factory_result.order_identifier_groups.keys():
+                                # 每个 order_identifier 反查一次(对应 1 个 release_batch)
+                                bids = factory_result.order_identifier_groups[oid]
+                                for bid in bids:
+                                    _evb = _event_boxes_for(bid)
+                                    v = verify_factory_upload(
+                                        order_id=oid, release_batch_id=bid,
+                                        expected_box_numbers=_evb or None,
+                                        expected_count=(len(_evb) or None),
+                                    )
+                                    verify_total_match = verify_total_match and v.total_match
+                                    verify_all_boxes = verify_all_boxes and v.all_boxes_found
+                                    verify_api_total += v.api_total
+                        finally:
+                            _cp.close()
                         preview.factory_verified = True
                         preview.factory_verify_total_match = verify_total_match
                         preview.factory_verify_boxes_ok = verify_all_boxes

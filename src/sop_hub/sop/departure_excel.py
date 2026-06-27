@@ -1032,6 +1032,94 @@ def main() -> int:
     return 0
 
 
+def generate_multibatch_departure_excel(
+    batch_specs: list[tuple[str, list[str] | None]],
+    *,
+    project_id: str,
+    output_dir: str | Path | None = None,
+    db_path: str | Path | None = None,
+    filename_override: str | None = None,
+) -> DispatchEventExcelResult:
+    """多批次「分块」发运 excel(2026-06-27 中唐):一次发车涉及多船/多批次时,
+    **按批次成块**——每块 = 船名小标题 + 列头 + 该批次记录 + 该批次货运 footer + 空行,
+    批次间**不混排**。与 generate_dispatch_event_excel(跨 batch 按 ticketed_at 合并
+    一张表)互补:整车多船(中唐贝拉+丰收散运)用本函数,集装箱单事件跨 lot 用那个。
+    batch_specs: [(release_batch_id, car_nos|None), ...] 按展示顺序传入。
+    """
+    if not batch_specs:
+        return DispatchEventExcelResult(error="batch_specs is empty")
+    try:
+        tpl = _load_template(project_id)
+    except (FileNotFoundError, ValueError, KeyError) as exc:
+        return DispatchEventExcelResult(project_id=project_id, error=f"template load failed: {exc}")
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = tpl.sheet_name
+    n_cols = max(1, len(tpl.columns))
+
+    cur = 1
+    total_rows = 0
+    total_wagons: set[str] = set()
+    used_batch_ids: list[str] = []
+
+    for rbid, car_nos in batch_specs:
+        rows, ctx, err = _extract_rows(rbid, db_path=db_path, car_nos=car_nos)
+        if err or not rows:
+            continue
+        ship = (ctx.get("ship_name") or "") if isinstance(ctx, dict) else ""
+        # 船名小标题(块首)
+        ws.cell(row=cur, column=1, value=f"【{ship}】{len(rows)} 车").font = Font(bold=True)
+        cur += 1
+        # 列头
+        for ci, col in enumerate(tpl.columns, 1):
+            ws.cell(row=cur, column=ci, value=col.header).font = Font(bold=True)
+        data_start = cur + 1
+        # 数据行
+        for ro, row in enumerate(rows):
+            er = data_start + ro
+            for ci, col in enumerate(tpl.columns, 1):
+                cell = ws.cell(row=er, column=ci, value=_resolve_cell_value(col, row))
+                if col.cell_format:
+                    cell.number_format = col.cell_format
+            if row.get("wagon_no"):
+                total_wagons.add(row["wagon_no"])
+        last_data_row = data_start + len(rows) - 1
+        # 该批次货运 footer(计划号/合同号/进口船名/到港船名 等)
+        footer_end = last_data_row
+        if tpl.footer:
+            _render_footer(ws=ws, footer_cfg=tpl.footer, release_batch_id=rbid,
+                           data_end_row=last_data_row, db_path=db_path)
+            gap = int(tpl.footer.get("start_row_gap", 1) or 0)
+            footer_end = last_data_row + gap + len(tpl.footer.get("rows") or [])
+        total_rows += len(rows)
+        used_batch_ids.append(rbid)
+        cur = footer_end + 2  # 批次间空 2 行
+
+    if not used_batch_ids:
+        return DispatchEventExcelResult(project_id=project_id, error="no rows for any batch in batch_specs")
+
+    for ci in range(1, n_cols + 1):
+        ws.column_dimensions[get_column_letter(ci)].width = 14
+
+    out_dir = Path(output_dir) if output_dir else _resolve_archive_dir(
+        project_id, used_batch_ids[0], db_path=db_path)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    filename = filename_override or f"中唐发运_{total_rows}车_{len(used_batch_ids)}批次.xlsx"
+    filepath = out_dir / filename
+    wb.save(str(filepath))
+
+    return DispatchEventExcelResult(
+        project_id=project_id, output_path=str(filepath),
+        row_count=total_rows, wagon_count=len(total_wagons),
+        filename=filename, release_batch_ids=used_batch_ids,
+    )
+
+
 if __name__ == "__main__":
     import sys
     sys.exit(main())

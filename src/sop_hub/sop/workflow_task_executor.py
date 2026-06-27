@@ -316,15 +316,7 @@ def _execute_jljg_departure(
     _TICKET_WAIT_TIMEOUT_H = 18.0
     if (not preview.error and not preview.skipped_reason
             and (getattr(preview, "query_total_candidates", 0) or 0) == 0):
-        elapsed_h = None
-        try:
-            from sop_hub.utils.time import now_iso_beijing, parse_any_timestamp
-            _mt = getattr(event, "received_at", None)
-            _mt = parse_any_timestamp(_mt) if _mt else None
-            if _mt:
-                elapsed_h = (parse_any_timestamp(now_iso_beijing()) - _mt).total_seconds() / 3600.0
-        except Exception:
-            elapsed_h = None
+        elapsed_h = _inbox_elapsed_hours(message_id, db_path)
         if elapsed_h is not None and elapsed_h >= _TICKET_WAIT_TIMEOUT_H:
             try:
                 from sop_hub.sop.send_excel import send_to_wechat
@@ -472,6 +464,51 @@ def _execute_create_release_batch(
     }
 
 
+def _inbox_elapsed_hours(message_id: str, db_path: Path) -> float | None:
+    """消息到现在多少小时(超时判断基准)。用 message_inbox.created_at(带 +08:00 时区,
+    解析可靠);**不用 received_datetime**——那列是裸北京时间,parse_any_timestamp 会当 UTC
+    错加 8h(2026-06-27 实测 -6h 负 elapsed 的坑)。"""
+    try:
+        from sop_hub.utils.time import now_iso_beijing, parse_any_timestamp
+        conn = sqlite3.connect(str(db_path))
+        try:
+            row = conn.execute(
+                "SELECT created_at FROM message_inbox "
+                "WHERE message_id=? LIMIT 1", (message_id,)).fetchone()
+        finally:
+            conn.close()
+        ref = row[0] if row else None
+        if not ref:
+            return None
+        mt = parse_any_timestamp(ref)
+        return (parse_any_timestamp(now_iso_beijing()) - mt).total_seconds() / 3600.0
+    except Exception:
+        return None
+
+
+def _zt_retry_or_timeout(
+    res: dict[str, Any], message_id: str, db_path: Path, *,
+    reason: str, timeout_h: float = 24.0,
+) -> dict[str, Any]:
+    """中唐货运 enrich 暂时匹配不上(通知单/批次还没到可匹配态)→ 缺陷A:挂 **pending**
+    让 daemon 每轮回扫,批次就绪后下轮自然匹配上;超 timeout_h → 终态 + 数据单发群⚠️告警。
+    安全:重试只是重跑 auto_enrich(规则1唯一才填、歧义仍挂起),不会错填。"""
+    eh = _inbox_elapsed_hours(message_id, db_path)
+    if eh is not None and eh >= timeout_h:
+        try:
+            from sop_hub.sop.send_excel import send_to_wechat
+            send_to_wechat(target="[GROUP013]", file_path=None, message=(
+                f"⚠️ 中唐货运超时未匹配批次({reason})\n"
+                f"{(res.get('reason') or '')[:50]}\n已等 {eh:.1f} 小时,需人工排查"))
+        except Exception:
+            pass
+        return {"action": "skipped", "status": "succeeded",
+                "output_json": {**res, "waiting_reason": "zt_freight_match_timeout"}}
+    return {"action": "waiting_match", "status": "pending",
+            "output_json": {**res, "waiting_reason": reason,
+                            "waited_hours": round(eh, 1) if eh is not None else None}}
+
+
 def _execute_freight_detail_enrichment(
     input_json: dict[str, Any],
     message_id: str,
@@ -522,17 +559,21 @@ def _execute_freight_detail_enrichment(
                 "output_json": res,
             }
         if st == "no_match":
-            # 合同号/计划号没在 release_batches 里 — 通知单还没来,留 skipped 重试
-            return {"action": "skipped", "status": "skipped", "output_json": res}
+            # 合同号/计划号没在 release_batches 里 — 通知单/批次还没来。缺陷A(2026-06-27):
+            # 原标 skipped(不在 daemon 重跑集 → 永不重试,正是中唐货运 bug)。改挂 pending 重试。
+            return _zt_retry_or_timeout(res, message_id, db_path, reason="通知单/批次未到")
         if st == "suspended":
-            # 用户口径:船名歧义(多个同船缺计划号)/ 对不上到港船(进口大船/转水)→ 挂起
-            # 人工指定,绝不自动错填。终态(succeeded 不重试,避免人工填一个后另一个被错填)
-            # + WARN surface。
-            import logging as _logging
-            _logging.getLogger("sop_hub.sop").warning(
-                "中唐货运挂起待人工: %s", res.get("reason", "")
-            )
-            return {"action": "suspended", "status": "succeeded", "output_json": res}
+            _reason = res.get("reason", "")
+            if "歧义" in _reason:
+                # 规则1:多个同船缺计划号 → 必人工指定,绝不自动错填(retry 也填不对)。终态 + WARN。
+                import logging as _logging
+                _logging.getLogger("sop_hub.sop").warning(
+                    "中唐货运挂起待人工(歧义): %s", _reason
+                )
+                return {"action": "suspended", "status": "succeeded", "output_json": res}
+            # 规则2:对不上任何在途船 = 批次还没到可匹配态(timing,如 lot 还没进 pending_freight)。
+            # 缺陷A:挂 pending 重试;批次就绪后规则1唯一命中即填(不唯一→转歧义→人工),不会错填。
+            return _zt_retry_or_timeout(res, message_id, db_path, reason="对不上在途船(待批次就绪)")
         return {
             "action": "executed",
             "status": "succeeded",

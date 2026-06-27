@@ -101,6 +101,72 @@ def extract_hph(ticket: dict) -> str:
     return ""
 
 
+def backfill_event_fields_from_95306(
+    wagon_ids: list[str],
+    *,
+    db_path: str | Path,
+    rail_db_path: str | Path | None = None,
+) -> dict[str, int]:
+    """正式发运链(create_wagon_shipments)只写精简行,不落 marked_weight / hph;
+    upload 前校验缺这俩会挂起(「挂起待 95306 补齐」)。车一旦制票,这俩在 95306 就有,
+    本函数在链条 create_wagon 之后**立即按 ydid 从 95306 回填**,使同一 run 即可上传,
+    不必空等不存在的"后续 sync"。**idempotent**:只补缺,已有值不动。
+    返回 {"marked_weight": n, "hph": n}。
+    """
+    out = {"marked_weight": 0, "hph": 0}
+    if not wagon_ids:
+        return out
+    from sop_hub.sop.query_95306_shipments import _resolve_rail_db_path
+    rail_path = _resolve_rail_db_path(rail_db_path)
+    if not Path(rail_path).exists():
+        return out
+    hub = sqlite3.connect(str(db_path))
+    hub.row_factory = sqlite3.Row
+    try:
+        in_ph = ",".join("?" * len(wagon_ids))
+        wagons = hub.execute(
+            f"SELECT id, ydid, marked_weight, hph FROM wagon_shipments WHERE id IN ({in_ph})",
+            wagon_ids,
+        ).fetchall()
+        need = [
+            w for w in wagons
+            if w["ydid"] and (
+                w["marked_weight"] in (None, 0, "")
+                or not (w["hph"] or "").strip()
+            )
+        ]
+        if not need:
+            return out
+        ydids = [w["ydid"] for w in need]
+        rail = sqlite3.connect(f"file:{rail_path}?mode=ro", uri=True)
+        rail.row_factory = sqlite3.Row
+        try:
+            yph = ",".join("?" * len(ydids))
+            rmap = {
+                r["ydid"]: (r["marked_weight"], extract_hph(dict(r)))
+                for r in rail.execute(
+                    f"SELECT * FROM shipments WHERE ydid IN ({yph})", ydids
+                )
+            }
+        finally:
+            rail.close()
+        for w in need:
+            src = rmap.get(w["ydid"])
+            if not src:
+                continue
+            mw, hph = src
+            if w["marked_weight"] in (None, 0, "") and mw not in (None, 0, ""):
+                hub.execute("UPDATE wagon_shipments SET marked_weight=? WHERE id=?", (mw, w["id"]))
+                out["marked_weight"] += 1
+            if not (w["hph"] or "").strip() and hph:
+                hub.execute("UPDATE wagon_shipments SET hph=? WHERE id=?", (hph, w["id"]))
+                out["hph"] += 1
+        hub.commit()
+    finally:
+        hub.close()
+    return out
+
+
 def build_wagon_row(
     ticket: dict,
     *,

@@ -521,6 +521,15 @@ def run_departure_executor_chain(
             excel_result = None
             factory_result = None
             if wagon_result.status == "safe_to_apply":
+                # ── Step 4c: 回填 marked_weight + hph(2026-06-27 工单)─────
+                # create_wagon 写精简行不落这俩 → upload 前校验「货票号缺/标重缺」挂起。
+                # 车制票时 95306 已有,这里同 run 立即按 ydid 回填,使 upload 不被拦。
+                if event_wagon_ids:
+                    try:
+                        from sop_hub.sop.wagon_ingest import backfill_event_fields_from_95306
+                        backfill_event_fields_from_95306(event_wagon_ids, db_path=db_path)
+                    except Exception as exc:
+                        preview.error += f"backfill_fields: {exc}; "
                 try:
                     if event_wagon_ids:
                         # 发运 excel 永远 per-event(#107):本次事件涉及的

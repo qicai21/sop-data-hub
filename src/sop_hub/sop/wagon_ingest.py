@@ -224,12 +224,17 @@ def build_wagon_row(
     if status and "交付" in status:
         ds = "confirmed_received"
         confirmed_at = ticket.get("delivered_at")
+    car_model = ticket.get("car_model") or ""
+    cargo_cnt = compute_cargo_count(ticket)
+    # marked_weight = 车型推标载(2026-06-27,不取 95306 计费/装载重量);未知车型兜底原值
+    _bz = marked_load_from_car_model(car_model, cargo_cnt > 0)
+    biaozai = _bz if _bz is not None else _f(ticket.get("marked_weight"))
     return {
         "id": gen_wagon_id(ydid, batch_id),
         "departure_id": departure_id,
         "batch_id": batch_id,
         "car_no": ticket.get("car_no") or "",
-        "car_model": ticket.get("car_model") or "",
+        "car_model": car_model,
         "cargo_name": ticket.get("cargo_name") or "",
         "shipper_name": ticket.get("shipper_name") or "",
         "consignee_name": ticket.get("consignee_name") or "",
@@ -246,13 +251,13 @@ def build_wagon_row(
         "latest_stage_key": ticket.get("latest_stage_key") or "",
         "latest_stage_name": ticket.get("latest_stage_name") or "",
         "latest_event_time": ticket.get("latest_event_time") or "",
-        "marked_weight": _f(ticket.get("marked_weight")),
+        "marked_weight": biaozai,
         "freight_fee": ticket.get("freight_fee"),
         "container_no": ticket.get("container_no_raw") or ticket.get("container_no") or "",
         "waybill_no": ticket.get("waybill_no") or "",
         "ydid": ydid,
         "czydid": ticket.get("czydid") or "",
-        "cargo_count": compute_cargo_count(ticket),
+        "cargo_count": cargo_cnt,
         "transport_mode_code": ticket.get("transport_mode_code") or "",
         "transport_mode_name": ticket.get("transport_mode_name") or "",
         "project_id": project_id,

@@ -483,7 +483,7 @@ def test_find_release_batch_phase_filter(temp_db):
     conn = sqlite3.connect(str(temp_db))
     conn.execute("""CREATE TABLE release_batches (
         id TEXT PRIMARY KEY, ship_name TEXT, destination_station TEXT,
-        dispatch_status TEXT NOT NULL, project TEXT
+        dispatch_status TEXT NOT NULL, project TEXT, batch_sequence TEXT
     )""")
     conn.executemany(
         "INSERT INTO release_batches (id, ship_name, destination_station, dispatch_status, project) VALUES (?,?,?,?,?)",

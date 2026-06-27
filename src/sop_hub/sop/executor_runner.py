@@ -252,14 +252,14 @@ def find_release_batch_with_reason(
     try:
         # 先取 ship+dest 全部 batch(任何 phase)看分布
         all_rows = conn.execute(
-            "SELECT id, ship_name, dispatch_status, destination_station, project "
+            "SELECT id, ship_name, dispatch_status, destination_station, project, batch_sequence "
             "FROM release_batches WHERE ship_name LIKE ? AND destination_station LIKE ?",
             (f"%{ship_name}%", f"%{destination}%"),
         ).fetchall()
         if not all_rows:
             # 试 ship-only(老 fallback)
             rows2 = conn.execute(
-                "SELECT id, ship_name, dispatch_status FROM release_batches "
+                "SELECT id, ship_name, dispatch_status, batch_sequence FROM release_batches "
                 "WHERE ship_name LIKE ?", (f"%{ship_name}%",),
             ).fetchall()
             if not rows2:
@@ -273,7 +273,8 @@ def find_release_batch_with_reason(
                 key=lambda r: (0 if r["dispatch_status"] == "loading" else 1),
             )
             r = open_rows[0]
-            return ({"id": r["id"], "ship_name": r["ship_name"] or ship_name},
+            return ({"id": r["id"], "ship_name": r["ship_name"] or ship_name,
+                     "batch_sequence": r["batch_sequence"] or ""},
                     "ok", [])
 
         # ship 有 batch 但没 open 的 — 区分 all_loaded vs 其他
@@ -585,18 +586,38 @@ def run_departure_executor_chain(
                         if not verify_all_boxes:
                             preview.error += "verify(per-event): some boxes missing; "
                     else:
+                        # 2026-06-27 修(工单):verify 只验**本次发车事件**的箱,不验整批。
+                        # 老路径传整批 release_batch_id → verify 从 lot 累计所有箱推 expected
+                        # (lot02 累计 vs 门户全量 → missing/extra 几百误报,把 verify 变废)。
+                        # 改:用 inserted_car_nos 把 expected 收窄到本次 80 箱。
+                        event_boxes: set[str] = set()
+                        if inserted_car_nos:
+                            import sqlite3 as _sqlv
+                            _cv = _sqlv.connect(str(db_path)); _cv.row_factory = _sqlv.Row
+                            _bph = ",".join("?" * len(inserted_car_nos))
+                            for _r in _cv.execute(
+                                f"SELECT box_no FROM wagon_container_shipments "
+                                f"WHERE batch_id=? AND car_no IN ({_bph})",
+                                (preview.release_batch_id, *inserted_car_nos),
+                            ):
+                                if _r["box_no"]:
+                                    event_boxes.add(_r["box_no"])
+                            _cv.close()
                         verify = verify_factory_upload(
                             order_id="", release_batch_id=preview.release_batch_id,
+                            expected_box_numbers=event_boxes or None,
+                            expected_count=(len(event_boxes) or None),
                         )
                         preview.factory_verified = True
                         preview.factory_verify_total_match = verify.total_match
                         preview.factory_verify_boxes_ok = verify.all_boxes_found
                         preview.factory_verify_api_total = verify.api_total
+                        # 闸只看"本次箱是否都进了门户"(all_boxes_found / missing),
+                        # 不看 extra(门户历史箱不是本次的事,不算失败)。
                         if not verify.all_boxes_found:
                             preview.error += (
-                                f"verify: total_match={verify.total_match} "
-                                f"missing={len(verify.missing_boxes)} "
-                                f"extra={len(verify.extra_boxes)}; "
+                                f"verify: 本次{len(event_boxes)}箱 "
+                                f"missing={len(verify.missing_boxes)}; "
                             )
                 except Exception as exc:
                     preview.error += f"factory_verify: {exc}; "

@@ -23,8 +23,11 @@ def _seed(db: str, batches: list[tuple]):
     """batches: (id, ship_name, dispatch_status, destination_station, project)。"""
     conn = sqlite3.connect(db)
     conn.execute("CREATE TABLE release_batches(id TEXT, ship_name TEXT, "
-                 "dispatch_status TEXT, destination_station TEXT, project TEXT)")
-    conn.executemany("INSERT INTO release_batches VALUES(?,?,?,?,?)", batches)
+                 "dispatch_status TEXT, destination_station TEXT, project TEXT, "
+                 "batch_sequence TEXT)")
+    conn.executemany("INSERT INTO release_batches"
+                     "(id, ship_name, dispatch_status, destination_station, project) "
+                     "VALUES(?,?,?,?,?)", batches)
     conn.commit()
     conn.close()
 

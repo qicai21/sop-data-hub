@@ -275,23 +275,25 @@ def create_wagon_shipments_from_candidates(
         existing_wagon_keys: set[str] = set()
         try:
             for row in sop_conn.execute(
-                "SELECT id, car_no, waybill_no FROM wagon_shipments WHERE batch_id = ?",
+                "SELECT id, car_no, waybill_no, ydid FROM wagon_shipments WHERE batch_id = ?",
                 (release_batch_id,),
             ):
                 existing_ws[row["id"]] = row["car_no"] or ""
-                existing_wagon_keys.add(row["car_no"] or "")
+                # 去重键 = ydid(发运唯一键),**绝不用 car_no**:车号会跨船复用
+                # (实证:吉林40车的16个复用车号在蓝鳍6-21等→若按车号会被误判重复 skip)
+                existing_wagon_keys.add(row["ydid"] or "")
         except sqlite3.OperationalError:
             pass  # wagon_shipments table doesn't exist yet
 
         # ── 3. Get all existing wagon_shipments (cross-batch conflict check) ──
-        existing_cross_batch: dict[str, str] = {}  # wagon_no → batch_id
+        existing_cross_batch: dict[str, str] = {}  # ydid → batch_id(按 ydid,非 car_no)
         try:
             for row in sop_conn.execute(
-                "SELECT car_no, batch_id FROM wagon_shipments WHERE car_no IS NOT NULL AND car_no != ''"
+                "SELECT ydid, batch_id FROM wagon_shipments WHERE ydid IS NOT NULL AND ydid != ''"
             ):
-                car = row["car_no"]
-                if car and row["batch_id"] != release_batch_id:
-                    existing_cross_batch[car] = row["batch_id"]
+                yd = row["ydid"]
+                if yd and row["batch_id"] != release_batch_id:
+                    existing_cross_batch[yd] = row["batch_id"]
         except sqlite3.OperationalError:
             pass
 
@@ -350,15 +352,15 @@ def create_wagon_shipments_from_candidates(
                 current_status=c.current_status,
             )
 
-            # ── Check existing same-batch ────────────────────────────
-            if allow_existing_skip and plan.wagon_no in existing_wagon_keys:
+            # ── Check existing same-batch(按 ydid 去重)──────────────
+            if allow_existing_skip and plan.ydid and plan.ydid in existing_wagon_keys:
                 plan.action = "skip_existing"
                 result.skipped_existing_count += 1
                 plans.append(plan)
                 continue
 
-            # ── Check cross-batch conflict ───────────────────────────
-            if plan.wagon_no in existing_cross_batch:
+            # ── Check cross-batch conflict(按 ydid,非 car_no)────────
+            if plan.ydid and plan.ydid in existing_cross_batch:
                 plan.action = "conflict_other_batch"
                 result.conflict_count += 1
                 plans.append(plan)

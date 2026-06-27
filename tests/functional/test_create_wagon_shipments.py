@@ -276,12 +276,13 @@ def test_cross_batch_conflict(tmp_path: Path):
     db_path = tmp_path / "test.db"
     _create_sop_db(db_path)
 
-    # Insert wagon with car_no into ANOTHER release_batch first
+    # Insert wagon with the SAME ydid as candidate 1 into ANOTHER release_batch.
+    # 去重/冲突按 ydid(发运唯一键),不按 car_no(车号会跨船复用)。
     conn = sqlite3.connect(str(db_path))
     conn.execute(
-        """INSERT INTO wagon_shipments (id, departure_id, batch_id, car_no)
-           VALUES (?, ?, ?, ?)""",
-        ("ws_conflict", "dep_other", "rb_other", "1625001"),
+        """INSERT INTO wagon_shipments (id, departure_id, batch_id, car_no, ydid)
+           VALUES (?, ?, ?, ?, ?)""",
+        ("ws_conflict", "dep_other", "rb_other", "1625001", "YD_001"),
     )
     conn.commit()
     conn.close()
@@ -418,11 +419,12 @@ def test_cumulative_updates_wagon_count(tmp_path: Path):
         shipment_query_result=_make_query_result(_make_candidates(18, "18")),
         db_path=db_path,
     )
-    # Then 28
+    # Then 28(不同 ydid 前缀 → 是另一批 28 节,与首批 18 节不同 ydid 才会累加;
+    #          若沿用同 YD_ 前缀,按 ydid 去重会判为同批重复——那是正确行为,但非本测试意图)
     create_wagon_shipments_from_candidates(
         release_batch_id=BATCH_ID,
         departure_candidate=_make_departure(28),
-        shipment_query_result=_make_query_result(_make_candidates(28, "28")),
+        shipment_query_result=_make_query_result(_make_candidates(28, "28", ydid_prefix="YE")),
         db_path=db_path,
     )
 

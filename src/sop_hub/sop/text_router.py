@@ -316,6 +316,20 @@ def classify_text_message(event: MessageEvent) -> TextRouteResult:
             summary="[empty] no text content",
         )
 
+    # 反馈环防护(#工单-2026-06-27):数据单发群是系统输出/屏障群(只有用户+我,无客户),
+    # 系统自己发到那的超时告警/合成通知/excel伴随消息若含"船名+N节",会被重抓 → 误触发
+    # 新的 inspection_text_trigger → 自激死循环(实证:贝拉超时告警每轮重触发新触发器)。
+    #   ① 数据单发群消息一律不当触发源;
+    #   ② ⚠️/✅ 开头的系统告警/通知跨群兜底忽略(别的群里转发了也不触发)。
+    if group_id == "数据单发群" or text.lstrip().startswith(("⚠️", "⚠", "✅")):
+        return TextRouteResult(
+            message_id=message_id,
+            group_id=group_id,
+            is_sop_msg=False,
+            processing_status="ignored",
+            summary="[barrier/system] 输出屏障群或系统告警,不触发 SOP",
+        )
+
     # Rule 0: 检验类文本触发器(#143)。复合多船文本或单船 chaoyang/zhongtang
     # 发运文本里,认得出 yaml known_ships 的船 + 车数 → 标 inspection_text_trigger。
     # 任务创建时按段扇出成 N 个触发器 task,各自与检装车通知单 rendezvous。

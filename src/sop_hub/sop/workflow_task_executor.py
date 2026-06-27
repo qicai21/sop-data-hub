@@ -452,6 +452,23 @@ def _execute_create_release_batch(
     agent = BusinessDataAgent()
     records = agent.ingest_release_batch_file(str(ext_path))
 
+    # 缺陷B / 出港0批次告警(2026-06-27 环球信任工单):授权的出港计划通知单却建出 0 批次,
+    # 多半是 VL 误读日期当历史过滤 / scope 全过滤 / 漏建。静默最危险 → 发数据单发群核对。
+    # (⚠️ 前缀被 text_router guard 挡,不自激。)
+    if not records:
+        try:
+            import json as _json
+            _ext = _json.loads(ext_path.read_text(encoding="utf-8"))
+            _ship = (_ext.get("business_info", {}) or {}).get("船名", "")
+            _date = (_ext.get("header_info", {}) or {}).get("通知日期", "")
+            from sop_hub.sop.send_excel import send_to_wechat
+            send_to_wechat(target="[GROUP013]", file_path=None, message=(
+                f"⚠️ 出港计划通知单建出 0 批次,疑似漏建\n"
+                f"船名:{_ship}  通知日期:{_date}\n"
+                f"({message_id})可能 VL 误读日期/scope 全过滤/已存在,请人工核对"))
+        except Exception as _exc:
+            pass
+
     return {
         "action": "executed",
         "status": "succeeded",
@@ -574,6 +591,22 @@ def _execute_freight_detail_enrichment(
             # 规则2:对不上任何在途船 = 批次还没到可匹配态(timing,如 lot 还没进 pending_freight)。
             # 缺陷A:挂 pending 重试;批次就绪后规则1唯一命中即填(不唯一→转歧义→人工),不会错填。
             return _zt_retry_or_timeout(res, message_id, db_path, reason="对不上在途船(待批次就绪)")
+        # 缺陷C(2026-06-27 环球信任工单):enrich 填齐计划号/合同号后,把匹配批次
+        # pending_freight → enriched。否则有了货运信息状态仍卡 pending_freight。
+        # advance_lifecycle 幂等 + 校验(已 loading/更后的批次=noop/rejected,不倒退)。
+        try:
+            from sop_hub.sop.lifecycle_transition import advance_lifecycle
+            for _r in (res.get("results") or []):
+                _bid = _r.get("release_batch_id")
+                if _bid:
+                    advance_lifecycle(
+                        _bid, "enriched",
+                        reason="中唐货运 enrich 填齐计划号/合同号",
+                        triggered_by="freight_detail_enrichment",
+                        db_path=str(db_path),
+                    )
+        except Exception as _exc:
+            res["lifecycle_advance_error"] = str(_exc)
         return {
             "action": "executed",
             "status": "succeeded",

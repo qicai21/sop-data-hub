@@ -29,6 +29,7 @@ import sqlite3
 import sys
 import time
 import uuid as _uuid
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -65,6 +66,8 @@ class UploadResult:
     server_returned_count: int = 0
     verified_count: int = 0     # 反查命中数
     missing_car_nos: list[str] = field(default_factory=list)  # 上传了但反查不到
+    # 2026-06-29 口径:本次上传车号在门户返回里出现多于一条(应唯一却重复)
+    duplicate_car_nos: list[str] = field(default_factory=list)
     extra_car_nos: list[str] = field(default_factory=list)    # 反查多出的(意外)
     error: str = ""
     plan_summary: str = ""      # plan 摘要(船名/运单/计划吨)
@@ -307,6 +310,36 @@ def _wagons_from_query_response(body: dict[str, Any]) -> list[dict[str, str]]:
     return out
 
 
+# ── 反查对账(2026-06-29 口径:present + unique,按 car_no)──────────────
+
+
+def reconcile_uploaded_cars(
+    uploaded_car_nos: set[str],
+    site_wagons: list[dict[str, str]],
+    today_yyyymmdd: str,
+) -> tuple[set[str], list[str], list[str], list[str]]:
+    """朝钢反查对账。门户按 plan 反查返回整单全量累计 + 收货端偶发删数,
+    故**不做整批对齐**,只校验本次上传车号:
+      present: 都出现在返回里(否则计入 missing)
+      unique : 在返回里各自仅一条(否则计入 duplicate)
+    extra 仅取"今天上传日期"里多出的车,作告警/观测,不参与成败判定。
+    返回 (verified, missing, duplicate, extra)。与吉林 box_no 口径对齐(键=car_no)。
+    """
+    site_counts: Counter[str] = Counter(
+        w["wagonno"] for w in site_wagons if w.get("wagonno")
+    )
+    site_carnos = set(site_counts)
+    verified = uploaded_car_nos & site_carnos
+    missing = sorted(uploaded_car_nos - site_carnos)
+    duplicate = sorted(c for c in uploaded_car_nos if site_counts[c] > 1)
+    today_returned = {
+        w["wagonno"] for w in site_wagons
+        if w.get("waybill_time", "").startswith(today_yyyymmdd)
+    }
+    extra = sorted(today_returned - uploaded_car_nos)
+    return verified, missing, duplicate, extra
+
+
 # ── 一体化入口 ────────────────────────────────────────────────────────
 
 
@@ -418,24 +451,22 @@ def upload_and_verify(
     verify_msg = (verify_sys.get("Msg") or "").strip()
     site_wagons = _wagons_from_query_response(verify_body)
 
-    # 6. 对账:纯 car_no set 对照(不再依赖日期,更鲁棒)
+    # 6. 对账(2026-06-29 口径:present + unique,按 car_no;不做整批对齐)
     uploaded_carnos = {w.car_no for w in wagons}
-    site_carnos = {w["wagonno"] for w in site_wagons if w["wagonno"]}
-    verified = uploaded_carnos & site_carnos
-    missing = sorted(uploaded_carnos - site_carnos)
-    # extra 只算"今天上传日期的车"中多出的(避免把第一列也算 extra)
     today_yyyymmdd = datetime.now().strftime("%Y%m%d")
-    today_returned = {w["wagonno"] for w in site_wagons
-                      if w["waybill_time"].startswith(today_yyyymmdd)}
-    extra = sorted(today_returned - uploaded_carnos)
+    verified, missing, duplicate, extra = reconcile_uploaded_cars(
+        uploaded_carnos, site_wagons, today_yyyymmdd)
 
-    success = (len(missing) == 0 and len(verified) == len(uploaded_carnos))
+    # 通过 = 本次车号全部出现(missing==0)且各自唯一(duplicate==0)。
+    success = (len(missing) == 0 and len(duplicate) == 0
+               and len(verified) == len(uploaded_carnos))
     return UploadResult(
         success=success,
         uploaded_count=len(wagons),
         server_returned_count=new_recs,
         verified_count=len(verified),
         missing_car_nos=missing,
+        duplicate_car_nos=duplicate,
         extra_car_nos=extra,
         upload_response_msg=upload_msg,
         verify_response_msg=verify_msg,
@@ -488,6 +519,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  verified   : {result.verified_count}/{result.uploaded_count}")
     if result.missing_car_nos:
         print(f"  ⚠️ missing {len(result.missing_car_nos)}: {result.missing_car_nos[:5]}{'…' if len(result.missing_car_nos) > 5 else ''}")
+    if result.duplicate_car_nos:
+        print(f"  ⚠️ duplicate {len(result.duplicate_car_nos)}: {result.duplicate_car_nos[:5]}{'…' if len(result.duplicate_car_nos) > 5 else ''}")
     if result.extra_car_nos:
         print(f"  ⚠️ extra   {len(result.extra_car_nos)}: {result.extra_car_nos[:5]}{'…' if len(result.extra_car_nos) > 5 else ''}")
     if result.upload_response_msg:

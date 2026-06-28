@@ -574,9 +574,15 @@ flows:
           pageSize: 100
           orderId: "{order_identifier}"
           formId: "MR07"
+        # 2026-06-29 口径修正:门户按计划号(orderId)查必返回整单全量累计,
+        # 且收货端偶发删已收货数据 → 整批对齐(total==expected / extra==0)不可取。
+        # 通过条件 = 本次上传的每个键都出现 且 各自唯一(吉林金钢键=box_no/箱号)。
+        # total/extra 仍可观测但不参与判定。详 src/sop_hub/sop/factory_verify.py
+        # evaluate_presence_and_uniqueness 与 docs/issues 同日工单。
+        key: "box_no"
         check:
-          - "total == expected_count"
-          - "all boxNumber values match"
+          - "every uploaded box_no present in response (missing == 0)"
+          - "every uploaded box_no unique in response (count == 1)"
   # ── 发运 excel 推送目标(yaml-driven,2026-06-06)──────────────────────
   # 程序只看配置 — 不再硬编码郭东北。当前统一发到数据单发群 [GROUP013];
   # 日后真正上线发吉林金钢业务群,直接把 target_group 改成 ["GROUP005"]

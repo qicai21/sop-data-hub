@@ -26,6 +26,10 @@ def _make_db(tmp_path: Path) -> Path:
         "CREATE TABLE wagon_shipments (id TEXT, batch_id TEXT, latest_stage_key TEXT)"
     )
     c.execute(
+        "CREATE TABLE wagon_container_shipments (id TEXT, batch_id TEXT, "
+        "latest_stage_key TEXT, ticketed_at TEXT)"
+    )
+    c.execute(
         "CREATE TABLE release_batch_dispatch_plan (release_batch_id TEXT, planned_box_count INT)"
     )
     c.commit()
@@ -84,3 +88,40 @@ def test_container_not_gated_by_tonnage(tmp_path):
     assert r["held_underfilled"] == 0
     assert r["advanced"] == 1
     assert _status(db, "container_lot") == "confirmed_received"
+
+
+def _add_container_batch(db: Path, bid: str, *, last_ticketed: str, n: int = 4):
+    """集装箱批:wagon_container_shipments 全交付,ticketed_at=last_ticketed。"""
+    c = sqlite3.connect(str(db))
+    c.execute(
+        "INSERT INTO release_batches (id, project, ship_name, batch_sequence, dispatch_status, "
+        "dispatch_status_note, remaining_weight_tons, batch_quantity) "
+        "VALUES (?, 'jiusan', 'C', 'lot01', 'loading', '', -100, 0)", (bid,))
+    for i in range(n):
+        c.execute("INSERT INTO wagon_container_shipments VALUES (?,?, 'delivered', ?)",
+                  (f"{bid}_b{i}", bid, last_ticketed))
+    c.commit()
+    c.close()
+
+
+def test_container_all_delivered_quiet_advances(tmp_path):
+    """集装箱批全交付 + 静默(最近2天无新车)→ 推 confirmed_received。
+
+    根治"closeout 只查 wagon_shipments、集装箱批永远关不了"(和谐1 lot01 卡 loading)。
+    """
+    db = _make_db(tmp_path)
+    _add_container_batch(db, "cont_done", last_ticketed="2026-01-01")  # 远古 → 静默
+    r = run_lifecycle_closeout(db_path=db)
+    assert r["advanced"] == 1
+    assert _status(db, "cont_done") == "confirmed_received"
+
+
+def test_container_recent_held_active(tmp_path):
+    """集装箱批全交付但最近2天还在制票(活跃船趟间空档)→ 不关,held_active。"""
+    from datetime import datetime
+    db = _make_db(tmp_path)
+    _add_container_batch(db, "cont_active", last_ticketed=datetime.now().strftime("%Y-%m-%d"))
+    r = run_lifecycle_closeout(db_path=db)
+    assert r.get("held_active") == 1
+    assert r["advanced"] == 0
+    assert _status(db, "cont_active") == "loading"

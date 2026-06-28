@@ -63,20 +63,46 @@ def _batch_has_dispatch_plan(conn: sqlite3.Connection, batch_id: str) -> bool:
 
 
 def _batch_wagon_stage_summary(conn: sqlite3.Connection, batch_id: str) -> dict[str, Any]:
-    """Return {'total': N, 'received': K, 'all_received': bool}."""
-    row = conn.execute(
-        "SELECT COUNT(*) AS total, "
-        "SUM(CASE WHEN latest_stage_key IN ('delivered','unloading_completed') "
-        "          THEN 1 ELSE 0 END) AS received "
-        "FROM wagon_shipments WHERE batch_id=?",
-        (batch_id,),
-    ).fetchone()
-    total = int(row[0] or 0)
-    received = int(row[1] or 0)
+    """Return {'total','received','all_received','has_container','last_ticketed'}.
+
+    同时数 wagon_shipments(散粮/整车)+ wagon_container_shipments(集装箱)——
+    否则集装箱批 total=0、永远 all_received=False、永不关批(和谐1 lot01 卡 loading
+    根因:原 closeout 只查 wagon_shipments)。表不存在(测试最小 schema)时跳过。
+    """
+    total = received = 0
+    last_tk = ""
+    has_container = False
+    for tbl in ("wagon_shipments", "wagon_container_shipments"):
+        try:
+            row = conn.execute(
+                f"SELECT COUNT(*) AS total, "
+                f"SUM(CASE WHEN latest_stage_key IN ('delivered','unloading_completed') "
+                f"          THEN 1 ELSE 0 END) AS received "
+                f"FROM {tbl} WHERE batch_id=?",
+                (batch_id,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            continue  # 表不存在(测试最小 schema)
+        n = int(row[0] or 0)
+        total += n
+        received += int(row[1] or 0)
+        if tbl == "wagon_container_shipments" and n > 0:
+            has_container = True
+        # last_ticketed 单独取:老/测试 schema 可能无 ticketed_at 列,失败不影响计数
+        try:
+            tk = conn.execute(
+                f"SELECT MAX(substr(ticketed_at,1,10)) FROM {tbl} WHERE batch_id=?",
+                (batch_id,)).fetchone()[0]
+            if tk and str(tk) > last_tk:
+                last_tk = str(tk)
+        except sqlite3.OperationalError:
+            pass
     return {
         "total": total,
         "received": received,
         "all_received": total > 0 and received == total,
+        "has_container": has_container,
+        "last_ticketed": last_tk,
     }
 
 
@@ -143,6 +169,15 @@ def run_lifecycle_closeout(
             # 诚信 lot02 这类(5096/17000t,30%)会被误判收货、从看板 loading 消失。
             # 集装箱 lot 有 dispatch_plan 按箱管满,不受此闸影响。
             if summary["all_received"]:
+                # 集装箱批静默闸:全交付 + 最近2天无新车制票 才关。避免趟间空档
+                # (上一趟箱全交付、下一趟还没装)把还在发的活跃船误关。散粮不受此闸
+                # (它走下方吨位闸)。
+                if summary.get("has_container") and summary.get("last_ticketed"):
+                    from datetime import datetime, timedelta
+                    cutoff = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+                    if summary["last_ticketed"] > cutoff:
+                        result["held_active"] = result.get("held_active", 0) + 1
+                        continue
                 rem = b["remaining_weight_tons"]
                 if (rem is not None and float(rem) > _BULK_REMAINING_TOLERANCE_T
                         and not _batch_has_dispatch_plan(conn, bid)):

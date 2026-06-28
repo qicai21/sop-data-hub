@@ -72,3 +72,19 @@ sandbox 无法装 pytest(项目 `.venv` 软链指向 Mac 路径、pip 网络受�
 - `2026-06-27-工单-发车识别与SOP触发不稳定.md`(待办3/6 expected 收窄、控制边界点1)
 - `2026-06-28-工单-朝钢链入库后未走鞍钢上传反查走不完整流程.md`(两个 dispatch_status 区分、真假完成机制)
 - `docs/business-rules/朝阳上传必须紧跟反查.md`(上传必反查铁律)
+
+## 执行与收尾(2026-06-29,主机已执行)
+
+- **代码已提交**(分支 `fix/verify-per-event-uniqueness`,未 push、未合 main,待 review):
+  - `cafa406` fix(verify): 上传后反查改 per-event present+unique(吉林 box_no)
+  - `39d47e8` fix(verify): 朝钢 car_no 唯一性对齐 + yaml 口径同步 + 工单归档
+- **主机测试**:`PYTHONPATH=src .venv/bin/python -m pytest tests/test_factory_verify_per_event.py tests/test_chaoyang_upload_reconcile.py` → **9 passed**。
+- **daemon 已重启**:`launchctl kickstart -k gui/$(id -u)/com.qicai21.sop-data-hub.text-watch`,新 pid **76958**,新口径生效;daemon 当前运行于 fix 分支工作树。
+- **#442 善后 = 纯数据库对账修正**(不重跑链路、不重发微信、不重传工厂门户——因 ⑥发送与工厂上传均不幂等,重跑会对客户系统重复写入):
+  - 执行前备份:`data/sop_agent.db` → `data/sop_agent.db.bak-20260629073311`
+  - SQL:#442 的 3 条 `external_action_log` 由 `planned`→`executed`;`workflow_task_db.id=442` 由 `failed`→`succeeded`
+  - 执行后核验:task=`succeeded`,三条 action=`executed`
+  - 依据:#442 的 Excel/上传现实里已成功(108/108),`failed` 仅旧校验误判;新口径下未来发车自动闭环,本次不重跑以避免对客户系统重复写入。
+- **后续观察项**:
+  1. 下一轮发货验证新 verify 口径在真实链路里通过(present + unique,吉林 box_no / 朝钢 car_no)。
+  2. 分支待用户 review 后合并。

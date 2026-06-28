@@ -764,15 +764,30 @@ def _infer_sop_project_token(payload: dict[str, Any], *, category: str) -> str:
             return "jiusan"
         if any(token in text for token in ("四平",)):
             return "jilin_jingang_jinzhou"
-        return ""
-    if category == "检装车通知单":
+    elif category == "检装车通知单":
         if any(token in text for token in ("合远9", "朝阳西", "朝阳铁", "朝阳钢铁", "朝钢")):
             return "chaoyang_steel"
         if any(token in text for token in ("汐子", "鞍子河", "中唐", "赤峰中唐")):
             return "zhongtang_special_steel"
         if any(token in text for token in ("新台子", "九三", "大豆", "和谐1", "诚信", "昆娜", "玛格丽特")):
             return "jiusan"
-        return ""
+
+    # 共享群/无硬锚兜底(2026-06-28 工单):**按 yaml known_ships 唯一命中消歧授权**。
+    # 共享群(铁晟=吉林/朝钢/中唐/金通共享)来的检装/出港单,上面的硬锚(到站/项目名)
+    # 没命中时——如丰收散运60车单到站被OCR读成"沙子"、又没"中唐"字样——回退按**船名**:
+    # 船名命中某项目 known_ships(各项目互不重叠)即唯一定位该项目;多项目同时命中不强授(交人工)。
+    try:
+        from sop_hub.data_agent.agent import project_known_ships
+        # 只数项目 key(ascii snake_case);_active_project_sop_tokens 同时含中文显示名,
+        # 不滤会把同一项目数两次(key+显示名)→ len 永远≥2 → 永不唯一(2026-06-28 实测坑)。
+        hits = {
+            proj for proj in _active_project_sop_tokens()
+            if proj.isascii() and any(s and s in text for s in project_known_ships(proj))
+        }
+        if len(hits) == 1:
+            return next(iter(hits))
+    except Exception:
+        pass
     return ""
 
 

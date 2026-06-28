@@ -1527,14 +1527,13 @@ def _execute_chaoyang_inspection_chain(
                         build_idempotency_key, get_action_by_key,
                         plan_external_action, mark_external_action_executed,
                     )
-                    _src_row = conn.execute(
-                        "SELECT source_image_path FROM inspection_ingestion_candidates WHERE id=?",
-                        (candidate_id,)).fetchone()
-                    _evt = _os.path.basename(
-                        (_src_row["source_image_path"] if _src_row else None) or (message_id or ""))
+                    # 幂等键 = **批次集 + 总车数**(2026-06-28 共享群工单):同一张检装车单
+                    # 若两群各发一份(铁晟 + 中唐发运群),source_image 不同但批次/车数相同 →
+                    # 按批次集 → 同键 → 只发一次,杜绝两群重复发。
+                    _bkey = ",".join(sorted(rbid for rbid, _ in _specs))
                     _idem = build_idempotency_key(
                         project_id, "send_shipping_excel_wechat",
-                        f"notice:{_evt}:{_mb.wagon_count}")
+                        f"batches:{_bkey}:{_mb.wagon_count}")
                     _prev = get_action_by_key(_idem, db_path=db_path)
                     if _prev and str(_prev.get("action_status")) == "executed":
                         send_info = {"skipped": True, "idempotency_key": _idem,

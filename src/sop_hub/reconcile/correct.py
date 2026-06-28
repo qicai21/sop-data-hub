@@ -61,21 +61,31 @@ def _batch_ship(hub, bid):
     return r[0] if r else None
 
 
-def reroute_mismatch(spec, result, hub, log) -> int:
-    """错挂 → 改归源 batch(+ ship_name 若有列),重算受影响批次聚合。"""
+def reroute_mismatch(spec, result, rail, hub, log) -> int:
+    """错挂 → 改归源 batch(+ ship_name 若有列),重算受影响批次聚合。
+
+    **先写台账再改 wagon 表**:sync 按台账路由,只改 wagon 表会被 sync revert。
+    """
     rows = result.by_cat.get(MISMATCH, [])
     if not rows:
         return 0
+    # 1) 写路由台账(权威源),sync 下次跑才认这次更正,不再 revert
+    n_led = spec.persist_to_ledger(hub, rail, [(key, s) for key, _d, s in rows], log)
+    if n_led:
+        log.line(f"[{spec.project_id}/{spec.leg}] 写台账 {n_led} 条(止 sync revert)")
+    # 2) 改 wagon 表(立即生效)+ 清 reconciled_at(归属变了重新核对)
     where = " AND ".join(f"{c}=?" for c in spec.key_cols)
     set_ship = _has_col(hub, spec.table, "ship_name")
+    has_rec = _has_col(hub, spec.table, "reconciled_at")
+    rec_clear = ", reconciled_at=NULL, reconcile_source_ref=NULL" if has_rec else ""
     affected = set()
     for key, d, s in rows:
         vals = key if isinstance(key, tuple) else (key,)
         if set_ship:
-            hub.execute(f"UPDATE {spec.table} SET batch_id=?, ship_name=? WHERE {where}",
+            hub.execute(f"UPDATE {spec.table} SET batch_id=?, ship_name=?{rec_clear} WHERE {where}",
                         (s, _batch_ship(hub, s), *vals))
         else:
-            hub.execute(f"UPDATE {spec.table} SET batch_id=? WHERE {where}", (s, *vals))
+            hub.execute(f"UPDATE {spec.table} SET batch_id=?{rec_clear} WHERE {where}", (s, *vals))
         log.act(spec.project_id, spec.leg, "reroute", key, d, s)
         affected |= {d, s}
     hub.commit()
@@ -89,9 +99,12 @@ def reroute_mismatch(spec, result, hub, log) -> int:
     return len(rows)
 
 
-def gate_finished_ships(spec, result, hub, log) -> int:
+def gate_finished_ships(spec, result, rail, hub, log) -> int:
     """完成闸:新货(NEW_UNATTR)若挂在**发完的船**上 → 移到当前唯一活跃船。
-    无唯一活跃船 → 不动,告警(交人工)。移后仍是 NEW_UNATTR(源到再确认归属)。"""
+    无唯一活跃船 → 不动,告警(交人工)。移后仍是 NEW_UNATTR(源到再确认归属)。
+
+    同 reroute:**先写台账再改 wagon 表**,否则 sync 按台账又把它移回发完的船。
+    """
     finished = spec.finished_batches(hub)
     on_finished = [(k, d) for k, d in result.by_cat.get(NEW_UNATTR, []) if d in finished]
     if not on_finished:
@@ -102,16 +115,21 @@ def gate_finished_ships(spec, result, hub, log) -> int:
                  f"但当前无唯一活跃船 → 待人工")
         return 0
     ship = _batch_ship(hub, active)
+    n_led = spec.persist_to_ledger(hub, rail, [(k, active) for k, _d in on_finished], log)
+    if n_led:
+        log.line(f"[{spec.project_id}/{spec.leg}] 完成闸写台账 {n_led} 条(止 sync 移回发完船)")
     set_ship = _has_col(hub, spec.table, "ship_name")
+    has_rec = _has_col(hub, spec.table, "reconciled_at")
+    rec_clear = ", reconciled_at=NULL, reconcile_source_ref=NULL" if has_rec else ""
     where = " AND ".join(f"{c}=?" for c in spec.key_cols)
     affected = {active}
     for key, d in on_finished:
         vals = key if isinstance(key, tuple) else (key,)
         if set_ship:
-            hub.execute(f"UPDATE {spec.table} SET batch_id=?, ship_name=? WHERE {where}",
+            hub.execute(f"UPDATE {spec.table} SET batch_id=?, ship_name=?{rec_clear} WHERE {where}",
                         (active, ship, *vals))
         else:
-            hub.execute(f"UPDATE {spec.table} SET batch_id=? WHERE {where}", (active, *vals))
+            hub.execute(f"UPDATE {spec.table} SET batch_id=?{rec_clear} WHERE {where}", (active, *vals))
         log.act(spec.project_id, spec.leg, "gate_move", key, d, active)
         affected.add(d)
     hub.commit()
@@ -152,9 +170,9 @@ def delete_phantom(spec, result, hub, log) -> int:
 
 
 def apply_corrections(spec, result, rail, hub, log) -> dict:
-    n_re = reroute_mismatch(spec, result, hub, log)
+    n_re = reroute_mismatch(spec, result, rail, hub, log)
     n_bf = spec.backfill(rail, hub, result, log)   # 项目自定(九三集装箱补 hph)
-    n_gate = gate_finished_ships(spec, result, hub, log)  # 完成闸:新货移出发完的船
+    n_gate = gate_finished_ships(spec, result, rail, hub, log)  # 完成闸:新货移出发完的船
     log_needs_human(spec, result, hub, log)
     return {"rerouted": n_re, "backfilled": n_bf, "gated": n_gate,
             "phantom_left": result.n(PHANTOM), "new_left": result.n(NEW_UNATTR)}

@@ -57,6 +57,12 @@ class ReconcileSpec:
         返回补的笔数。"""
         return 0
 
+    def persist_to_ledger(self, hub, rail, routes, log=None) -> int:
+        """把更正后的归属 (key→batch_id) 写回**项目路由台账**(默认无操作)。
+        关键:sync 按台账路由,只改 wagon 表会被 sync revert 回去 → reroute/gate
+        必须先写台账,sync 下次跑才认。`routes` = [(key, batch_id), ...]。返回写入笔数。"""
+        return 0
+
     # ── 完成闸:发完的船不再接新货,新货落当前活跃船 ──────────────
     def active_batch(self, hub):
         """当前唯一在发(loading)的 batch_id;0 或多于1个 → None(交人工)。默认关闸。"""

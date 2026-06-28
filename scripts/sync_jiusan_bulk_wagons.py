@@ -38,8 +38,20 @@ SINCE = "2026-06-09"
 CONSIGNOR = "锦州港物流发展有限公司"
 CONSIGNEE = "九三集团铁岭大豆科技有限公司"
 # 未命中台账的全新散粮车的兜底落点(单船期/通知单未到时)。命中台账的会自愈纠正,
-# 故此兜底只是临时落点;不要因此放弃 WARN。
-FALLBACK_SHIP = "和谐1"
+# 故此兜底只是临时落点;不要因此放弃 WARN。和谐1 发完后不再默认堆它:兜底 = 当前唯一
+# 活跃船(lot02 loading);无/多个活跃船时退回 FALLBACK_SHIP_DEFAULT(#issue-20260627)。
+FALLBACK_SHIP_DEFAULT = "和谐1"
+
+
+def resolve_fallback_ship(conn: sqlite3.Connection) -> str:
+    """未命中台账的全新散粮车落点 = 当前唯一在发(loading)的 lot02 船。
+    恰好一个活跃船 → 它;否则 → FALLBACK_SHIP_DEFAULT。"""
+    loading = [
+        r["ship_name"] for r in conn.execute(
+            "SELECT ship_name FROM release_batches WHERE project=? AND batch_sequence='lot02' "
+            "AND dispatch_status='loading' AND ship_name IS NOT NULL", (PROJECT,))
+    ]
+    return loading[0] if len(loading) == 1 else FALLBACK_SHIP_DEFAULT
 
 
 def stable_hash(*parts: str) -> str:
@@ -147,7 +159,8 @@ def build_row(t: dict, now: str, ship: str, batch_id: str) -> dict:
 
 
 def resolve_routing(
-    tickets: list[dict], notice_map: dict[str, str], ship_batches: dict[str, str]
+    tickets: list[dict], notice_map: dict[str, str], ship_batches: dict[str, str],
+    fallback_ship: str,
 ) -> list[tuple[dict, str, str, bool]]:
     """每票 → (ticket, ship, batch_id, matched)。matched=命中简装车通知单台账(按ydid)。"""
     routed = []
@@ -156,7 +169,7 @@ def resolve_routing(
         if ship and ship in ship_batches:
             routed.append((t, ship, ship_batches[ship], True))
         else:
-            routed.append((t, FALLBACK_SHIP, ship_batches.get(FALLBACK_SHIP, ""), False))
+            routed.append((t, fallback_ship, ship_batches.get(fallback_ship, ""), False))
     return routed
 
 
@@ -193,6 +206,10 @@ def upsert_rows(
     new_n = reroute_n = refresh_n = 0
     touched: set[str] = set()
     warn_new_unmatched: list[tuple] = []
+    # 归属变了 → 清核对完毕标记(否则 reconcile 把它当已核对剔除,脏标记卡死)
+    rec_clear = (", reconciled_at=NULL, reconcile_source_ref=NULL"
+                 if "reconciled_at" in {c[1] for c in conn.execute("PRAGMA table_info(wagon_shipments)")}
+                 else "")
 
     for t, ship, batch_id, matched in routed:
         rid = stable_hash("bulk", t["ydid"])
@@ -200,10 +217,10 @@ def upsert_rows(
         if rid in existing:
             cur = existing[rid]
             if matched and batch_id and batch_id != cur:
-                # 命中台账但当前挂错船 → 重路由纠正(连 ship_name/source 一起改)。
+                # 命中台账但当前挂错船 → 重路由纠正(连 ship_name/source 一起改)+ 清核对标记。
                 conn.execute(
                     f"UPDATE wagon_shipments SET batch_id=?, ship_name=?, "
-                    f"source_message_id=?, {_STATUS_SET} WHERE id=?",
+                    f"source_message_id=?, {_STATUS_SET}{rec_clear} WHERE id=?",
                     [batch_id, ship, r["source_message_id"], *_status_vals(r), rid],
                 )
                 reroute_n += 1
@@ -268,11 +285,13 @@ def main(apply: bool = False) -> None:
     try:
         ship_batches = load_ship_batches(conn)
         notice_map = load_notice_ship_map(conn)
-        if FALLBACK_SHIP not in ship_batches:
-            print(f"⚠ 缺 {FALLBACK_SHIP} lot02 批次(release_batches),中止")
+        fallback_ship = resolve_fallback_ship(conn)
+        if fallback_ship not in ship_batches:
+            print(f"⚠ 缺 {fallback_ship} lot02 批次(release_batches),中止")
             return
+        print(f"未命中台账兜底落点(当前活跃船)={fallback_ship}")
         id2ship = {v: k for k, v in ship_batches.items()}
-        routed = resolve_routing(tickets, notice_map, ship_batches)
+        routed = resolve_routing(tickets, notice_map, ship_batches, fallback_ship)
 
         # 预览:按船路由分布
         byship = defaultdict(lambda: [0, 0])  # ship -> [票数, 命中台账数]
@@ -289,7 +308,7 @@ def main(apply: bool = False) -> None:
 
         if stats["warn_new_unmatched"]:
             print(f"\n⚠ WARN:{len(stats['warn_new_unmatched'])} 个**全新且未命中通知单**的散粮车,"
-                  f"暂落 {FALLBACK_SHIP}(请尽快入简装车通知单台账,下趟 sync 自动纠正):")
+                  f"暂落 {fallback_ship}(请尽快入简装车通知单台账,下趟 sync 自动纠正):")
             for ydid, car, day in stats["warn_new_unmatched"][:20]:
                 print(f"    {day}  车号 {car}  ydid {ydid}")
 

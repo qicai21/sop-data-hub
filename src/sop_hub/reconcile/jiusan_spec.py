@@ -8,6 +8,7 @@ scope:origin=高桥镇、dest=新台子、ticketed>=2026-06-10。
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -20,6 +21,8 @@ import openpyxl
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT / "scripts"))
 import reconcile_jiusan_containers as _rec  # noqa: E402  复用 RAIL 常量
+
+from sop_hub.utils.time import now_iso_beijing  # noqa: E402
 
 from .engine import ReconcileSpec  # noqa: E402
 
@@ -92,6 +95,11 @@ def _ship_to_batch(hub, seq):
     return {r[0]: r[1] for r in hub.execute(
         "SELECT ship_name, id FROM release_batches "
         "WHERE project=? AND batch_sequence=?", (PROJECT, seq))}
+
+
+def _batch_ship_name(hub, bid):
+    r = hub.execute("SELECT ship_name FROM release_batches WHERE id=?", (bid,)).fetchone()
+    return r[0] if r else None
 
 
 class _JiusanBase(ReconcileSpec):
@@ -188,6 +196,34 @@ class JiusanContainerSpec(_JiusanBase):
             log.line(f"[{PROJECT}/{self.leg}] backfill hph {n} 箱(从95306,不改归属)")
         return n
 
+    def persist_to_ledger(self, hub, rail, routes, log=None):
+        """把更正后的 (key→batch) 写回 container_loading_notice 台账(box 级)。
+        sync_jiusan_harmony_wagons.py 按本台账路由 → 写台账才能止 revert。
+        id=sha1(ydid|box_no) 船无关 → 重路由不换 id,幂等 REPLACE。"""
+        if not routes:
+            return 0
+        y2h = _ydid2hph(rail)
+        now = now_iso_beijing()
+        n = 0
+        for key, bid in routes:
+            ydid, box = key
+            ship = _batch_ship_name(hub, bid)
+            if not ship:
+                continue
+            car = hub.execute(
+                "SELECT car_no FROM wagon_container_shipments WHERE ydid=? AND box_no=?",
+                (ydid, box)).fetchone()
+            rid = hashlib.sha1(f"{ydid}|{box}".encode()).hexdigest()
+            hub.execute(
+                "INSERT OR REPLACE INTO container_loading_notice "
+                "(id,project,ship_name,ydid,box_no,hph,car_no,source_ref,created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (rid, PROJECT, ship, ydid, box, y2h.get(ydid, ""),
+                 car[0] if car else "", "reconcile", now))
+            n += 1
+        hub.commit()
+        return n
+
 
 class JiusanBulkSpec(_JiusanBase):
     leg = "bulk"
@@ -221,6 +257,40 @@ class JiusanBulkSpec(_JiusanBase):
             if ship and s2b.get(ship):
                 out[ydid] = s2b[ship]
         return out
+
+    def persist_to_ledger(self, hub, rail, routes, log=None):
+        """把更正后的 (ydid→batch) 写回 bulk_loading_notice_wagon 台账(车级)。
+        sync_jiusan_bulk_wagons.py 按 ydid→ship_name 路由 → 写台账才能止 revert。
+        已有真『简装车通知单』行 → 仅改 ship_name(不造重复 ydid);否则插一条
+        track='reconcile:<ydid>' 的对账来源行(易识别/可清理)。"""
+        if not routes:
+            return 0
+        now = now_iso_beijing()
+        n = 0
+        for ydid, bid in routes:
+            ship = _batch_ship_name(hub, bid)
+            if not ship:
+                continue
+            r = hub.execute(
+                "SELECT id FROM bulk_loading_notice_wagon WHERE ydid=?", (ydid,)).fetchone()
+            if r:
+                hub.execute(
+                    "UPDATE bulk_loading_notice_wagon SET ship_name=? WHERE ydid=?", (ship, ydid))
+            else:
+                car = hub.execute(
+                    "SELECT car_no FROM wagon_shipments WHERE ydid=?", (ydid,)).fetchone()
+                rid = hashlib.sha1(f"reconcile|{ydid}".encode()).hexdigest()
+                hub.execute(
+                    "INSERT OR REPLACE INTO bulk_loading_notice_wagon "
+                    "(id,project,notice_date,track,total_cars,car_seq,car_no,car_model,"
+                    " ship_name,lot,ydid,destination,consignee,source_ref,created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (rid, PROJECT, now[:10], f"reconcile:{ydid}", 0, 0,
+                     car[0] if car else "", "", ship, "lot02", ydid, DEST, "",
+                     "reconcile", now))
+            n += 1
+        hub.commit()
+        return n
 
 
 SPECS = {"container": JiusanContainerSpec, "bulk": JiusanBulkSpec}

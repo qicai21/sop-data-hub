@@ -64,7 +64,7 @@ def test_mixed_ship_reroute_and_grandfather(tmp_path):
     ship_batches = {"和谐1": "BH", "诚信": "BC"}
     notice_map = {"YD_CX": "诚信"}  # 仅诚信入台账;和谐1历史票未命中
     tickets = [_ticket("YD_CX", "car_cx"), _ticket("YD_H1", "car_h1")]
-    routed = m.resolve_routing(tickets, notice_map, ship_batches)
+    routed = m.resolve_routing(tickets, notice_map, ship_batches, "和谐1")
     stats = m.upsert_rows(c, routed, "t1", ship_batches)
 
     # 诚信票自愈重路由到诚信;和谐1未命中票 grandfather 保留。
@@ -81,18 +81,18 @@ def test_new_unmatched_warns_and_falls_back(tmp_path):
     c = _make_db(tmp_path)
     ship_batches = {"和谐1": "BH", "诚信": "BC"}
     # 全新且未命中台账的散粮车 → 暂落兜底船(和谐1)+ 进 WARN 清单。
-    routed = m.resolve_routing([_ticket("YD_NEW", "car_new")], {}, ship_batches)
+    routed = m.resolve_routing([_ticket("YD_NEW", "car_new")], {}, ship_batches, "和谐1")
     stats = m.upsert_rows(c, routed, "t1", ship_batches)
     assert stats["new"] == 1
     assert len(stats["warn_new_unmatched"]) == 1
     row = c.execute("SELECT batch_id, ship_name FROM wagon_shipments WHERE ydid='YD_NEW'").fetchone()
-    assert (row["batch_id"], row["ship_name"]) == ("BH", m.FALLBACK_SHIP)
+    assert (row["batch_id"], row["ship_name"]) == ("BH", "和谐1")
 
 
 def test_matched_routes_directly_when_new(tmp_path):
     c = _make_db(tmp_path)
     ship_batches = {"和谐1": "BH", "诚信": "BC"}
-    routed = m.resolve_routing([_ticket("YD_CX2", "car_cx2")], {"YD_CX2": "诚信"}, ship_batches)
+    routed = m.resolve_routing([_ticket("YD_CX2", "car_cx2")], {"YD_CX2": "诚信"}, ship_batches, "和谐1")
     stats = m.upsert_rows(c, routed, "t1", ship_batches)
     assert stats["new"] == 1
     assert not stats["warn_new_unmatched"]

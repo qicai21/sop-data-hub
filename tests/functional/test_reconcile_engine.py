@@ -74,3 +74,46 @@ def test_tuple_keys_box_level():
     r = reconcile(FakeSpec(U, D, S), None, None)
     assert r.by_cat[OK] == [("y1", "b1")]
     assert r.by_cat[MISMATCH] == [(("y1", "b2"), "和谐1", "诚信")]
+
+
+# ── reroute 必须写台账(否则 sync 按台账 revert) + 清 reconciled_at ──────────
+def _mem_hub():
+    import sqlite3
+    h = sqlite3.connect(":memory:")
+    h.execute("CREATE TABLE t (k TEXT PRIMARY KEY, batch_id TEXT, ship_name TEXT, "
+              "reconciled_at TEXT, reconcile_source_ref TEXT)")
+    h.execute("CREATE TABLE release_batches (id TEXT, ship_name TEXT)")
+    h.executemany("INSERT INTO release_batches VALUES (?,?)",
+                  [("b1", "和谐1"), ("b2", "诚信")])
+    # 错挂 + 旧脏标记:k1 现挂 b1(和谐1)却标了已核对
+    h.execute("INSERT INTO t VALUES ('k1','b1','和谐1','2026-06-28','ok:daily')")
+    h.commit()
+    return h
+
+
+class _LedgerSpec(ReconcileSpec):
+    project_id, leg, table, key_cols = "test", "x", "t", ("k",)
+
+    def __init__(self):
+        self.persisted = []
+
+    def persist_to_ledger(self, hub, rail, routes, log=None):
+        self.persisted.extend(routes)   # 记录被写台账的 (key, batch)
+        return len(routes)
+
+
+def test_reroute_writes_ledger_and_clears_reconciled():
+    from sop_hub.reconcile import correct
+    from sop_hub.reconcile.engine import MISMATCH, ReconcileResult
+    hub = _mem_hub()
+    correct.ensure_log_table(hub)
+    spec = _LedgerSpec()
+    res = ReconcileResult("test", "x", {MISMATCH: [("k1", "b1", "b2")]})
+    log = correct.ReconcileLog(hub, "2026-06-28T00:00:00")
+    n = correct.reroute_mismatch(spec, res, None, hub, log)
+    assert n == 1
+    # ① 写了台账(止 sync revert):k1 → b2
+    assert spec.persisted == [("k1", "b2")]
+    # ② wagon 表改归 b2/诚信 且清掉脏 reconciled_at
+    row = hub.execute("SELECT batch_id, ship_name, reconciled_at FROM t WHERE k='k1'").fetchone()
+    assert row == ("b2", "诚信", None)

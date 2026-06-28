@@ -6,7 +6,7 @@
 
 1. 拉 rail DB 高桥镇→新台子 大豆集装箱票(SINCE 起)。
 2. 按制票时间聚类发车窗口(间隔 > 2h)。
-3. **每个 box 按台账定船**;命中台账 → 该船 lot01;未命中 → 默认 DEFAULT_SHIP + WARN
+3. **每个 box 按台账定船**;命中台账 → 该船 lot01;未命中 → 当前活跃船(resolve_default_ship)+ WARN
    (grandfather,等下次对账脚本据新货票清单纠正)。
 4. 窗口内按船拆子组,各船子组独立归循环列(ship_scope=该船)。
 5. box 行 INSERT OR 自愈:id=sha1(car|box|ydid) 船无关 → 挂错船的箱**重路由纠正**。
@@ -32,7 +32,10 @@ SOP_DB = REPO / "data" / "sop_agent.db"
 RAIL_DB = Path("/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3")
 
 PROJECT = "jiusan"
-DEFAULT_SHIP = "和谐1"   # 未命中台账的全新箱兜底(命中台账的会自愈纠正)
+# 未命中台账的全新箱兜底:**当前唯一活跃船**(lot01 dispatch_status='loading'),
+# 不再写死和谐1——和谐1 发完后新箱不该再默认堆它(#issue-20260627 完成闸入库端)。
+# 无/多于一个活跃船时退回 FALLBACK_SHIP(命中台账的仍会自愈纠正)。
+FALLBACK_SHIP = "和谐1"
 SINCE = "2026-06-09"
 WINDOW_GAP_HOURS = 2
 OVERLAP_THRESHOLD = 0.6
@@ -47,6 +50,15 @@ def load_ship_batches(conn) -> dict[str, str]:
     return {r[1]: r[0] for r in conn.execute(
         "SELECT id, ship_name FROM release_batches "
         "WHERE project=? AND batch_sequence='lot01' AND ship_name IS NOT NULL", (PROJECT,))}
+
+
+def resolve_default_ship(conn) -> str:
+    """未命中台账的全新箱落点 = 当前唯一在发(loading)的 lot01 船。
+    恰好一个活跃船 → 它;否则(0 或多个,无法判断)→ FALLBACK_SHIP。"""
+    loading = [r[0] for r in conn.execute(
+        "SELECT ship_name FROM release_batches WHERE project=? AND batch_sequence='lot01' "
+        "AND dispatch_status='loading' AND ship_name IS NOT NULL", (PROJECT,))]
+    return loading[0] if len(loading) == 1 else FALLBACK_SHIP
 
 
 def load_taizhang(conn) -> dict[tuple[str, str], str]:
@@ -138,18 +150,26 @@ def build_box_row(t: dict, box: str, pos: int, ship: str, batch_id: str, cycle_i
     }
 
 
+def _has_col(conn, table, col):
+    return col in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+
+
 def upsert_rows(conn, rows: list[dict], existing: dict[str, str]) -> tuple[int, int, int]:
     """existing: id → 当前 batch_id(全 jiusan lot01)。返回 (新增, 刷新, 重路由纠正)。"""
     new_n = refresh_n = reroute_n = 0
+    # 归属变了 → 清核对完毕标记(否则 reconcile 把它当已核对剔除,脏标记卡死)
+    rec_clear = (", reconciled_at=NULL, reconcile_source_ref=NULL"
+                 if _has_col(conn, "wagon_container_shipments", "reconciled_at") else "")
     for r in rows:
         rid = r["id"]
         if rid in existing:
             if existing[rid] != r["batch_id"]:
-                # 挂错船 → 重路由纠正(自愈)+ 刷状态
+                # 挂错船 → 重路由纠正(自愈)+ 刷状态 + 清核对完毕标记
                 conn.execute(
-                    """UPDATE wagon_container_shipments SET batch_id=?, ship_name=?,
+                    f"""UPDATE wagon_container_shipments SET batch_id=?, ship_name=?,
                        status_name=?, latest_stage_key=?, latest_stage_name=?, latest_event_time=?,
-                       departed_at=?, arrived_at=?, delivered_at=?, cycle_id=?, updated_at=? WHERE id=?""",
+                       departed_at=?, arrived_at=?, delivered_at=?, cycle_id=?, updated_at=?{rec_clear}
+                       WHERE id=?""",
                     (r["batch_id"], r["ship_name"], r["status_name"], r["latest_stage_key"],
                      r["latest_stage_name"], r["latest_event_time"], r["departed_at"], r["arrived_at"],
                      r["delivered_at"], r["cycle_id"], r["updated_at"], rid))
@@ -214,12 +234,14 @@ def main() -> None:
     try:
         ship_batches = load_ship_batches(conn)
         taizhang = load_taizhang(conn)
+        default_ship = resolve_default_ship(conn)
         existing = {r[0]: r[1] for r in conn.execute(
             "SELECT id, batch_id FROM wagon_container_shipments WHERE batch_id IN ({})".format(
                 ",".join("?" * len(ship_batches))), list(ship_batches.values()))}
-        print(f"船 lot01: {list(ship_batches)} | 台账 {len(taizhang)} 箱 | 现有 {len(existing)} 箱")
-        if DEFAULT_SHIP not in ship_batches:
-            print(f"!! 默认船 {DEFAULT_SHIP} 无 lot01 batch,退出"); return
+        print(f"船 lot01: {list(ship_batches)} | 台账 {len(taizhang)} 箱 | 现有 {len(existing)} 箱 "
+              f"| 兜底落点(当前活跃船)={default_ship}")
+        if default_ship not in ship_batches:
+            print(f"!! 兜底船 {default_ship} 无 lot01 batch,退出"); return
 
         tot_new = tot_ref = tot_rr = 0
         unmatched_boxes = 0
@@ -230,7 +252,7 @@ def main() -> None:
                 for pos, box in enumerate(json.loads(t["container_numbers_json"] or "[]"), 1):
                     ship = taizhang.get((t["ydid"], box))
                     if ship is None:
-                        ship = DEFAULT_SHIP; unmatched_boxes += 1
+                        ship = default_ship; unmatched_boxes += 1
                     ship_boxes[ship].append((t, box, pos))
             # 2) 各船子组:归循环列 + 建行 + upsert
             for ship, items in ship_boxes.items():
@@ -248,7 +270,7 @@ def main() -> None:
         conn.commit()
         print(f"COMMIT ✓ 新增 {tot_new} / 刷新 {tot_ref} / 重路由纠正 {tot_rr} box")
         if unmatched_boxes:
-            print(f"⚠️ 未命中台账(暂落{DEFAULT_SHIP}): {unmatched_boxes} box —— 待港方货票清单到后跑 reconcile 纠正")
+            print(f"⚠️ 未命中台账(暂落{default_ship}): {unmatched_boxes} box —— 待港方货票清单到后跑 reconcile 纠正")
         from sop_hub.sop.shipped_weight import compute_for_release_batch
         for ship, bid in ship_batches.items():
             sw = compute_for_release_batch(bid, db_path=SOP_DB)

@@ -820,6 +820,29 @@ def _execute_inspection_text_trigger(
 
         synth_cand_id = None  # Fix C:非空=本次靠 95306 合成的候选(链 skip_upload)
         if not cand:
+            # 已被通知单链处理?同船 + 车数对得上 + 时间窗内的**已 matched** 候选 =
+            # 通知单图走了自己的检验链处理完了(2026-06-28 丰收散运60车 wx_71 即此:
+            # 通知单链 09:30 matched 并发了 excel,文本触发器却因 rendezvous 只认非
+            # matched 候选而晾着、12h 误报"通知单未到")。→ 触发器直接结束,不再等/报警。
+            done = conn.execute(
+                "SELECT id FROM inspection_ingestion_candidates "
+                "WHERE ship_name=? AND candidate_status='matched' "
+                "  AND created_at >= datetime('now', ?) "
+                "  AND (? = 0 OR ABS(COALESCE(wagon_count,0) - ?) <= ?) "
+                "ORDER BY created_at DESC LIMIT 1",
+                (ship, f"-{_INSPECTION_TEXT_TRIGGER_CANDIDATE_MAX_AGE_H} hours",
+                 expected, expected, _INSPECTION_TEXT_TRIGGER_COUNT_TOL),
+            ).fetchone()
+            if done:
+                return {
+                    "action": "executed", "status": "skipped",
+                    "output_json": {
+                        "stage": "already_handled_by_notice_chain",
+                        "ship": ship, "expected_count": expected,
+                        "matched_candidate": done[0],
+                        "note": "通知单图已由检验链 matched 处理,文本触发器无需再等/报警",
+                    },
+                }
             # rendezvous 等待:通知单图还没到。看任务已等多久。
             trow = conn.execute(
                 "SELECT created_at FROM workflow_task_db WHERE id=?", (task_id,),

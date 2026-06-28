@@ -1918,7 +1918,7 @@ class BusinessDataAgent:
                     "yard_location": parse_yard_location(special_matter),
                     "customs_release_qty": parse_customs_release_qty(special_matter),
                     "notice_date": notice_date,
-                    "batch_date": remark.get("date") or notice_date,
+                    "batch_date": _sane_batch_date(remark.get("date"), notice_date),
                     "batch_sequence": remark.get("sequence"),
                     "batch_quantity": remark.get("quantity")
                     or parse_number(cargo_info.get("总重里")),
@@ -2061,6 +2061,26 @@ def canonicalize_station_text(text: Optional[str]) -> Optional[str]:
         if alias and alias in raw:
             return standard
     return raw
+
+
+def _sane_batch_date(raw: Optional[str], notice_date: Optional[str]) -> Optional[str]:
+    """放货日期(第N次下达计划那行的日期)sanity 闸。
+
+    下达计划日 ≤ 检装/通知日(计划先于发运);若解析出的日期**晚于 notice_date**,
+    十有八九是 OCR 月份误读(实证 2026-06-28:马兰幸福/马兰希望 把 6-27 读成
+    **8-27**,batch_date 落进未来,污染发运 excel 归档路径)→ 退回 notice_date 并告警。
+    ISO 串(YYYY-MM-DD)可直接字典序比大小。
+    """
+    r = (raw or "").strip()
+    nd = (notice_date or "").strip()
+    if not r:
+        return nd or r
+    if nd and r > nd:
+        import logging as _lg
+        _lg.getLogger("sop_hub.data_agent").warning(
+            "batch_date %r 晚于 notice_date %r — 疑 OCR 月份误读,退回 notice_date", r, nd)
+        return nd
+    return r
 
 
 def normalize_sequence_label(value: Optional[str], raw_line: Optional[str] = None) -> Optional[str]:

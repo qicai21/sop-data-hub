@@ -578,9 +578,14 @@ def run_departure_executor_chain(
                         verify_total_match = True
                         verify_all_boxes = True
                         verify_api_total = 0
+                        verify_missing = 0
+                        verify_duplicate = 0
                         # 2026-06-27 工单(plan 模式与非 plan 同款 scope 修):每个 (oid,bid)
                         # 也只验**本次事件该批次的箱**,不传整批 release_batch_id(否则 verify
                         # 从 lot 累计所有箱推 expected → 门户全量误报)。用 inserted_car_nos 收窄。
+                        # 2026-06-29 口径:通过条件 = 本次箱都在门户(missing==0)且各自唯一
+                        # (duplicate==0);门户按计划号查必返整单全量累计 + 收货端偶发删数,
+                        # 故不看 total/extra(见 factory_verify.evaluate_presence_and_uniqueness)。
                         import sqlite3 as _sqlp
                         _cp = _sqlp.connect(str(db_path)); _cp.row_factory = _sqlp.Row
 
@@ -609,6 +614,8 @@ def run_departure_executor_chain(
                                     verify_total_match = verify_total_match and v.total_match
                                     verify_all_boxes = verify_all_boxes and v.all_boxes_found
                                     verify_api_total += v.api_total
+                                    verify_missing += len(v.missing_boxes)
+                                    verify_duplicate += len(v.duplicate_boxes)
                         finally:
                             _cp.close()
                         preview.factory_verified = True
@@ -616,7 +623,16 @@ def run_departure_executor_chain(
                         preview.factory_verify_boxes_ok = verify_all_boxes
                         preview.factory_verify_api_total = verify_api_total
                         if not verify_all_boxes:
-                            preview.error += "verify(per-event): some boxes missing; "
+                            # 文案按真实原因区分,不再一律写 "some boxes missing"
+                            _vparts = []
+                            if verify_missing:
+                                _vparts.append(f"missing={verify_missing}")
+                            if verify_duplicate:
+                                _vparts.append(f"duplicate={verify_duplicate}")
+                            preview.error += (
+                                "verify(per-event): "
+                                f"{', '.join(_vparts) or '本次箱未全部到位/不唯一'}; "
+                            )
                     else:
                         # 2026-06-27 修(工单):verify 只验**本次发车事件**的箱,不验整批。
                         # 老路径传整批 release_batch_id → verify 从 lot 累计所有箱推 expected
@@ -644,12 +660,14 @@ def run_departure_executor_chain(
                         preview.factory_verify_total_match = verify.total_match
                         preview.factory_verify_boxes_ok = verify.all_boxes_found
                         preview.factory_verify_api_total = verify.api_total
-                        # 闸只看"本次箱是否都进了门户"(all_boxes_found / missing),
-                        # 不看 extra(门户历史箱不是本次的事,不算失败)。
+                        # 2026-06-29 口径:闸只看"本次箱都进了门户(missing==0)且各自唯一
+                        # (duplicate==0)";不看 total/extra(门户按计划号查必返整单全量累计 +
+                        # 收货端偶发删数,整批对齐不可取)。详 factory_verify。
                         if not verify.all_boxes_found:
                             preview.error += (
                                 f"verify: 本次{len(event_boxes)}箱 "
-                                f"missing={len(verify.missing_boxes)}; "
+                                f"missing={len(verify.missing_boxes)} "
+                                f"duplicate={len(verify.duplicate_boxes)}; "
                             )
                 except Exception as exc:
                     preview.error += f"factory_verify: {exc}; "

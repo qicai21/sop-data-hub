@@ -5,9 +5,12 @@ After uploading wagon data to the factory system, this module:
   2. Queries GET /prod-api/sales/transportOrder/list
      ?pageNum=1&pageSize=100&orderId=<ID>&formId=MR07
   3. Handles pagination (fetches all pages if total > pageSize)
-  4. Compares total count vs expected
-  5. Verifies every boxNumber we uploaded exists in the response
-  6. Reports mismatches
+  4. 判定口径(2026-06-29):门户按计划号查必返回整单全量累计 + 收货端偶发删数,
+     故**不做整批对齐**。只校验本次上传的每个键(吉林=box_no):
+       a) 都出现在返回里(present / missing==0)
+       b) 各自唯一(unique / 无 duplicate)
+     total / extra 仍计算但仅作观测,不参与成败判定。
+  5. Reports mismatches (missing / duplicate / extra-for-log)
 
 Usage:
   PYTHONPATH=src python -m sop_hub.sop.factory_verify \\
@@ -18,6 +21,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -63,6 +67,8 @@ class VerifySummary:
     all_boxes_found: bool = False
     missing_boxes: list[str] = field(default_factory=list)
     extra_boxes: list[str] = field(default_factory=list)
+    # 2026-06-29 口径:本次上传键在门户返回里出现多于一条(应唯一却重复)
+    duplicate_boxes: list[str] = field(default_factory=list)
 
     error: str = ""
 
@@ -81,6 +87,8 @@ class VerifySummary:
             "missing_box_count": len(self.missing_boxes),
             "extra_boxes": self.extra_boxes[:20],
             "extra_box_count": len(self.extra_boxes),
+            "duplicate_boxes": self.duplicate_boxes[:20],
+            "duplicate_box_count": len(self.duplicate_boxes),
             "error": self.error,
             "login_error": self.login_error,
         }
@@ -109,6 +117,28 @@ def _login() -> tuple[str | None, str]:
         return token, ""
     except requests.RequestException as e:
         return None, str(e)
+
+
+# ── Per-event 判定口径(2026-06-29)─────────────────────────────────────
+
+def evaluate_presence_and_uniqueness(
+    expected_keys: set[str],
+    api_key_counts: "Counter[str] | dict[str, int]",
+) -> tuple[list[str], list[str]]:
+    """本次上传是否"全部到位且唯一"——per-event 反查判定。
+
+    收货人门户按计划号(orderId/回运计划号)反查**必然返回整单全量累计**,
+    且收货端偶发删已收货数据,所以**不做整批对齐**:不要求 total==expected,
+    也不因门户存在历史 extra 记录而判失败。只校验本次上传的每个键:
+      1) 出现在返回里(present)        → 否则计入 missing
+      2) 在返回里各自仅一条(unique)   → 否则计入 duplicate
+    键:吉林金钢=box_no(箱号),朝钢=car_no(车号)。
+
+    返回 (missing, duplicate);二者皆空即通过。
+    """
+    missing = sorted(k for k in expected_keys if api_key_counts.get(k, 0) == 0)
+    duplicate = sorted(k for k in expected_keys if api_key_counts.get(k, 0) > 1)
+    return missing, duplicate
 
 
 # ── Core ─────────────────────────────────────────────────────────────────
@@ -213,7 +243,8 @@ def verify_factory_upload(
     }
 
     # ── Paginated fetch ──
-    all_boxes: set[str] = set()
+    # 用 Counter 记每个 boxNumber 在门户返回里出现的次数(唯一性校验要用)
+    api_box_counts: Counter[str] = Counter()
     page = 1
     total = 0
 
@@ -243,7 +274,7 @@ def verify_factory_upload(
         for row in rows:
             bn = (row.get("boxNumber") or "").strip()
             if bn:
-                all_boxes.add(bn)
+                api_box_counts[bn] += 1
 
         summary.api_rows_fetched += len(rows)
         summary.pages_fetched = page
@@ -252,22 +283,21 @@ def verify_factory_upload(
             break
         page += 1
 
+    all_boxes: set[str] = set(api_box_counts)
     summary.api_total = total
     summary.api_box_numbers = all_boxes
 
-    # ── Compare ──
+    # ── Compare(2026-06-29 口径:present + unique,不做整批对齐)──
+    # total_match / extra_boxes 仍计算并保留,**仅作观测/脏 log**,不参与判定。
     summary.total_match = (summary.expected_count == total)
-    summary.missing_boxes = sorted(
-        summary.expected_box_numbers - all_boxes
+    summary.extra_boxes = sorted(all_boxes - summary.expected_box_numbers)
+    # 判定:本次上传的每个键都出现(present)且各自唯一(unique)即通过。
+    missing, duplicate = evaluate_presence_and_uniqueness(
+        summary.expected_box_numbers, api_box_counts
     )
-    summary.extra_boxes = sorted(
-        all_boxes - summary.expected_box_numbers
-    )
-    summary.all_boxes_found = (
-        len(summary.missing_boxes) == 0
-        and len(summary.extra_boxes) == 0
-        and summary.total_match
-    )
+    summary.missing_boxes = missing
+    summary.duplicate_boxes = duplicate
+    summary.all_boxes_found = (len(missing) == 0 and len(duplicate) == 0)
 
     return summary
 
@@ -302,7 +332,7 @@ def main():
     # Pretty-print key fields
     for k in ["login_ok", "expected_count", "api_total",
               "pages_fetched", "total_match", "all_boxes_found",
-              "missing_box_count", "extra_box_count"]:
+              "missing_box_count", "duplicate_box_count", "extra_box_count"]:
         val = d.get(k)
         print(f"{k}: {val}")
     if d.get("error"):

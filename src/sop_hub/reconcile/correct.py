@@ -134,6 +134,23 @@ def log_needs_human(spec, result, hub, log) -> None:
         log.line(f"[{spec.project_id}/{spec.leg}] ⚠️ 待人工·新货源未到 {result.n(NEW_UNATTR)} —— 等额外源到再分船")
 
 
+def delete_phantom(spec, result, hub, log) -> int:
+    """删 phantom(95306本leg无的DB行)。**人工显式触发**(--delete-phantom),不进每日自动。
+    删前把 batch_id 记进日志 from_value 供回溯;改前请先备份。"""
+    keys = result.by_cat.get(PHANTOM, [])
+    if not keys:
+        return 0
+    where = " AND ".join(f"{c}=?" for c in spec.key_cols)
+    for key in keys:
+        vals = key if isinstance(key, tuple) else (key,)
+        row = hub.execute(f"SELECT batch_id FROM {spec.table} WHERE {where}", vals).fetchone()
+        hub.execute(f"DELETE FROM {spec.table} WHERE {where}", vals)
+        log.act(spec.project_id, spec.leg, "delete_phantom", key, row[0] if row else "", "")
+    hub.commit()
+    log.line(f"[{spec.project_id}/{spec.leg}] 删 phantom {len(keys)} 行 —— 人工确认删除")
+    return len(keys)
+
+
 def apply_corrections(spec, result, rail, hub, log) -> dict:
     n_re = reroute_mismatch(spec, result, hub, log)
     n_bf = spec.backfill(rail, hub, result, log)   # 项目自定(九三集装箱补 hph)

@@ -35,7 +35,7 @@ def _ydid_of(key):
     return key[0] if isinstance(key, tuple) else key
 
 
-def run(project, leg_filter, apply, mark):
+def run(project, leg_filter, apply, mark, delete_phantom):
     specs = REGISTRY[project]
     rail = sqlite3.connect(jiusan_spec.RAIL)
     hub = sqlite3.connect(HUB)
@@ -86,7 +86,12 @@ def run(project, leg_filter, apply, mark):
                   f"完成闸移={c['gated']} | 待人工 phantom={c['phantom_left']} new={c['new_left']}")
             res = reconcile(spec, rail, hub)   # 更正后重对账,供标核对完毕用
 
-        if apply or mark:
+        if delete_phantom:
+            d = correct.delete_phantom(spec, res, hub, log)
+            print(f"  ▸ 删 phantom: {d} 行")
+            res = reconcile(spec, rail, hub)
+
+        if apply or mark or delete_phantom:
             m = marking.commit_reconciled(spec, res, rail, hub, source_ref="daily")
             print(f"  ▸ 标核对完毕: ok={m['ok_marked']} + grandfather历史={m['grandfathered']} "
                   f"| 真phantom待删={m['true_phantom_left']}")
@@ -102,8 +107,10 @@ def main():
                     help="自动 reroute 错挂 + backfill;phantom/new 只告警(写库+日志)")
     ap.add_argument("--mark", action="store_true",
                     help="把 ok 标核对完毕 + grandfather 历史船(写库)")
+    ap.add_argument("--delete-phantom", action="store_true",
+                    help="人工确认删 phantom(95306本leg无的DB行);删前请备份")
     a = ap.parse_args()
-    run(a.project, a.leg, a.apply, a.mark)
+    run(a.project, a.leg, a.apply, a.mark, a.delete_phantom)
 
 
 if __name__ == "__main__":

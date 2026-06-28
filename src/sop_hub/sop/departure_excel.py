@@ -452,6 +452,7 @@ def _resolve_archive_dir(
     release_batch_id: str,
     *,
     db_path: str | Path | None = None,
+    date_override: str | None = None,
 ) -> Path:
     """业务归档目录:business/projects/<proj>/<dest>/<ship>/<lot>/excel/<date>/
 
@@ -478,7 +479,8 @@ def _resolve_archive_dir(
     ship = (ship or "_unknown_ship").strip()
     dest = (dest or "_unknown_dest").strip()
     lot = (lot or "lot01").strip()
-    date_seg = (batch_date or notice_date or "").strip()
+    # 优先用调用方给的发运日(发运 excel 该按发运事件日,不取可能解析错的 batch_date)
+    date_seg = (date_override or batch_date or notice_date or "").strip()
     if not date_seg:
         from datetime import datetime
         date_seg = datetime.now().strftime("%Y-%m-%d")
@@ -1066,12 +1068,15 @@ def generate_multibatch_departure_excel(
     total_rows = 0
     total_wagons: set[str] = set()
     used_batch_ids: list[str] = []
+    ships_used: list[str] = []
 
     for rbid, car_nos in batch_specs:
         rows, ctx, err = _extract_rows(rbid, db_path=db_path, car_nos=car_nos)
         if err or not rows:
             continue
         ship = (ctx.get("ship_name") or "") if isinstance(ctx, dict) else ""
+        if ship and ship not in ships_used:
+            ships_used.append(ship)
         # 船名小标题(块首)
         ws.cell(row=cur, column=1, value=f"【{ship}】{len(rows)} 车").font = Font(bold=True)
         cur += 1
@@ -1106,10 +1111,25 @@ def generate_multibatch_departure_excel(
     for ci in range(1, n_cols + 1):
         ws.column_dimensions[get_column_letter(ci)].width = 14
 
+    # 发运日 = 这批车实际制票日(发运事件日);绕开可能解析错的 batch_date(如马兰幸福 8-27)。
+    dispatch_date = ""
+    try:
+        _ph = ",".join("?" * len(used_batch_ids))
+        _c = sqlite3.connect(str(Path(db_path) if db_path else SOP_DB))
+        _row = _c.execute(
+            f"SELECT max(substr(ticketed_at,1,10)) FROM wagon_shipments WHERE batch_id IN ({_ph})",
+            used_batch_ids).fetchone()
+        _c.close()
+        dispatch_date = (_row[0] or "").strip() if _row else ""
+    except Exception:
+        dispatch_date = ""
+
     out_dir = Path(output_dir) if output_dir else _resolve_archive_dir(
-        project_id, used_batch_ids[0], db_path=db_path)
+        project_id, used_batch_ids[0], db_path=db_path, date_override=dispatch_date or None)
     out_dir.mkdir(parents=True, exist_ok=True)
-    filename = filename_override or f"中唐发运_{total_rows}车_{len(used_batch_ids)}批次.xlsx"
+    # 文件名按船名(去掉"中唐发运"硬编码,全项目通用)+ 发运日
+    _ships_label = "+".join(ships_used) or project_id
+    filename = filename_override or f"{_ships_label}发运_{dispatch_date or '未知日'}_{total_rows}车.xlsx"
     filepath = out_dir / filename
     wb.save(str(filepath))
 

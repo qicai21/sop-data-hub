@@ -83,7 +83,7 @@ def run(project, leg_filter, apply, mark):
         if apply:
             c = correct.apply_corrections(spec, res, rail, hub, log)
             print(f"  ▸ 更正: reroute={c['rerouted']} backfill={c['backfilled']} "
-                  f"| 待人工 phantom={c['phantom_left']} new={c['new_left']}")
+                  f"完成闸移={c['gated']} | 待人工 phantom={c['phantom_left']} new={c['new_left']}")
             res = reconcile(spec, rail, hub)   # 更正后重对账,供标核对完毕用
 
         if apply or mark:

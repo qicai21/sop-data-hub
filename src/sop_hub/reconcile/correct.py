@@ -89,6 +89,43 @@ def reroute_mismatch(spec, result, hub, log) -> int:
     return len(rows)
 
 
+def gate_finished_ships(spec, result, hub, log) -> int:
+    """完成闸:新货(NEW_UNATTR)若挂在**发完的船**上 → 移到当前唯一活跃船。
+    无唯一活跃船 → 不动,告警(交人工)。移后仍是 NEW_UNATTR(源到再确认归属)。"""
+    finished = spec.finished_batches(hub)
+    on_finished = [(k, d) for k, d in result.by_cat.get(NEW_UNATTR, []) if d in finished]
+    if not on_finished:
+        return 0
+    active = spec.active_batch(hub)
+    if not active:
+        log.line(f"[{spec.project_id}/{spec.leg}] ⚠️ 完成闸:{len(on_finished)} 新货挂在发完的船,"
+                 f"但当前无唯一活跃船 → 待人工")
+        return 0
+    ship = _batch_ship(hub, active)
+    set_ship = _has_col(hub, spec.table, "ship_name")
+    where = " AND ".join(f"{c}=?" for c in spec.key_cols)
+    affected = {active}
+    for key, d in on_finished:
+        vals = key if isinstance(key, tuple) else (key,)
+        if set_ship:
+            hub.execute(f"UPDATE {spec.table} SET batch_id=?, ship_name=? WHERE {where}",
+                        (active, ship, *vals))
+        else:
+            hub.execute(f"UPDATE {spec.table} SET batch_id=? WHERE {where}", (active, *vals))
+        log.act(spec.project_id, spec.leg, "gate_move", key, d, active)
+        affected.add(d)
+    hub.commit()
+    try:
+        from sop_hub.sop.shipped_weight import compute_for_release_batch
+        for bid in affected:
+            compute_for_release_batch(bid, db_path=DB_PATH)
+    except Exception as e:
+        log.line(f"  ⚠️ 重算聚合异常: {e}")
+    log.line(f"[{spec.project_id}/{spec.leg}] 完成闸:{len(on_finished)} 新货移出发完的船 "
+             f"→ 当前活跃船[{ship}](仍待源到确认)")
+    return len(on_finished)
+
+
 def log_needs_human(spec, result, hub, log) -> None:
     """phantom(待删)/ new(待分船)不自动做,记数 + 待人工日志。"""
     if result.n(PHANTOM):
@@ -100,6 +137,7 @@ def log_needs_human(spec, result, hub, log) -> None:
 def apply_corrections(spec, result, rail, hub, log) -> dict:
     n_re = reroute_mismatch(spec, result, hub, log)
     n_bf = spec.backfill(rail, hub, result, log)   # 项目自定(九三集装箱补 hph)
+    n_gate = gate_finished_ships(spec, result, hub, log)  # 完成闸:新货移出发完的船
     log_needs_human(spec, result, hub, log)
-    return {"rerouted": n_re, "backfilled": n_bf,
+    return {"rerouted": n_re, "backfilled": n_bf, "gated": n_gate,
             "phantom_left": result.n(PHANTOM), "new_left": result.n(NEW_UNATTR)}

@@ -113,6 +113,17 @@ class _JiusanBase(ReconcileSpec):
             "SELECT ydid FROM shipments WHERE origin_name=? AND destination_name LIKE ? "
             "AND transport_mode_name=?", (ORIGIN, f"%{DEST}%", self.transport_mode))}
 
+    def active_batch(self, hub):
+        rows = [r[0] for r in hub.execute(
+            "SELECT id FROM release_batches WHERE project=? AND batch_sequence=? "
+            "AND dispatch_status='loading'", (PROJECT, self.batch_seq))]
+        return rows[0] if len(rows) == 1 else None
+
+    def finished_batches(self, hub):
+        return {r[0] for r in hub.execute(
+            "SELECT id FROM release_batches WHERE project=? AND batch_sequence=? "
+            "AND dispatch_status!='loading'", (PROJECT, self.batch_seq))}
+
 
 class JiusanContainerSpec(_JiusanBase):
     leg = "container"

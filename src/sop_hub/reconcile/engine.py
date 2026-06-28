@@ -57,6 +57,15 @@ class ReconcileSpec:
         返回补的笔数。"""
         return 0
 
+    # ── 完成闸:发完的船不再接新货,新货落当前活跃船 ──────────────
+    def active_batch(self, hub):
+        """当前唯一在发(loading)的 batch_id;0 或多于1个 → None(交人工)。默认关闸。"""
+        return None
+
+    def finished_batches(self, hub) -> set:
+        """已发完(非 loading)的 batch_id 集合。默认空 = 不判完成。"""
+        return set()
+
     def reconciled_keys(self, hub) -> set:
         """已核对完毕的 key(从三方一起剔除,每日只算未核对的)。通用实现:
         按 table + key_cols 取 reconciled_at 非空的行。"""

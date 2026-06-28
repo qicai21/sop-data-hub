@@ -753,6 +753,16 @@ def _infer_sop_project_token(payload: dict[str, Any], *, category: str) -> str:
     header fields at all.
     """
     text = _payload_search_text(payload)
+    # OCR 到站归一兜底(2026-06-28 用户):VLM(Qwen3.6)常把"汐子"读成沙子/夕子/涉子,
+    # 项目推断搜的是原始抽取文本(没过 canonicalize_station_text),硬锚"汐子"命不中。
+    # 这里在锚点匹配前先把已知误识替换成标准站名;闭集 STATION_OCR_CORRECTIONS 随经验丰富。
+    try:
+        from sop_hub.data_agent.agent import STATION_OCR_CORRECTIONS
+        for _bad, _good in STATION_OCR_CORRECTIONS.items():
+            if _bad in text:
+                text = text.replace(_bad, _good)
+    except Exception:
+        pass
     if category == "出港计划通知单":
         if any(token in text for token in ("合远9", "朝阳钢铁", "朝钢", "朝阳西", "朝阳铁")):
             return "chaoyang_steel"

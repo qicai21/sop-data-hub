@@ -36,10 +36,12 @@ FALLBACK_BUSINESS_SOP_TOKENS = {
 # station names, not project hard-coding: the final value still passes through
 # the normal station canonicalization path below.
 STATION_OCR_CORRECTIONS = {
-    # 中唐特钢汐子站 VLM 误识闭集 — 2026-06-06 用户补
+    # 中唐特钢汐子站 VLM(Qwen3.6)误识闭集 — 随用经验逐渐丰富。
+    # 2026-06-06 用户补:沱子/沙子/夕子;2026-06-28 用户补:涉子。
     "沱子": "汐子",
     "沙子": "汐子",
     "夕子": "汐子",
+    "涉子": "汐子",
 }
 
 

@@ -107,12 +107,20 @@ class _JiusanBase(ReconcileSpec):
                 h2s[h] = ship
         return h2s
 
+    def leg_ydids_all_dates(self, rail):
+        """本 leg 在 95306 的全部 ydid(不卡日期)——grandfather 判历史真车。"""
+        return {r[0] for r in rail.execute(
+            "SELECT ydid FROM shipments WHERE origin_name=? AND destination_name LIKE ? "
+            "AND transport_mode_name=?", (ORIGIN, f"%{DEST}%", self.transport_mode))}
+
 
 class JiusanContainerSpec(_JiusanBase):
     leg = "container"
     transport_mode = "集装箱运输"
     sheet = "新台子"
     batch_seq = "lot01"
+    table = "wagon_container_shipments"
+    key_cols = ("ydid", "box_no")
 
     def universe(self, rail):
         out = {}
@@ -154,6 +162,8 @@ class JiusanBulkSpec(_JiusanBase):
     transport_mode = "整车运输"
     sheet = "散粮车"
     batch_seq = "lot02"
+    table = "wagon_shipments"
+    key_cols = ("ydid",)
 
     def universe(self, rail):
         out = {}

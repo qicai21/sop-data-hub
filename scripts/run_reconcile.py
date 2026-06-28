@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from sop_hub.reconcile import (  # noqa: E402
     MISMATCH, MISSING, NEW_UNATTR, OK, PHANTOM, mismatch_breakdown, reconcile,
 )
-from sop_hub.reconcile import jiusan_spec  # noqa: E402
+from sop_hub.reconcile import jiusan_spec, marking  # noqa: E402
 
 HUB = "data/sop_agent.db"
 REGISTRY = {"jiusan": jiusan_spec.SPECS}
@@ -34,10 +34,11 @@ def _ydid_of(key):
     return key[0] if isinstance(key, tuple) else key
 
 
-def run(project, leg_filter):
+def run(project, leg_filter, mark):
     specs = REGISTRY[project]
     rail = sqlite3.connect(jiusan_spec.RAIL)
     hub = sqlite3.connect(HUB)
+    marking.ensure_columns(hub)   # 幂等建 reconciled_at / reconcile_source_ref
     for leg, cls in specs.items():
         if leg_filter and leg != leg_filter:
             continue
@@ -76,13 +77,20 @@ def run(project, leg_filter):
 
         print(f"  ✓ 核对完毕(一致): {res.n(OK)}{unit}")
 
+        if mark:
+            m = marking.commit_reconciled(spec, res, rail, hub, source_ref="daily")
+            print(f"  ▸ 标核对完毕: ok={m['ok_marked']} + grandfather历史={m['grandfathered']} "
+                  f"| 真phantom待删={m['true_phantom_left']}")
+
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--project", default="jiusan")
     ap.add_argument("--leg", choices=["container", "bulk"])
+    ap.add_argument("--mark", action="store_true",
+                    help="跑完把 ok 标核对完毕 + grandfather 历史船(写库)")
     a = ap.parse_args()
-    run(a.project, a.leg)
+    run(a.project, a.leg, a.mark)
 
 
 if __name__ == "__main__":

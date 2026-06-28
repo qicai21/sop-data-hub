@@ -43,6 +43,27 @@ class ReconcileSpec:
         只含"源能定到 batch"的 key;源里没有的 key 不出现(→ 引擎判 NEW_UNATTR)。"""
         raise NotImplementedError
 
+    # 列(marking 用):DB 表名 + key 列;子类填。
+    table: str = ""
+    key_cols: tuple = ()
+
+    def leg_ydids_all_dates(self, rail) -> set:
+        """本 leg 在 95306 的全部 ydid(不卡日期),grandfather 判历史真车。
+        默认空集 = 不 grandfather(phantom 全留待人工)。"""
+        return set()
+
+    def reconciled_keys(self, hub) -> set:
+        """已核对完毕的 key(从三方一起剔除,每日只算未核对的)。通用实现:
+        按 table + key_cols 取 reconciled_at 非空的行。"""
+        if not self.table or not self.key_cols:
+            return set()
+        cols = ", ".join(f"t.{c}" for c in self.key_cols)
+        rows = hub.execute(
+            f"SELECT {cols} FROM {self.table} t JOIN release_batches rb ON t.batch_id=rb.id "
+            f"WHERE rb.project=? AND t.reconciled_at IS NOT NULL", (self.project_id,))
+        n = len(self.key_cols)
+        return {(r[0] if n == 1 else tuple(r)) for r in rows}
+
 
 @dataclass
 class ReconcileResult:
@@ -67,6 +88,14 @@ def reconcile(spec: ReconcileSpec, rail, hub) -> ReconcileResult:
     U = spec.universe(rail)
     D = spec.db_rows(hub)
     S = spec.source_batch(rail, hub)
+
+    # 已核对完毕的 key 从三方一起剔除(每日只算未核对 + 新增 + 源更新过的);
+    # 否则已核对的箱:universe有·source有·db(被过滤)无 → 会被误判 missing。
+    done = spec.reconciled_keys(hub)
+    if done:
+        U = {k: v for k, v in U.items() if k not in done}
+        D = {k: v for k, v in D.items() if k not in done}
+        S = {k: v for k, v in S.items() if k not in done}
 
     by_cat: dict[str, list] = {c: [] for c in CATEGORIES}
     for k in set(U) | set(D) | set(S):

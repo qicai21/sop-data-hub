@@ -52,6 +52,11 @@ class ReconcileSpec:
         默认空集 = 不 grandfather(phantom 全留待人工)。"""
         return set()
 
+    def backfill(self, rail, hub, result, log) -> int:
+        """更正时的项目自定数据补全(默认无操作)。不改归属,只补字段。
+        返回补的笔数。"""
+        return 0
+
     def reconciled_keys(self, hub) -> set:
         """已核对完毕的 key(从三方一起剔除,每日只算未核对的)。通用实现:
         按 table + key_cols 取 reconciled_at 非空的行。"""

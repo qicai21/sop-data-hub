@@ -17,7 +17,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from sop_hub.reconcile import (  # noqa: E402
     MISMATCH, MISSING, NEW_UNATTR, OK, PHANTOM, mismatch_breakdown, reconcile,
 )
-from sop_hub.reconcile import jiusan_spec, marking  # noqa: E402
+from sop_hub.reconcile import correct, jiusan_spec, marking  # noqa: E402
+from sop_hub.utils.time import now_iso_beijing  # noqa: E402
 
 HUB = "data/sop_agent.db"
 REGISTRY = {"jiusan": jiusan_spec.SPECS}
@@ -34,11 +35,13 @@ def _ydid_of(key):
     return key[0] if isinstance(key, tuple) else key
 
 
-def run(project, leg_filter, mark):
+def run(project, leg_filter, apply, mark):
     specs = REGISTRY[project]
     rail = sqlite3.connect(jiusan_spec.RAIL)
     hub = sqlite3.connect(HUB)
-    marking.ensure_columns(hub)   # 幂等建 reconciled_at / reconcile_source_ref
+    marking.ensure_columns(hub)        # 幂等建 reconciled_at / reconcile_source_ref
+    correct.ensure_log_table(hub)      # 幂等建 reconcile_action_log
+    log = correct.ReconcileLog(hub, now_iso_beijing())
     for leg, cls in specs.items():
         if leg_filter and leg != leg_filter:
             continue
@@ -77,20 +80,30 @@ def run(project, leg_filter, mark):
 
         print(f"  ✓ 核对完毕(一致): {res.n(OK)}{unit}")
 
-        if mark:
+        if apply:
+            c = correct.apply_corrections(spec, res, rail, hub, log)
+            print(f"  ▸ 更正: reroute={c['rerouted']} backfill={c['backfilled']} "
+                  f"| 待人工 phantom={c['phantom_left']} new={c['new_left']}")
+            res = reconcile(spec, rail, hub)   # 更正后重对账,供标核对完毕用
+
+        if apply or mark:
             m = marking.commit_reconciled(spec, res, rail, hub, source_ref="daily")
             print(f"  ▸ 标核对完毕: ok={m['ok_marked']} + grandfather历史={m['grandfathered']} "
                   f"| 真phantom待删={m['true_phantom_left']}")
+
+    log.flush()
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--project", default="jiusan")
     ap.add_argument("--leg", choices=["container", "bulk"])
+    ap.add_argument("--apply", action="store_true",
+                    help="自动 reroute 错挂 + backfill;phantom/new 只告警(写库+日志)")
     ap.add_argument("--mark", action="store_true",
-                    help="跑完把 ok 标核对完毕 + grandfather 历史船(写库)")
+                    help="把 ok 标核对完毕 + grandfather 历史船(写库)")
     a = ap.parse_args()
-    run(a.project, a.leg, a.mark)
+    run(a.project, a.leg, a.apply, a.mark)
 
 
 if __name__ == "__main__":

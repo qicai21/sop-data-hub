@@ -156,6 +156,27 @@ class JiusanContainerSpec(_JiusanBase):
                 out[(ydid, box)] = bid
         return out
 
+    def backfill(self, rail, hub, result, log):
+        """新货(源未到)的箱:从 95306 补 hph 列(入库时漏写),不改归属。"""
+        from .engine import NEW_UNATTR
+        y2h = _ydid2hph(rail)
+        n = 0
+        for key, _d in result.by_cat.get(NEW_UNATTR, []):
+            ydid, box = key
+            hph = y2h.get(ydid)
+            if not hph:
+                continue
+            r = hub.execute(
+                "UPDATE wagon_container_shipments SET hph=? "
+                "WHERE ydid=? AND box_no=? AND (hph IS NULL OR hph='')", (hph, ydid, box))
+            if r.rowcount:
+                log.act(PROJECT, self.leg, "backfill_hph", key, "", hph)
+                n += 1
+        hub.commit()
+        if n:
+            log.line(f"[{PROJECT}/{self.leg}] backfill hph {n} 箱(从95306,不改归属)")
+        return n
+
 
 class JiusanBulkSpec(_JiusanBase):
     leg = "bulk"

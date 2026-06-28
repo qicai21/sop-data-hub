@@ -1,0 +1,105 @@
+"""更正(--apply):**自动只做安全的两件 + 每笔落日志**。
+
+- reroute 错挂(MISMATCH):batch_id/ship_name 改回源指定 batch,重算聚合。可逆。
+- spec 自定 backfill(九三集装箱:给新货从 95306 补 hph),不改归属。
+- PHANTOM(删)/NEW(分船)**不自动做**,只写"待人工"日志 + 计数,交人工。
+
+日志双写:`reconcile_action_log` 表(逐笔可查/可回溯)+ `runtime/reconcile.log` 文件。
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+from sop_hub.utils.time import now_iso_beijing
+
+from .engine import MISMATCH, NEW_UNATTR, PHANTOM
+
+LOG_FILE = Path("runtime/reconcile.log")
+DB_PATH = "data/sop_agent.db"
+
+
+def ensure_log_table(hub) -> None:
+    hub.execute("""CREATE TABLE IF NOT EXISTS reconcile_action_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_at TEXT, project TEXT, leg TEXT, action TEXT,
+        entity_key TEXT, from_value TEXT, to_value TEXT, source_ref TEXT )""")
+    hub.commit()
+
+
+class ReconcileLog:
+    """逐笔写表 + 攒行写文件。"""
+
+    def __init__(self, hub, run_at: str):
+        self.hub = hub
+        self.run_at = run_at
+        self.buf: list[str] = []
+
+    def act(self, project, leg, action, key, frm, to, src="daily"):
+        self.hub.execute(
+            "INSERT INTO reconcile_action_log "
+            "(run_at,project,leg,action,entity_key,from_value,to_value,source_ref) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (self.run_at, project, leg, action, str(key), str(frm), str(to), src))
+
+    def line(self, text):
+        self.buf.append(text)
+
+    def flush(self):
+        self.hub.commit()
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with LOG_FILE.open("a", encoding="utf-8") as f:
+            for ln in self.buf:
+                f.write(f"{self.run_at}  {ln}\n")
+
+
+def _has_col(hub, table, col):
+    return col in {r[1] for r in hub.execute(f"PRAGMA table_info({table})")}
+
+
+def _batch_ship(hub, bid):
+    r = hub.execute("SELECT ship_name FROM release_batches WHERE id=?", (bid,)).fetchone()
+    return r[0] if r else None
+
+
+def reroute_mismatch(spec, result, hub, log) -> int:
+    """错挂 → 改归源 batch(+ ship_name 若有列),重算受影响批次聚合。"""
+    rows = result.by_cat.get(MISMATCH, [])
+    if not rows:
+        return 0
+    where = " AND ".join(f"{c}=?" for c in spec.key_cols)
+    set_ship = _has_col(hub, spec.table, "ship_name")
+    affected = set()
+    for key, d, s in rows:
+        vals = key if isinstance(key, tuple) else (key,)
+        if set_ship:
+            hub.execute(f"UPDATE {spec.table} SET batch_id=?, ship_name=? WHERE {where}",
+                        (s, _batch_ship(hub, s), *vals))
+        else:
+            hub.execute(f"UPDATE {spec.table} SET batch_id=? WHERE {where}", (s, *vals))
+        log.act(spec.project_id, spec.leg, "reroute", key, d, s)
+        affected |= {d, s}
+    hub.commit()
+    try:  # 重算聚合(shipped_weight)
+        from sop_hub.sop.shipped_weight import compute_for_release_batch
+        for bid in affected:
+            compute_for_release_batch(bid, db_path=DB_PATH)
+    except Exception as e:
+        log.line(f"  ⚠️ 重算聚合异常: {e}")
+    log.line(f"[{spec.project_id}/{spec.leg}] reroute 错挂 {len(rows)} 箱 → 重算 {len(affected)} 批")
+    return len(rows)
+
+
+def log_needs_human(spec, result, hub, log) -> None:
+    """phantom(待删)/ new(待分船)不自动做,记数 + 待人工日志。"""
+    if result.n(PHANTOM):
+        log.line(f"[{spec.project_id}/{spec.leg}] ⚠️ 待人工·幻影/错表 {result.n(PHANTOM)} —— 核实后删")
+    if result.n(NEW_UNATTR):
+        log.line(f"[{spec.project_id}/{spec.leg}] ⚠️ 待人工·新货源未到 {result.n(NEW_UNATTR)} —— 等额外源到再分船")
+
+
+def apply_corrections(spec, result, rail, hub, log) -> dict:
+    n_re = reroute_mismatch(spec, result, hub, log)
+    n_bf = spec.backfill(rail, hub, result, log)   # 项目自定(九三集装箱补 hph)
+    log_needs_human(spec, result, hub, log)
+    return {"rerouted": n_re, "backfilled": n_bf,
+            "phantom_left": result.n(PHANTOM), "new_left": result.n(NEW_UNATTR)}

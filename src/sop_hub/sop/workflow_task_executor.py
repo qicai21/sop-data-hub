@@ -1559,6 +1559,21 @@ def _execute_chaoyang_inspection_chain(
             upload_info = {"skipped": True,
                            "reason": "skip_upload(95306合成候选,待人工确认再上传)"}
         elif project_id == "chaoyang_steel" and loading_car_nos:
+            # P2#1 审计(2026-06-28):鞍钢上传也走 external_action_log,否则上传全程
+            # 无审计痕迹(原工单"无上传动作"误判即源于此)。action_type 独立标识。
+            from sop_hub.sop.external_action_log import (
+                build_idempotency_key as _bik,
+                plan_external_action as _pea,
+                mark_external_action_executed as _mae,
+            )
+            _uidem = _bik(project_id, "upload_ansteel_consignee",
+                          f"{matched_batch_id}:{len(loading_car_nos)}")
+            try:
+                _pea(db_path=db_path, workflow_task_id=task_id, message_id=message_id or "",
+                     project_id=project_id, action_type="upload_ansteel_consignee",
+                     idempotency_key=_uidem, target_system="ansteel_portal")
+            except Exception:
+                pass
             try:
                 from sop_hub.external.chaoyang_ansteel.upload_wagons import (
                     upload_and_verify,
@@ -1580,6 +1595,13 @@ def _execute_chaoyang_inspection_chain(
                     "plan": ur.plan_summary,
                     "error": ur.error,
                 }
+                if ur.success:
+                    try:
+                        _mae(_uidem, db_path=db_path, response_json={
+                            "uploaded": ur.uploaded_count, "verified": ur.verified_count,
+                            "server_returned": ur.server_returned_count})
+                    except Exception:
+                        pass
             except Exception as exc:
                 upload_info = {"skipped": False, "error": str(exc)}
 

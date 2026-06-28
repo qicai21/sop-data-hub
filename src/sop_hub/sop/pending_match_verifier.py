@@ -195,16 +195,26 @@ def verify_pending_candidates(
         try:
             res = _retry_chain(cand_id, db_path)
             summary.retried += 1
+            oj = res.get("output_json") or {}
             status = res.get("status") or ""
-            stage = (res.get("output_json") or {}).get("stage", "")
-            note = (res.get("output_json") or {}).get("note", "")
-            actual = (res.get("output_json") or {}).get("actual_in_db_count", 0)
-            expected = (res.get("output_json") or {}).get("expected_count", 0)
+            stage = oj.get("stage", "")
+            note = oj.get("note", "")
+            actual = oj.get("actual_in_db_count", 0)
+            expected = oj.get("expected_count", 0)
+            # P2#3 透传(2026-06-28):链的上传/发送/告警结果带进 verifier detail
+            # (原来全丢 → 成功/失败都看不到鞍钢上传 + excel 发送结果)。
+            _up = oj.get("consignee_upload") or {}
+            _obs = {
+                "upload_success": _up.get("success"),
+                "upload_skipped": _up.get("skipped"),
+                "send_success": (oj.get("send") or {}).get("success"),
+                "warnings": oj.get("warnings") or [],
+            }
             if status == "succeeded":
                 summary.succeeded += 1
                 summary.detail.append({
                     "candidate_id": cand_id, "action": "succeeded",
-                    "elapsed_hours": round(elapsed_h, 2),
+                    "elapsed_hours": round(elapsed_h, 2), **_obs,
                 })
             elif stage == "waiting_95306_tickets":
                 summary.still_pending += 1
@@ -216,9 +226,11 @@ def verify_pending_candidates(
             else:
                 summary.still_pending += 1
                 summary.detail.append({
-                    "candidate_id": cand_id, "action": f"unknown_status:{status}",
+                    "candidate_id": cand_id,
+                    "action": (f"retry_after_fail:{status}" if status == "failed"
+                               else f"unknown_status:{status}"),
                     "note": note,
-                    "elapsed_hours": round(elapsed_h, 2),
+                    "elapsed_hours": round(elapsed_h, 2), **_obs,
                 })
         except Exception as exc:
             summary.errors += 1

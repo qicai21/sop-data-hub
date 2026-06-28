@@ -1320,10 +1320,12 @@ def _execute_chaoyang_inspection_chain(
         rail = _sql.connect(f"file:{RAIL_DB}?mode=ro", uri=True)
         rail.row_factory = _sql.Row
         try:
-            inserted = 0
+            # 逐车号查 95306 拿权威货票行(朝阳西到站 + 货描含铁矿 + 最近一张),
+            # 收成 ticket dict 列表。落库统一交给 wagon_ingest.ingest_wagons —— 标载/
+            # hph/列序号/重算都在那一处口径(2026-06-28 收敛掉这里的手搓 INSERT)。
+            tickets: list[dict] = []
             no_match = []
             for cno in loading_car_nos:
-                # 找朝阳西到站 + 货描含铁矿 + ticketed_at 最近的一条
                 row = rail.execute("""
                     SELECT car_no, ydid, czydid, car_model, marked_weight, cargo_count,
                            cargo_name, transport_mode_code, transport_mode_name,
@@ -1340,68 +1342,48 @@ def _execute_chaoyang_inspection_chain(
                 if not row:
                     no_match.append(cno)
                     continue
-                r = dict(row)
-                wid = hashlib.sha1(
-                    f"{r['ydid']}|{matched_batch_id}".encode()
-                ).hexdigest()[:24]
-                # 提取时即写 hph + 标载(2026-06-27 统一口径,不取 rail 计费重量)
-                from sop_hub.sop.wagon_ingest import (
-                    marked_load_from_car_model as _mlf, extract_hph as _ehp,
-                )
-                _bz = _mlf(r['car_model'], int(r['cargo_count'] or 0) > 0)
-                if _bz is None:
-                    _bz = float(r['marked_weight']) if r['marked_weight'] else None
-                try:
-                    conn.execute("""INSERT INTO wagon_shipments
-                        (id, batch_id, car_no, ydid, czydid, car_model, marked_weight,
-                         cargo_count, cargo_name, shipper_name, consignee_name,
-                         origin_name, destination_name, ticketed_at, departed_at,
-                         arrived_at, delivered_at, status_name, latest_stage_key,
-                         latest_stage_name, latest_event_time, accepted_at, loaded_at,
-                         transport_mode_code, transport_mode_name,
-                         container_no, container_numbers_json,
-                         project_id, ship_name, dispatch_status,
-                         source_message_id, source_group_id, hph, created_at, updated_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-                                ?,?,?,?,?,?,datetime('now'),datetime('now'))""",
-                        (wid, matched_batch_id, cno, r['ydid'], r['czydid'],
-                         r['car_model'], _bz,
-                         int(r['cargo_count']) if r['cargo_count'] else None,
-                         r['cargo_name'], "", "",
-                         r['origin_name'], r['destination_name'], r['ticketed_at'],
-                         r['departed_at'], r['arrived_at'], r['delivered_at'],
-                         r['status_name'], r['latest_stage_key'], r['latest_stage_name'],
-                         r['latest_event_time'], r['accepted_at'], r['loaded_at'],
-                         r['transport_mode_code'], r['transport_mode_name'],
-                         r['container_no_raw'] or "", r['container_numbers_json'] or "",
-                         project_id, ship, "completed",
-                         cand_d.get("message_id") or "", "", _ehp(r)))
-                    # match 表
-                    mid = hashlib.sha1(
-                        f"{matched_batch_id}|{r['ydid']}".encode()
-                    ).hexdigest()[:24]
-                    try:
-                        # 用项目派生的 match_source,便于审计区分朝阳 vs 中唐
-                        # 自动链跑出来的对单关系。
-                        ms = (
-                            "zhongtang_inspection_chain"
-                            if project_id == "zhongtang_special_steel"
-                            else "chaoyang_inspection_chain"
-                        )
-                        conn.execute("""INSERT INTO shipment_release_batch_matches
-                            (id, release_batch_id, wagon_shipment_id, ydid,
-                             waybill_no, wagon_no, container_no, match_source)
-                            VALUES (?,?,?,?,?,?,?,?)""",
-                            (mid, matched_batch_id, wid, r['ydid'],
-                             "", cno, r['container_no_raw'] or "", ms))
-                    except _sql.IntegrityError:
-                        pass
-                    inserted += 1
-                except _sql.IntegrityError:
-                    # 同 batch 同 ydid 已存在,跳过
-                    pass
+                tickets.append(dict(row))
         finally:
             rail.close()
+
+        # ── 4b. 统一入库口(ingest_wagons)──────────────────────────
+        # build_wagon_row 内部已处理 标载(车型推)/ hph / dispatch_status。
+        # dispatch_status='completed' 维持朝阳"发运即定稿"口径(已交付的会被
+        # build_wagon_row 升级成 confirmed_received)。recompute=False:下方 step 5
+        # 显式 compute_for_release_batch,这里不重复重算。
+        from sop_hub.sop.wagon_ingest import ingest_wagons, gen_wagon_id
+        ingest_res = ingest_wagons(
+            matched_batch_id, tickets,
+            project_id=project_id, ship_name=ship, db_path=db_path,
+            dispatch_status="completed",
+            source_message_id=cand_d.get("message_id") or "",
+            recompute=False,
+        )
+        inserted = ingest_res.get("new", 0)
+
+        # ── 4c. 对单关系(ingest_wagons 不写 match 表)── 逐车补
+        # shipment_release_batch_matches。wid = gen_wagon_id(同 ingest 口径,FK 对齐)。
+        # match_source 按项目派生,审计区分朝阳 vs 中唐自动链。
+        ms = (
+            "zhongtang_inspection_chain"
+            if project_id == "zhongtang_special_steel"
+            else "chaoyang_inspection_chain"
+        )
+        for t in tickets:
+            ydid = t.get("ydid") or ""
+            wid = gen_wagon_id(ydid, matched_batch_id)
+            mid = hashlib.sha1(
+                f"{matched_batch_id}|{ydid}".encode()
+            ).hexdigest()[:24]
+            try:
+                conn.execute("""INSERT INTO shipment_release_batch_matches
+                    (id, release_batch_id, wagon_shipment_id, ydid,
+                     waybill_no, wagon_no, container_no, match_source)
+                    VALUES (?,?,?,?,?,?,?,?)""",
+                    (mid, matched_batch_id, wid, ydid,
+                     "", t.get("car_no") or "", t.get("container_no_raw") or "", ms))
+            except _sql.IntegrityError:
+                pass
 
         conn.commit()
 
@@ -1634,9 +1616,25 @@ def _execute_chaoyang_inspection_chain(
         except Exception as exc:
             lifecycle_info["error"] = str(exc)
 
+        # ── 真实 status:不再硬编码 succeeded(2026-06-28 6b丢失/假完成工单)──────
+        # 鞍钢上传(关键对外动作)或发运 excel(6b)**该成功却没成功** → status=failed,
+        # 让 verifier 重试(两者都幂等,重试不会重复动作),杜绝静默假完成 + 6b 丢失。
+        # 合法跳过(已发/无批次/等兄弟船齐/无配置)不算失败。
+        warnings: list[str] = []
+        _upload_problem = (not upload_info.get("skipped")) and (not upload_info.get("success"))
+        if _upload_problem:
+            warnings.append(f"鞍钢上传未成功: {upload_info.get('error') or '见 consignee_upload'}")
+        _send_reason = str(send_info.get("reason") or "")
+        _send_legit_skip = bool(send_info.get("skipped")) and any(
+            k in _send_reason for k in ("已发", "无可导出", "等齐", "send_report target"))
+        _send_problem = (not send_info.get("success")) and not _send_legit_skip
+        if _send_problem:
+            warnings.append(f"发运excel未发: {_send_reason or send_info.get('error') or '未知'}")
+        _status = "failed" if (_upload_problem or _send_problem) else "succeeded"
+
         return {
             "action": "executed",
-            "status": "succeeded",
+            "status": _status,
             "output_json": {
                 "matched_release_batch_id": matched_batch_id,
                 "candidate_id": candidate_id,
@@ -1651,6 +1649,7 @@ def _execute_chaoyang_inspection_chain(
                 "lifecycle": lifecycle_info,
                 "send": send_info,
                 "consignee_upload": upload_info,  # 新:ansteel 上传 + 反查
+                "warnings": warnings,             # 新:上传/发送 该成功未成功 暴露在此
             },
         }
 

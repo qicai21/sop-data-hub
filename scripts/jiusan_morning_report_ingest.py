@@ -32,8 +32,8 @@ WX_DB_DIR = Path("/Users/qicai21/Library/Containers/com.tencent.xinWeChat/Data/D
                  "xwechat_files/wxid_xby4wwyshvxr22_5815/db_storage")
 GROUP093_ROOM = "18894028363@chatroom"   # 九三大豆发运群[GROUP093],见记忆 wx-group-search-codes
 SOP_DB = REPO / "data" / "sop_agent.db"
-SHIP = "和谐1"
-CONTAINER_BATCH = "e96f4b3b83c74b4891c6b0957f6989bb827de45b"  # 和谐1 集装箱
+POOL_KEY = "九三大豆"  # snapshot.ship_name 的项目级 key(工单 2026-06-29 §3a);箱数=本阶段港总池
+CONTAINER_BATCH = "e96f4b3b83c74b4891c6b0957f6989bb827de45b"  # 和谐1 集装箱(锚船 batch,留作参考)
 
 
 # ── 1. 拉最新晨报(GROUP093 微信原始库)──────────────────────────────────
@@ -81,7 +81,9 @@ def parse_report(text: str) -> dict:
     xtz_loaded = _num(r"新台子站内目前\s*(\d+)", text)
     line330_loaded = _num(r"线上重箱\s*(\d+)", text)
     ground330_loaded = _num(r"落地重箱\s*(\d+)", text)
-    transit_cars = _num(r"在途\s*(\d+)\s*节集装箱", text)
+    # 在途集装箱:晨报措辞历史上有"在途N节集装箱"(6/12)与"在途N节重箱"(6/29)两种,
+    # 均指在途去程重箱;"在途N节散粮车"/"在途无"不计(非集装箱)。见工单 2026-06-29 §途重。
+    transit_cars = _num(r"在途\s*(\d+)\s*节\s*(?:集装箱|重箱)", text)
     return {
         "port_loaded": port_loaded, "port_empty": port_empty,
         "xtz_loaded": xtz_loaded, "line330_loaded": line330_loaded,
@@ -94,14 +96,18 @@ def parse_report(text: str) -> dict:
 
 # ── 3. 返空(95306 返空列)+ 物理池(unique 箱号)────────────────────────
 def compute_returns_and_pool(conn: sqlite3.Connection) -> tuple[int, int]:
+    """返空(返程在途空箱)+ 物理池基数,均为**本阶段总池**口径(工单 2026-06-29 §3b):
+    以 PHASE_START_SHIP(和谐1)首发为锚,跨船(和谐1→诚信→…)按 jiusan 车体池统计 unique
+    箱;不限单船,也不回溯到锚船之前。"""
+    import jiusan_cycle_board as jcb
+    phase = jcb._phase_start_date(conn)
     pool = conn.execute(
-        "SELECT COUNT(DISTINCT box_no) FROM wagon_container_shipments "
-        "WHERE ship_name=? AND box_no!=''", (SHIP,)).fetchone()[0]
+        "SELECT COUNT(DISTINCT wcs.box_no) FROM wagon_container_shipments wcs "
+        "JOIN wagon_body_pool wbp ON wcs.car_no=wbp.car_no AND wbp.project='jiusan' "
+        "WHERE wcs.box_no!='' AND wcs.departed_at>=?", (phase,)).fetchone()[0]
     transit_empty = 0
     try:
-        import jiusan_cycle_board as jcb
-        pos = jcb._cycle_positions(conn)
-        transit_empty = int((pos.get("transit_empty") or {}).get("boxes", 0) or 0)
+        transit_empty = int(jcb._cycle_state(conn).get("transit_empty_boxes", 0) or 0)
     except Exception:
         pass
     return transit_empty, pool
@@ -145,7 +151,7 @@ def main(apply: bool = False, dry_run: bool = False) -> None:
     conn0 = sqlite3.connect(str(SOP_DB))
     exists = conn0.execute(
         "SELECT source FROM container_pool_snapshot WHERE snapshot_date=? AND ship_name=?",
-        (snap_date, SHIP)).fetchone()
+        (snap_date, POOL_KEY)).fetchone()
     conn0.close()
     if exists:
         print(f"  快照 {snap_date} 已存在(source={exists[0]})→ 跳过,不覆盖人工精修")
@@ -161,7 +167,7 @@ def main(apply: bool = False, dry_run: bool = False) -> None:
     note = (f"auto从GROUP093晨报截止{day}日:返空取95306返空列、330空反推平物理池(unique箱{pool});"
             f"昨装{nodes['_loaded_box']}发{nodes['_shipped_box']}。"
             f"港空/330若按流量口径精修请人工--record覆盖。{warn}")
-    record(conn, snapshot_date=snap_date, project="jiusan", ship_name=SHIP,
+    record(conn, snapshot_date=snap_date, project="jiusan", ship_name=POOL_KEY,
            nodes={k: v for k, v in nodes.items() if not k.startswith("_")},
            inferred="ground330_empty", source="auto_morning_report", note=note,
            now=now_iso_beijing())

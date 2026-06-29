@@ -186,7 +186,9 @@ def main() -> None:
     p.add_argument("--check", metavar="DATE", help="对该日快照跑守恒校验")
     p.add_argument("--record", metavar="DATE")
     p.add_argument("--project", default="jiusan")
-    p.add_argument("--ship", default="和谐1")
+    # 九三 snapshot 已迁为项目级 key(工单 2026-06-29 §3a);CONTAINER_BATCH 无此 key →
+    # check() 跳过单船 95306 交叉项(总池口径下单船对比无意义),负数/池守恒校验仍生效。
+    p.add_argument("--ship", default="九三大豆")
     for f in NODE_FIELDS:
         p.add_argument(f"--{f.replace('_', '-')}", type=int, default=0)
     p.add_argument("--inferred", default="")

@@ -20,8 +20,20 @@ sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "scripts"))
 import cli_dashboard as cd  # noqa: E402  复用渲染风格
 
-SHIP = "和谐1"
+POOL_KEY = "九三大豆"  # snapshot.ship_name 的项目级 key(工单 2026-06-29 §3a,已迁移);箱数节点=本阶段港总池
+PHASE_START_SHIP = "和谐1"  # 本阶段锚(工单 §3b):集装箱循环从和谐1 起算——总池跨船(和谐1→诚信→…)
+#                            但 departed_at 不回溯到和谐1 之前(项目曾停发,3 月旧船不计)。可调:换船名即换锚。
+DISPLAY = "九三大豆·锦州港集装箱总池"  # 看板口径:项目整体集装箱循环,不拘单船(工单 §二)
 INNER = cd.PANEL_WIDTH - 4  # 内容显示宽
+
+
+def _phase_start_date(conn) -> str:
+    """本阶段起始时刻 = PHASE_START_SHIP 的首次发车(工单 §3b)。总池跨船但 departed_at
+    须 >= 此值,绝不回溯到锚船之前。锚船无数据则返回 ''(=不加下限)。"""
+    r = conn.execute(
+        "SELECT MIN(departed_at) FROM wagon_container_shipments "
+        "WHERE ship_name=? AND departed_at!=''", (PHASE_START_SHIP,)).fetchone()
+    return (r[0] if r and r[0] else "") or ""
 
 # ── 固定列布局(显示列,半角=1 全角=2)。横向铺开、竖线钉死同列 ──────
 LV = 4            # 左竖线列(返程上行边 / 左直角)
@@ -56,56 +68,123 @@ def _fetch(conn) -> tuple[dict, dict]:
             "total_loaded", "total_empty", "total_pool", "snapshot_date", "note"]
     rows = conn.execute(
         f"SELECT {','.join(cols)} FROM container_pool_snapshot WHERE ship_name=? "
-        f"ORDER BY snapshot_date DESC LIMIT 2", (SHIP,)).fetchall()
+        f"ORDER BY snapshot_date DESC LIMIT 2", (POOL_KEY,)).fetchall()
     today = dict(zip(cols, rows[0])) if rows else {}
     yest = dict(zip(cols, rows[1])) if len(rows) > 1 else {}
     return today, yest
 
 
-_CBATCH = "e96f4b3b83c74b4891c6b0957f6989bb827de45b"  # 和谐1 集装箱 batch
+RETURN_HOME_HOURS = 5  # 全部交付后≥5h视为返空回港(返程≈去程~5h);见工单 2026-06-29 §返空口径
 
 
-def _cycle_positions(conn) -> dict[str, dict]:
-    """每号列当前位置 → {position: {cyc, boxes}}。位置键:port_loaded/transit_loaded/
-    xtz/transit_empty。
+def _col_latest_trips(conn) -> list[dict]:
+    """每条循环列(home_cycle_no)的**最近一趟**(按发车日),across 九三大豆全部集装箱船。
+    **总池口径**(工单 2026-06-29 §三):不锁单船/单 batch——和谐1/诚信等共用同一车体池
+    (140/180 诚信车命中 jiusan wagon_body_pool),循环列由车体识别,故 JOIN
+    wagon_body_pool(project=jiusan) 即把同一组循环列在所有船的趟次统一,取真正最近一趟
+    (诚信的新趟会盖过和谐1旧趟,根治"看板锁死和谐1致循环列停在旧船"的失显)。
 
-    #issue-20260623 问题2 修复:原靠 95306 status_name(已制单→港重),但制票滞后,
-    刚物理装车没出票的在装列认不到 → 港重列号常错。改用**节点时间戳推进**(港发车
-    departed→新台子到达 arrived→三三0交付 delivered),按 home_cycle 取每列最近一趟:
-      - 已交付:返港重装中。多列已交付时,**交付最早(返港最久)的 = 在装列(港重)**,
-        其余 = 返空(返程在途)。这一步不依赖制票,解决在装列滞后失显。
-      - 已到达未交付:新台子(到达/卸)。
-      - 已发车未到达:在途去程(途重)。
-    在装列精确时刻仍可由晨报「港内配车 N道M节」进一步校准(留待 §八 合并)。"""
+    返回每列 dict:cyc/ship/dep/arr/total(箱)/deliv(已交付箱)/last_deliv/full。"""
+    phase = _phase_start_date(conn)   # 阶段锚:departed_at >= 此值(总池跨船,不回溯锚船之前)
     rows = conn.execute(
         """
         WITH t AS (
-          SELECT wbp.home_cycle_no cyc, min(wcs.departed_at) dep,
-                 min(wcs.arrived_at) arr, min(NULLIF(wcs.delivered_at,'')) deliv,
-                 count(DISTINCT wcs.box_no) boxes
+          SELECT wbp.home_cycle_no cyc, wcs.ship_name ship,
+                 min(wcs.departed_at) dep, max(wcs.arrived_at) arr,
+                 count(DISTINCT wcs.box_no) total,
+                 count(DISTINCT CASE WHEN COALESCE(wcs.delivered_at,'')!='' THEN wcs.box_no END) deliv,
+                 max(wcs.delivered_at) last_deliv
           FROM wagon_container_shipments wcs
           JOIN wagon_body_pool wbp ON wcs.car_no=wbp.car_no AND wbp.project='jiusan'
-          WHERE wcs.batch_id=? AND wcs.departed_at!='' GROUP BY cyc, substr(wcs.departed_at,1,10)),
+          WHERE wcs.departed_at!='' AND wcs.departed_at>=? GROUP BY cyc, substr(wcs.departed_at,1,10)),
         lt AS (SELECT cyc, MAX(dep) md FROM t GROUP BY cyc)
-        SELECT t.cyc, t.dep, t.arr, t.deliv, t.boxes
+        SELECT t.cyc, t.ship, t.dep, t.arr, t.total, t.deliv, t.last_deliv
         FROM t JOIN lt ON t.cyc=lt.cyc AND t.dep=lt.md
-        """, (_CBATCH,)).fetchall()
+        ORDER BY t.cyc
+        """, (phase,)).fetchall()
+    out = []
+    for cyc, ship, dep, arr, total, deliv, last_deliv in rows:
+        total, deliv = int(total or 0), int(deliv or 0)
+        out.append({"cyc": cyc, "ship": ship or "", "dep": dep or "", "arr": arr or "",
+                    "total": total, "deliv": deliv, "last_deliv": last_deliv or "",
+                    "full": total > 0 and deliv == total})
+    return out
+
+
+def _hours_since(ts: str, now) -> float | None:
+    if not ts:
+        return None
+    from datetime import datetime
+    for fmt, n in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%dT%H:%M:%S", 19),
+                   ("%Y-%m-%d %H:%M", 16), ("%Y-%m-%dT%H:%M", 16)):
+        try:
+            return (now - datetime.strptime(ts[:n], fmt)).total_seconds() / 3600.0
+        except Exception:
+            pass
+    return None
+
+
+def _cycle_state(conn, now=None) -> dict:
+    """循环列状态机 → {pos, transit_empty_boxes, transit_empty_cycs, confirms, trips}。
+
+    返空口径(工单 2026-06-29,用户铁律 §返空):
+      - 已发车未到站            → 途重(transit_loaded,在途去程)。
+      - 已到站·部分交付          → 新台子(xtz,在330卸),**绝不计返空**;若该列拖长
+        (已开卸但未交付完)且已有**更新进站列开卸** → 提示人工确认(规则3:是否主体
+        已返空、少量车随下趟返港)。
+      - 已到站·全部交付:
+          · 交付>5h(RETURN_HOME_HOURS) → 返空回港(规则1);或
+          · 已有更新进站列开卸           → 返空回港(规则2,旧列即便<5h也算回港);
+            两者满足其一即视为回港(returned)。最早交付(回港最久)= 在装列(港重 #列)。
+          · 否则                          → 返空在途(transit_empty,计入返空箱)。
+
+    transit_empty_boxes = 所有"返空在途"列的箱数**之和**(根治旧版循环里被覆盖、只剩
+    最后一列致返空漏算的 bug)。"""
+    if now is None:
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone(timedelta(hours=8))).replace(tzinfo=None)
+    trips = _col_latest_trips(conn)
+
+    def has_newer_delivering(arr: str) -> bool:
+        # 是否存在"到站更晚且已开卸(deliv>=1)"的列 → 用于规则2/3 的 supersede 判断
+        return any(t["arr"] and arr and t["arr"] > arr and t["deliv"] >= 1 for t in trips)
+
     pos: dict[str, dict] = {}
-    delivered: list[tuple] = []  # (cyc, deliv, boxes)
-    for cyc, dep, arr, deliv, boxes in rows:
-        if deliv:
-            delivered.append((cyc, deliv, boxes))
-        elif arr:
-            pos["xtz"] = {"cyc": cyc, "boxes": boxes}
-        elif dep:
-            pos["transit_loaded"] = {"cyc": cyc, "boxes": boxes}
-    # 已交付的列:交付最早(返港最久)→ 在装列;其余 → 返空
-    delivered.sort(key=lambda x: x[1])
-    if delivered:
-        pos["port_loaded"] = {"cyc": delivered[0][0], "boxes": delivered[0][2]}
-        for cyc, deliv, boxes in delivered[1:]:
-            pos["transit_empty"] = {"cyc": cyc, "boxes": boxes}
-    return pos
+    te_cycs: list = []
+    te_boxes = 0
+    returned: list[tuple] = []   # (last_deliv, cyc, boxes)
+    confirms: list[str] = []
+    for t in trips:
+        cyc, boxes = t["cyc"], t["total"]
+        if t["dep"] and not t["arr"]:
+            pos["transit_loaded"] = {"cyc": cyc, "boxes": boxes}        # 途重
+        elif t["arr"] and not t["full"]:
+            pos["xtz"] = {"cyc": cyc, "boxes": boxes}                   # 新台子(部分卸)
+            if t["deliv"] >= 1 and has_newer_delivering(t["arr"]):       # 规则3
+                confirms.append(
+                    f"#{cyc}号列到站后仅交付 {t['deliv']}/{t['total']} 箱,且已有更新进站列开卸"
+                    f"——是否主体已返空回港、少量车随下趟返港?需人工确认")
+        elif t["full"]:
+            hrs = _hours_since(t["last_deliv"], now)
+            home = (hrs is not None and hrs > RETURN_HOME_HOURS) or has_newer_delivering(t["arr"])
+            if home:
+                returned.append((t["last_deliv"], cyc, boxes))          # 返空回港
+            else:
+                te_cycs.append(cyc)                                     # 返空在途
+                te_boxes += boxes
+    if te_cycs:
+        pos["transit_empty"] = {"cyc": te_cycs[0], "boxes": te_boxes, "cycs": te_cycs}
+    if returned:
+        returned.sort(key=lambda x: x[0] or "")     # 交付最早(回港最久)= 在装列(港重)
+        pos["port_loaded"] = {"cyc": returned[0][1], "boxes": returned[0][2]}
+    return {"pos": pos, "transit_empty_boxes": te_boxes, "transit_empty_cycs": te_cycs,
+            "confirms": confirms, "trips": trips}
+
+
+def _cycle_positions(conn) -> dict[str, dict]:
+    """back-compat 包装:仅返回 position→{cyc,boxes} 映射(口径见 _cycle_state)。
+    transit_empty.boxes 为所有返空在途列之**和**。"""
+    return _cycle_state(conn)["pos"]
 
 
 # 2026-06-19 厘清:就 3 列循环(无第4列)。列号 = home_cycle_no(车归属池),二者一致。
@@ -153,21 +232,24 @@ def render_lines() -> list[str]:
         return [cd._dim("(DB 连接失败)")]
     try:
         t, y = _fetch(conn)
-        pos = _cycle_positions(conn)
+        state = _cycle_state(conn)
+        pos = state["pos"]
         bulk = _bulk_active(conn)
     finally:
         conn.close()
     if not t:
-        return cd._box(f"{SHIP} 箱循环",
+        return cd._box(f"{DISPLAY} 箱循环",
                        [cd._dim("  (无 container_pool_snapshot 快照)")])
 
     g = lambda k: int(t.get(k) or 0)
     # 节点箱数一律取 container_pool_snapshot(晨报盘点 = 权威池底);95306 只用于
     # 叠加"哪号列在该节点"(hn)。此前混口径(箱数走95306在装列)致港重显100而非
     # 晨报165、新台子错读 line330_loaded——已收口为纯晨报池。
-    n_portL = g("port_loaded")   # 港重(港内待发重箱)
-    n_tranL = g("transit_loaded")  # 途重(在途去程)
-    n_ret = g("transit_empty")   # 返空(返程)
+    n_portL = g("port_loaded")   # 港重(港内待发重箱,晨报港总池)
+    n_tranL = g("transit_loaded")  # 途重(在途去程,晨报港总池)
+    # 返空(返程在途空箱)= 95306 循环列状态机**实时**(总池口径,工单 2026-06-29 §返空),
+    # 不再取 snapshot.transit_empty(晨报ingest幂等跳过→当日易停在旧值);实时反映回港推进。
+    n_ret = state["transit_empty_boxes"]
     g330 = g("ground330_loaded") + g("ground330_empty")
     y330 = (int(y.get("ground330_loaded") or 0) + int(y.get("ground330_empty") or 0)) if y else None
     d330 = ""
@@ -260,19 +342,22 @@ def render_lines() -> list[str]:
     except Exception:
         stale_days = 0
     if stale_days >= 1:
-        title = (f"{SHIP} 箱循环 · {now_hm}  "
+        title = (f"{DISPLAY} 箱循环 · {now_hm}  "
                  f"{cd._red(f'⚠箱数=晨报{date}(已{stale_days}天·非现状)')}"
-                 f" 池{g('total_pool')} · #列=95306实时")
+                 f" 池{g('total_pool')} · 返空/#列=95306实时")
     else:
-        title = (f"{SHIP} 箱循环 · 现状 {now_hm}   "
-                 f"箱数=晨报{date}盘点池 {g('total_pool')} · #号列=95306实时位置")
+        title = (f"{DISPLAY} 箱循环 · 现状 {now_hm}   "
+                 f"箱数=晨报{date}盘点池 {g('total_pool')} · 返空/#号列=95306实时")
 
-    legend_extra = (cd._red("  ⚠ 箱数节点(港重/港空/三三0…)停在 " + date +
-                            " 手动快照,需补今日晨报 record;#号列/散粮状态=95306 实时")
+    legend_extra = (cd._red("  ⚠ 箱数节点(港重/途重/港空/三三0…)停在 " + date +
+                            " 手动快照,需补今日晨报 record;返空/#号列/散粮状态=95306 实时")
                     if stale_days >= 1 else
-                    cd._dim("  箱数=晨报盘点池;#N号列=95306循环列位置;散·待发/在途/到站=95306散粮车状态(非循环、不进箱池)"))
-    legend = legend_extra
-    body = [""] + L + ["", legend]
+                    cd._dim("  箱数=晨报港总池;返空+#N号列=95306循环列实时(总池,跨船);散·待发/在途/到站=95306散粮车状态(非循环、不进箱池)"))
+    legend_lines = [legend_extra]
+    # 规则3:返空口径无法自动判定时,醒目挂人工确认(见 _cycle_state)
+    for c in state.get("confirms", []):
+        legend_lines.append(cd._red("  ⚠ 待确认:" + c))
+    body = [""] + L + ["", *legend_lines]
     return cd._box(title, body)
 
 

@@ -1219,6 +1219,8 @@ def _execute_chaoyang_inspection_chain(
         # 制票车号才是权威。前 4 个查不到 = 还没制单,挂起等(业务约定)。
         # 2026-06-03 宝腾海 53→52 漏触发即此处治本。
         from sop_hub.sop.inspection_window_recover import (
+            autocorrect_config_from_env,
+            persist_car_no_corrections,
             recover_loading_cars_via_window,
         )
         all_notice_car_nos = [
@@ -1252,6 +1254,7 @@ def _execute_chaoyang_inspection_chain(
             max_anchor_attempts=4,
             window_minutes=120,
             min_ticketed_at=min_ticketed_at,
+            **autocorrect_config_from_env(),
         )
         if recover["status"] == "no_ticket_yet":
             # 95306 还没制票 → 候选挂 pending_95306_match,延迟验证器后续重试
@@ -1294,6 +1297,20 @@ def _execute_chaoyang_inspection_chain(
                 },
             }
         # status == "ok":用 95306 权威装车列表替换 VLM 抽的(治 52→53)
+        # #检装车号95306自动核对纠错:若反推时把通知单错号唯一配到了窗内真号
+        # (真排车数==异常数==N,且各自唯一近似),写审计(旧号→新号、来源=95306
+        # 窗口、置信依据)并把候选车号集合更正成真号,候选随之干净匹配照常推进。
+        if recover.get("corrections"):
+            persist_car_no_corrections(
+                conn,
+                candidate_id=candidate_id,
+                release_batch_id=matched_batch_id,
+                corrections=recover["corrections"],
+                anchor_car_no=recover.get("anchor_car_no"),
+                anchor_ticketed_at=recover.get("anchor_ticketed_at"),
+                window_minutes=recover.get("window_minutes"),
+            )
+            conn.commit()
         authoritative_loading = recover["loading_car_nos"]
         if authoritative_loading:
             # 跟通知单 footer.zhuangche_jieshu 再 sanity 一道

@@ -43,8 +43,9 @@ class ReleaseBatchMatch:
 
 # #125 lifecycle 8 phase:open 状态 = enriched/loading(可接装车),其他阶段拒
 _OPEN_STATUSES = ("loading", "enriched")
-# 优先 loading(正在装),其次 enriched(等装)
-_STATUS_PRIORITY = {"loading": 1, "enriched": 2}
+_FACT_STATUSES = ("loading", "enriched", "pending_freight")
+# 优先 loading(正在装),其次 enriched(等装);pending_freight 只允许车列事实入库,不允许发运输出。
+_STATUS_PRIORITY = {"loading": 1, "enriched": 2, "pending_freight": 3}
 
 
 def match_release_batch_by_ship_destination_cargo(
@@ -55,6 +56,7 @@ def match_release_batch_by_ship_destination_cargo(
     cargo_name: str = "",
     db_conn: sqlite3.Connection | None = None,
     db_path: str | Path | None = None,
+    allow_pending_freight_for_facts: bool = False,
 ) -> ReleaseBatchMatch:
     """按 project + ship + destination (+ cargo soft match) 找匹配的 release_batch。
 
@@ -84,8 +86,10 @@ def match_release_batch_by_ship_destination_cargo(
     db_conn.row_factory = sqlite3.Row
 
     try:
-        # #125 lifecycle 8 phase open 集 = enriched/loading;动态用 _OPEN_STATUSES
-        ph = ",".join("?" * len(_OPEN_STATUSES))
+        # #125 lifecycle 8 phase open 集 = enriched/loading。
+        # 检装车事实入库层可临时纳入 pending_freight;输出层仍需单独拦截。
+        statuses = _FACT_STATUSES if allow_pending_freight_for_facts else _OPEN_STATUSES
+        ph = ",".join("?" * len(statuses))
         rows = db_conn.execute(
             f"SELECT id, project, ship_name, destination_station, cargo_name, "
             f"       cargo_product_name, dispatch_status, notice_date, batch_date "
@@ -95,13 +99,13 @@ def match_release_batch_by_ship_destination_cargo(
             f"  AND COALESCE(destination_station,'') = ? "
             f"  AND dispatch_status IN ({ph}) "
             f"ORDER BY notice_date DESC, batch_date DESC",
-            (project_id, ship_name, destination_station, *_OPEN_STATUSES),
+            (project_id, ship_name, destination_station, *statuses),
         ).fetchall()
 
         if not rows:
             return ReleaseBatchMatch(
                 reason="no_open_batch",
-                notes=[f"no enriched/loading batch for {project_id}/{ship_name}/{destination_station}"],
+                notes=[f"no {'/'.join(statuses)} batch for {project_id}/{ship_name}/{destination_station}"],
             )
 
         # Cargo soft filter only when more than one row

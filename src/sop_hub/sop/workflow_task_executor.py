@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -738,6 +738,32 @@ _INACTIVE_CANDIDATE_STATUSES = (
 _INSPECTION_TEXT_TRIGGER_COUNT_TOL = 4
 # 候选"临近窗":只认触发器前 这个小时数内产生的检装车候选,不抓陈年旧候选
 _INSPECTION_TEXT_TRIGGER_CANDIDATE_MAX_AGE_H = 24.0
+# 文本触发器判断同一发车事件的窗口:以触发文本时间为锚,而不是 daemon 重试时的 now。
+_INSPECTION_TEXT_TRIGGER_EVENT_BEFORE_H = 12.0
+_INSPECTION_TEXT_TRIGGER_EVENT_AFTER_H = 6.0
+
+
+def _inspection_text_trigger_event_bounds(
+    conn,
+    input_json: dict[str, Any],
+) -> tuple[str, str] | None:
+    trigger_ts = (input_json.get("received_datetime") or "").strip()
+    if not trigger_ts and input_json.get("message_inbox_id"):
+        row = conn.execute(
+            "SELECT received_datetime FROM message_inbox WHERE id=?",
+            (input_json.get("message_inbox_id"),),
+        ).fetchone()
+        trigger_ts = str((row[0] if row else "") or "").strip()
+    if not trigger_ts:
+        return None
+    try:
+        from sop_hub.utils.time import parse_any_timestamp
+        dt = parse_any_timestamp(trigger_ts)
+    except Exception:
+        return None
+    lo = dt - timedelta(hours=_INSPECTION_TEXT_TRIGGER_EVENT_BEFORE_H)
+    hi = dt + timedelta(hours=_INSPECTION_TEXT_TRIGGER_EVENT_AFTER_H)
+    return lo.strftime("%Y-%m-%d %H:%M:%S"), hi.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _find_candidate_inbox(
@@ -794,6 +820,7 @@ def _execute_inspection_text_trigger(
     conn = _sql.connect(str(db_path))
     conn.row_factory = _sql.Row
     try:
+        event_bounds = _inspection_text_trigger_event_bounds(conn, input_json)
         # 候选匹配:ship + dest + 活跃状态 + **车数对得上** + **临近时间窗** 的最新一条。
         # #issue-20260623:仅 ship+dest+latest 会抓到已 matched / 车数对不上 / 陈年的旧候选
         # (今早中联发发车 50 节抓了 6 天前 44 车的 matched 候选)。加三道闸:
@@ -804,19 +831,41 @@ def _execute_inspection_text_trigger(
             "SELECT id, message_id, candidate_status FROM inspection_ingestion_candidates "
             "WHERE ship_name=? "
             f"  AND candidate_status NOT IN ({','.join('?' * len(_INACTIVE_CANDIDATE_STATUSES))}) "
-            "  AND created_at >= datetime('now', ?) "
             "  AND (? = 0 OR ABS(COALESCE(wagon_count, 0) - ?) <= ?) "
         )
         params: list[Any] = [
             ship, *_INACTIVE_CANDIDATE_STATUSES,
-            f"-{_INSPECTION_TEXT_TRIGGER_CANDIDATE_MAX_AGE_H} hours",
             expected, expected, _INSPECTION_TEXT_TRIGGER_COUNT_TOL,
         ]
+        if event_bounds:
+            q += "  AND created_at BETWEEN ? AND ? "
+            params.extend(event_bounds)
+        else:
+            q += "  AND created_at >= datetime('now', ?) "
+            params.append(f"-{_INSPECTION_TEXT_TRIGGER_CANDIDATE_MAX_AGE_H} hours")
         if dest:
             q += "  AND (destination=? OR destination='' OR destination IS NULL) "
             params.append(dest)
         q += "ORDER BY created_at DESC LIMIT 1"
         cand = conn.execute(q, params).fetchone()
+        if not cand and event_bounds:
+            q_fallback = (
+                "SELECT id, message_id, candidate_status FROM inspection_ingestion_candidates "
+                "WHERE ship_name=? "
+                f"  AND candidate_status NOT IN ({','.join('?' * len(_INACTIVE_CANDIDATE_STATUSES))}) "
+                "  AND (? = 0 OR ABS(COALESCE(wagon_count, 0) - ?) <= ?) "
+                "  AND created_at >= datetime('now', ?) "
+            )
+            fallback_params: list[Any] = [
+                ship, *_INACTIVE_CANDIDATE_STATUSES,
+                expected, expected, _INSPECTION_TEXT_TRIGGER_COUNT_TOL,
+                f"-{_INSPECTION_TEXT_TRIGGER_CANDIDATE_MAX_AGE_H} hours",
+            ]
+            if dest:
+                q_fallback += "  AND (destination=? OR destination='' OR destination IS NULL) "
+                fallback_params.append(dest)
+            q_fallback += "ORDER BY created_at DESC LIMIT 1"
+            cand = conn.execute(q_fallback, fallback_params).fetchone()
 
         synth_cand_id = None  # Fix C:非空=本次靠 95306 合成的候选(链 skip_upload)
         if not cand:
@@ -827,11 +876,15 @@ def _execute_inspection_text_trigger(
             done = conn.execute(
                 "SELECT id FROM inspection_ingestion_candidates "
                 "WHERE ship_name=? AND candidate_status='matched' "
-                "  AND created_at >= datetime('now', ?) "
                 "  AND (? = 0 OR ABS(COALESCE(wagon_count,0) - ?) <= ?) "
-                "ORDER BY created_at DESC LIMIT 1",
-                (ship, f"-{_INSPECTION_TEXT_TRIGGER_CANDIDATE_MAX_AGE_H} hours",
-                 expected, expected, _INSPECTION_TEXT_TRIGGER_COUNT_TOL),
+                + ("  AND created_at BETWEEN ? AND ? " if event_bounds else "  AND created_at >= datetime('now', ?) ")
+                + ("  AND destination=? " if dest else "")
+                + "ORDER BY created_at DESC LIMIT 1",
+                (
+                    ship, expected, expected, _INSPECTION_TEXT_TRIGGER_COUNT_TOL,
+                    *(event_bounds or (f"-{_INSPECTION_TEXT_TRIGGER_CANDIDATE_MAX_AGE_H} hours",)),
+                    *((dest,) if dest else ()),
+                ),
             ).fetchone()
             if done:
                 return {
@@ -1190,6 +1243,7 @@ def _execute_chaoyang_inspection_chain(
         m = match_release_batch_by_ship_destination_cargo(
             project_id=project_id, ship_name=ship,
             destination_station=dest, cargo_name=cargo, db_conn=conn,
+            allow_pending_freight_for_facts=True,
         )
         if m.reason in ("no_open_batch", "no_match", "multiple_candidates"):
             conn.execute(
@@ -1470,6 +1524,37 @@ def _execute_chaoyang_inspection_chain(
                     "candidate_status": "pending_95306_match",
                     "note": (f"票尚未全到 95306({db_count}/{expected_count}),"
                              f"候选已挂起,等延迟验证(6h timeout)"),
+                },
+            }
+
+        if m.matched_dispatch_status == "pending_freight":
+            conn.execute(
+                "UPDATE inspection_ingestion_candidates "
+                "SET candidate_status='pending_freight_info', "
+                "    release_batch_id=?, reason=?, updated_at=datetime('now') "
+                "WHERE id=?",
+                (
+                    matched_batch_id,
+                    "wagon_facts_ingested_awaiting_freight_info",
+                    candidate_id,
+                ),
+            )
+            conn.commit()
+            return {
+                "action": "executed",
+                "status": "skipped",
+                "output_json": {
+                    "stage": "awaiting_freight_info",
+                    "matched_release_batch_id": matched_batch_id,
+                    "matched_dispatch_status": m.matched_dispatch_status,
+                    "candidate_id": candidate_id,
+                    "loading_car_count": len(loading_car_nos),
+                    "expected_count": expected_count,
+                    "actual_in_db_count": db_count,
+                    "wagon_shipments_inserted": inserted,
+                    "wagon_shipments_no_95306_match": no_match,
+                    "candidate_status": "pending_freight_info",
+                    "note": "车列事实已入库;批次仍缺货运信息,暂停发运 Excel/发送/上传",
                 },
             }
 

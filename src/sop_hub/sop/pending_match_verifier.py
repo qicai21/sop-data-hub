@@ -1,10 +1,11 @@
-"""延迟验证:扫描 pending_95306_match 候选,重试链 + 超时上报。
+"""延迟验证:扫描 pending 候选,重试链 + 超时上报。
 
 业务模型:
 - 检装车通知单收到后,候选若所有车都已落 wagon_shipments → matched(链已跑完)
 - 若部分车票尚未到 95306 → candidate_status='pending_95306_match'
+- 若车列事实已入库但批次仍缺货运信息 → candidate_status='pending_freight_info'
 - 验证器每被触发(rail95306-sync 同步完一轮 / 手动 / launchd):
-  - 对每个 pending_95306_match 候选,re-trigger chain → 票到齐就 succeed
+  - 对每个 pending 候选,re-trigger chain → 票/货运信息齐就 succeed
   - 超 6 h 仍未到齐 → 标 timeout_manual_review + 通知人工
 - 不动 in_progress / completed / matched 等其他状态
 
@@ -78,6 +79,25 @@ def _find_inbox_id(candidate_id: str, db_path: str | Path) -> tuple[int | None, 
         ).fetchone()
         if row:
             return int(row[0]), str(row[1] or "")
+        cand = conn.execute(
+            "SELECT message_id FROM inspection_ingestion_candidates WHERE id=?",
+            (candidate_id,),
+        ).fetchone()
+        cand_message_id = str((cand[0] if cand else "") or "")
+        if cand_message_id:
+            row = conn.execute(
+                "SELECT id, message_id FROM message_inbox "
+                "WHERE message_id=? ORDER BY id DESC LIMIT 1",
+                (cand_message_id,),
+            ).fetchone()
+            if row:
+                conn.execute(
+                    "UPDATE message_inbox SET inspection_candidate_id=? "
+                    "WHERE id=? AND (inspection_candidate_id IS NULL OR inspection_candidate_id='')",
+                    (candidate_id, row[0]),
+                )
+                conn.commit()
+                return int(row[0]), str(row[1] or "")
     finally:
         conn.close()
     return None, ""
@@ -150,16 +170,16 @@ def verify_pending_candidates(
     timeout_hours: float = 6.0,
     send_timeout_notice: bool = True,
 ) -> VerifierSummary:
-    """主入口:扫描 pending_95306_match,逐个重试或超时上报。"""
+    """主入口:扫描 pending_95306_match / pending_freight_info,逐个重试。"""
     summary = VerifierSummary()
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
-            "SELECT id, group_name, source_file_name, ship_name, "
+            "SELECT id, group_name, source_file_name, ship_name, candidate_status, "
             "       release_batch_id, created_at, updated_at "
             "FROM inspection_ingestion_candidates "
-            "WHERE candidate_status='pending_95306_match'"
+            "WHERE candidate_status IN ('pending_95306_match','pending_freight_info')"
         ).fetchall()
     finally:
         conn.close()
@@ -169,6 +189,7 @@ def verify_pending_candidates(
 
     for row in rows:
         cand_id = row["id"]
+        candidate_status = row["candidate_status"] or ""
         created_at = row["created_at"] or row["updated_at"] or ""
         created_dt = _parse_dt(created_at)  # tz-aware Beijing
         elapsed_h = (
@@ -176,8 +197,8 @@ def verify_pending_candidates(
             if created_dt else float("inf")
         )
 
-        # 1. 超时判定
-        if elapsed_h > timeout_hours:
+        # 1. 超时判定:只对等 95306 票超时;等货运信息可能跨更长业务窗口。
+        if candidate_status == "pending_95306_match" and elapsed_h > timeout_hours:
             _mark_timeout(cand_id, db_path, elapsed_h)
             summary.timed_out += 1
             summary.detail.append({
@@ -222,6 +243,13 @@ def verify_pending_candidates(
                     "candidate_id": cand_id, "action": "still_pending",
                     "actual": actual, "expected": expected,
                     "elapsed_hours": round(elapsed_h, 2),
+                })
+            elif stage == "awaiting_freight_info":
+                summary.still_pending += 1
+                summary.detail.append({
+                    "candidate_id": cand_id, "action": "awaiting_freight_info",
+                    "elapsed_hours": round(elapsed_h, 2),
+                    "matched_release_batch_id": oj.get("matched_release_batch_id"),
                 })
             else:
                 summary.still_pending += 1

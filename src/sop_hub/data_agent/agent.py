@@ -1031,6 +1031,40 @@ class BusinessDataAgent:
             elif has_destination and has_cargo:
                 station_cargo_matches.append(row)
 
+        batch_anchor_matches = []
+        if not ship_anchor_matches:
+            batch_rows = self.db.execute(
+                """
+                SELECT id AS release_batch_id, project, ship_name,
+                       destination_station, cargo_name, dispatch_status
+                FROM release_batches
+                WHERE dispatch_status IN ('pending_freight','enriched','loading')
+                ORDER BY notice_date DESC
+                """
+            ).fetchall()
+            for row in batch_rows:
+                ship = str(row["ship_name"] or "")
+                dest = str(row["destination_station"] or "")
+                cargo = str(row["cargo_name"] or "")
+                has_ship = bool(ship and ship in searchable)
+                has_destination = bool(dest and dest in searchable)
+                has_cargo = bool(cargo and (cargo in searchable or (cargo == "铁矿" and "铁矿粉" in searchable)))
+                if has_ship and has_destination and has_cargo:
+                    batch_anchor_matches.append(row)
+
+        if len(batch_anchor_matches) == 1:
+            return {
+                "status": "candidate",
+                "reason": "matched_release_batch_from_batch_anchor_waiting_95306_validation",
+                "release_batch_ids": [batch_anchor_matches[0]["release_batch_id"]],
+            }
+        if len(batch_anchor_matches) > 1:
+            return {
+                "status": "ambiguous",
+                "reason": "ambiguous_release_batch_batch_anchor_candidate",
+                "release_batch_ids": [row["release_batch_id"] for row in batch_anchor_matches],
+            }
+
         if len(ship_anchor_matches) == 1:
             return {
                 "status": "candidate",
@@ -1081,10 +1115,10 @@ class BusinessDataAgent:
         if not rows:
             return [payload]
         rules = self.db.execute(
-            "SELECT id, ship_name, matching_tokens_json FROM release_dispatch_match_rules "
+            "SELECT id, release_batch_id, ship_name, matching_tokens_json FROM release_dispatch_match_rules "
             "WHERE status='active' ORDER BY priority ASC"
         ).fetchall()
-        rule_ship_tokens: List[tuple[str, Any]] = []  # (ship_token, rule_row)
+        rule_ship_tokens: List[tuple[str, Any]] = []  # (ship_token, rule/batch row)
         for r in rules:
             try:
                 tokens = json.loads(r["matching_tokens_json"] or "{}")
@@ -1093,6 +1127,22 @@ class BusinessDataAgent:
             for ship_tok in tokens.get("ship") or []:
                 if ship_tok:
                     rule_ship_tokens.append((str(ship_tok), r))
+        existing_ship_tokens = {tok for tok, _ in rule_ship_tokens if tok}
+        batch_rows = self.db.execute(
+            """
+            SELECT id AS release_batch_id, project, ship_name, destination_station,
+                   cargo_name, dispatch_status
+            FROM release_batches
+            WHERE dispatch_status IN ('pending_freight','enriched','loading')
+            ORDER BY notice_date DESC
+            """
+        ).fetchall()
+        for b in batch_rows:
+            ship_tok = str(b["ship_name"] or "").strip()
+            if not ship_tok or ship_tok in existing_ship_tokens:
+                continue
+            rule_ship_tokens.append((ship_tok, b))
+            existing_ship_tokens.add(ship_tok)
 
         # 算法:走 rows 找所有 ship 锚点 (seq, rule)。每段从
         # (上一锚点之后 + 本锚点前向吸收 N 表头行) 到 (下一锚点前向吸收 N - 1)。
@@ -1120,7 +1170,12 @@ class BusinessDataAgent:
         deduped_anchors: List[tuple[int, Any]] = []
         last_rid = object()
         for a_idx, a_rule in anchor_points:
-            rid = a_rule["id"] if a_rule is not None else None
+            if a_rule is None:
+                rid = None
+            elif "id" in a_rule.keys():
+                rid = a_rule["id"]
+            else:
+                rid = f"batch:{a_rule['release_batch_id']}"
             if rid != last_rid:
                 deduped_anchors.append((a_idx, a_rule))
                 last_rid = rid
@@ -1175,8 +1230,15 @@ class BusinessDataAgent:
                 _m["jieshu"] = real_cars_in_seg
                 sub["meta"] = _m
             if rule is not None:
-                sub["_split_group_rule_id"] = rule["id"]
-                sub["_split_group_ship_name"] = rule["ship_name"] or ""
+                if "matching_tokens_json" not in rule.keys():
+                    # Synthetic fallback from release_batches:没有 rules 行也能按船锚拆分,
+                    # 后续 ingest 直接用 release_batch_id 归属。
+                    sub["_split_group_rule_id"] = ""
+                    sub["_split_group_release_batch_id"] = rule["release_batch_id"] or ""
+                    sub["_split_group_ship_name"] = rule["ship_name"] or ""
+                else:
+                    sub["_split_group_rule_id"] = rule["id"]
+                    sub["_split_group_ship_name"] = rule["ship_name"] or ""
             else:
                 sub["_split_group_rule_id"] = ""
                 sub["_split_group_ship_name"] = ""
@@ -1306,6 +1368,12 @@ class BusinessDataAgent:
                         candidate_id,
                     ),
                 )
+                self.db.execute(
+                    "UPDATE message_inbox "
+                    "SET inspection_candidate_id=COALESCE(NULLIF(inspection_candidate_id,''), ?) "
+                    "WHERE message_id=?",
+                    (candidate_id, _ib["message_id"] or ""),
+                )
                 self.db.commit()
 
         # ── infer ship/dest/cargo/project_id 三层级联 ────────────────
@@ -1350,6 +1418,20 @@ class BusinessDataAgent:
                     inferred.release_batch_id = _rule_row["release_batch_id"]
                     inferred.candidate_status = "candidate"
                     inferred.reason = "split_group_ship_rule_matched"
+            _split_batch_id = payload.get("_split_group_release_batch_id") or ""
+            if _split_batch_id and not payload.get("_split_group_unmatched"):
+                _batch_row = self.db.execute(
+                    "SELECT id, ship_name, destination_station, cargo_name, project "
+                    "FROM release_batches WHERE id=?", (_split_batch_id,),
+                ).fetchone()
+                if _batch_row:
+                    inferred.ship_name = _batch_row["ship_name"] or inferred.ship_name
+                    inferred.destination = _batch_row["destination_station"] or inferred.destination
+                    inferred.cargo_name = _batch_row["cargo_name"] or inferred.cargo_name
+                    inferred.project_id = _batch_row["project"] or inferred.project_id
+                    inferred.release_batch_id = _batch_row["id"]
+                    inferred.candidate_status = "candidate"
+                    inferred.reason = "split_group_release_batch_anchor_matched"
             # 写回候选(含业务铁律:matched 才设 release_batch_id,挂起也明确状态)
             new_release_batch_id = inferred.release_batch_id or release_batch_id
             self.db.execute(

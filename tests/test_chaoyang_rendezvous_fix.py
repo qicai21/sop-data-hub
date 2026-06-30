@@ -42,3 +42,44 @@ def test_query_filters_exclude_stale(tmp_path):
          f"AND (?=0 OR ABS(COALESCE(wagon_count,0)-?)<=?) ORDER BY created_at DESC LIMIT 1")
     got = c.execute(q, [*w._INACTIVE_CANDIDATE_STATUSES, expected, expected, tol]).fetchone()
     assert got is not None and got[0] == "good"
+
+
+def test_already_handled_matched_uses_trigger_event_window(tmp_path):
+    import sqlite3
+    from pathlib import Path
+
+    db = tmp_path / "t.db"
+    c = sqlite3.connect(str(db))
+    c.executescript("""
+    CREATE TABLE inspection_ingestion_candidates (
+      id TEXT, message_id TEXT, ship_name TEXT, destination TEXT,
+      candidate_status TEXT, wagon_count INT, created_at TEXT
+    );
+    CREATE TABLE workflow_task_db (id INTEGER, created_at TEXT);
+    CREATE TABLE message_inbox (id INTEGER, received_datetime TEXT);
+    """)
+    c.execute(
+        "INSERT INTO inspection_ingestion_candidates VALUES (?,?,?,?,?,?,?)",
+        ("old55", "wx_old", "马兰幸福", "朝阳西", "matched", 55, "2026-06-28 06:50:00"),
+    )
+    c.execute("INSERT INTO workflow_task_db VALUES (1, '2026-06-30 06:51:00')")
+    c.execute("INSERT INTO message_inbox VALUES (100, '2026-06-30 06:51:00')")
+    c.commit()
+    c.close()
+
+    res = w._execute_inspection_text_trigger(
+        {
+            "trigger_project": "chaoyang_steel",
+            "trigger_ship": "马兰幸福",
+            "trigger_dest": "朝阳西",
+            "trigger_expected_count": 53,
+            "message_inbox_id": 100,
+            "received_datetime": "2026-06-30 06:51:00",
+        },
+        "wx_text",
+        db_path=Path(db),
+        task_id=1,
+    )
+
+    assert (res.get("output_json") or {}).get("stage") != "already_handled_by_notice_chain"
+    assert res["status"] in {"pending", "skipped", "failed"}

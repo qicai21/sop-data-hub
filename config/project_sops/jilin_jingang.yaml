@@ -136,6 +136,7 @@ listening_tasks:
   - group_id: "GROUP005"
     group_lookup_id: "[GROUP005]"
     group_name: "金钢铁矿发运群"
+    wxid: "39330980598@chatroom"
     source_role: "primary"
     listen_options:
       image: true

@@ -91,6 +91,7 @@ def _col_latest_trips(conn) -> list[dict]:
         WITH t AS (
           SELECT wbp.home_cycle_no cyc, wcs.ship_name ship,
                  min(wcs.departed_at) dep, max(wcs.arrived_at) arr,
+                 count(DISTINCT wcs.car_no) cars,
                  count(DISTINCT wcs.box_no) total,
                  count(DISTINCT CASE WHEN COALESCE(wcs.delivered_at,'')!='' THEN wcs.box_no END) deliv,
                  max(wcs.delivered_at) last_deliv
@@ -98,16 +99,78 @@ def _col_latest_trips(conn) -> list[dict]:
           JOIN wagon_body_pool wbp ON wcs.car_no=wbp.car_no AND wbp.project='jiusan'
           WHERE wcs.departed_at!='' AND wcs.departed_at>=? GROUP BY cyc, substr(wcs.departed_at,1,10)),
         lt AS (SELECT cyc, MAX(dep) md FROM t GROUP BY cyc)
-        SELECT t.cyc, t.ship, t.dep, t.arr, t.total, t.deliv, t.last_deliv
+        SELECT t.cyc, t.ship, t.dep, t.arr, t.cars, t.total, t.deliv, t.last_deliv
         FROM t JOIN lt ON t.cyc=lt.cyc AND t.dep=lt.md
         ORDER BY t.cyc
         """, (phase,)).fetchall()
     out = []
-    for cyc, ship, dep, arr, total, deliv, last_deliv in rows:
+    for cyc, ship, dep, arr, cars, total, deliv, last_deliv in rows:
         total, deliv = int(total or 0), int(deliv or 0)
         out.append({"cyc": cyc, "ship": ship or "", "dep": dep or "", "arr": arr or "",
-                    "total": total, "deliv": deliv, "last_deliv": last_deliv or "",
+                    "cars": int(cars or 0), "total": total, "deliv": deliv, "last_deliv": last_deliv or "",
                     "full": total > 0 and deliv == total})
+    return out
+
+
+def _pool_cycles(conn) -> dict[int, dict]:
+    try:
+        rows = conn.execute(
+            """
+            SELECT home_cycle_no, COUNT(DISTINCT car_no) cars,
+                   MIN(first_seen_date), MAX(last_seen_date)
+            FROM wagon_body_pool
+            WHERE project='jiusan' AND status='active' AND home_cycle_no IS NOT NULL
+            GROUP BY home_cycle_no
+            ORDER BY home_cycle_no
+            """
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = conn.execute(
+            """
+            SELECT home_cycle_no, COUNT(DISTINCT car_no) cars, '' AS first_seen, '' AS last_seen
+            FROM wagon_body_pool
+            WHERE project='jiusan' AND home_cycle_no IS NOT NULL
+            GROUP BY home_cycle_no
+            ORDER BY home_cycle_no
+            """
+        ).fetchall()
+    return {
+        int(cyc): {"cycle_no": int(cyc), "pool_cars": int(cars or 0),
+                   "first_seen": first or "", "last_seen": last or ""}
+        for cyc, cars, first, last in rows
+    }
+
+
+def _current_ticketed_trips(conn) -> dict[int, dict]:
+    """当前已制票但未发车的列。用于弥补 95306 departed_at 之前的港内待发状态。"""
+    try:
+        rows = conn.execute(
+            """
+            SELECT wbp.home_cycle_no cyc, wcs.ship_name,
+                   COUNT(DISTINCT wcs.car_no) cars,
+                   COUNT(DISTINCT wcs.box_no) boxes,
+                   COUNT(DISTINCT wcs.ydid) ydids,
+                   MIN(wcs.ticketed_at) first_ticketed,
+                   MAX(wcs.ticketed_at) last_ticketed
+            FROM wagon_container_shipments wcs
+            JOIN wagon_body_pool wbp ON wcs.car_no=wbp.car_no AND wbp.project='jiusan'
+            WHERE wcs.project_id='jiusan'
+              AND COALESCE(wcs.ticketed_at,'')!=''
+              AND COALESCE(wcs.departed_at,'')=''
+              AND COALESCE(wcs.transport_mode_name,'') LIKE '%集装箱%'
+            GROUP BY wbp.home_cycle_no, wcs.ship_name
+            ORDER BY wbp.home_cycle_no
+            """
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    out: dict[int, dict] = {}
+    for cyc, ship, cars, boxes, ydids, first_ticketed, last_ticketed in rows:
+        out[int(cyc)] = {
+            "cyc": int(cyc), "ship": ship or "", "cars": int(cars or 0),
+            "boxes": int(boxes or 0), "ydids": int(ydids or 0),
+            "first_ticketed": first_ticketed or "", "last_ticketed": last_ticketed or "",
+        }
     return out
 
 
@@ -144,22 +207,40 @@ def _cycle_state(conn, now=None) -> dict:
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone(timedelta(hours=8))).replace(tzinfo=None)
     trips = _col_latest_trips(conn)
+    pool = _pool_cycles(conn)
+    ticketed = _current_ticketed_trips(conn)
 
     def has_newer_delivering(arr: str) -> bool:
         # 是否存在"到站更晚且已开卸(deliv>=1)"的列 → 用于规则2/3 的 supersede 判断
         return any(t["arr"] and arr and t["arr"] > arr and t["deliv"] >= 1 for t in trips)
 
     pos: dict[str, dict] = {}
+    pos_multi: dict[str, list[dict]] = {}
     te_cycs: list = []
     te_boxes = 0
     returned: list[tuple] = []   # (last_deliv, cyc, boxes)
     confirms: list[str] = []
+
+    def add_pos(key: str, item: dict) -> None:
+        pos_multi.setdefault(key, []).append(item)
+        pos[key] = item
+
+    cycle_rows: dict[int, dict] = {}
     for t in trips:
         cyc, boxes = t["cyc"], t["total"]
+        cycle_rows[int(cyc)] = {
+            "cycle_no": int(cyc), "pool_cars": pool.get(int(cyc), {}).get("pool_cars", 0),
+            "trip_cars": int(t.get("cars") or 0), "trip_boxes": boxes, "ship": t["ship"],
+            "latest_departed": t["dep"], "latest_arrived": t["arr"],
+            "latest_delivered": t["last_deliv"], "delivered_boxes": t["deliv"],
+            "node_key": "", "node_label": "", "note": "",
+        }
         if t["dep"] and not t["arr"]:
-            pos["transit_loaded"] = {"cyc": cyc, "boxes": boxes}        # 途重
+            add_pos("transit_loaded", {"cyc": cyc, "boxes": boxes})     # 途重
+            cycle_rows[int(cyc)].update({"node_key": "transit_loaded", "node_label": "途重"})
         elif t["arr"] and not t["full"]:
-            pos["xtz"] = {"cyc": cyc, "boxes": boxes}                   # 新台子(部分卸)
+            add_pos("xtz", {"cyc": cyc, "boxes": boxes})                # 新台子(部分卸)
+            cycle_rows[int(cyc)].update({"node_key": "xtz", "node_label": "新台子到站未交付"})
             if t["deliv"] >= 1 and has_newer_delivering(t["arr"]):       # 规则3
                 confirms.append(
                     f"#{cyc}号列到站后仅交付 {t['deliv']}/{t['total']} 箱,且已有更新进站列开卸"
@@ -169,15 +250,51 @@ def _cycle_state(conn, now=None) -> dict:
             home = (hrs is not None and hrs > RETURN_HOME_HOURS) or has_newer_delivering(t["arr"])
             if home:
                 returned.append((t["last_deliv"], cyc, boxes))          # 返空回港
+                cycle_rows[int(cyc)].update({"node_key": "returned_home", "node_label": "已交付返港/港内待装"})
             else:
                 te_cycs.append(cyc)                                     # 返空在途
                 te_boxes += boxes
+                cycle_rows[int(cyc)].update({"node_key": "transit_empty", "node_label": "返空在途"})
     if te_cycs:
-        pos["transit_empty"] = {"cyc": te_cycs[0], "boxes": te_boxes, "cycs": te_cycs}
+        add_pos("transit_empty", {"cyc": te_cycs[0], "boxes": te_boxes, "cycs": te_cycs})
     if returned:
         returned.sort(key=lambda x: x[0] or "")     # 交付最早(回港最久)= 在装列(港重)
-        pos["port_loaded"] = {"cyc": returned[0][1], "boxes": returned[0][2]}
-    return {"pos": pos, "transit_empty_boxes": te_boxes, "transit_empty_cycs": te_cycs,
+        for last_deliv, cyc, boxes in returned:
+            add_pos("returned_home", {"cyc": cyc, "boxes": boxes, "last_deliv": last_deliv})
+        if "port_loaded" not in pos:
+            add_pos("port_loaded", {"cyc": returned[0][1], "boxes": returned[0][2]})
+
+    for cyc, tick in ticketed.items():
+        if "returned_home" in pos_multi:
+            pos_multi["returned_home"] = [
+                item for item in pos_multi["returned_home"] if item.get("cyc") != cyc
+            ]
+        add_pos("port_loaded", {"cyc": cyc, "boxes": tick["boxes"], "cars": tick["cars"],
+                                "ticketed": True})
+        row = cycle_rows.setdefault(cyc, {
+            "cycle_no": cyc, "pool_cars": pool.get(cyc, {}).get("pool_cars", 0),
+            "trip_cars": 0, "trip_boxes": 0, "ship": tick["ship"],
+            "latest_departed": "", "latest_arrived": "", "latest_delivered": "",
+            "delivered_boxes": 0, "node_key": "", "node_label": "", "note": "",
+        })
+        row.update({
+            "ship": tick["ship"], "trip_cars": tick["cars"], "trip_boxes": tick["boxes"],
+            "latest_ticketed": tick["last_ticketed"],
+            "node_key": "port_loaded", "node_label": "港内制票/待发",
+        })
+        if row["pool_cars"] and tick["cars"] != row["pool_cars"]:
+            row["note"] = f"池{row['pool_cars']}车,已制票{tick['cars']}车"
+
+    for cyc, info in pool.items():
+        cycle_rows.setdefault(cyc, {
+            "cycle_no": cyc, "pool_cars": info["pool_cars"], "trip_cars": 0,
+            "trip_boxes": 0, "ship": "", "latest_departed": "", "latest_arrived": "",
+            "latest_delivered": "", "delivered_boxes": 0, "node_key": "unknown",
+            "node_label": "无近期趟次", "note": "",
+        })
+    rows = [cycle_rows[k] for k in sorted(cycle_rows)]
+    return {"pos": pos, "pos_multi": pos_multi, "cycle_rows": rows,
+            "transit_empty_boxes": te_boxes, "transit_empty_cycs": te_cycs,
             "confirms": confirms, "trips": trips}
 
 
@@ -215,6 +332,49 @@ def _hn(pos: dict, key: str) -> str:
     return cd._dim(f"#{n}号列") if n else ""
 
 
+def _hn_multi(state: dict, key: str) -> str:
+    items = state.get("pos_multi", {}).get(key) or []
+    cycs = []
+    for item in items:
+        cyc = item.get("cyc")
+        if cyc is not None and cyc not in cycs:
+            cycs.append(cyc)
+    if not cycs:
+        return ""
+    return cd._dim("+".join(f"#{c}号列" for c in cycs))
+
+
+def _cycle_detail_lines(state: dict) -> list[str]:
+    rows = state.get("cycle_rows") or []
+    if not rows:
+        return []
+    out = [cd._dim("  列状态  列号  池车  本趟        当前节点              关键时间/提示")]
+    for r in rows:
+        cyc = f"#{r['cycle_no']}"
+        pool = str(r.get("pool_cars") or "-")
+        trip = f"{r.get('trip_cars') or 0}车/{r.get('trip_boxes') or 0}箱"
+        node = r.get("node_label") or "-"
+        if r.get("latest_ticketed"):
+            when = f"制票 {r['latest_ticketed']}"
+        elif r.get("latest_departed"):
+            when = f"发 {r['latest_departed']}"
+        else:
+            when = ""
+        if r.get("note"):
+            when = (when + " " if when else "") + r["note"]
+        line = (
+            "  "
+            + cd._fixed(cyc, 6)
+            + cd._fixed(pool, 5, ">")
+            + "  "
+            + cd._fixed(trip, 13)
+            + cd._fixed(node, 22)
+            + when
+        )
+        out.append(cd._fixed(line, INNER))
+    return out
+
+
 def _delta(today, yest, key) -> str:
     """净变化 ▲N/▼N(快照今昨差;gross +进/-出 待 95306/晨报流量子系统,暂用净)。"""
     if not yest or today.get(key) is None or yest.get(key) is None:
@@ -249,7 +409,7 @@ def render_lines() -> list[str]:
     n_tranL = g("transit_loaded")  # 途重(在途去程,晨报港总池)
     # 返空(返程在途空箱)= 95306 循环列状态机**实时**(总池口径,工单 2026-06-29 §返空),
     # 不再取 snapshot.transit_empty(晨报ingest幂等跳过→当日易停在旧值);实时反映回港推进。
-    n_ret = state["transit_empty_boxes"]
+    n_ret = max(g("transit_empty"), int(state.get("transit_empty_boxes") or 0))
     g330 = g("ground330_loaded") + g("ground330_empty")
     y330 = (int(y.get("ground330_loaded") or 0) + int(y.get("ground330_empty") or 0)) if y else None
     d330 = ""
@@ -261,11 +421,11 @@ def render_lines() -> list[str]:
         return (start, "─" * (end - start) + endchar)
 
     A = "──▶"   # 去程箭头
-    hn = lambda k: _hn(pos, k)   # 该位置的 #N列 标签
+    hn = lambda k: _hn_multi(state, k) or _hn(pos, k)   # 该位置的 #N列 标签
 
     xtz_lbl = cd._bold("新台子") + f" {g('xtz_loaded')}"
     xtz_end = COL_XTZ + _w(xtz_lbl) - 1
-    ret_hn = hn("transit_empty")
+    ret_hn = hn("transit_empty") or hn("returned_home")
     ret_lbl = cd._bold("返空") + f" {n_ret}" + (f" {ret_hn}" if ret_hn else "")
     ret_end = COL_RET + _w(ret_lbl) - 1
 
@@ -293,7 +453,7 @@ def render_lines() -> list[str]:
         tran_hn = hn("transit_loaded") or cd._dim("(无在途列)")
         plat_hn = hn("port_loaded")
         port_load_note = cd._dim("装·pm发")
-    g330_hn = hn("ground330")
+    g330_hn = hn("ground330") or hn("xtz")
     # R1 附属①:集装箱列号(港重在装列 / 途重在途列 / 新台子到达列)+ 港空增量 + 右竖线
     L.append(_compose([
         (COL_PORT_E, _delta(t, y, "port_empty")),
@@ -353,7 +513,8 @@ def render_lines() -> list[str]:
                             " 手动快照,需补今日晨报 record;返空/#号列/散粮状态=95306 实时")
                     if stale_days >= 1 else
                     cd._dim("  箱数=晨报港总池;返空+#N号列=95306循环列实时(总池,跨船);散·待发/在途/到站=95306散粮车状态(非循环、不进箱池)"))
-    legend_lines = [legend_extra]
+    detail_lines = _cycle_detail_lines(state)
+    legend_lines = [*detail_lines, legend_extra]
     # 规则3:返空口径无法自动判定时,醒目挂人工确认(见 _cycle_state)
     for c in state.get("confirms", []):
         legend_lines.append(cd._red("  ⚠ 待确认:" + c))

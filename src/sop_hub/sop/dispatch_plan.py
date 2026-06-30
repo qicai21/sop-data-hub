@@ -102,7 +102,9 @@ def set_plan(
       entries: list of (release_batch_id, planned_box_count, priority_order).
       notes:   optional human-readable note (e.g. "今早港口分票").
 
-    For each entry: INSERT OR REPLACE keeps allocated_box_count if already > 0.
+    For each entry: INSERT OR REPLACE keeps allocated_box_count in sync with
+    boxes already assigned to that release_batch. This matters when a dispatch
+    plan is created after some wagons have already been ingested.
     Old plans on the same (project, ship) NOT in entries are NOT touched —
     caller is expected to know what to reset; if you need wholesale reset,
     call mark_status() first.
@@ -117,7 +119,14 @@ def set_plan(
                 "SELECT allocated_box_count FROM release_batch_dispatch_plan "
                 "WHERE release_batch_id=?", (rb_id,),
             ).fetchone()
-            allocated = int(existing["allocated_box_count"]) if existing else 0
+            actual_boxes = conn.execute(
+                "SELECT COUNT(*) FROM wagon_container_shipments "
+                "WHERE batch_id=?",
+                (rb_id,),
+            ).fetchone()[0]
+            existing_allocated = int(existing["allocated_box_count"]) if existing else 0
+            allocated = max(existing_allocated, int(actual_boxes or 0))
+            status = "completed" if allocated >= int(planned) else "active"
             conn.execute(
                 "INSERT OR REPLACE INTO release_batch_dispatch_plan "
                 "(release_batch_id, project_id, ship_name, planned_box_count, "
@@ -128,13 +137,13 @@ def set_plan(
                 "                 release_batch_dispatch_plan WHERE release_batch_id=?), ?), "
                 "        ?)",
                 (rb_id, project_id, ship_name, int(planned), allocated,
-                 int(prio), "active", notes, rb_id, _now_iso(), _now_iso()),
+                 int(prio), status, notes, rb_id, _now_iso(), _now_iso()),
             )
             out.append(PlanEntry(
                 release_batch_id=rb_id, project_id=project_id,
                 ship_name=ship_name, planned_box_count=int(planned),
                 allocated_box_count=allocated, priority_order=int(prio),
-                status="active", notes=notes,
+                status=status, notes=notes,
             ))
         conn.commit()
     finally:

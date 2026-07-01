@@ -100,6 +100,32 @@ contract:
       tax_included_price: 65.13
       unit: "元/吨"
 
+# ── 费用结构(先落 route C 散粮线)──────────────────────────────
+# 说明:
+# - route_c_income = 对客户收入口径(合同价)
+# - nrf_cost       = 95306 实际票面金额(分转元),不写死 rate
+# - 地铁费/轨道衡/辅助作业费按当前项目档案口径落地
+cost_structure:
+  currency: "CNY"
+  route_c_bulk:
+    route_code: "C"
+    recognition_scope: "train"
+    doc_templates:
+      onsite_confirm_sheet:
+        template_code: "jiusan_bulk_onsite_confirm"
+        template_name: "锦州港装卸辅助作业现场确认单"
+        output_format: "docx"
+        applicable_fee_codes:
+          - "aux_bulk_loading"
+          - "aux_bulk_inspection"
+    items:
+      - {code: route_c_income, name: "路线C运输收入", side: income, rate: 65.13, base: railway_billing_weight, tax: 0.09, counterparty: "锦州港物流发展有限公司"}
+      - {code: nrf_cost, name: "国铁运费", side: cost, calc: actual_freight_sum, tax: 0.09, settle_party: "中国铁路"}
+      - {code: metro_fee, name: "地铁费", side: cost, rate: 3.75, base: railway_billing_weight, tax: 0.09, settle_party: "锦州高天铁路有限责任公司"}
+      - {code: track_scale, name: "轨道衡费", side: cost, rate: 0.70, base: railway_billing_weight, tax: 0.06, settle_party: "中铁外服锦州分公司"}
+      - {code: aux_bulk_loading, name: "散粮车装卸辅助作业服务", side: cost, rate: 450.0, base: car_count, tax: 0.06, settle_party: "二级公司", doc_type: "onsite_confirm_sheet", service_no: "19"}
+      - {code: aux_bulk_inspection, name: "散粮车车体检查及作业现场检查服务", side: cost, rate: 200.0, base: car_count, tax: 0.06, settle_party: "二级公司", doc_type: "onsite_confirm_sheet", service_no: "20"}
+
 listening_tasks:
   - group_id: "GROUP013"
     group_lookup_id: "[GROUP013]"

@@ -248,7 +248,8 @@ def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
         rows = conn.execute(
             """
             SELECT
-              rb.id, rb.project, rb.ship_name, rb.destination_station, rb.cargo_name,
+              rb.id, rb.project, rb.ship_name, rb.destination_station,
+              rb.cargo_name, rb.cargo_product_name,
               rb.batch_sequence, rb.notice_date, rb.batch_date, rb.batch_quantity,
               rb.actual_wagon_count, rb.shipped_weight_tons, rb.remaining_weight_tons,
               rb.dispatch_status, rb.updated_at,
@@ -457,27 +458,34 @@ def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
     # 集装箱项目(yaml is_container_business=true)显示"箱数",散运显示"车数"
     is_container = project_id in _container_business_projects()
     unit_label = "箱数" if is_container else "车数"
+    ship_w = 22
+    lot_w = 6
+    date_w = 10
+    ton_w = 8
+    unit_w = 11
+    status_w = 15
+    plan_w = 16
 
     # 表头(用 _pad_disp 按终端 cell 宽度对齐 — 中文 2 cell)
     header = (
-        _pad_disp("船名", 14)
-        + _pad_disp("lot", 7)
-        + _pad_disp("下达日", 12)
-        + _pad_disp("计划t", 8, "right")
-        + _pad_disp("已发t", 8, "right")
-        + _pad_disp("剩 t", 8, "right")
-        + _pad_disp(f"{unit_label}(+当日)", 12, "right")
-        + "  " + _pad_disp("状态", 19)
-        + "  " + _pad_disp("计划号", 16)
+        _pad_disp("船名(品名)", ship_w)
+        + _pad_disp("lot", lot_w)
+        + _pad_disp("下达日", date_w)
+        + _pad_disp("计划t", ton_w, "right")
+        + _pad_disp("已发t", ton_w, "right")
+        + _pad_disp("剩 t", ton_w, "right")
+        + _pad_disp(f"{unit_label}(+当日)", unit_w, "right")
+        + "  " + _pad_disp("状态", status_w)
+        + "  " + _pad_disp("计划号", plan_w)
     )
     lines.append(_dim(header))
     for b in batches[:8]:  # 最多 8 条/项目
-        ship = _truncate_disp(b.get("ship_name") or "—", 13)
-        lot = _truncate_disp(b.get("batch_sequence") or "—", 6)
+        ship = _truncate_disp(_ship_cargo_label(project_id, b), ship_w - 1)
+        lot = _truncate_disp(b.get("batch_sequence") or "—", lot_w - 1)
         # 业务上看每个 lot 各自的"下达日期"(batch_date),不是出港单整张的
         # "通知日期"(notice_date)— 一张累计放货单的 notice_date 是共用的,
         # batch_date 才是每段 remark 的下达日。2026-06-04 用户校订。
-        notice = _truncate_disp(b.get("batch_date") or "—", 11)
+        notice = _truncate_disp(b.get("batch_date") or "—", date_w)
         planned = _num(b.get("batch_quantity"))
         shipped = _num(b.get("shipped_weight_tons"))
         # 剩余防御:存值优先,NULL 时现算 计划-已发(防 batch 没及时 compute
@@ -495,28 +503,47 @@ def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
         # 当日(铁路计划日)发运量:不并入总数,只在后面标 (+N) 绿色
         today = int((b.get("today_box") if is_container else b.get("today_wagon")) or 0)
         unit_plain = f"{base_count} (+{today})" if today > 0 else str(base_count)
-        unit_cell = _pad_disp(unit_plain, 12, "right")
+        unit_cell = _pad_disp(unit_plain, unit_w, "right")
         if today > 0:
             unit_cell = unit_cell.replace(f"(+{today})", _green(f"(+{today})"))
         status = b.get("dispatch_status") or "—"
-        # status 列固定 19 cell — 容纳 pending_completion 全名,所有行右
+        # status 列固定宽度 — 容纳常见 lifecycle 枚举,所有行右
         # 边框自然对齐(_color_status 改成 strip 后判颜色,pad 不影响)
-        status_colored = _color_status(_pad_disp(status, 19))
-        plan_no = _truncate_disp(_plan_no_for(project_id, b) or "—", 16)
+        status_colored = _color_status(_pad_disp(status, status_w))
+        plan_no = _truncate_disp(_plan_no_for(project_id, b) or "—", plan_w)
         lines.append(
-            _pad_disp(ship, 14)
-            + _pad_disp(lot, 7)
-            + _pad_disp(notice, 12)
-            + _pad_disp(planned, 8, "right")
-            + _pad_disp(shipped, 8, "right")
-            + _pad_disp(remain, 8, "right")
+            _pad_disp(ship, ship_w)
+            + _pad_disp(lot, lot_w)
+            + _pad_disp(notice, date_w)
+            + _pad_disp(planned, ton_w, "right")
+            + _pad_disp(shipped, ton_w, "right")
+            + _pad_disp(remain, ton_w, "right")
             + unit_cell
             + "  " + status_colored
-            + "  " + _pad_disp(plan_no, 16)
+            + "  " + _pad_disp(plan_no, plan_w)
         )
     if len(batches) > 8:
         lines.append(_dim(f"  …还有 {len(batches) - 8} 条未显示"))
     return _box(title, lines)
+
+
+def _ship_cargo_label(project_id: str, b: dict[str, Any]) -> str:
+    ship = str(b.get("ship_name") or "—").strip() or "—"
+    if project_id not in {"zhongtang_special_steel", "jilin_jingang_jinzhou", "chaoyang_steel"}:
+        return ship
+    cargo = _display_cargo_name(b)
+    return f"{ship}({cargo})" if cargo else ship
+
+
+def _display_cargo_name(b: dict[str, Any]) -> str:
+    product = str(b.get("cargo_product_name") or "").strip()
+    cargo = str(b.get("cargo_name") or "").strip()
+    generic = {"铁矿", "铁矿粉", "矿粉", "红土镍矿"}
+    if product and product not in generic:
+        return product
+    if cargo and cargo not in generic:
+        return cargo
+    return product or cargo
 
 
 def _num(v: Any) -> str:

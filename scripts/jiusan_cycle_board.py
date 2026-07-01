@@ -488,9 +488,10 @@ def render_lines() -> list[str]:
         hbar(ret_end + 3, RV, "┘"),
     ]))
 
-    # 标题栏(a 口径:现状·循环列实时;落地池=最新晨报底)
+    # 标题栏:压缩顶栏文案,详细口径留在 legend。
     date = str(t.get("snapshot_date") or "")
     now_hm = cd.now_iso_beijing_compact()[:16].replace("T", " ")
+    now_short = now_hm[2:4] + now_hm[5:7] + now_hm[8:16]
     today = cd.now_iso_beijing_compact()[:10]
     # §八.2 自保:箱数取最新手动快照,若快照不是今天→别拿旧数冒充"现状",醒目标过时。
     stale_days = 0
@@ -501,13 +502,12 @@ def render_lines() -> list[str]:
         stale_days = (_d(ty, tm, td) - _d(sy, sm, sd)).days
     except Exception:
         stale_days = 0
-    if stale_days >= 1:
-        title = (f"{DISPLAY} 箱循环 · {now_hm}  "
-                 f"{cd._red(f'⚠箱数=晨报{date}(已{stale_days}天·非现状)')}"
-                 f" 池{g('total_pool')} · 返空/#列=95306实时")
-    else:
-        title = (f"{DISPLAY} 箱循环 · 现状 {now_hm}   "
-                 f"箱数=晨报{date}盘点池 {g('total_pool')} · 返空/#号列=95306实时")
+    cycle_count = len(state.get("cycle_rows") or [])
+    stale_mark = cd._red(f" ⚠晨报{date}已{stale_days}天") if stale_days >= 1 else ""
+    title = (
+        f"大豆循环现状 {now_short} | 总箱量: {g('total_pool')} | "
+        f"循环车组{cycle_count}列{stale_mark}"
+    )
 
     legend_extra = (cd._red("  ⚠ 箱数节点(港重/途重/港空/三三0…)停在 " + date +
                             " 手动快照,需补今日晨报 record;返空/#号列/散粮状态=95306 实时")

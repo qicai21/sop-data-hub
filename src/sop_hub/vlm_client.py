@@ -15,6 +15,9 @@ from pathlib import Path
 import requests
 
 
+OPENAI_VLM_MIN_TEMPERATURE = 0.01
+
+
 def call_vlm(
     service_url: str,
     prompt: str,
@@ -27,6 +30,13 @@ def call_vlm(
 ) -> str:
     if "/v1" in service_url:
         b64 = base64.b64encode(Path(image_path).read_bytes()).decode()
+        # mlx-vlm 0.6.3 + Qwen3.6-35B on this 32G Mac can trip a Metal
+        # threadgroup limit in the greedy fast path. A tiny non-zero
+        # temperature keeps output effectively deterministic while avoiding
+        # temperature == 0.
+        request_temperature = (
+            OPENAI_VLM_MIN_TEMPERATURE if temperature <= 0 else temperature
+        )
         resp = requests.post(
             service_url,
             json={
@@ -36,7 +46,7 @@ def call_vlm(
                     {"type": "text", "text": prompt},
                 ]}],
                 "max_tokens": max_tokens,
-                "temperature": temperature,
+                "temperature": request_temperature,
                 "enable_thinking": False,
             },
             timeout=timeout,

@@ -155,8 +155,46 @@ def test_autocorrect_switch_off_keeps_anomaly(autocorrect_rail_db):
     assert r["auto_corrected"] is False
 
 
-def test_autocorrect_count_mismatch_keeps_anomaly(tmp_path):
-    """② 数量不等(真排车数 != 异常数)→ 不纠错,维持 anomaly。"""
+def test_autocorrect_keeps_extra_notice_only_as_real_rejects(tmp_path):
+    """排车 + 单个错号混合:解释掉 window_only 后,剩余 notice_only 保留为排车。"""
+    db = tmp_path / "rail.sqlite3"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE shipments (ydid TEXT PRIMARY KEY, car_no TEXT,"
+        " destination_name TEXT, cargo_name TEXT, ticketed_at TEXT)"
+    )
+    true_cars = ["1891601", "1891599", "1891570", "1891595"]
+    conn.executemany(
+        "INSERT INTO shipments VALUES (?,?,?,?,?)",
+        [(f"y{i}", c, "朝阳西", "铁矿", f"2026-06-30 19:5{i}:00")
+         for i, c in enumerate(true_cars)],
+    )
+    conn.commit()
+    conn.close()
+    notice = ["1591601", "1891573", "1891581", "1891599", "1891570", "1891595"]
+    r = recover_loading_cars_via_window(
+        rail_db_path=db,
+        loading_car_nos=["1891599", "1891570", "1891595"],
+        all_notice_car_nos=notice,
+        destination="朝阳西",
+        min_ticketed_at="2026-06-30 00:00:00",
+    )
+    assert r["status"] == "ok"
+    assert r["auto_corrected"] is True
+    assert r["missing_from_notice"] == []
+    assert r["notice_only"] == ["1891573", "1891581"]
+    assert r["corrections"] == [{
+        "notice_car_no": "1591601",
+        "window_car_no": "1891601",
+        "edit_distance": 1,
+        "match_reason": "substitution",
+        "source": "95306_window",
+    }]
+    assert set(r["loading_car_nos"]) == {"1891601", "1891599", "1891570", "1891595"}
+
+
+def test_autocorrect_unexplained_window_only_keeps_anomaly(tmp_path):
+    """仍有无法解释的 window_only 异常车 → 不纠错,维持 anomaly。"""
     db = tmp_path / "rail.sqlite3"
     conn = sqlite3.connect(str(db))
     conn.execute(

@@ -284,32 +284,37 @@ def _autocorrect_notice_car_numbers(
     max_edit_distance: int,
     max_pairs: int,
 ) -> list[dict[str, Any]]:
-    """把通知单错号(notice_only/真排车)唯一配对到窗内异常车(window_only)。
+    """把通知单错号(notice_only 中一部分)唯一配对到窗内异常车(window_only)。
 
     返回 corrections 列表;**任一保守边界不满足就返回 []**(不纠错,维持人工):
-      - 真排车数 != 异常数;或 N==0;或 N > max_pairs。
-      - 某真排车在阈值内找不到**唯一**近似异常车(0 个或 ≥2 个)→ 整体放弃。
-      - 配对非单射(两个真排车配到同一异常车)→ 整体放弃。
+      - 异常车数 N==0;或 N > max_pairs。
+      - 某个窗内异常车在 notice_only 中找不到**唯一最小距离**近似错号
+        (0 个或最小距离并列)→ 整体放弃。
+      - 配对非单射(两个异常车配到同一个错号)→ 整体放弃。
+      - 未配对的 notice_only 允许继续保留为真排车,不阻断纠错。
     宁可挂人工,绝不乱配。
     """
-    n = len(notice_only)
-    if n == 0 or n != len(window_only) or n > max_pairs:
+    n = len(window_only)
+    if not notice_only or n == 0 or n > max_pairs:
         return []
 
     pairing: dict[str, tuple[str, int, str]] = {}
-    for wrong in notice_only:
+    for true in window_only:
         cands = []
-        for true in window_only:
+        for wrong in notice_only:
             ok, dist, reason = _similar_car_no(wrong, true, max_edit_distance)
             if ok:
-                cands.append((true, dist, reason))
-        if len(cands) != 1:  # 0 或多个近似 → 不可信
+                cands.append((wrong, dist, reason))
+        if not cands:
             return []
-        pairing[wrong] = cands[0]
+        cands.sort(key=lambda item: item[1])
+        if len(cands) > 1 and cands[0][1] == cands[1][1]:
+            return []
+        pairing[true] = cands[0]
 
-    # 单射校验:不允许两个错号配到同一个真号
-    trues = [v[0] for v in pairing.values()]
-    if len(set(trues)) != n:
+    # 单射校验:不允许两个异常车配到同一个错号
+    wrongs = [v[0] for v in pairing.values()]
+    if len(set(wrongs)) != n:
         return []
 
     return [
@@ -320,7 +325,7 @@ def _autocorrect_notice_car_numbers(
             "match_reason": reason,
             "source": "95306_window",
         }
-        for wrong, (true, dist, reason) in pairing.items()
+        for true, (wrong, dist, reason) in pairing.items()
     ]
 
 

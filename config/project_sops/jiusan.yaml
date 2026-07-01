@@ -107,6 +107,16 @@ contract:
 # - 地铁费/轨道衡/辅助作业费按当前项目档案口径落地
 cost_structure:
   currency: "CNY"
+  route_a_container:
+    route_code: "A"
+    recognition_scope: "container_batch"
+    location_code: "三三〇处专用线"
+    weight_per_box: 28.4
+    items:
+      - {code: route_a_income, name: "路线A运输收入", side: income, rate: 65.43, base: railway_billing_weight, tax: 0.09, counterparty: "锦州港物流发展有限公司"}
+      - {code: route_a_nrf_cost, name: "路线A国铁运费", side: cost, calc: actual_freight_sum, tax: 0.09, settle_party: "中国铁路"}
+      - {code: route_a_metro_fee, name: "路线A地铁费", side: cost, rate: 120.0, base: box_count, tax: 0.09, settle_party: "锦州高天铁路有限责任公司"}
+      - {code: route_a_transfer_fee, name: "路线A诚信倒运费", side: cost, rate: 444.0, base: box_count, tax: 0.09, settle_party: "诚信集装箱储运"}
   route_c_bulk:
     route_code: "C"
     recognition_scope: "train"

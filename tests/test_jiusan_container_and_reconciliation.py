@@ -19,16 +19,18 @@ def test_calc_route_a_fee_items():
     }
     items = calc_route_a_fee_items(
         config=cfg,
-        box_count=630,
+        box_count=1709,
         total_weight=17892.0,
+        railway_weight=54688.0,
         freight_sum_yuan=1619604.0,
         source_ref="test",
     )
     by_code = {item.code: item for item in items}
     assert by_code["route_a_income"].amount == 1170673.56
     assert by_code["route_a_nrf_cost"].amount == 1619604.0
-    assert by_code["route_a_metro_fee"].amount == 75600.0
-    assert by_code["route_a_transfer_fee"].amount == 279720.0
+    assert by_code["route_a_nrf_cost"].qty == 54688.0
+    assert by_code["route_a_metro_fee"].amount == 205080.0
+    assert by_code["route_a_transfer_fee"].amount == 758796.0
 
 
 def test_group_ship_fee_rows_dedup_batches():

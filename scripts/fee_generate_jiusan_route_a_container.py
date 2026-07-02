@@ -107,25 +107,64 @@ def _members(conn: sqlite3.Connection, batch_id: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def _freight_summary(conn: sqlite3.Connection, batch_id: str) -> tuple[float, int]:
+def _railway_allocations(conn: sqlite3.Connection, batch_id: str) -> tuple[float, float, int]:
+    rows = conn.execute(
+        """
+        SELECT ydid, COUNT(*) AS batch_box_rows, MAX(COALESCE(marked_weight, 0)) AS marked_weight
+        FROM wagon_container_shipments
+        WHERE batch_id=?
+        GROUP BY ydid
+        """,
+        (batch_id,),
+    ).fetchall()
+    if not rows:
+        return 0.0, 0.0, 0
+
+    ydids = [str(r["ydid"]) for r in rows if r["ydid"]]
+    if not ydids:
+        return 0.0, 0.0, 0
+    placeholders = ",".join("?" for _ in ydids)
+
+    total_counts = {
+        str(r["ydid"]): int(r["total_box_rows"] or 0)
+        for r in conn.execute(
+            f"""
+            SELECT ydid, COUNT(*) AS total_box_rows
+            FROM wagon_container_shipments
+            WHERE ydid IN ({placeholders})
+            GROUP BY ydid
+            """,
+            ydids,
+        ).fetchall()
+    }
+
     rail = sqlite3.connect(str(RAIL_DB))
     rail.row_factory = sqlite3.Row
     try:
-        rail.execute("ATTACH ? AS sop", (str(DB),))
-        row = rail.execute(
-            """
-            SELECT round(sum(coalesce(s.freight_fee,0))/100.0, 2) AS freight_yuan,
-                   count(distinct s.ydid) AS ydid_count
-            FROM shipments s
-            WHERE s.ydid IN (
-              SELECT distinct ydid FROM sop.wagon_container_shipments WHERE batch_id=?
-            )
-            """,
-            (batch_id,),
-        ).fetchone()
-        return float(row["freight_yuan"] or 0.0), int(row["ydid_count"] or 0)
+        freight_map = {
+            str(r["ydid"]): float(r["freight_fee"] or 0.0) / 100.0
+            for r in rail.execute(
+                f"""
+                SELECT ydid, freight_fee
+                FROM shipments
+                WHERE ydid IN ({placeholders})
+                """,
+                ydids,
+            ).fetchall()
+        }
     finally:
         rail.close()
+
+    allocated_weight = 0.0
+    allocated_freight = 0.0
+    for row in rows:
+        ydid = str(row["ydid"])
+        batch_box_rows = int(row["batch_box_rows"] or 0)
+        total_box_rows = max(total_counts.get(ydid, 0), batch_box_rows, 1)
+        share = float(batch_box_rows) / float(total_box_rows)
+        allocated_weight += float(row["marked_weight"] or 0.0) * share
+        allocated_freight += freight_map.get(ydid, 0.0) * share
+    return round(allocated_weight, 2), round(allocated_freight, 2), len(rows)
 
 
 def _upsert_batch(
@@ -142,10 +181,11 @@ def _upsert_batch(
 
     batch_id = stable_hash(PROJECT, "container_fee_batch", batch["ship_name"], LOT)
     source_ref = f"wagon_container_shipments:{batch['ship_name']}:{LOT}:{batch['id']}"
-    box_count = len({m["box_no"] for m in members if m.get("box_no")})
+    box_count = len(members)
+    unique_box_count = len({m["box_no"] for m in members if m.get("box_no")})
     wagon_count = len({m["car_no"] for m in members if m.get("car_no")})
-    total_weight = container_billing_weight(box_count, float(cfg.get("weight_per_box", 28.4)))
-    freight_sum, ydid_count = _freight_summary(conn, batch["id"])
+    total_weight = container_billing_weight(unique_box_count, float(cfg.get("weight_per_box", 28.4)))
+    railway_weight, freight_sum, ydid_count = _railway_allocations(conn, batch["id"])
     event_date = min((str(m.get("ticketed_at") or "")[:10] for m in members if m.get("ticketed_at")), default=batch["notice_date"])
 
     conn.execute("DELETE FROM fee_batch_member WHERE fee_batch_id=?", (batch_id,))
@@ -184,7 +224,7 @@ def _upsert_batch(
             "codex",
             now,
             now,
-            f"ydid_count={ydid_count}",
+            f"ydid_count={ydid_count};unique_box_count={unique_box_count};trip_box_count={box_count};railway_weight={railway_weight}",
         ),
     )
 
@@ -227,6 +267,7 @@ def _upsert_batch(
         config=cfg,
         box_count=box_count,
         total_weight=total_weight,
+        railway_weight=railway_weight,
         freight_sum_yuan=freight_sum,
         source_ref=source_ref,
     )
@@ -274,7 +315,9 @@ def _upsert_batch(
         "ship_name": batch["ship_name"],
         "wagon_count": wagon_count,
         "box_count": box_count,
+        "unique_box_count": unique_box_count,
         "total_weight": total_weight,
+        "railway_weight": railway_weight,
         "freight_sum": freight_sum,
     }
 
@@ -310,7 +353,9 @@ def main() -> None:
         for o in outputs:
             print(
                 f"  ship={o['ship_name']} batch={o['batch_id']} wagons={o['wagon_count']} "
-                f"boxes={o['box_count']} weight={o['total_weight']} freight={o['freight_sum']}"
+                f"box_trips={o['box_count']} unique_boxes={o['unique_box_count']} "
+                f"contract_weight={o['total_weight']} railway_weight={o['railway_weight']} "
+                f"freight={o['freight_sum']}"
             )
     finally:
         conn.close()

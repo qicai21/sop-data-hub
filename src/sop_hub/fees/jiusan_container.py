@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import yaml
 
-from .jiusan_bulk import JIUSAN_YAML, stable_hash
+REPO_ROOT = Path(__file__).resolve().parents[3]
+JIUSAN_YAML = REPO_ROOT / "config" / "project_sops" / "jiusan.yaml"
+
+
+def stable_hash(*parts: Any) -> str:
+    return hashlib.sha1("|".join(str(p) for p in parts).encode("utf-8")).hexdigest()[:24]
 
 
 def load_route_a_config() -> dict[str, Any]:
@@ -39,6 +46,7 @@ def calc_route_a_fee_items(
     config: dict[str, Any],
     box_count: int,
     total_weight: float,
+    railway_weight: float,
     freight_sum_yuan: float,
     source_ref: str,
 ) -> list[ContainerFeeItemCalc]:
@@ -54,7 +62,7 @@ def calc_route_a_fee_items(
         counterparty = str(item.get("counterparty") or "")
 
         if calc_mode == "actual_freight_sum":
-            qty = round(total_weight, 2)
+            qty = round(railway_weight, 2)
             amount = round(freight_sum_yuan, 2)
             price = round(amount / qty, 4) if qty else 0.0
             qty_unit = "ton"

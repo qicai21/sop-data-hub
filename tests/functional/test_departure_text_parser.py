@@ -128,6 +128,17 @@ def test_py_shazi_alias():
     assert c.project_id == "zhongtang_special_steel"
 
 
+def test_py_jiusan_xintaizi_departure():
+    """'八道 40节 新台子 大豆 诚信' → jiusan"""
+    c = parse_departure_text("八道 40节 新台子 大豆 诚信")
+    assert c.status == "complete"
+    assert c.destination == "新台子"
+    assert c.car_count == 40
+    assert c.lane_or_track == "八道"
+    assert c.optional_ship_name == "诚信"
+    assert c.project_id == "jiusan"
+
+
 # ── MessageEvent integration ──────────────────────────────────────────
 
 
@@ -255,4 +266,3 @@ def test_py_mei6_39jie_siping_zhihui():
     assert c.optional_ship_name == "智慧"
     assert "煤六" in c.lane_or_track
     assert c.project_id == "jilin_jingang_jinzhou"
-

@@ -6,7 +6,7 @@ monitoring_plan_matcher._fallback_alignment_match and executor_runner's
 `"四平" not in event.text` gate.
 
 Rules (priority order):
-  1. Departure text → jilin_jingang_jinzhou / departure_flow / detect_departure_message
+  1. Departure text → jilin_jingang_jinzhou / jiusan / departure_flow / detect_departure_message
   2. Chaoyang business context → chaoyang_steel / dispatch_flow / capture_business_context
   3. Freight detail → project_id inferred / freight_detail_flow / enrich_release_batch
   4. Everything else → ignored
@@ -34,10 +34,11 @@ _DEST_PROJECT = {
     "四平": "jilin_jingang_jinzhou",
     "朝阳西": "chaoyang_steel",
     "汐子": "zhongtang_special_steel",
+    "新台子": "jiusan",
 }
 
 # ── Departure text signals ──────────────────────────────────────────────
-_DEPARTURE_DESTINATION_KEYWORDS = {"四平", "四平铁", "四平镍", "朝阳西", "朝阳铁", "汐子"}
+_DEPARTURE_DESTINATION_KEYWORDS = {"四平", "四平铁", "四平镍", "朝阳西", "朝阳铁", "汐子", "新台子", "新台"}
 _DEPARTURE_LANE_PATTERNS = {"道", "煤一", "煤二", "煤三", "煤四", "煤五", "煤六", "煤七", "煤八", "煤九"}
 _DEPARTURE_CAR_PATTERNS = {"节", "车"}
 

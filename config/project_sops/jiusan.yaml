@@ -136,6 +136,77 @@ cost_structure:
       - {code: aux_bulk_loading, name: "散粮车装卸辅助作业服务", side: cost, rate: 450.0, base: car_count, tax: 0.06, settle_party: "二级公司", doc_type: "onsite_confirm_sheet", service_no: "19"}
       - {code: aux_bulk_inspection, name: "散粮车车体检查及作业现场检查服务", side: cost, rate: 200.0, base: car_count, tax: 0.06, settle_party: "二级公司", doc_type: "onsite_confirm_sheet", service_no: "20"}
 
+flows:
+  departure_flow:
+    trigger:
+      groups:
+        - "GROUP093"
+        - "GROUP094"
+      message_patterns:
+        - ".*新台子.*"
+        - ".*大豆.*"
+        - ".*\\d{1,3}\\s*(车|节).*"
+        - ".*([七八九十]|十[一二三四五六七八九]|[0-9]{1,2})道.*"
+    examples:
+      - "八道 40节 新台子 大豆 诚信"
+      - "七道 53车 新台子 大豆 和谐1"
+    text_semantics:
+      car_units: "\"车\" 和 \"节\" 等价为 car_count"
+      lane_or_track: "\"七道\"、\"八道\" 等为 lane_or_track"
+      ship_name_position: "船名常出现在消息末尾(诚信/和谐1)"
+    steps:
+      - node: "detect_departure_message"
+        action:
+          - "parse_departure_text"
+        extract_fields:
+          - "message_time"
+          - "destination"
+          - "car_count"
+          - "optional_ship_name"
+          - "lane_or_track"
+      - node: "build_95306_query_window"
+        action:
+          - "build_time_window"
+        query_window:
+          start: "message_time - 60m"
+          end: "message_time + 60m"
+      - node: "query_95306"
+        action:
+          - "query_95306_waybills"
+        outputs:
+          - "waybill_candidates"
+      - node: "query_result_found"
+        conditions:
+          waybill_candidates_found: false
+        action:
+          - "create_pending_task"
+        outputs:
+          - "pending_departure_candidate"
+      - node: "extract_wagons_and_waybills"
+        conditions:
+          waybill_candidates_found: true
+        action:
+          - "extract_wagon_no"
+          - "extract_container_no"
+          - "extract_waybill_no"
+      - node: "deduplicate_departure_records"
+        action:
+          - "check_existing_wagon_shipments"
+        duplicate_policy:
+          existing_record: "ignore"
+          partial_record: "enrich_only"
+      - node: "match_release_batch"
+        action:
+          - "bind_wagons_to_release_batch"
+      - node: "write_departure_records"
+        action:
+          - "create_wagon_shipments"
+        outputs:
+          - "departure_records_written"
+      - node: "enter_tracking_phase"
+        next:
+          - "track_95306_status"
+
 listening_tasks:
   - group_id: "GROUP013"
     group_lookup_id: "[GROUP013]"
@@ -182,3 +253,17 @@ listening_tasks:
         handler: "scripts/ingest_bulk_loading_notice.py"
         save_db: true
         note: "落 bulk_loading_notice_wagon(船名取自文件名,car_no+日期反查95306 ydid),随后 sync 按船重路由。⚠️95306 数据权威最高,本表只提供分票"
+
+  # 九三内部文本股道通知群(2026-07-02 接入)。文本如“八道 40节 新台子 大豆 诚信”
+  # 作为 departure_text 触发源,为同次发车补齐真实作业道线。
+  - group_id: "GROUP094"
+    group_lookup_id: "[GROUP094]"
+    group_name: "铁晟大豆业务内部沟通群"
+    wxid: "17885542384@chatroom"
+    listen_options:
+      text: true
+    pull_image: false
+    routing:
+      - message_type: "text"
+        trigger_condition: "match_departure_text_template"
+        target_node: "detect_departure_message"

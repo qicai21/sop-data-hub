@@ -70,6 +70,8 @@ _DESTINATION_MAP = {
     "朝阳铁": "朝阳西",
     "汐子": "汐子",
     "沙子": "汐子",
+    "新台子": "新台子",
+    "新台": "新台子",
 }
 _DESTINATION_MAP_REVERSED: dict[str, list[str]] = {}
 for _alias, _canonical in _DESTINATION_MAP.items():
@@ -80,6 +82,7 @@ _DESTINATION_PROJECT = {
     "四平": "jilin_jingang_jinzhou",
     "朝阳西": "chaoyang_steel",
     "汐子": "zhongtang_special_steel",
+    "新台子": "jiusan",
 }
 
 # ── 装车线路归一(2026-06-16 设定)──────────────────────────────────────
@@ -311,6 +314,8 @@ def parse_departure_text(
             destination = "朝阳西"
         elif any(kw in raw for kw in ("汐子", "沙子")):
             destination = "汐子"
+        elif "新台" in raw:
+            destination = "新台子"
 
     project = _DESTINATION_PROJECT.get(destination, "")
 

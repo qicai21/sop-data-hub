@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS bulk_loading_notice_wagon (
   consignee TEXT,
   source_ref TEXT,
   created_at TEXT,
-  UNIQUE(project, notice_date, track, car_seq)
+  UNIQUE(project, notice_date, track, car_seq, ship_name)
 )
 """
 

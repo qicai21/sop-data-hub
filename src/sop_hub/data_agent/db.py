@@ -118,6 +118,8 @@ def open_db() -> sqlite3.Connection:
     migrate_release_batches_schema(connection)
 
     migrate_wagon_shipments_schema(connection)
+    
+    migrate_wagon_container_shipments_schema(connection)
 
     migrate_release_batch_dispatch_plan_schema(connection)
 
@@ -132,6 +134,7 @@ def open_db() -> sqlite3.Connection:
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_contracts_party_b ON contracts(party_b)"
     )
+    migrate_contract_fee_schema(connection)
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS release_dispatch_match_rules (
@@ -219,6 +222,119 @@ def open_db() -> sqlite3.Connection:
     connection.commit()
 
     return connection
+
+
+def migrate_contract_fee_schema(connection: sqlite3.Connection) -> None:
+    """R82: 费用合同结构层。
+
+    目标:
+    1. 合同条款按 route / fee item 结构化落库
+    2. 地铁费支持按作业道线单独配置价格
+    3. 收入侧业务确认重量有独立事实表
+    """
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS contract_fee_terms (
+          id TEXT PRIMARY KEY,
+          contract_ref TEXT NOT NULL,
+          project_id TEXT NOT NULL,
+          route_code TEXT,
+          fee_code TEXT NOT NULL,
+          fee_name TEXT NOT NULL,
+          charge_side TEXT NOT NULL,
+          pricing_basis TEXT NOT NULL,
+          pricing_unit TEXT NOT NULL,
+          default_rate REAL,
+          currency TEXT NOT NULL DEFAULT 'CNY',
+          tax_rate REAL,
+          counterparty TEXT,
+          settle_party TEXT,
+          evidence_path TEXT,
+          evidence_locator TEXT,
+          effective_from TEXT,
+          effective_to TEXT,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          source_mode TEXT NOT NULL DEFAULT 'manual_entry',
+          source_ref TEXT,
+          created_by TEXT,
+          updated_by TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          note TEXT,
+          UNIQUE(contract_ref, project_id, route_code, fee_code, effective_from)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_contract_fee_terms_project "
+        "ON contract_fee_terms(project_id, route_code, fee_code, enabled)"
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS contract_line_rates (
+          id TEXT PRIMARY KEY,
+          contract_fee_term_id TEXT,
+          contract_ref TEXT NOT NULL,
+          project_id TEXT NOT NULL,
+          route_code TEXT,
+          fee_code TEXT NOT NULL,
+          line_name TEXT NOT NULL,
+          rate REAL NOT NULL,
+          pricing_unit TEXT NOT NULL,
+          tax_rate REAL,
+          evidence_path TEXT,
+          evidence_locator TEXT,
+          effective_from TEXT,
+          effective_to TEXT,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          source_mode TEXT NOT NULL DEFAULT 'manual_entry',
+          source_ref TEXT,
+          created_by TEXT,
+          updated_by TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          note TEXT,
+          FOREIGN KEY(contract_fee_term_id) REFERENCES contract_fee_terms(id),
+          UNIQUE(project_id, route_code, fee_code, line_name, effective_from)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_contract_line_rates_lookup "
+        "ON contract_line_rates(project_id, route_code, fee_code, line_name, enabled)"
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS shipment_weight_confirmation (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          ship_name TEXT NOT NULL,
+          release_batch_id TEXT,
+          route_code TEXT,
+          weight_type TEXT NOT NULL,
+          confirmed_weight REAL NOT NULL,
+          unit TEXT NOT NULL DEFAULT 'ton',
+          confirmed_date TEXT,
+          confirmed_by TEXT,
+          evidence_path TEXT,
+          evidence_locator TEXT,
+          source_mode TEXT NOT NULL DEFAULT 'manual_entry',
+          source_ref TEXT,
+          created_by TEXT,
+          updated_by TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          note TEXT,
+          FOREIGN KEY(release_batch_id) REFERENCES release_batches(id),
+          UNIQUE(project_id, ship_name, release_batch_id, route_code, weight_type)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_weight_confirmation_lookup "
+        "ON shipment_weight_confirmation(project_id, ship_name, route_code, weight_type)"
+    )
+    connection.commit()
 
 
 def migrate_release_dispatch_match_rules_schema(connection: sqlite3.Connection) -> None:
@@ -392,6 +508,68 @@ def migrate_wagon_shipments_schema(connection: sqlite3.Connection) -> None:
     for field, type_def in new_fields.items():
         if field not in columns:
             connection.execute(f"ALTER TABLE wagon_shipments ADD COLUMN {field} {type_def}")
+    connection.commit()
+
+
+def migrate_wagon_container_shipments_schema(connection: sqlite3.Connection) -> None:
+    """R82: Ensure wagon_container_shipments carries票面费用/作业道线等关键事实。"""
+    try:
+        connection.execute("SELECT 1 FROM wagon_container_shipments LIMIT 0")
+    except sqlite3.OperationalError:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS wagon_container_shipments (
+                id TEXT PRIMARY KEY,
+                car_no TEXT NOT NULL,
+                box_no TEXT NOT NULL,
+                box_position INTEGER,
+                ydid TEXT NOT NULL,
+                czydid TEXT,
+                waybill_no TEXT,
+                batch_id TEXT NOT NULL,
+                car_model TEXT,
+                ticketed_at TEXT,
+                departed_at TEXT,
+                arrived_at TEXT,
+                delivered_at TEXT,
+                accepted_at TEXT,
+                loaded_at TEXT,
+                status_name TEXT,
+                latest_stage_key TEXT,
+                latest_stage_name TEXT,
+                latest_event_time TEXT,
+                origin_name TEXT,
+                destination_name TEXT,
+                transport_mode_code TEXT,
+                transport_mode_name TEXT,
+                cargo_name TEXT,
+                marked_weight REAL,
+                freight_fee REAL NOT NULL DEFAULT 0,
+                detail_json TEXT NOT NULL DEFAULT '{}',
+                loading_line TEXT,
+                project_id TEXT,
+                ship_name TEXT,
+                consignor TEXT,
+                consignee TEXT,
+                dispatch_status TEXT NOT NULL DEFAULT 'in_progress',
+                source_message_id TEXT,
+                source_group_id TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(car_no, box_no, ydid)
+            )
+        """)
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(wagon_container_shipments)").fetchall()
+    }
+    new_fields: dict[str, str] = {
+        "freight_fee": "REAL NOT NULL DEFAULT 0",
+        "detail_json": "TEXT NOT NULL DEFAULT '{}'",
+        "loading_line": "TEXT",
+    }
+    for field, type_def in new_fields.items():
+        if field not in columns:
+            connection.execute(f"ALTER TABLE wagon_container_shipments ADD COLUMN {field} {type_def}")
     connection.commit()
 
 

@@ -57,6 +57,9 @@ CREATE TABLE IF NOT EXISTS wagon_container_shipments (
     -- box / wagon 级混合
     cargo_name TEXT,
     marked_weight REAL,                        -- 车级标载(沿用 95306;每箱列拿同值)
+    freight_fee REAL NOT NULL DEFAULT 0,      -- 票面国铁运费(元)
+    detail_json TEXT NOT NULL DEFAULT '{}',   -- 原始 95306/同步明细
+    loading_line TEXT,                        -- 作业道线:七道/八道/煤五...
 
     -- 项目元
     project_id TEXT,

@@ -86,6 +86,13 @@ def test_route_single_zhongtang_to_trigger():
     assert r.sop_project_id == "zhongtang_special_steel"
 
 
+def test_route_huanqiu_xinren_to_trigger():
+    r = classify_text_message(_event("煤五，汐子铁，环球信任，实装33节"))
+    assert r.sop_node == "inspection_text_trigger"
+    assert r.sop_flow == "inspection_text_trigger_flow"
+    assert r.sop_project_id == "zhongtang_special_steel"
+
+
 def test_route_jilin_still_departure():
     r = classify_text_message(_event("煤六 四平铁 蓝鳍 53节"))
     assert r.sop_node == "detect_departure_message"
@@ -209,3 +216,33 @@ def test_rendezvous_delegates_when_candidate_exists(db):
     oj = out.get("output_json") or {}
     assert oj.get("text_trigger", {}).get("delegated_to_candidate") == "cand1"
     assert oj["text_trigger"]["expected_count"] == 5
+
+
+def test_rendezvous_skips_when_matched_candidate_exists_outside_event_bounds(db):
+    from sop_hub.sop.workflow_task_executor import run_workflow_task
+
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "INSERT INTO inspection_ingestion_candidates "
+        "(id, message_id, ship_name, destination, candidate_status, wagon_count, created_at) "
+        "VALUES ('cand_done','wx_img_done','环球信任','汐子','matched',35, datetime('now'))"
+    )
+    conn.commit()
+    conn.close()
+
+    inbox_id = _insert_inbox(db, "煤五，汐子铁，环球信任，实装33节", inbox_id=102)
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "UPDATE message_inbox SET received_datetime='2026-07-02 01:43:09' WHERE id=?",
+        (inbox_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    res = create_task_from_message_inbox(inbox_id, db_path=db)
+    task_id = res["ids"][0]
+    out = run_workflow_task(task_id, db_path=db)
+    oj = out.get("output_json") or {}
+    assert out["status"] == "skipped"
+    assert oj["stage"] == "already_handled_by_notice_chain"
+    assert oj["matched_candidate"] == "cand_done"

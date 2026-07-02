@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import re
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
-from docx import Document
+try:
+    from docx import Document
+except ModuleNotFoundError:  # pragma: no cover - optional at import time
+    Document = None
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -51,6 +55,12 @@ def freight_fee_yuan(raw_fee: Any) -> float:
 
 
 def billing_weight(row: dict[str, Any]) -> float:
+    v = row.get("marked_weight")
+    if v not in (None, ""):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            pass
     v = row.get("computed_loading_weight")
     if v not in (None, ""):
         try:
@@ -61,6 +71,84 @@ def billing_weight(row: dict[str, Any]) -> float:
     if model.startswith("L70"):
         return 69.0
     return 61.0
+
+
+def load_contract_terms(conn: sqlite3.Connection, project_id: str, route_code: str) -> dict[str, dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT fee_code, fee_name, charge_side, pricing_basis, pricing_unit, default_rate,
+               tax_rate, counterparty, settle_party, note
+        FROM contract_fee_terms
+        WHERE project_id=? AND route_code=? AND enabled=1
+        """,
+        (project_id, route_code),
+    ).fetchall()
+    return {str(r["fee_code"]): dict(r) for r in rows}
+
+
+def load_line_rates(
+    conn: sqlite3.Connection,
+    project_id: str,
+    route_code: str,
+    fee_code: str,
+) -> dict[str, float]:
+    rows = conn.execute(
+        """
+        SELECT line_name, rate
+        FROM contract_line_rates
+        WHERE project_id=? AND route_code=? AND fee_code=? AND enabled=1
+        """,
+        (project_id, route_code, fee_code),
+    ).fetchall()
+    return {str(r["line_name"]).strip(): float(r["rate"]) for r in rows}
+
+
+def load_weight_confirmation(
+    conn: sqlite3.Connection,
+    release_batch_id: str,
+    route_code: str,
+    weight_type: str = "port_weighing_departure",
+) -> float | None:
+    row = conn.execute(
+        """
+        SELECT confirmed_weight
+        FROM shipment_weight_confirmation
+        WHERE release_batch_id=? AND route_code=? AND weight_type=?
+        """,
+        (release_batch_id, route_code, weight_type),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        return float(row["confirmed_weight"])
+    except (TypeError, ValueError):
+        return None
+
+
+def allocated_confirmed_weight(
+    total_confirmed_weight: float | None,
+    batch_marked_weight: float,
+    ship_marked_weight: float,
+) -> float:
+    if total_confirmed_weight in (None, ""):
+        return 0.0
+    total = float(total_confirmed_weight or 0.0)
+    batch = float(batch_marked_weight or 0.0)
+    ship = float(ship_marked_weight or 0.0)
+    if total <= 0 or batch <= 0 or ship <= 0:
+        return 0.0
+    return round(total * batch / ship, 2)
+
+
+def resolve_line_rate(
+    line_name: str | None,
+    rate_map: dict[str, float],
+    default_rate: float | None = None,
+) -> tuple[float | None, str]:
+    name = str(line_name or "").strip()
+    if name and name in rate_map:
+        return rate_map[name], name
+    return default_rate, name
 
 
 @dataclass
@@ -84,48 +172,67 @@ class FeeItemCalc:
 
 def calc_fee_items(
     *,
-    config: dict[str, Any],
+    terms: dict[str, dict[str, Any]],
     total_weight: float,
     freight_sum_yuan: float,
     car_count: int,
+    line_rate: float | None,
+    box_trip_count: int = 0,
+    code_weights: dict[str, float] | None = None,
     source_ref: str,
 ) -> list[FeeItemCalc]:
     out: list[FeeItemCalc] = []
-    for item in config.get("items") or []:
-        code = item["code"]
-        name = item["name"]
-        side = item["side"]
-        base = item.get("base", "")
-        calc_mode = item.get("calc", "")
-        tax = float(item.get("tax", 0) or 0)
+    overrides = code_weights or {}
+    for code, item in terms.items():
+        name = str(item["fee_name"])
+        side = str(item["charge_side"])
+        basis = str(item.get("pricing_basis") or "")
+        tax = float(item.get("tax_rate", 0) or 0)
         settle_party = str(item.get("settle_party") or "")
         counterparty = str(item.get("counterparty") or "")
-        doc_type = str(item.get("doc_type") or "")
-        service_no = str(item.get("service_no") or "")
+        doc_type = "onsite_confirm_sheet" if code in {"aux_bulk_loading", "aux_bulk_inspection"} else ""
+        service_no = "19" if code == "aux_bulk_loading" else "20" if code == "aux_bulk_inspection" else ""
+        rate = float(item.get("default_rate", 0) or 0)
 
-        if calc_mode == "actual_freight_sum":
+        if basis == "freight_fee_sum":
             qty = round(total_weight, 2)
             amount = round(freight_sum_yuan, 2)
             price = round(amount / qty, 4) if qty else 0.0
             qty_unit = "ton"
             pricing_basis = "actual_freight_fee"
             pricing_basis_value = round(freight_sum_yuan, 2)
-        elif base == "railway_billing_weight":
-            rate = float(item.get("rate", 0) or 0)
-            qty = round(total_weight, 2)
+        elif basis in {"confirmed_weight", "marked_weight", "marked_weight_tiered"}:
+            weight = float(overrides.get(code, total_weight))
+            qty = round(weight, 2)
             amount = round(rate * qty, 2)
             price = rate
             qty_unit = "ton"
-            pricing_basis = "billing_weight"
-            pricing_basis_value = round(total_weight, 2)
-        elif base == "car_count":
-            rate = float(item.get("rate", 0) or 0)
+            pricing_basis = basis
+            pricing_basis_value = round(weight, 2)
+        elif basis == "marked_weight_x_line_rate":
+            if line_rate is None:
+                continue
+            weight = float(overrides.get(code, total_weight))
+            qty = round(weight, 2)
+            amount = round(float(line_rate) * qty, 2)
+            price = float(line_rate)
+            qty_unit = "ton"
+            pricing_basis = basis
+            pricing_basis_value = round(weight, 2)
+        elif basis == "car_count":
             qty = float(car_count)
             amount = round(rate * qty, 2)
             price = rate
             qty_unit = "car"
-            pricing_basis = "car_count"
+            pricing_basis = basis
             pricing_basis_value = float(car_count)
+        elif basis == "box_trip_count":
+            qty = float(box_trip_count)
+            amount = round(rate * qty, 2)
+            price = rate
+            qty_unit = "box"
+            pricing_basis = basis
+            pricing_basis_value = float(box_trip_count)
         else:
             continue
 
@@ -162,6 +269,8 @@ def render_onsite_confirm_docx(
     fee_items: list[FeeItemCalc],
     ship_name: str,
 ) -> None:
+    if Document is None:
+        raise ModuleNotFoundError("python-docx is required to render onsite confirm docs")
     path.parent.mkdir(parents=True, exist_ok=True)
     doc = Document()
     doc.add_heading("锦州港装卸辅助作业现场确认单", level=1)

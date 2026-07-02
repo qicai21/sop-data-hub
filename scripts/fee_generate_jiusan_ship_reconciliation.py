@@ -43,9 +43,15 @@ def _upsert(conn: sqlite3.Connection, *, ship: str, now: str) -> list[dict]:
     rows = _rows(conn, ship)
     groups = group_ship_fee_rows(rows)
     out: list[dict] = []
+    conn.execute(
+        """
+        DELETE FROM billing_reconciliation
+        WHERE project=? AND period=? AND recognition_scope='ship' AND recognition_key=?
+        """,
+        (PROJECT, f"ship:{ship}", ship),
+    )
     for g in groups:
         rid = stable_hash("billing_reconciliation", PROJECT, ship, g.charge_side, g.party_name)
-        conn.execute("DELETE FROM billing_reconciliation WHERE id=?", (rid,))
         conn.execute(
             """INSERT INTO billing_reconciliation
                (id, project, counterparty, period, total_amount, total_cars, total_qty, status,

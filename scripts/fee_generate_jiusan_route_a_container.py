@@ -9,7 +9,7 @@
 
 依赖：
   - sop-data-hub/data/sop_agent.db
-  - rail95306-sync/runtime/95306_collection.sqlite3(只读)
+  - rail95306-sync/runtime/95306_collection.sqlite3(仅历史补录 freight_fee/detail_json 用)
 """
 from __future__ import annotations
 
@@ -23,8 +23,10 @@ sys.path.insert(0, str(REPO / "src"))
 
 from sop_hub.fees.jiusan_container import (  # noqa: E402
     calc_route_a_fee_items,
-    container_billing_weight,
-    load_route_a_config,
+    load_contract_terms,
+    load_line_rates,
+    load_weight_confirmation,
+    resolve_line_rate,
     stable_hash,
 )
 from sop_hub.utils.time import now_iso_beijing  # noqa: E402
@@ -41,41 +43,33 @@ def _open() -> sqlite3.Connection:
     return conn
 
 
-def _ensure_catalog(conn: sqlite3.Connection, config: dict, now: str) -> dict[str, str]:
-    ids: dict[str, str] = {}
-    for item in config.get("items") or []:
-        fid = stable_hash(PROJECT, "fee_item", item["code"])
-        ids[item["code"]] = fid
-        conn.execute(
-            """INSERT OR REPLACE INTO fee_item_catalog
-               (id, project_id, fee_code, fee_name, charge_side, pricing_unit,
-                default_rate, tax_rate, document_flow_type, contract_ref,
-                contract_path, enabled, source_mode, source_ref, created_by,
-                updated_by, created_at, updated_at, note)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                fid,
-                PROJECT,
-                item["code"],
-                item["name"],
-                item["side"],
-                "ton" if item.get("base") == "railway_billing_weight" else "box",
-                item.get("rate"),
-                item.get("tax"),
-                "",
-                "JGWL-JZTS-DD-202601",
-                str(REPO / "config" / "project_sops" / "jiusan.yaml"),
-                1,
-                "system_generated",
-                "jiusan.yaml:cost_structure.route_a_container",
-                "codex",
-                "codex",
-                now,
-                now,
-                "",
-            ),
-        )
-    return ids
+ROUTE = "A"
+REQUIRED_CODES = [
+    "route_a_income",
+    "route_a_nrf_cost",
+    "route_a_metro_fee",
+    "route_a_wagon_occupancy",
+    "route_a_transfer_fee",
+    "route_a_tarpaulin",
+    "route_a_item9",
+    "route_a_item11",
+]
+
+
+def _item_ids(conn: sqlite3.Connection) -> dict[str, str]:
+    rows = conn.execute(
+        f"""
+        SELECT fee_code, id
+        FROM fee_item_catalog
+        WHERE project_id=? AND fee_code IN ({",".join("?" for _ in REQUIRED_CODES)})
+        """,
+        (PROJECT, *REQUIRED_CODES),
+    ).fetchall()
+    out = {str(r["fee_code"]): str(r["id"]) for r in rows}
+    missing = [code for code in REQUIRED_CODES if code not in out]
+    if missing:
+        raise SystemExit(f"缺少 fee_item_catalog 费目: {missing}")
+    return out
 
 
 def _release_batches(conn: sqlite3.Connection, ship: str) -> list[sqlite3.Row]:
@@ -95,7 +89,7 @@ def _release_batches(conn: sqlite3.Connection, ship: str) -> list[sqlite3.Row]:
 def _members(conn: sqlite3.Connection, batch_id: str) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT id, ydid, car_no, box_no, box_position, marked_weight, ticketed_at,
+        SELECT id, ydid, car_no, box_no, box_position, marked_weight, freight_fee, loading_line, detail_json, ticketed_at,
                departed_at, arrived_at, delivered_at, accepted_at, loaded_at,
                latest_stage_key, latest_stage_name, latest_event_time, ship_name
         FROM wagon_container_shipments
@@ -107,10 +101,54 @@ def _members(conn: sqlite3.Connection, batch_id: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def _railway_allocations(conn: sqlite3.Connection, batch_id: str) -> tuple[float, float, int]:
+def _backfill_local_ticket_fields(conn: sqlite3.Connection, batch_id: str) -> int:
     rows = conn.execute(
         """
-        SELECT ydid, COUNT(*) AS batch_box_rows, MAX(COALESCE(marked_weight, 0)) AS marked_weight
+        SELECT DISTINCT ydid
+        FROM wagon_container_shipments
+        WHERE batch_id=? AND (freight_fee IS NULL OR freight_fee=0 OR detail_json IS NULL OR detail_json='')
+        """,
+        (batch_id,),
+    ).fetchall()
+    ydids = [str(r["ydid"]) for r in rows if r["ydid"]]
+    if not ydids or not RAIL_DB.exists():
+        return 0
+    ph = ",".join("?" for _ in ydids)
+    rail = sqlite3.connect(str(RAIL_DB))
+    rail.row_factory = sqlite3.Row
+    updated = 0
+    try:
+        for r in rail.execute(
+            f"""
+            SELECT ydid, freight_fee, detail_json
+            FROM shipments
+            WHERE ydid IN ({ph})
+            """,
+            ydids,
+        ).fetchall():
+            cur = conn.execute(
+                """
+                UPDATE wagon_container_shipments
+                SET freight_fee=COALESCE(NULLIF(freight_fee,0), ?),
+                    detail_json=CASE WHEN detail_json IS NULL OR detail_json='' OR detail_json='{}' THEN ? ELSE detail_json END,
+                    updated_at=?
+                WHERE ydid=?
+                """,
+                (float(r["freight_fee"] or 0.0), str(r["detail_json"] or "{}"), now_iso_beijing(), str(r["ydid"])),
+            )
+            updated += cur.rowcount
+    finally:
+        rail.close()
+    return updated
+
+
+def _local_container_railway_allocations(conn: sqlite3.Connection, batch_id: str) -> tuple[float, float, int]:
+    rows = conn.execute(
+        """
+        SELECT ydid,
+               COUNT(*) AS batch_box_rows,
+               MAX(COALESCE(marked_weight, 0)) AS marked_weight,
+               MAX(COALESCE(freight_fee, 0)) AS freight_fee
         FROM wagon_container_shipments
         WHERE batch_id=?
         GROUP BY ydid
@@ -137,23 +175,10 @@ def _railway_allocations(conn: sqlite3.Connection, batch_id: str) -> tuple[float
             ydids,
         ).fetchall()
     }
-
-    rail = sqlite3.connect(str(RAIL_DB))
-    rail.row_factory = sqlite3.Row
-    try:
-        freight_map = {
-            str(r["ydid"]): float(r["freight_fee"] or 0.0) / 100.0
-            for r in rail.execute(
-                f"""
-                SELECT ydid, freight_fee
-                FROM shipments
-                WHERE ydid IN ({placeholders})
-                """,
-                ydids,
-            ).fetchall()
-        }
-    finally:
-        rail.close()
+    freight_map = {
+        str(r["ydid"]): float(r["freight_fee"] or 0.0) / 100.0
+        for r in rows
+    }
 
     allocated_weight = 0.0
     allocated_freight = 0.0
@@ -167,25 +192,93 @@ def _railway_allocations(conn: sqlite3.Connection, batch_id: str) -> tuple[float
     return round(allocated_weight, 2), round(allocated_freight, 2), len(rows)
 
 
+def _line_rate_amount(
+    conn: sqlite3.Connection,
+    members: list[dict],
+    batch_id: str,
+    rate_map: dict[str, float],
+    default_rate: float | None,
+) -> tuple[float, list[str]]:
+    batch_counts = {
+        str(r["ydid"]): int(r["batch_box_rows"] or 0)
+        for r in conn.execute(
+            """
+            SELECT ydid, COUNT(*) AS batch_box_rows
+            FROM wagon_container_shipments
+            WHERE batch_id=?
+            GROUP BY ydid
+            """,
+            (batch_id,),
+        ).fetchall()
+    }
+    total_counts = {
+        str(r["ydid"]): int(r["total_box_rows"] or 0)
+        for r in conn.execute(
+            """
+            SELECT ydid, COUNT(*) AS total_box_rows
+            FROM wagon_container_shipments
+            WHERE ydid IN (
+              SELECT DISTINCT ydid FROM wagon_container_shipments WHERE batch_id=?
+            )
+            GROUP BY ydid
+            """,
+            (batch_id,),
+        ).fetchall()
+    }
+    ydid_rows: dict[str, dict] = {}
+    for m in members:
+        ydid = str(m.get("ydid") or "")
+        if ydid and ydid not in ydid_rows:
+            ydid_rows[ydid] = m
+
+    total = 0.0
+    missing: list[str] = []
+    seen_missing: set[str] = set()
+    for ydid, m in ydid_rows.items():
+        line_rate, line_name = resolve_line_rate(m.get("loading_line"), rate_map, default_rate)
+        if line_rate is None:
+            key = line_name or "<empty>"
+            if key not in seen_missing:
+                missing.append(key)
+                seen_missing.add(key)
+            continue
+        share = float(batch_counts.get(ydid, 0)) / float(max(total_counts.get(ydid, 0), batch_counts.get(ydid, 0), 1))
+        total += float(m.get("marked_weight") or 0.0) * share * float(line_rate)
+    return round(total, 2), missing
+
+
 def _upsert_batch(
     conn: sqlite3.Connection,
     *,
     batch: sqlite3.Row,
-    cfg: dict,
     item_ids: dict[str, str],
     now: str,
 ) -> dict:
+    _backfill_local_ticket_fields(conn, batch["id"])
     members = _members(conn, batch["id"])
     if not members:
         return {}
+    terms = load_contract_terms(conn, PROJECT, ROUTE)
+    line_rates = load_line_rates(conn, PROJECT, ROUTE, "route_a_metro_fee")
+    confirmed_weight = load_weight_confirmation(conn, batch["id"], ROUTE) or 0.0
 
     batch_id = stable_hash(PROJECT, "container_fee_batch", batch["ship_name"], LOT)
     source_ref = f"wagon_container_shipments:{batch['ship_name']}:{LOT}:{batch['id']}"
     box_count = len(members)
-    unique_box_count = len({m["box_no"] for m in members if m.get("box_no")})
     wagon_count = len({m["car_no"] for m in members if m.get("car_no")})
-    total_weight = container_billing_weight(unique_box_count, float(cfg.get("weight_per_box", 28.4)))
-    railway_weight, freight_sum, ydid_count = _railway_allocations(conn, batch["id"])
+    railway_weight, freight_sum, ydid_count = _local_container_railway_allocations(conn, batch["id"])
+    metro_default = float((terms.get("route_a_metro_fee") or {}).get("default_rate") or 3.75)
+    metro_amount, missing_lines = _line_rate_amount(conn, members, batch["id"], line_rates, metro_default)
+    wagon_occupancy_rate = float((terms.get("route_a_wagon_occupancy") or {}).get("default_rate") or 0.64)
+    wagon_occupancy_amount = round(railway_weight * wagon_occupancy_rate, 2)
+    transfer_rate = float((terms.get("route_a_transfer_fee") or {}).get("default_rate") or 0.0)
+    transfer_amount = round(box_count * transfer_rate, 2)
+    tarpaulin_rate = float((terms.get("route_a_tarpaulin") or {}).get("default_rate") or 0.0)
+    tarpaulin_amount = round(box_count * tarpaulin_rate * 0.7, 2)
+    item9_rate = float((terms.get("route_a_item9") or {}).get("default_rate") or 0.0)
+    item11_rate = float((terms.get("route_a_item11") or {}).get("default_rate") or 0.0)
+    item9_amount = round(box_count * item9_rate, 2)
+    item11_amount = round(box_count * item11_rate, 2)
     event_date = min((str(m.get("ticketed_at") or "")[:10] for m in members if m.get("ticketed_at")), default=batch["notice_date"])
 
     conn.execute("DELETE FROM fee_batch_member WHERE fee_batch_id=?", (batch_id,))
@@ -203,19 +296,19 @@ def _upsert_batch(
             PROJECT,
             "container_dispatch",
             "container",
-            cfg.get("route_code", "A"),
+            ROUTE,
             batch["id"],
             batch["ship_name"],
-            cfg.get("location_code", "三三〇处专用线"),
-            cfg.get("location_code", "三三〇处专用线"),
+            "三三〇处专用线",
+            "三三〇处专用线",
             event_date,
             event_date,
             event_date,
             wagon_count,
             box_count,
-            "billing_weight",
-            total_weight,
-            cfg.get("recognition_scope", "container_batch"),
+            "confirmed_weight",
+            confirmed_weight,
+            "container_batch",
             f"{batch['ship_name']}|{LOT}|route_a",
             "cost_generated",
             "system_generated",
@@ -224,7 +317,7 @@ def _upsert_batch(
             "codex",
             now,
             now,
-            f"ydid_count={ydid_count};unique_box_count={unique_box_count};trip_box_count={box_count};railway_weight={railway_weight}",
+            f"ydid_count={ydid_count};trip_box_count={box_count};railway_weight={railway_weight};missing_lines={','.join(missing_lines) if missing_lines else ''}",
         ),
     )
 
@@ -248,7 +341,7 @@ def _upsert_batch(
                 m.get("box_no"),
                 m.get("marked_weight"),
                 None,
-                float(cfg.get("weight_per_box", 28.4)),
+                float(m.get("marked_weight") or 0.0),
                 m.get("ticketed_at"),
                 m.get("departed_at"),
                 m.get("arrived_at"),
@@ -264,11 +357,17 @@ def _upsert_batch(
         )
 
     fee_items = calc_route_a_fee_items(
-        config=cfg,
-        box_count=box_count,
-        total_weight=total_weight,
+        terms=terms,
+        box_trip_count=box_count,
+        confirmed_weight=confirmed_weight,
         railway_weight=railway_weight,
         freight_sum_yuan=freight_sum,
+        metro_amount=metro_amount,
+        wagon_occupancy_amount=wagon_occupancy_amount,
+        transfer_amount=transfer_amount,
+        tarpaulin_amount=tarpaulin_amount,
+        item9_amount=item9_amount,
+        item11_amount=item11_amount,
         source_ref=source_ref,
     )
     for item in fee_items:
@@ -295,7 +394,7 @@ def _upsert_batch(
                 item.amount,
                 item.pricing_basis,
                 item.pricing_basis_value,
-                cfg.get("recognition_scope", "container_batch"),
+                "container_batch",
                 f"{batch['ship_name']}|{LOT}|route_a",
                 "",
                 "generated",
@@ -315,10 +414,10 @@ def _upsert_batch(
         "ship_name": batch["ship_name"],
         "wagon_count": wagon_count,
         "box_count": box_count,
-        "unique_box_count": unique_box_count,
-        "total_weight": total_weight,
+        "confirmed_weight": confirmed_weight,
         "railway_weight": railway_weight,
         "freight_sum": freight_sum,
+        "metro_amount": metro_amount,
     }
 
 
@@ -329,19 +428,13 @@ def main() -> None:
     args = ap.parse_args()
 
     now = now_iso_beijing()
-    cfg = load_route_a_config()
-    if not cfg:
-        raise SystemExit("jiusan.yaml 缺 cost_structure.route_a_container")
-    if not RAIL_DB.exists():
-        raise SystemExit(f"缺少 95306 只读库: {RAIL_DB}")
-
     conn = _open()
     try:
-        item_ids = _ensure_catalog(conn, cfg, now)
+        item_ids = _item_ids(conn)
         batches = _release_batches(conn, args.ship)
         outputs = []
         for batch in batches:
-            out = _upsert_batch(conn, batch=batch, cfg=cfg, item_ids=item_ids, now=now)
+            out = _upsert_batch(conn, batch=batch, item_ids=item_ids, now=now)
             if out:
                 outputs.append(out)
         if args.apply:
@@ -353,9 +446,9 @@ def main() -> None:
         for o in outputs:
             print(
                 f"  ship={o['ship_name']} batch={o['batch_id']} wagons={o['wagon_count']} "
-                f"box_trips={o['box_count']} unique_boxes={o['unique_box_count']} "
-                f"contract_weight={o['total_weight']} railway_weight={o['railway_weight']} "
-                f"freight={o['freight_sum']}"
+                f"box_trips={o['box_count']} confirmed_weight={o['confirmed_weight']} "
+                f"railway_weight={o['railway_weight']} freight={o['freight_sum']} "
+                f"metro={o['metro_amount']}"
             )
     finally:
         conn.close()

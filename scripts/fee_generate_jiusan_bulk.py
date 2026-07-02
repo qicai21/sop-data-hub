@@ -25,12 +25,17 @@ sys.path.insert(0, str(REPO / "src"))
 
 import yaml  # noqa: E402
 from sop_hub.fees.jiusan_bulk import (  # noqa: E402
+    allocated_confirmed_weight,
     build_docx_path,
     billing_weight,
     calc_fee_items,
     freight_fee_yuan,
+    load_contract_terms,
+    load_line_rates,
+    load_weight_confirmation,
     load_route_c_config,
     render_onsite_confirm_docx,
+    resolve_line_rate,
     stable_hash,
 )
 from sop_hub.utils.time import now_iso_beijing  # noqa: E402
@@ -39,6 +44,7 @@ DB = REPO / "data" / "sop_agent.db"
 YAML_PATH = REPO / "config" / "project_sops" / "jiusan.yaml"
 PROJECT = "jiusan"
 LOT = "lot02"
+ROUTE = "C"
 PROJECT_NAME = "九三大豆铁运项目(散粮车)"
 
 
@@ -52,41 +58,32 @@ def _load_yaml() -> dict:
     return yaml.safe_load(YAML_PATH.read_text(encoding="utf-8")) or {}
 
 
-def _ensure_catalog(conn: sqlite3.Connection, config: dict, now: str) -> dict[str, str]:
-    ids: dict[str, str] = {}
-    for item in config.get("items") or []:
-        fid = stable_hash(PROJECT, "fee_item", item["code"])
-        ids[item["code"]] = fid
-        conn.execute(
-            """INSERT OR REPLACE INTO fee_item_catalog
-               (id, project_id, fee_code, fee_name, charge_side, pricing_unit,
-                default_rate, tax_rate, document_flow_type, contract_ref,
-                contract_path, enabled, source_mode, source_ref, created_by,
-                updated_by, created_at, updated_at, note)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                fid,
-                PROJECT,
-                item["code"],
-                item["name"],
-                item["side"],
-                "ton" if item.get("base") == "railway_billing_weight" else "car" if item.get("base") == "car_count" else "batch",
-                item.get("rate"),
-                item.get("tax"),
-                item.get("doc_type") or "",
-                "JGWL-JZTS-DD-202601",
-                str(YAML_PATH),
-                1,
-                "system_generated",
-                "jiusan.yaml:cost_structure.route_c_bulk",
-                "codex",
-                "codex",
-                now,
-                now,
-                item.get("service_no") and f"service_no={item['service_no']}" or "",
-            ),
-        )
-    return ids
+REQUIRED_CODES = [
+    "route_c_income",
+    "nrf_cost",
+    "route_c_pickup_fee",
+    "metro_fee",
+    "route_c_wagon_occupancy",
+    "track_scale",
+    "aux_bulk_loading",
+    "aux_bulk_inspection",
+]
+
+
+def _item_ids(conn: sqlite3.Connection) -> dict[str, str]:
+    rows = conn.execute(
+        f"""
+        SELECT fee_code, id
+        FROM fee_item_catalog
+        WHERE project_id=? AND fee_code IN ({",".join("?" for _ in REQUIRED_CODES)})
+        """,
+        (PROJECT, *REQUIRED_CODES),
+    ).fetchall()
+    out = {str(r["fee_code"]): str(r["id"]) for r in rows}
+    missing = [code for code in REQUIRED_CODES if code not in out]
+    if missing:
+        raise SystemExit(f"缺少 fee_item_catalog 费目: {missing}")
+    return out
 
 
 def _ensure_doc_template(conn: sqlite3.Connection, config: dict, now: str) -> str:
@@ -161,10 +158,17 @@ def _members(conn: sqlite3.Connection, ship_name: str, notice_date: str, track: 
     return [dict(r) for r in rows]
 
 
+def _ship_marked_weight(conn: sqlite3.Connection, release_batch_id: str) -> float:
+    row = conn.execute(
+        "SELECT round(sum(coalesce(marked_weight,0)),2) AS total_weight FROM wagon_shipments WHERE batch_id=?",
+        (release_batch_id,),
+    ).fetchone()
+    return float((row["total_weight"] if row else 0.0) or 0.0)
+
+
 def _upsert_group(
     conn: sqlite3.Connection,
     *,
-    cfg: dict,
     item_ids: dict[str, str],
     template_id: str,
     notice_date: str,
@@ -175,12 +179,21 @@ def _upsert_group(
     now: str,
     write_docs: bool,
 ) -> dict:
+    terms = load_contract_terms(conn, PROJECT, ROUTE)
+    line_rates = load_line_rates(conn, PROJECT, ROUTE, "metro_fee")
     release_batch_id = _release_batch_id(conn, ship_name)
     batch_id = stable_hash(PROJECT, "bulk_fee_batch", ship_name, notice_date, track, LOT)
     car_count = len(members)
     total_weight = round(sum(billing_weight(m) for m in members), 2)
     freight_sum = round(sum(freight_fee_yuan(m.get("freight_fee")) for m in members), 2)
+    ship_total_marked_weight = _ship_marked_weight(conn, release_batch_id)
+    confirmed_total_weight = load_weight_confirmation(conn, release_batch_id, ROUTE)
+    confirmed_batch_weight = allocated_confirmed_weight(confirmed_total_weight, total_weight, ship_total_marked_weight)
+    metro_default = float((terms.get("metro_fee") or {}).get("default_rate") or 3.75)
+    line_rate, resolved_line = resolve_line_rate(track if track and track.endswith("道") else None, line_rates, metro_default)
     source_ref = f"bulk_loading_notice_wagon:{ship_name}:{notice_date}:{track}:{LOT}"
+    wagon_occupancy_rate = float((terms.get("route_c_wagon_occupancy") or {}).get("default_rate") or 0.64)
+    pickup_rate = float((terms.get("route_c_pickup_fee") or {}).get("default_rate") or 0.0)
 
     conn.execute("DELETE FROM fee_batch_member WHERE fee_batch_id=?", (batch_id,))
     conn.execute("DELETE FROM fee_record WHERE fee_batch_id=?", (batch_id,))
@@ -201,7 +214,7 @@ def _upsert_group(
             PROJECT,
             "dispatch_train",
             "bulk",
-            cfg.get("route_code", "C"),
+            ROUTE,
             release_batch_id,
             ship_name,
             "九三集团铁岭大豆科技有限公司专用线",
@@ -211,9 +224,9 @@ def _upsert_group(
             notice_date,
             car_count,
             0,
-            "billing_weight",
-            total_weight,
-            cfg.get("recognition_scope", "train"),
+            "confirmed_weight_allocated",
+            confirmed_batch_weight,
+            "train",
             f"{ship_name}|{notice_date}|{track}|{LOT}",
             "cost_generated",
             "system_generated",
@@ -222,7 +235,7 @@ def _upsert_group(
             "codex",
             now,
             now,
-            f"notice_total_cars={total_cars}",
+            f"notice_total_cars={total_cars};marked_weight={total_weight};ship_total_marked_weight={ship_total_marked_weight};resolved_line={resolved_line or '<default>'}",
         ),
     )
 
@@ -264,10 +277,12 @@ def _upsert_group(
         )
 
     fee_items = calc_fee_items(
-        config=cfg,
+        terms=terms,
         total_weight=total_weight,
         freight_sum_yuan=freight_sum,
         car_count=car_count,
+        line_rate=line_rate,
+        code_weights={"route_c_income": confirmed_batch_weight},
         source_ref=source_ref,
     )
     for item in fee_items:
@@ -294,7 +309,7 @@ def _upsert_group(
                 item.amount,
                 item.pricing_basis,
                 item.pricing_basis_value,
-                cfg.get("recognition_scope", "train"),
+                "train",
                 f"{ship_name}|{notice_date}|{track}|{LOT}",
                 item.document_flow_type,
                 "generated",
@@ -312,16 +327,19 @@ def _upsert_group(
 
     doc_path = build_docx_path(notice_date, ship_name, track, car_count)
     if write_docs:
-        render_onsite_confirm_docx(
-            path=doc_path,
-            notice_date=notice_date,
-            project_name=PROJECT_NAME,
-            track=track,
-            car_count=car_count,
-            car_nos=car_nos,
-            fee_items=fee_items,
-            ship_name=ship_name,
-        )
+        try:
+            render_onsite_confirm_docx(
+                path=doc_path,
+                notice_date=notice_date,
+                project_name=PROJECT_NAME,
+                track=track,
+                car_count=car_count,
+                car_nos=car_nos,
+                fee_items=fee_items,
+                ship_name=ship_name,
+            )
+        except ModuleNotFoundError:
+            pass
     doc_id = stable_hash(batch_id, "doc_instance", "onsite_confirm_sheet")
     conn.execute(
         """INSERT OR REPLACE INTO doc_instance
@@ -354,7 +372,8 @@ def _upsert_group(
         "batch_id": batch_id,
         "doc_path": str(doc_path),
         "car_count": car_count,
-        "total_weight": total_weight,
+        "marked_weight": total_weight,
+        "confirmed_weight": confirmed_batch_weight,
         "freight_sum": freight_sum,
     }
 
@@ -373,7 +392,7 @@ def main() -> None:
 
     conn = _open()
     try:
-        item_ids = _ensure_catalog(conn, cfg, now)
+        item_ids = _item_ids(conn)
         template_id = _ensure_doc_template(conn, cfg, now)
         groups = _groups(conn, args.ship, args.date)
         if not groups:
@@ -389,7 +408,6 @@ def main() -> None:
             outputs.append(
                 _upsert_group(
                     conn,
-                    cfg=cfg,
                     item_ids=item_ids,
                     template_id=template_id,
                     notice_date=g["notice_date"],
@@ -408,7 +426,8 @@ def main() -> None:
             for o in outputs:
                 print(
                     f"  batch={o['batch_id']} cars={o['car_count']} "
-                    f"weight={o['total_weight']} freight={o['freight_sum']} doc={o['doc_path']}"
+                    f"marked_weight={o['marked_weight']} confirmed_weight={o['confirmed_weight']} "
+                    f"freight={o['freight_sum']} doc={o['doc_path']}"
                 )
         else:
             conn.rollback()
@@ -416,7 +435,8 @@ def main() -> None:
             for o in outputs:
                 print(
                     f"  batch={o['batch_id']} cars={o['car_count']} "
-                    f"weight={o['total_weight']} freight={o['freight_sum']} doc={o['doc_path']}"
+                    f"marked_weight={o['marked_weight']} confirmed_weight={o['confirmed_weight']} "
+                    f"freight={o['freight_sum']} doc={o['doc_path']}"
                 )
     finally:
         conn.close()

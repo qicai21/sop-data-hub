@@ -81,7 +81,7 @@ def upsert_contract_fee_terms(conn: sqlite3.Connection) -> None:
         # route A
         ("A", "route_a_income", "路线A运输收入", "income", "confirmed_weight", "ton", 65.43, None, "锦州港物流发展有限公司", "", CONTRACT_REF_MAIN, str(JIUSAN_CONTRACT_PATH), "sheet=P008_大豆_路线A_三三零", "route A 收入拆分:37.18@9% + 28.25@6%; 当前先按总价落"),
         ("A", "route_a_nrf_cost", "路线A国铁运费", "cost", "freight_fee_sum", "batch", None, 0.09, "", "中国铁路", CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线A_三三零", "票面国铁费取 wagon_container_shipments.freight_fee 按 ydid 汇总"),
-        ("A", "route_a_metro_fee", "路线A地铁费", "cost", "marked_weight_x_line_rate", "ton", None, 0.09, "", "锦州高天铁路有限责任公司", CONTRACT_REF_GAOTIAN, str(GAOTIAN_CONTRACT_PATH), "第四条(一)(二)", "按作业道线价格 * 标载"),
+        ("A", "route_a_metro_fee", "路线A地铁费", "cost", "marked_weight_x_line_rate", "ton", 3.75, 0.09, "", "锦州高天铁路有限责任公司", CONTRACT_REF_GAOTIAN, str(GAOTIAN_CONTRACT_PATH), "第四条(一)(二)", "按作业道线价格 * 标载; 缺少道线时默认 3.75"),
         ("A", "route_a_wagon_occupancy", "路线A货车占用费", "cost", "marked_weight_tiered", "ton", 0.64, 0.09, "", "锦州高天铁路有限责任公司", CONTRACT_REF_GAOTIAN, str(GAOTIAN_CONTRACT_PATH), "第四条(一)(二)", "疏港普通货物 <300万吨 0.64元/吨, >=300万吨 0.60元/吨"),
         ("A", "route_a_transfer_fee", "路线A诚信倒运费", "cost", "box_trip_count", "box", 444.0, 0.09, "", "诚信集装箱储运", CONTRACT_REF_CHENGXIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线A_三三零", "三三零 444元/箱; 汇总表备注合同已过期待续签"),
         ("A", "route_a_tarpaulin", "路线A篷布租金", "cost", "formula", "box", 12.8, 0.06, "", "锦州港物流发展有限公司", CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线A_三三零", "12.8元/箱 * 70%租用比例; 约30%国铁免费篷布"),
@@ -91,7 +91,7 @@ def upsert_contract_fee_terms(conn: sqlite3.Connection) -> None:
         ("C", "route_c_income", "路线C运输收入", "income", "confirmed_weight", "ton", 65.13, None, "锦州港物流发展有限公司", "", CONTRACT_REF_MAIN, str(JIUSAN_CONTRACT_PATH), "sheet=P008_大豆_路线C_新台子", "route C 收入拆分:50.07@9% + 15.06@6%; 当前先按总价落"),
         ("C", "nrf_cost", "国铁运费", "cost", "freight_fee_sum", "batch", None, 0.09, "", "中国铁路", CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线C_新台子", "票面国铁费从 wagon_shipments.freight_fee 汇总"),
         ("C", "route_c_pickup_fee", "路线C取送车费", "cost", "car_count", "car", 32.4, 0.09, "", "中国铁路", CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线C_新台子", "32.40元/车"),
-        ("C", "metro_fee", "地铁费", "cost", "marked_weight_x_line_rate", "ton", None, 0.09, "", "锦州高天铁路有限责任公司", CONTRACT_REF_GAOTIAN, str(GAOTIAN_CONTRACT_PATH), "第四条(一)(二)", "按作业道线价格 * 标载"),
+        ("C", "metro_fee", "地铁费", "cost", "marked_weight_x_line_rate", "ton", 3.75, 0.09, "", "锦州高天铁路有限责任公司", CONTRACT_REF_GAOTIAN, str(GAOTIAN_CONTRACT_PATH), "第四条(一)(二)", "按作业道线价格 * 标载; 缺少道线时默认 3.75"),
         ("C", "route_c_wagon_occupancy", "路线C货车占用费", "cost", "marked_weight_tiered", "ton", 0.64, 0.09, "", "锦州高天铁路有限责任公司", CONTRACT_REF_GAOTIAN, str(GAOTIAN_CONTRACT_PATH), "第四条(一)(二)", "疏港普通货物 <300万吨 0.64元/吨, >=300万吨 0.60元/吨"),
         ("C", "track_scale", "轨道衡费", "cost", "marked_weight", "ton", 0.7, 0.0, "", "大连中铁外服国际货运代理锦州分公司", CONTRACT_REF_TRACK, str(SUMMARY_XLSX), "sheet=P008_大豆_路线C_新台子", "免税"),
         ("C", "aux_bulk_loading", "散粮车装卸辅助作业服务", "cost", "car_count", "car", 450.0, 0.06, "", "二级公司", CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线C_新台子", "第19项"),

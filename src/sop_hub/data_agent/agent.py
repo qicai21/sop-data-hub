@@ -23,6 +23,13 @@ _LOCKED_DISPATCH_STATES = frozenset({
 })
 ZHONGTANG_PROJECT = "中唐特钢铁矿发运项目"
 WUGANG_PROJECT = "乌兰浩特钢铁铁矿发运项目"
+NON_SOP_INSPECTION_TOKENS = (
+    "乌兰浩特铁",
+    "乌兰浩特",
+    "乌钢",
+    "沈阳盛京颐昇",
+    "盛京颐昇",
+)
 FALLBACK_BUSINESS_SOP_TOKENS = {
     "zt_steel_baseline",
     ZHONGTANG_PROJECT,
@@ -92,6 +99,54 @@ def canonicalize_ship_text(text: Optional[str]) -> Optional[str]:
     if not raw:
         return raw
     return SHIP_OCR_CORRECTIONS.get(raw, raw)
+
+
+def _inspection_payload_text(payload: Dict[str, Any]) -> str:
+    return to_searchable_text(payload)
+
+
+def _is_explicit_non_sop_inspection_payload(payload: Dict[str, Any]) -> bool:
+    """Return True for inspection slips that clearly belong outside managed SOPs.
+
+    The pending-review path is valuable for ambiguous shared-group slips, but it
+    should not collect clearly unrelated projects such as 乌兰浩特/乌钢 sheets.
+    """
+    text = _inspection_payload_text(payload)
+    return any(token in text for token in NON_SOP_INSPECTION_TOKENS)
+
+
+def _existing_path_or_empty(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        path = Path(text)
+        if path.exists():
+            return str(path)
+    except Exception:
+        return ""
+    return ""
+
+
+def _pending_image_from_extraction_path(value: Any, source_file_name: str = "") -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        json_path = Path(text)
+        stem = json_path.name
+        if stem.endswith("_result.json"):
+            image_name = stem[:-len("_result.json")] + ".jpg"
+        elif source_file_name:
+            image_name = source_file_name
+        else:
+            image_name = json_path.with_suffix(".jpg").name
+        image_path = json_path.parent.parent / "images" / image_name
+        if image_path.exists():
+            return str(image_path)
+    except Exception:
+        return ""
+    return ""
 
 
 def project_known_ships(project_display: Optional[str]) -> set[str]:
@@ -1299,6 +1354,14 @@ class BusinessDataAgent:
         status = str(match.get("status") or "pending")
         reason = str(match.get("reason") or "no_release_batch_candidate")
         release_batch_ids = [str(item) for item in (match.get("release_batch_ids") or []) if item]
+        if status != "candidate" and _is_explicit_non_sop_inspection_payload(payload):
+            return {
+                "status": "ignored",
+                "reason": "ignored_explicit_non_sop_inspection",
+                "candidate_ids": [],
+                "release_batch_ids": [],
+                "wagon_count": len(car_numbers),
+            }
         release_batch_id = release_batch_ids[0] if status == "candidate" and len(release_batch_ids) == 1 else None
         candidate_payload = dict(payload)
         if release_batch_ids:
@@ -1345,14 +1408,37 @@ class BusinessDataAgent:
         # "no inspection candidate" 或 "extraction JSON not found"。三个一起补。
         if source_file_name:
             _stem = source_file_name.rsplit(".", 1)[0]
+            _cols = {
+                str(r["name"])
+                for r in self.db.execute("PRAGMA table_info(message_inbox)").fetchall()
+            }
+            _image_cols = [
+                c for c in (
+                    "business_archive_image_path",
+                    "raw_standard_image_path",
+                    "msg_path",
+                    "raw_msg_path",
+                    "missing_media_path",
+                )
+                if c in _cols
+            ]
+            _select_cols = ["message_id", "extraction_json_path", *_image_cols]
             _ib = self.db.execute(
-                "SELECT message_id, extraction_json_path, raw_standard_image_path "
+                f"SELECT {', '.join(_select_cols)} "
                 "FROM message_inbox "
                 "WHERE raw_standard_image_path LIKE ? OR extraction_json_path LIKE ? "
                 "ORDER BY id DESC LIMIT 1",
                 (f"%{source_file_name}", f"%{_stem}%"),
             ).fetchone()
             if _ib:
+                _resolved_image_path = ""
+                for _col in _image_cols:
+                    _resolved_image_path = _existing_path_or_empty(_ib[_col])
+                    if _resolved_image_path:
+                        break
+                if not _resolved_image_path:
+                    _resolved_image_path = _pending_image_from_extraction_path(
+                        _ib["extraction_json_path"] or "", source_file_name)
                 # COALESCE(NULLIF(?,'')...):仅在 inbox 有值时覆盖,空值不冲掉
                 # 候选已有的(防再次跑覆盖)。三个字段一起 UPDATE。
                 self.db.execute(
@@ -1364,7 +1450,7 @@ class BusinessDataAgent:
                     (
                         _ib["message_id"] or "",
                         _ib["extraction_json_path"] or "",
-                        _ib["raw_standard_image_path"] or "",
+                        _resolved_image_path,
                         candidate_id,
                     ),
                 )

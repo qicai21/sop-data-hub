@@ -164,6 +164,99 @@ class TestBusinessDataAgent:
         assert records
         assert rule_count == 0
 
+    def test_explicit_non_sop_inspection_is_ignored_without_candidate(self, tmp_db):
+        agent = BusinessDataAgent()
+        payload = {
+            "is_inspection": True,
+            "rows": [
+                {"seq": 1, "car_no": "1662248", "cargo_info_raw": "乌兰浩特铁"},
+                {"seq": 2, "car_no": "4862970", "cargo_info_raw": "沈阳盛京颐昇"},
+                {"seq": 3, "car_no": "4907921", "cargo_info_raw": "春日莲花"},
+                {"seq": 4, "car_no": "1627360", "cargo_info_raw": "51节"},
+            ],
+            "meta": {"daoxian": "煤四", "jieshu": 52},
+            "footer": {"zhuangche_jieshu": 51, "paiche_jieshu": 1},
+        }
+
+        res = agent.ingest_inspection_payload(
+            payload, source_file_name="wugang_spring_lotus.jpg",
+            group_name="铁晟业务工作群")
+        count = agent.db.execute(
+            "SELECT COUNT(*) FROM inspection_ingestion_candidates"
+        ).fetchone()[0]
+
+        assert res["status"] == "ignored"
+        assert res["reason"] == "ignored_explicit_non_sop_inspection"
+        assert count == 0
+
+    def test_inspection_candidate_uses_existing_pending_image_path(self, tmp_db, tmp_path):
+        agent = BusinessDataAgent()
+        for col in (
+            "message_id TEXT",
+            "project_id TEXT",
+            "document_type TEXT",
+            "source_image_path TEXT",
+            "extraction_json_path TEXT",
+            "parsed_json TEXT",
+            "ship_name TEXT",
+            "destination TEXT",
+            "cargo_name TEXT",
+            "candidate_status TEXT DEFAULT 'pending_match'",
+        ):
+            agent.db.execute(f"ALTER TABLE inspection_ingestion_candidates ADD COLUMN {col}")
+        pending_root = tmp_path / "wechat_images" / "_pending" / "2026-07"
+        image_path = pending_root / "images" / "464_abc.jpg"
+        json_path = pending_root / "json" / "464_abc_result.json"
+        image_path.parent.mkdir(parents=True)
+        json_path.parent.mkdir(parents=True)
+        image_path.write_bytes(b"fake-image")
+        json_path.write_text("{}", encoding="utf-8")
+        missing_group_path = (
+            tmp_path / "wechat_images" / "铁晟业务工作群" / "2026-07" / "464_abc.jpg"
+        )
+        agent.db.execute(
+            """
+            CREATE TABLE message_inbox (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              message_id TEXT,
+              raw_standard_image_path TEXT,
+              extraction_json_path TEXT,
+              received_datetime TEXT,
+              inspection_candidate_id TEXT
+            )
+            """
+        )
+        agent.db.execute(
+            """
+            INSERT INTO message_inbox (
+              message_id, raw_standard_image_path, extraction_json_path,
+              received_datetime
+            ) VALUES (?, ?, ?, ?)
+            """,
+            ("wx_test_pending_path", str(missing_group_path), str(json_path),
+             "2026-07-04 05:57:28"),
+        )
+        agent.db.commit()
+        payload = {
+            "is_inspection": True,
+            "rows": [
+                {"seq": 1, "car_no": "100001", "cargo_info_raw": "未知货物"},
+                {"seq": 2, "car_no": "100002", "cargo_info_raw": ""},
+            ],
+        }
+
+        res = agent.ingest_inspection_payload(
+            payload, source_file_name="464_abc.jpg", group_name="铁晟业务工作群")
+        row = agent.db.execute(
+            "SELECT source_image_path, extraction_json_path, message_id "
+            "FROM inspection_ingestion_candidates"
+        ).fetchone()
+
+        assert res["status"] == "pending"
+        assert row["source_image_path"] == str(image_path)
+        assert row["extraction_json_path"] == str(json_path)
+        assert row["message_id"] == "wx_test_pending_path"
+
     def test_ingest_and_list(self, tmp_db):
         """Test basic ingest -> list cycle"""
         agent = BusinessDataAgent()

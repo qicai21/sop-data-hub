@@ -46,7 +46,7 @@ _DEPARTURE_CAR_PATTERNS = {"节", "车"}
 _CHAOYANG_SHIP_KEYWORDS = {"木森17", "合远9", "宝腾海"}
 # 2026-06-04 贝拉从 chaoyang 移到 zhongtang:贝拉走汐子站,属于中唐特钢
 # 业务范畴。chaoyang 历史里贝拉是误归类(从没真用过)。
-_ZHONGTANG_SHIP_KEYWORDS = {"丰收散运", "鞍子河", "马兰探险", "贝拉", "环球信任"}
+_ZHONGTANG_SHIP_KEYWORDS = {"丰收散运", "鞍子河", "马兰探险", "贝拉", "环球信任", "宝丽"}
 _CHAOYANG_DEST_KEYWORDS = {"朝阳西", "朝阳铁", "朝钢", "朝阳钢铁"}
 _CHAOYANG_CARGO_KEYWORDS = {"铁矿", "印粉", "PB粉", "麦克粉", "纽曼粉"}
 

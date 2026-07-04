@@ -93,6 +93,13 @@ def test_route_huanqiu_xinren_to_trigger():
     assert r.sop_project_id == "zhongtang_special_steel"
 
 
+def test_route_baoli_to_trigger():
+    r = classify_text_message(_event("汐子铁，宝丽，实装40节"))
+    assert r.sop_node == "inspection_text_trigger"
+    assert r.sop_flow == "inspection_text_trigger_flow"
+    assert r.sop_project_id == "zhongtang_special_steel"
+
+
 def test_route_jilin_still_departure():
     r = classify_text_message(_event("煤六 四平铁 蓝鳍 53节"))
     assert r.sop_node == "detect_departure_message"

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import random
 import re
 import sqlite3
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Iterable
 
@@ -40,6 +42,16 @@ class BulkTrainGroup:
         return len(self.rows)
 
 
+@dataclass(frozen=True)
+class ContainerReceiptContext:
+    ship_name: str
+    notice_date: str
+    track: str
+    lot: str
+    inspection_quantity: int
+    seed: str = ""
+
+
 def safe_filename_part(value: str) -> str:
     cleaned = re.sub(r"[\\/:*?\"<>|\\s]+", "_", str(value or "").strip())
     return cleaned.strip("_") or "未命名"
@@ -50,6 +62,33 @@ def display_rows(rows: list[dict]) -> list[dict | None]:
     if len(rows) <= 4:
         return list(rows)
     return [*rows[:2], None, *rows[-2:]]
+
+
+def bulk_explanation(group: BulkTrainGroup) -> str:
+    cars = [str(row.get("car_no") or "").strip() for row in group.rows]
+    cars = [car for car in cars if car]
+    if len(cars) <= 4:
+        car_text = ", ".join(cars)
+    else:
+        car_text = f"{cars[0]}, {cars[1]} ... {cars[-2]}, {cars[-1]}"
+    return f"散粮车: {car_text}; 共 {group.car_count} 车"
+
+
+def fake_container_numbers(quantity: int, *, seed: str = "") -> list[str]:
+    seed_text = seed or f"jiusan-container-{quantity}"
+    seed_int = int(sha256(seed_text.encode("utf-8")).hexdigest()[:16], 16)
+    rng = random.Random(seed_int)
+    count = rng.randint(2, 10)
+    return [f"{rng.randint(1000000, 9999999)}" for _ in range(count)]
+
+
+def container_explanation(context: ContainerReceiptContext) -> str:
+    numbers = fake_container_numbers(
+        context.inspection_quantity,
+        seed=context.seed
+        or f"{context.notice_date}-{context.ship_name}-{context.track}-{context.inspection_quantity}",
+    )
+    return f"集装箱: 检验数量 {context.inspection_quantity} 箱; 抽样箱号 {', '.join(numbers)}"
 
 
 def fetch_bulk_train_groups(
@@ -104,6 +143,10 @@ def fetch_bulk_train_groups(
     return out
 
 
+def _work_record_lines() -> list[tuple[str, str]]:
+    return [("作业记录:", "left"), *[("", "left") for _ in range(6)]]
+
+
 def receipt_lines(group: BulkTrainGroup) -> list[tuple[str, str]]:
     """Return (text, align) lines for one receipt page."""
     lines: list[tuple[str, str]] = [
@@ -113,27 +156,18 @@ def receipt_lines(group: BulkTrainGroup) -> list[tuple[str, str]]:
         (f"项目名称: {PROJECT_NAME}", "left"),
         (f"船名/批次: {group.ship_name} / {LOT}", "left"),
         (f"道线场地: {group.track}", "left"),
-        (f"数量: {group.car_count} 车", "left"),
         ("-" * 25, "left"),
         ("作业项目:", "left"),
         ("[ ] #19 散粮车装卸辅助作业服务", "left"),
         ("    特殊平整、清扫归集及皮带机配合", "left"),
         ("[ ] #20 散粮车车体检查及作业现场检查服务", "left"),
+        (f"作业单位/班组: {TEAM_NAME}", "left"),
         ("-" * 25, "left"),
-        ("车号/车型:", "left"),
     ]
-    for row in display_rows(group.rows):
-        if row is None:
-            lines.append(("... 中间车号略 ...", "center"))
-        else:
-            seq = int(row.get("car_seq") or 0)
-            car_no = str(row.get("car_no") or "")
-            model = str(row.get("car_model") or "")
-            lines.append((f"{seq:02d} {car_no} {model}", "left"))
+    lines.extend(_work_record_lines())
     lines.extend(
         [
             ("-" * 25, "left"),
-            (f"作业单位/班组: {TEAM_NAME}", "left"),
             ("", "left"),
             ("委托方(签字):", "left"),
             ("", "left"),
@@ -143,9 +177,47 @@ def receipt_lines(group: BulkTrainGroup) -> list[tuple[str, str]]:
             ("", "left"),
             ("", "left"),
             ("", "left"),
-            ("备注:", "left"),
+            ("-" * 25, "left"),
+            ("", "left"),
+            ("说明:", "left"),
+            (bulk_explanation(group), "left"),
+        ]
+    )
+    return lines
+
+
+def container_receipt_lines(context: ContainerReceiptContext) -> list[tuple[str, str]]:
+    lines: list[tuple[str, str]] = [
+        ("锦州港集装箱辅助作业现场确认单", "center"),
+        ("-" * 25, "left"),
+        (f"发生日期: {context.notice_date}", "left"),
+        ("项目名称: 九三大豆铁运项目(集装箱)", "left"),
+        (f"船名/批次: {context.ship_name} / {context.lot}", "left"),
+        (f"道线场地: {context.track}", "left"),
+        ("-" * 25, "left"),
+        ("作业项目:", "left"),
+        ("[ ] 粮食专用箱专项检查服务", "left"),
+        ("[ ] 集装箱清理整备服务", "left"),
+        (f"作业单位/班组: {TEAM_NAME}", "left"),
+        ("-" * 25, "left"),
+    ]
+    lines.extend(_work_record_lines())
+    lines.extend(
+        [
+            ("-" * 25, "left"),
+            ("", "left"),
+            ("委托方(签字):", "left"),
+            ("", "left"),
+            ("", "left"),
+            ("", "left"),
+            ("作业方(签字):", "left"),
+            ("", "left"),
+            ("", "left"),
             ("", "left"),
             ("-" * 25, "left"),
+            ("", "left"),
+            ("说明:", "left"),
+            (container_explanation(context), "left"),
         ]
     )
     return lines
@@ -209,8 +281,13 @@ def default_output_path(groups: list[BulkTrainGroup], output_dir: Path) -> Path:
 
 __all__ = [
     "BulkTrainGroup",
+    "ContainerReceiptContext",
+    "bulk_explanation",
+    "container_explanation",
+    "container_receipt_lines",
     "default_output_path",
     "display_rows",
+    "fake_container_numbers",
     "fetch_bulk_train_groups",
     "receipt_lines",
     "render_groups_to_pdf",

@@ -70,6 +70,42 @@ def test_anchor_picks_current_batch_ticket(rail_db):
     assert r["loading_car_nos"] == ["1000001", "1000002", "1000003"]
 
 
+def test_partial_ticket_window_does_not_finalize_when_notice_count_is_known(tmp_path):
+    """通知单明确 53 车时,95306 只同步 15 车不能被当作完整发运。"""
+    db = tmp_path / "rail.sqlite3"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE shipments ("
+        " ydid TEXT PRIMARY KEY, car_no TEXT, destination_name TEXT,"
+        " cargo_name TEXT, ticketed_at TEXT)"
+    )
+    notice_cars = [f"8{i:06d}" for i in range(53)]
+    synced_cars = notice_cars[:15]
+    conn.executemany(
+        "INSERT INTO shipments VALUES (?,?,?,?,?)",
+        [
+            (f"y{i}", car, "汐子", "铁矿粉", f"2026-07-04 22:{i:02d}:00")
+            for i, car in enumerate(synced_cars)
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    r = recover_loading_cars_via_window(
+        rail_db_path=db,
+        loading_car_nos=notice_cars,
+        all_notice_car_nos=notice_cars,
+        destination="汐子",
+        min_ticketed_at="2026-07-04 12:00:00",
+        expected_loading_count=53,
+    )
+
+    assert r["status"] == "no_ticket_yet"
+    assert len(r["loading_car_nos"]) == 15
+    assert r["window_total_count"] == 15
+    assert "15/53" in r["message"]
+
+
 def test_legacy_no_bound_anchors_old_ticket(rail_db, tmp_path):
     """不带下界(老行为)会锚到旧票 — 文档化 #144 的 bug 形态。"""
     conn = sqlite3.connect(str(rail_db))

@@ -17,6 +17,25 @@ def test_count_and_age_guards_exist():
     assert w._INSPECTION_TEXT_TRIGGER_CANDIDATE_MAX_AGE_H > 0
 
 
+def test_send_idempotency_key_uses_car_set_not_only_batch_and_count():
+    batch = "batch-1"
+    first = w._event_send_biz_key(
+        [(batch, ["1000001", "1000002", "1000003"])],
+        wagon_count=3,
+    )
+    first_reordered = w._event_send_biz_key(
+        [(batch, ["1000003", "1000001", "1000002"])],
+        wagon_count=3,
+    )
+    second_same_count = w._event_send_biz_key(
+        [(batch, ["2000001", "2000002", "2000003"])],
+        wagon_count=3,
+    )
+
+    assert first == first_reordered
+    assert first != second_same_count
+
+
 def test_query_filters_exclude_stale(tmp_path):
     """复现今早:matched/车数对不上/陈年 候选都不该被选;只选 新鲜+车数对的。"""
     import sqlite3

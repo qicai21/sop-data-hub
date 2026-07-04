@@ -31,6 +31,7 @@ def recover_loading_cars_via_window(
     max_anchor_attempts: int = 4,
     window_minutes: int = 120,
     min_ticketed_at: str | None = None,
+    expected_loading_count: int | None = None,
     auto_correct_car_no: bool = True,
     max_correct_edit_distance: int = 2,
     max_correct_pairs: int = 3,
@@ -49,6 +50,9 @@ def recover_loading_cars_via_window(
       min_ticketed_at: 锚点票的时间下界(通常 = 通知时间 - 12h)。车皮会反复
         发运,同车同到站历史上有旧票;不带下界时 ORDER BY DESC 会锚到**上一批
         的旧票**,整个时间窗错位(#144 根因)。早于下界的票视为"本批还没制票"。
+      expected_loading_count: 通知单 footer 或文本触发明确给出的装车数。若 95306
+        时间窗交集少于该数量,说明只是部分货票先到,必须继续 pending,不能把半窗
+        车号回写为权威集合。
       auto_correct_car_no: 开关 —— 是否启用"通知单错号 vs 95306 自动核对纠错"
         (2026-06-29 #检装车号95306自动核对纠错)。通知单上的车号有时本身录错
         (非 OCR,是单子写错),反推后表现为:真排车数 == 异常数 == N(N≥1)。
@@ -204,6 +208,13 @@ def recover_loading_cars_via_window(
             # 朝阳西按业务铁律不许拼列 → 这种就是异常,挂人工裁决
             status = "anomaly"
             msg += f";异常:95306 窗内 {len(missing_from_notice)} 车不在通知单上"
+        expected = int(expected_loading_count or 0)
+        if status == "ok" and expected > 0 and len(loading) < expected:
+            status = "no_ticket_yet"
+            msg += (
+                f";95306 窗口仅匹配 {len(loading)}/{expected} 车,"
+                "疑似货票未同步齐,继续等待"
+            )
 
         return {
             "status": status,

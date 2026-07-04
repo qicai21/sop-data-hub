@@ -16,6 +16,7 @@ Other task_types: marked skipped/not_implemented for now.
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -539,6 +540,25 @@ def _event_excel_batch_specs(
         if s["ship_name"]:
             ships.append(s["ship_name"])
     return specs, all_matched, ships
+
+
+def _event_send_biz_key(
+    batch_specs: list[tuple[str, list[str] | None]],
+    wagon_count: int,
+) -> str:
+    """Build a send idempotency business key for one physical inspection event.
+
+    Same batch + same wagon count can occur repeatedly in one lot. The car set is
+    the event identity; duplicate posts of the same slip keep the same digest,
+    while a later train with different cars gets a different key.
+    """
+    parts: list[str] = []
+    for batch_id, cars in sorted(batch_specs, key=lambda item: item[0]):
+        clean = sorted(str(c).strip() for c in (cars or []) if str(c or "").strip())
+        parts.append(f"{batch_id}:{','.join(clean)}")
+    digest = hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
+    batch_key = ",".join(sorted(batch_id for batch_id, _ in batch_specs))
+    return f"batches:{batch_key}:cars:{digest}:{wagon_count}"
 
 
 def _persist_authoritative_candidate_cars(
@@ -1340,6 +1360,7 @@ def _execute_chaoyang_inspection_chain(
             str(r.get("car_no") or "").strip()
             for r in all_rows if r.get("car_no")
         ]
+        footer_count = int((ext_data.get("footer") or {}).get("zhuangche_jieshu") or 0)
         # #144:锚点票时间下界 = 通知时间 - 12h。同车同到站历史有旧票,
         # 不带下界会锚到上一批的票,整窗错位。
         min_ticketed_at = None
@@ -1367,6 +1388,7 @@ def _execute_chaoyang_inspection_chain(
             max_anchor_attempts=4,
             window_minutes=120,
             min_ticketed_at=min_ticketed_at,
+            expected_loading_count=footer_count or None,
             **autocorrect_config_from_env(),
         )
         if recover["status"] == "no_ticket_yet":
@@ -1529,7 +1551,6 @@ def _execute_chaoyang_inspection_chain(
         # 只做观测,不能把排车/OCR 多抽重新变成闸。
         # 实际数 = DB 中 batch_id+本次 car_nos 的实际行数(idempotent
         # 重跑也对 — 不依赖 inserted 计数)。
-        footer_count = int((ext_data.get("footer") or {}).get("zhuangche_jieshu") or 0)
         expected_count = len(loading_car_nos) if authoritative_loading else (
             footer_count or len(loading_car_nos)
         )
@@ -1677,13 +1698,9 @@ def _execute_chaoyang_inspection_chain(
                         build_idempotency_key, get_action_by_key,
                         plan_external_action, mark_external_action_executed,
                     )
-                    # 幂等键 = **批次集 + 总车数**(2026-06-28 共享群工单):同一张检装车单
-                    # 若两群各发一份(铁晟 + 中唐发运群),source_image 不同但批次/车数相同 →
-                    # 按批次集 → 同键 → 只发一次,杜绝两群重复发。
-                    _bkey = ",".join(sorted(rbid for rbid, _ in _specs))
                     _idem = build_idempotency_key(
                         project_id, "send_shipping_excel_wechat",
-                        f"batches:{_bkey}:{_mb.wagon_count}")
+                        _event_send_biz_key(_specs, _mb.wagon_count))
                     _prev = get_action_by_key(_idem, db_path=db_path)
                     if _prev and str(_prev.get("action_status")) == "executed":
                         send_info = {"skipped": True, "idempotency_key": _idem,

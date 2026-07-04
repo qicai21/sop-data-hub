@@ -600,16 +600,31 @@ def run_departure_executor_chain(
                                     (_bid, *inserted_car_nos))
                                 if _r["box_no"]
                             }
+
+                        def _event_box_wagon_keys_for(_bid: str) -> set:
+                            if not inserted_car_nos:
+                                return set()
+                            _pph = ",".join("?" * len(inserted_car_nos))
+                            return {
+                                f"{_r['box_no']}|{_r['car_no']}"
+                                for _r in _cp.execute(
+                                    f"SELECT box_no, car_no FROM wagon_container_shipments "
+                                    f"WHERE batch_id=? AND car_no IN ({_pph})",
+                                    (_bid, *inserted_car_nos))
+                                if _r["box_no"] and _r["car_no"]
+                            }
                         try:
                             for oid in factory_result.order_identifier_groups.keys():
                                 # 每个 order_identifier 反查一次(对应 1 个 release_batch)
                                 bids = factory_result.order_identifier_groups[oid]
                                 for bid in bids:
                                     _evb = _event_boxes_for(bid)
+                                    _evk = _event_box_wagon_keys_for(bid)
                                     v = verify_factory_upload(
                                         order_id=oid, release_batch_id=bid,
                                         expected_box_numbers=_evb or None,
-                                        expected_count=(len(_evb) or None),
+                                        expected_unique_keys=_evk or None,
+                                        expected_count=(len(_evk) or len(_evb) or None),
                                     )
                                     verify_total_match = verify_total_match and v.total_match
                                     verify_all_boxes = verify_all_boxes and v.all_boxes_found
@@ -639,22 +654,26 @@ def run_departure_executor_chain(
                         # (lot02 累计 vs 门户全量 → missing/extra 几百误报,把 verify 变废)。
                         # 改:用 inserted_car_nos 把 expected 收窄到本次 80 箱。
                         event_boxes: set[str] = set()
+                        event_box_wagon_keys: set[str] = set()
                         if inserted_car_nos:
                             import sqlite3 as _sqlv
                             _cv = _sqlv.connect(str(db_path)); _cv.row_factory = _sqlv.Row
                             _bph = ",".join("?" * len(inserted_car_nos))
                             for _r in _cv.execute(
-                                f"SELECT box_no FROM wagon_container_shipments "
+                                f"SELECT box_no, car_no FROM wagon_container_shipments "
                                 f"WHERE batch_id=? AND car_no IN ({_bph})",
                                 (preview.release_batch_id, *inserted_car_nos),
                             ):
                                 if _r["box_no"]:
                                     event_boxes.add(_r["box_no"])
+                                if _r["box_no"] and _r["car_no"]:
+                                    event_box_wagon_keys.add(f"{_r['box_no']}|{_r['car_no']}")
                             _cv.close()
                         verify = verify_factory_upload(
                             order_id="", release_batch_id=preview.release_batch_id,
                             expected_box_numbers=event_boxes or None,
-                            expected_count=(len(event_boxes) or None),
+                            expected_unique_keys=event_box_wagon_keys or None,
+                            expected_count=(len(event_box_wagon_keys) or len(event_boxes) or None),
                         )
                         preview.factory_verified = True
                         preview.factory_verify_total_match = verify.total_match

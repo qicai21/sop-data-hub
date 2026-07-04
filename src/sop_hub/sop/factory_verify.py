@@ -6,7 +6,7 @@ After uploading wagon data to the factory system, this module:
      ?pageNum=1&pageSize=100&orderId=<ID>&formId=MR07
   3. Handles pagination (fetches all pages if total > pageSize)
   4. 判定口径(2026-06-29):门户按计划号查必返回整单全量累计 + 收货端偶发删数,
-     故**不做整批对齐**。只校验本次上传的每个键(吉林=box_no):
+     故**不做整批对齐**。只校验本次上传的每个键(吉林=箱号+车号):
        a) 都出现在返回里(present / missing==0)
        b) 各自唯一(unique / 无 duplicate)
      total / extra 仍计算但仅作观测,不参与成败判定。
@@ -55,6 +55,7 @@ class VerifySummary:
     # From our upload
     expected_count: int = 0
     expected_box_numbers: set[str] = field(default_factory=set)
+    expected_unique_keys: set[str] = field(default_factory=set)
 
     # From factory list API
     api_total: int = 0
@@ -78,6 +79,7 @@ class VerifySummary:
             "form_id": self.form_id,
             "login_ok": self.login_ok,
             "expected_count": self.expected_count,
+            "expected_unique_key_count": len(self.expected_unique_keys),
             "api_total": self.api_total,
             "api_rows_fetched": self.api_rows_fetched,
             "pages_fetched": self.pages_fetched,
@@ -132,13 +134,17 @@ def evaluate_presence_and_uniqueness(
     也不因门户存在历史 extra 记录而判失败。只校验本次上传的每个键:
       1) 出现在返回里(present)        → 否则计入 missing
       2) 在返回里各自仅一条(unique)   → 否则计入 duplicate
-    键:吉林金钢=box_no(箱号),朝钢=car_no(车号)。
+    键:吉林金钢(集装箱)=box_no|wagon_no,朝钢(整车)=car_no。
 
     返回 (missing, duplicate);二者皆空即通过。
     """
     missing = sorted(k for k in expected_keys if api_key_counts.get(k, 0) == 0)
     duplicate = sorted(k for k in expected_keys if api_key_counts.get(k, 0) > 1)
     return missing, duplicate
+
+
+def build_box_wagon_key(box_no: str, wagon_no: str) -> str:
+    return f"{(box_no or '').strip()}|{(wagon_no or '').strip()}"
 
 
 # ── Core ─────────────────────────────────────────────────────────────────
@@ -148,6 +154,7 @@ def verify_factory_upload(
     *,
     form_id: str = "MR07",
     expected_box_numbers: set[str] | None = None,
+    expected_unique_keys: set[str] | None = None,
     expected_count: int | None = None,
     db_path: str | Path | None = None,
     release_batch_id: str | None = None,
@@ -160,6 +167,7 @@ def verify_factory_upload(
         order_id: The orderId parameter (订单标识号).
         form_id: The formId parameter (default "MR07").
         expected_box_numbers: Box numbers we uploaded (optional, inferred from DB).
+        expected_unique_keys: Uniqueness keys we uploaded (optional, inferred from DB).
         expected_count: Total records we uploaded (optional, inferred).
         db_path: Optional sop_agent.db path for auto-inference.
         release_batch_id: Optional release_batch_id for auto-inference.
@@ -172,16 +180,21 @@ def verify_factory_upload(
     summary = VerifySummary(order_id=order_id, form_id=form_id)
 
     # ── Auto-infer expected values from DB ──
-    if release_batch_id and (expected_box_numbers is None or expected_count is None):
+    if release_batch_id and (
+        expected_box_numbers is None
+        or expected_unique_keys is None
+        or expected_count is None
+    ):
         sop_path = Path(db_path) if db_path else SOP_DB
         if sop_path.exists():
             conn = sqlite3.connect(str(sop_path))
             conn.row_factory = sqlite3.Row
             try:
                 batch = conn.execute(
-                    "SELECT order_identifier FROM release_batches WHERE id=?",
+                    "SELECT order_identifier, project FROM release_batches WHERE id=?",
                     (release_batch_id,),
                 ).fetchone()
+                project_id = (batch["project"] or "") if batch else ""
                 if batch and not order_id:
                     order_id = batch["order_identifier"] or order_id
                     summary.order_id = order_id
@@ -189,15 +202,20 @@ def verify_factory_upload(
                 # #123 Phase 2:优先 SELECT 新表 wagon_container_shipments;
                 # fallback wagon_shipments(老业务/老数据)
                 box_rows = conn.execute(
-                    "SELECT box_no FROM wagon_container_shipments WHERE batch_id=?",
+                    "SELECT box_no, car_no FROM wagon_container_shipments WHERE batch_id=?",
                     (release_batch_id,),
                 ).fetchall()
                 if box_rows:
                     boxes = {r["box_no"] for r in box_rows if r["box_no"]}
+                    unique_keys = {
+                        build_box_wagon_key(r["box_no"], r["car_no"])
+                        for r in box_rows
+                        if r["box_no"] and r["car_no"]
+                    } if project_id == "jilin_jingang_jinzhou" else boxes.copy()
                 else:
                     # fallback 老路径
                     wagons = conn.execute(
-                        "SELECT container_no, container_numbers_json "
+                        "SELECT car_no, container_no, container_numbers_json "
                         "FROM wagon_shipments WHERE batch_id=?",
                         (release_batch_id,),
                     ).fetchall()
@@ -211,17 +229,30 @@ def verify_factory_upload(
                         raw = row["container_no"] or ""
                         return [b.strip() for b in raw.split("/") if b.strip()]
                     boxes = set()
+                    unique_keys = set()
                     for w in wagons:
-                        boxes.update(_row_boxes(w))
+                        row_boxes = _row_boxes(w)
+                        boxes.update(row_boxes)
+                        car_no = (w["car_no"] or "").strip()
+                        if project_id == "jilin_jingang_jinzhou":
+                            unique_keys.update(
+                                build_box_wagon_key(box_no, car_no)
+                                for box_no in row_boxes if box_no and car_no
+                            )
+                        else:
+                            unique_keys.update(box for box in row_boxes if box)
                 if expected_box_numbers is None:
                     expected_box_numbers = boxes
+                if expected_unique_keys is None:
+                    expected_unique_keys = unique_keys
                 if expected_count is None:
-                    expected_count = len(boxes)
+                    expected_count = len(unique_keys or boxes)
             finally:
                 conn.close()
 
     summary.expected_count = expected_count or 0
     summary.expected_box_numbers = expected_box_numbers or set()
+    summary.expected_unique_keys = expected_unique_keys or summary.expected_box_numbers
 
     if dry_run:
         summary.total_match = True
@@ -243,8 +274,9 @@ def verify_factory_upload(
     }
 
     # ── Paginated fetch ──
-    # 用 Counter 记每个 boxNumber 在门户返回里出现的次数(唯一性校验要用)
+    # 用 Counter 记唯一性键在门户返回里出现的次数(唯一性校验要用)
     api_box_counts: Counter[str] = Counter()
+    use_box_wagon_key = any("|" in k for k in summary.expected_unique_keys)
     page = 1
     total = 0
 
@@ -273,7 +305,12 @@ def verify_factory_upload(
 
         for row in rows:
             bn = (row.get("boxNumber") or "").strip()
-            if bn:
+            wn = (row.get("wagonNumber") or "").strip()
+            if not bn:
+                continue
+            if use_box_wagon_key:
+                api_box_counts[build_box_wagon_key(bn, wn)] += 1
+            else:
                 api_box_counts[bn] += 1
 
         summary.api_rows_fetched += len(rows)
@@ -293,7 +330,7 @@ def verify_factory_upload(
     summary.extra_boxes = sorted(all_boxes - summary.expected_box_numbers)
     # 判定:本次上传的每个键都出现(present)且各自唯一(unique)即通过。
     missing, duplicate = evaluate_presence_and_uniqueness(
-        summary.expected_box_numbers, api_box_counts
+        summary.expected_unique_keys, api_box_counts
     )
     summary.missing_boxes = missing
     summary.duplicate_boxes = duplicate

@@ -225,7 +225,7 @@ def test_rendezvous_delegates_when_candidate_exists(db):
     assert oj["text_trigger"]["expected_count"] == 5
 
 
-def test_rendezvous_skips_when_matched_candidate_exists_outside_event_bounds(db):
+def test_rendezvous_does_not_skip_matched_candidate_outside_event_bounds(db):
     from sop_hub.sop.workflow_task_executor import run_workflow_task
 
     conn = sqlite3.connect(str(db))
@@ -250,6 +250,6 @@ def test_rendezvous_skips_when_matched_candidate_exists_outside_event_bounds(db)
     task_id = res["ids"][0]
     out = run_workflow_task(task_id, db_path=db)
     oj = out.get("output_json") or {}
-    assert out["status"] == "skipped"
-    assert oj["stage"] == "already_handled_by_notice_chain"
-    assert oj["matched_candidate"] == "cand_done"
+    assert oj.get("stage") != "already_handled_by_notice_chain"
+    assert out["status"] == "pending"
+    assert oj["stage"] == "waiting_inspection_notice"

@@ -908,30 +908,8 @@ def _execute_inspection_text_trigger(
                         "note": "通知单图已由检验链 matched 处理,文本触发器无需再等/报警",
                     },
                 }
-            if not done and event_bounds:
-                done = conn.execute(
-                    "SELECT id FROM inspection_ingestion_candidates "
-                    "WHERE ship_name=? AND candidate_status='matched' "
-                    "  AND (? = 0 OR ABS(COALESCE(wagon_count,0) - ?) <= ?) "
-                    "  AND created_at >= datetime('now', ?) "
-                    + ("  AND destination=? " if dest else "")
-                    + "ORDER BY created_at DESC LIMIT 1",
-                    (
-                        ship, expected, expected, _INSPECTION_TEXT_TRIGGER_COUNT_TOL,
-                        f"-{_INSPECTION_TEXT_TRIGGER_CANDIDATE_MAX_AGE_H} hours",
-                        *((dest,) if dest else ()),
-                    ),
-                ).fetchone()
-                if done:
-                    return {
-                        "action": "executed", "status": "skipped",
-                        "output_json": {
-                            "stage": "already_handled_by_notice_chain",
-                            "ship": ship, "expected_count": expected,
-                            "matched_candidate": done[0],
-                            "note": "通知单图已由检验链 matched 处理(24h fallback),文本触发器无需再等/报警",
-                        },
-                    }
+            # 已 matched 候选只能在同一发车事件窗口内短路。不能再用 24h fallback,
+            # 否则同船连续发车时会把上一趟 matched 候选误当作本趟已处理。
             # rendezvous 等待:通知单图还没到。看任务已等多久。
             trow = conn.execute(
                 "SELECT created_at FROM workflow_task_db WHERE id=?", (task_id,),

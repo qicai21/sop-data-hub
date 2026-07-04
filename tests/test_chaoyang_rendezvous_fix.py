@@ -62,7 +62,7 @@ def test_already_handled_matched_uses_trigger_event_window(tmp_path):
         "INSERT INTO inspection_ingestion_candidates VALUES (?,?,?,?,?,?,?)",
         ("old55", "wx_old", "马兰幸福", "朝阳西", "matched", 55, "2026-06-28 06:50:00"),
     )
-    c.execute("INSERT INTO workflow_task_db VALUES (1, '2026-06-30 06:51:00')")
+    c.execute("INSERT INTO workflow_task_db VALUES (1, datetime('now'))")
     c.execute("INSERT INTO message_inbox VALUES (100, '2026-06-30 06:51:00')")
     c.commit()
     c.close()

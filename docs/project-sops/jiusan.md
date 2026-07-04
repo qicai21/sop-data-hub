@@ -27,7 +27,7 @@
 | 最终目的地 | 九三集团铁岭大豆科技有限公司工厂院内 |
 | 收货人 | 九三集团铁岭大豆科技有限公司 |
 | 合同有效期 | 2026-01-01 至 2026-12-31 |
-| 合同文件 | `/Users/qicai21/projects/repos/ops-data-hub/data/contracts/jiusan_soybean/物流发展-铁盛2026大豆合同.docx` |
+| 合同文件 | `/Users/qicai21/projects/repos/sop-data-hub/data/contracts/jiusan_soybean/物流发展-铁盛2026大豆合同.docx`（待补齐；当前仓库未包含该 docx） |
 
 ## 3. 当前系统职责
 
@@ -134,7 +134,7 @@
 
 | 数据 | 表 / 结构 | 当前策略 |
 |---|---|---|
-| 合同文件 | 文件路径 | 已保存到 `ops-data-hub/data/contracts/jiusan_soybean/` |
+| 合同文件 | 文件路径 | 保存目录为 `sop-data-hub/data/contracts/jiusan_soybean/`；合同 docx 待补齐 |
 | 合同条款 | 待扩展合同条款模型 | 暂不写入单价格 `contracts` 表，避免三条路线价格丢失 |
 | 放货发运信息 | `release_batches` 或后续专用结构 | 由用户手动指认后建立 |
 | 95306 发车事实 | 95306 同步库 / 发运动态视图 | 从 `xts` 账号同步数据中识别 |
@@ -142,10 +142,10 @@
 
 ## 10. 验收条件
 
-- [ ] 项目 SOP fixture 能被 `ops-data-hub` loader 正确读取。
+- [ ] 项目 SOP fixture 能被 `sop-data-hub` loader 正确读取。
 - [ ] 九三大豆项目不会自动监听或处理检装车通知单。
 - [ ] 九三大豆项目不会自动识别放货单建批；必须人工指认。
-- [ ] 合同文件保存在 `ops-data-hub` 项目目录下。
+- [ ] 合同文件保存在 `sop-data-hub` 项目目录下；合同 docx 需补齐。
 - [ ] 后续程序能从 `xts` 账号 95306 数据中查询并更新每日发车动态。
 - [ ] 得胜台路线出现时能被标记为补充路线，不被当作常规新台子路线。
 

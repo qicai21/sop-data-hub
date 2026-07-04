@@ -32,7 +32,7 @@
 | 返库 | 从铁路站台将未装车货物返回运输到港口堆货货场。返库会使港存数量增加、可发运数量减少。不要把“铁路发运/铁路返库”文字误判为已发生返库业务 |
 | 发车数据 | 货物完成铁路装车后形成的发运记录，包括作业时间、作业道线、车型、车数、车号等信息。检装车通知单是当前获取发车数据的主要来源 |
 | 发运报表 | 发车数据正式入库后，按指定 Excel 模板生成的朝阳钢铁发运表 |
-| 发运报表模板 | `/Users/qicai21/projects/repos/ops-data-hub/config/report_templates/cysteel_departure_report_template.xlsx` |
+| 发运报表模板 | `/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/cysteel_departure_report_template.xlsx`（待补齐；当前仓库未包含该模板文件） |
 | 发运报表文件名 | `锦州港铁矿发运表_<车数>_<日期>.xlsx`，其中车数取本次已入库有效车辆数，日期取本次报表生成日期或业务确认日期 |
 | `departure_records` | 发车汇总记录，通常对应一次检装车通知单处理后的批次发车结果 |
 | `wagon_shipments` | 单车发运明细，一辆车一条记录，用于保存车号、车型、到发站、95306 校验状态、运抵状态等单车事实 |
@@ -149,7 +149,7 @@
 |---|---|
 | 输入 | 按到站拆分的车辆块 |
 | 触发条件 | 检装车解析完成后执行 |
-| 处理动作 | 按 `ops-data-hub/config/inspection_defect_terms.yaml` 中的确认词表剔除缺陷车、不可发车辆或空排车辆 |
+| 处理动作 | 按 `sop-data-hub/config/inspection_defect_terms.yaml` 中的确认词表剔除缺陷车、不可发车辆或空排车辆 |
 | 输出 | 有效车号列表、缺陷车列表 |
 | 入库表 | 不写入 `wagon_shipments`；如后续需要追踪缺陷车，应使用缺陷车记录或异常说明 |
 | 下一节点 | 批次匹配 |
@@ -201,7 +201,7 @@
 |---|---|
 | 输入 | 已入库发车数据 |
 | 触发条件 | 发车数据入库完成，且存在可报送车辆 |
-| 处理动作 | 使用模板 `/Users/qicai21/projects/repos/ops-data-hub/config/report_templates/cysteel_departure_report_template.xlsx` 制作发运报表；填入本次已入库车辆对应的批次、到站、车号、车数、异常说明等字段；文件名按 `锦州港铁矿发运表_<车数>_<日期>.xlsx` 生成 |
+| 处理动作 | 使用模板 `/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/cysteel_departure_report_template.xlsx`（待补齐）制作发运报表；填入本次已入库车辆对应的批次、到站、车号、车数、异常说明等字段；文件名按 `锦州港铁矿发运表_<车数>_<日期>.xlsx` 生成 |
 | 输出 | 发运报表 Excel 文件、报送任务 |
 | 入库表 | 发运报表记录或发送记录；具体表名待确认 |
 | 下一节点 | 发运报表发送 |
@@ -234,7 +234,7 @@ report_targets:
     group_name: "朝钢铁矿发运群"
 report_artifact:
   type: "departure_report"
-  template_path: "/Users/qicai21/projects/repos/ops-data-hub/config/report_templates/cysteel_departure_report_template.xlsx"
+  template_path: "/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/cysteel_departure_report_template.xlsx"
   filename_pattern: "锦州港铁矿发运表_{wagon_count}_{date}.xlsx"
   generate_after: "departure_records_committed"
   send_after_generate: true
@@ -323,7 +323,7 @@ report_artifact:
 ### 6.5 缺陷车规则
 
 - 缺陷车先剔除，再统计有效车号和有效车数。
-- 缺陷词表维护在 `ops-data-hub/config/inspection_defect_terms.yaml`，代码和 agent 不应另行硬编码。
+- 缺陷词表维护在 `sop-data-hub/config/inspection_defect_terms.yaml`，代码和 agent 不应另行硬编码。
 - 当前确认词包括：排、空排、临修、地板漏、车皮毛刺、双划不入槽、车皮上沿开裂、车皮立柱开焊、小门划缺失、地板起皮、折页开焊。
 - 缺陷车不得进入有效 `wagon_shipments`。
 - 缺陷车应保留在异常说明或缺陷记录中，便于人工复核。
@@ -334,7 +334,7 @@ report_artifact:
 - 发车数据必须先完成批次匹配，再进入 95306 校验。
 - 95306 校验失败的车辆不得标记为通过。
 - 发车数据正式入库后，必须先制作发运报表，再进入报送动作。
-- 发运报表模板固定为 `/Users/qicai21/projects/repos/ops-data-hub/config/report_templates/cysteel_departure_report_template.xlsx`。
+- 发运报表模板固定为 `/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/cysteel_departure_report_template.xlsx`（待补齐；当前仓库未包含该模板文件）。
 - 发运报表文件名固定为 `锦州港铁矿发运表_<车数>_<日期>.xlsx`；车数取本次已入库有效车辆数，日期取本次报表生成日期或业务确认日期。
 - 当前测试开发阶段，发运报表发送给微信联系人“郭东北”（暂定）。
 - 正式运行阶段，发运报表发送到“朝钢铁矿发运群”；群检索标识待确认，确认后必须保留方括号。
@@ -391,9 +391,9 @@ report_artifact:
   - dev：联系人“郭东北”
   - production：朝钢铁矿发运群；群检索标识确认后必须保留方括号
 - [ ] `chaoyang_steel_baseline.yaml` 包含发运报表配置：
-  - 模板路径：`/Users/qicai21/projects/repos/ops-data-hub/config/report_templates/cysteel_departure_report_template.xlsx`
+  - 模板路径：`/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/cysteel_departure_report_template.xlsx`（待补齐）
   - 文件名模式：`锦州港铁矿发运表_{wagon_count}_{date}.xlsx`
-- [ ] fixture 能被 `ops-data-hub` 的项目 SOP loader 正确解析，且 `report_targets`、`report_artifact` 不丢失。
+- [ ] fixture 能被 `sop-data-hub` 的项目 SOP loader 正确解析，且 `report_targets`、`report_artifact` 不丢失。
 
 ### 9.2 放货批次验收
 
@@ -410,7 +410,7 @@ report_artifact:
 ### 9.3 检装车与匹配验收
 
 - [ ] 给定一张包含朝阳项目确认到站的检装车通知单，系统能按到站分块。
-- [ ] 缺陷词表从 `ops-data-hub/config/inspection_defect_terms.yaml` 读取，不从代码或 agent 文档硬编码。
+- [ ] 缺陷词表从 `sop-data-hub/config/inspection_defect_terms.yaml` 读取，不从代码或 agent 文档硬编码。
 - [ ] 缺陷车不会进入有效车辆列表。
 - [ ] 船名能辅助匹配具体放货批次。
 - [ ] 节数只用于校验，不作为主匹配依据。
@@ -425,7 +425,7 @@ report_artifact:
 
 ### 9.5 发运报表与发送验收
 
-- [ ] 发车数据入库后能使用 `/Users/qicai21/projects/repos/ops-data-hub/config/report_templates/cysteel_departure_report_template.xlsx` 生成发运报表。
+- [ ] 发车数据入库后能使用 `/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/cysteel_departure_report_template.xlsx` 生成发运报表；该模板文件需先补齐。
 - [ ] 发运报表文件名符合 `锦州港铁矿发运表_<车数>_<日期>.xlsx`。
 - [ ] 当前测试开发阶段，发运报表能发送给微信联系人“郭东北”（暂定）。
 - [ ] 正式运行阶段配置保留为发送到“朝钢铁矿发运群”，并能按群检索标识定位。

@@ -161,7 +161,7 @@
 |---|---|
 | 输入 | 按到站拆分的车辆块 |
 | 触发条件 | 检装车解析完成后执行 |
-| 处理动作 | 按 `ops-data-hub/config/inspection_defect_terms.yaml` 中的确认词表剔除缺陷车、不可发车辆或空排车辆 |
+| 处理动作 | 按 `sop-data-hub/config/inspection_defect_terms.yaml` 中的确认词表剔除缺陷车、不可发车辆或空排车辆 |
 | 输出 | 有效车号列表、缺陷车列表 |
 | 入库表 | 不写入 `wagon_shipments`；如后续需要追踪缺陷车，应使用缺陷车记录或异常说明 |
 | 下一节点 | 批次匹配 |
@@ -329,7 +329,7 @@ report_targets:
 ### 6.5 缺陷车规则
 
 - 缺陷车先剔除，再统计有效车号和有效车数。
-- 缺陷词表维护在 `ops-data-hub/config/inspection_defect_terms.yaml`，代码和 agent 不应另行硬编码。
+- 缺陷词表维护在 `sop-data-hub/config/inspection_defect_terms.yaml`，代码和 agent 不应另行硬编码。
 - 当前确认词包括：排、空排、临修、地板漏、车皮毛刺、双划不入槽、车皮上沿开裂、车皮立柱开焊、小门划缺失、地板起皮、折页开焊。
 - 缺陷车不得进入有效 `wagon_shipments`。
 - 缺陷车应保留在异常说明或缺陷记录中，便于人工复核。
@@ -393,7 +393,7 @@ report_targets:
 - [ ] `zt_steel_baseline.yaml` 包含开发和生产两个报送对象：
   - dev：联系人“郭东北”
   - production：中唐特钢发运群，群检索标识必须保留为 `[GROUP003]`
-- [ ] fixture 能被 `ops-data-hub` 的项目 SOP loader 正确解析，且 `report_targets` 不丢失。
+- [ ] fixture 能被 `sop-data-hub` 的项目 SOP loader 正确解析，且 `report_targets` 不丢失。
 
 ### 9.2 放货批次验收
 
@@ -413,7 +413,7 @@ report_targets:
 ### 9.3 检装车与匹配验收
 
 - [ ] 给定一张包含“汐子”的检装车通知单，系统能按到站分块。
-- [ ] 缺陷词表从 `ops-data-hub/config/inspection_defect_terms.yaml` 读取，不从代码或 agent 文档硬编码。
+- [ ] 缺陷词表从 `sop-data-hub/config/inspection_defect_terms.yaml` 读取，不从代码或 agent 文档硬编码。
 - [ ] 缺陷车不会进入有效车辆列表。
 - [ ] 船名能辅助匹配具体放货批次。
 - [ ] 节数只用于校验，不作为主匹配依据。

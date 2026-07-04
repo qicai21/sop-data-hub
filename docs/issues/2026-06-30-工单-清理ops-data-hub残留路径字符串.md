@@ -3,7 +3,7 @@
 - **类型**:文档/路径治理
 - **发现日期**:2026-06-30
 - **发现来源**:上手检查 `docs/project-sops/` 时发现旧项目名/旧路径残留
-- **状态**:待处理
+- **状态**:已处理
 - **处理顺序**:1
 - **严重度**:中 —— 项目已统一为 `sop-data-hub`,但部分 SOP 文档仍引用旧名 `ops-data-hub`,容易误导后续开发、排查和路径定位
 
@@ -11,7 +11,7 @@
 
 用户确认:旧项目名 `ops-data-hub` 已改为 `sop-data-hub`,且项目功能已明显演进。后续代码变动、更新、调整均需进入 `docs/issues/` 工单管理并纳入 git 版本管理。
 
-本工单只记录清理任务;尚未修改任何路径字符串。
+本工单用于记录并跟踪活跃文档中的旧路径清理。
 
 ## 现象
 
@@ -36,6 +36,8 @@
    - `docs/project-sops/chaoyang_steel.md`
    - `docs/project-sops/zhongtang_special_steel.md`
    - `docs/project-sops/jiusan.md`
+   - `schema/jiusan_cycle_schema.sql`
+   - `uv.lock`
 2. 将应指向当前仓库的路径统一改为 `sop-data-hub` 下的真实路径。
 3. 对不存在的旧模板/合同/配置路径逐项确认真实现状,不要只做字符串替换。
 4. 保留归档工单中的历史描述,除非后续明确决定做历史文档规范化。
@@ -50,3 +52,12 @@
 
 - 这是文档和路径治理任务,不应顺手修改业务逻辑。
 - 如发现代码或配置中也存在 `ops-data-hub` 活跃引用,需扩大工单范围并补充证据后再改。
+
+## 处理记录(2026-07-04)
+
+- 已清理 `docs/project-sops/` 三个活跃 SOP 文档中的旧项目名/路径。
+- `config/inspection_defect_terms.yaml` 为真实存在文件,文档路径已改为 `sop-data-hub/config/inspection_defect_terms.yaml`。
+- 朝钢发运报表模板与九三合同 docx 当前仓库未包含,已在文档中保留 `sop-data-hub` 目标路径并明确标注“待补齐”。
+- `uv.lock` 中 editable 包名已从 `ops-data-hub` 修正为 `sop-data-hub`,与 `pyproject.toml` 一致。
+- `schema/jiusan_cycle_schema.sql` 的 DB 注释路径已改为 `sop-data-hub/data/jiusan_cycle.db`。
+- 保留 `deprecated/`、历史 notes、归档工单、迁移兼容测试中的旧名,作为历史证据或兼容场景,不纳入本次机械改写。

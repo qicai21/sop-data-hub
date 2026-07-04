@@ -80,11 +80,36 @@ def test_mixed_ship_candidate_only_writes_target_release_segment(tmp_path: Path)
         operator_note="pytest mixed ship",
     )
 
+    assert result.safe_to_commit is False
+    assert result.requires_manual_review is True
+    assert "mixed-inspection-segment-requires-authoritative-car-set" in result.review_reasons
+    assert _match_count(rail_db, "batch-1") == 0
+    assert any(item["wagon_no"] == "200001" and item["reason"] == "outside-target-release-segment" for item in result.excluded)
+
+
+def test_mixed_ship_candidate_can_commit_with_authoritative_car_numbers(tmp_path: Path) -> None:
+    biz_db, rail_db = _build_fixture(tmp_path, authorized=True, include_other_ship_segment=True)
+    with sqlite3.connect(biz_db) as conn:
+        conn.execute(
+            "UPDATE inspection_ingestion_candidates SET car_numbers_json=? WHERE id='cand-1'",
+            (json.dumps(["100001", "100002"]),),
+        )
+
+    result = reconcile_inspection_shipments(
+        business_db_path=biz_db,
+        rail_db_path=rail_db,
+        project_id="中唐特钢铁矿发运项目",
+        release_batch_id="batch-1",
+        candidate_ids=["cand-1"],
+        run_mode="commit",
+        operator_note="pytest mixed ship authoritative cars",
+    )
+
+    assert result.safe_to_commit is True
     assert result.planned_write_count == 2
     assert _match_count(rail_db, "batch-1") == 2
-    cars = _matched_cars(rail_db, "batch-1")
-    assert cars == ["100001", "100002"]
-    assert any(item["wagon_no"] == "200001" and item["reason"] == "outside-target-release-segment" for item in result.excluded)
+    assert _matched_cars(rail_db, "batch-1") == ["100001", "100002"]
+    assert any(item["wagon_no"] == "200001" and item["reason"] == "outside-authoritative-car-set" for item in result.excluded)
 
 
 def test_unauthorized_project_or_route_cannot_commit(tmp_path: Path) -> None:

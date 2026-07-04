@@ -1,7 +1,7 @@
 # 工单:reconcile-inspection 段逻辑在"制单不规范/非连续分票"单上抓错车(会入错车号)
 
 - **类型**:代码缺陷(高危 —— 直接导致错车入库/结算)
-- **状态**:待处理;历史数据已补偿,制单不规范时的代码防错仍需专项加固
+- **状态**:已处理
 - **处理顺序**:5
 - **发现日期**:2026-06-27
 - **发现会话**:数据运维(只改数据,不改代码)
@@ -39,3 +39,30 @@
 - **教训**:制单不规范的多船混合单,reconcile 不可信,须按 95306 权威 + 人工确认的车号直接 ingest_wagons。
 
 关联 [[2026-06-27-工单-pending_freight批次未自动推进致检装车候选挂起]]、记忆 inspection_payload_multi_group_split(#130)、95306-window-reconcile-rule。
+
+## 处理记录
+
+2026-07-04 已完成代码加固：
+
+- `inspection_95306_reconciler` 不再让混合检装车单的连续段猜测直接 `safe_to_commit`。
+- 当 `_ship_segment_rows` 通过“船名标注 + N节”切出一段，同时候选里还存在 `outside-target-release-segment` 时，新增人工复核原因：
+  - `mixed-inspection-segment-requires-authoritative-car-set`
+- 支持人工/上游修正后的权威车号集：
+  - 若 `inspection_ingestion_candidates.car_numbers_json` 与 `payload_json.rows` 车号列表不一致，则视为权威车号集；
+  - reconcile 只按该权威车号集查 95306 并生成正式匹配；
+  - 其他 payload 行仅以 `outside-authoritative-car-set` 排除，不再参与连续段猜测。
+- 这样可以覆盖本工单的“贝拉 3 车实际为 seq37-39，但标注压在 seq39 导致向后抓 3 行”的风险：没有权威车号集时不自动提交；有权威车号集时按明确车号提交。
+
+新增/调整测试：
+
+- `tests/test_inspection_95306_reconciler.py::test_mixed_ship_candidate_only_writes_target_release_segment`
+  - 从“混合单可自动提交”调整为“混合单必须人工复核”。
+- `tests/test_inspection_95306_reconciler.py::test_mixed_ship_candidate_can_commit_with_authoritative_car_numbers`
+  - 验证 `car_numbers_json` 权威子集可以安全提交。
+
+验证：
+
+- `PYTHONPATH=src .venv/bin/python -m pytest tests/test_inspection_95306_reconciler.py -q`
+- 结果：`12 passed`
+- `PYTHONPATH=src .venv/bin/python -m pytest tests/test_inspection_95306_reconciler.py tests/functional/test_inspection_window_recover.py tests/functional/test_chaoyang_authoritative_candidate_cars.py tests/functional/test_pending_match_verifier_retry_before_timeout.py tests/test_pending_freight_inspection_guards.py tests/functional/test_e2e_chains_smoke.py -q`
+- 结果：`32 passed`

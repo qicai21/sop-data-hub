@@ -133,6 +133,10 @@ def reconcile_inspection_shipments(
                 excluded.append(_excluded(candidate["id"], candidate["source_file_name"], "", "candidate-status-not-candidate"))
                 continue
             payload = json.loads(candidate["payload_json"])
+            manual_car_numbers = _authoritative_car_numbers_from_candidate(candidate, payload)
+            if manual_car_numbers:
+                payload = dict(payload)
+                payload["_authoritative_car_numbers"] = manual_car_numbers
             if not _candidate_authorized(payload):
                 return _failure(run_mode, release_batch_id, project_id, operator_note, "candidate-sop-not-authorized")
             rows, row_excluded = _target_rows_for_release(payload, spec)
@@ -246,6 +250,36 @@ def _candidate_authorized(payload: Mapping[str, Any]) -> bool:
     return payload.get("_agent_sop_authorized") is True or payload.get("sop_authorized") is True
 
 
+def _authoritative_car_numbers_from_candidate(
+    candidate: sqlite3.Row | Mapping[str, Any],
+    payload: Mapping[str, Any],
+) -> list[str]:
+    """Use manually corrected candidate.car_numbers_json only when it changes payload rows.
+
+    Normal candidates store the same car list in payload rows and `car_numbers_json`.
+    A difference means an operator or upstream recovery has supplied an authoritative
+    subset/correction; that must override brittle section splitting.
+    """
+    try:
+        raw = candidate["car_numbers_json"]
+    except Exception:
+        raw = ""
+    if not raw:
+        return []
+    try:
+        cars = [str(c).strip() for c in json.loads(raw) if str(c or "").strip()]
+    except Exception:
+        return []
+    if not cars:
+        return []
+    payload_cars = [
+        str(row.get("car_no") or "").strip()
+        for row in (payload.get("rows") or [])
+        if isinstance(row, Mapping) and str(row.get("car_no") or "").strip()
+    ]
+    return cars if cars != payload_cars else []
+
+
 def _target_rows_for_release(payload: Mapping[str, Any], spec: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     source_rows = [dict(row) for row in (payload.get("rows") or []) if isinstance(row, Mapping)]
     source_rows.sort(key=lambda r: int(r.get("seq") or r.get("global_index") or 0))
@@ -253,7 +287,39 @@ def _target_rows_for_release(payload: Mapping[str, Any], spec: Any) -> tuple[lis
         return [], []
     source_rows = [_normalize_footer_boundary_defect(row, payload) for row in source_rows]
 
+    manual_cars = [
+        str(c).strip()
+        for c in (payload.get("_authoritative_car_numbers") or [])
+        if str(c or "").strip()
+    ]
+    if manual_cars:
+        rows_by_car = {
+            str(row.get("car_no") or "").strip(): row
+            for row in source_rows
+            if str(row.get("car_no") or "").strip()
+        }
+        segment: list[dict[str, Any]] = []
+        for index, car in enumerate(manual_cars, start=1):
+            row = dict(rows_by_car.get(car) or {"seq": index, "car_no": car})
+            row["defect"] = False
+            row["_authoritative_car_set"] = True
+            segment.append(row)
+        selected_cars = set(manual_cars)
+        excluded = [
+            {
+                "candidate_id": "",
+                "source_file_name": "",
+                "wagon_no": str(row.get("car_no") or ""),
+                "inspection_row": row.get("seq") or row.get("global_index"),
+                "reason": "outside-authoritative-car-set",
+            }
+            for row in source_rows
+            if str(row.get("car_no") or "").strip() not in selected_cars
+        ]
+        return segment, excluded
+
     segment = _ship_segment_rows(source_rows, spec)
+    segment_from_section_count = segment is not None
     if segment is None:
         loading_limit = _loading_row_limit(payload, len(source_rows))
         segment = [row for row in source_rows[:loading_limit] if not row.get("defect") and row_matches_spec(row, spec)]
@@ -271,6 +337,14 @@ def _target_rows_for_release(payload: Mapping[str, Any], spec: Any) -> tuple[lis
                     "reason": _row_exclusion_reason(row_for_reason),
                 }
             )
+    if segment_from_section_count and any(item["reason"] == "outside-target-release-segment" for item in excluded):
+        excluded.append({
+            "candidate_id": "",
+            "source_file_name": "",
+            "wagon_no": "",
+            "inspection_row": None,
+            "reason": "mixed-inspection-segment-requires-authoritative-car-set",
+        })
     return segment, excluded
 
 
@@ -394,8 +468,11 @@ def _build_formal_rows_for_candidate(
     window_shipments = _query_all_shipments_in_window(rail, spec, start, end)
     active_row_count = len(active_rows)
     target_row_count = len(inspection_rows)
+    manual_authoritative = any(row.get("_authoritative_car_set") for row in inspection_rows)
     use_db_authoritative_window = False
-    if len(window_shipments) == active_row_count:
+    if manual_authoritative:
+        use_db_authoritative_window = False
+    elif len(window_shipments) == active_row_count:
         use_db_authoritative_window = True
     elif target_row_count > active_row_count and len(window_shipments) == target_row_count:
         # Some live inspection slips carry OCR defect/no-match flags inside the
@@ -576,6 +653,7 @@ def _review_reasons(planned_rows: list[dict[str, Any]], excluded: list[dict[str,
         "db-window-empty",
         "no-matching-95306-window",
         "95306-window-count-mismatch",
+        "mixed-inspection-segment-requires-authoritative-car-set",
     }
     for item in excluded:
         reason = str(item.get("reason") or "")

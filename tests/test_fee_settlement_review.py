@@ -90,11 +90,11 @@ def test_add_review_sheet_is_first_sheet_with_status_validation() -> None:
 
     assert workbook.sheetnames[0] == REVIEW_SHEET_NAME
     assert [cell.value for cell in worksheet[1]] == REVIEW_HEADERS
-    assert worksheet["O2"].value == "结算"
-    assert worksheet["P2"].value == "m1"
-    assert worksheet["Q2"].value == 2
-    assert worksheet["R2"].value == 102
+    assert worksheet["H2"].value == "结算"
+    assert worksheet["I2"].value == "m1"
+    assert worksheet["J2"].value == 2
+    assert worksheet["K2"].value == 102
     validations = list(worksheet.data_validations.dataValidation)
     assert len(validations) == 1
     assert validations[0].formula1 == '"结算,挂起,排除"'
-    assert "O2" in str(validations[0].sqref)
+    assert "H2" in str(validations[0].sqref)

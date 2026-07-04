@@ -197,22 +197,8 @@ def verify_pending_candidates(
             if created_dt else float("inf")
         )
 
-        # 1. 超时判定:只对等 95306 票超时;等货运信息可能跨更长业务窗口。
-        if candidate_status == "pending_95306_match" and elapsed_h > timeout_hours:
-            _mark_timeout(cand_id, db_path, elapsed_h)
-            summary.timed_out += 1
-            summary.detail.append({
-                "candidate_id": cand_id, "action": "timed_out",
-                "elapsed_hours": round(elapsed_h, 2),
-                "ship_name": row["ship_name"] or "",
-            })
-            if send_timeout_notice:
-                _send_timeout_notice(
-                    cand_id, row["group_name"] or "", elapsed_h,
-                )
-            continue
-
-        # 2. 重试链
+        # 先重试链路,再判超时。95306 往往是在候选已等了数小时后才补齐;
+        # 若先 timeout,刚补齐的票会被挡在标准后置动作(excel/微信/上传)之外。
         try:
             res = _retry_chain(cand_id, db_path)
             summary.retried += 1
@@ -238,12 +224,26 @@ def verify_pending_candidates(
                     "elapsed_hours": round(elapsed_h, 2), **_obs,
                 })
             elif stage == "waiting_95306_tickets":
-                summary.still_pending += 1
-                summary.detail.append({
-                    "candidate_id": cand_id, "action": "still_pending",
-                    "actual": actual, "expected": expected,
-                    "elapsed_hours": round(elapsed_h, 2),
-                })
+                if candidate_status == "pending_95306_match" and elapsed_h > timeout_hours:
+                    _mark_timeout(cand_id, db_path, elapsed_h)
+                    summary.timed_out += 1
+                    summary.detail.append({
+                        "candidate_id": cand_id, "action": "timed_out",
+                        "actual": actual, "expected": expected,
+                        "elapsed_hours": round(elapsed_h, 2),
+                        "ship_name": row["ship_name"] or "",
+                    })
+                    if send_timeout_notice:
+                        _send_timeout_notice(
+                            cand_id, row["group_name"] or "", elapsed_h,
+                        )
+                else:
+                    summary.still_pending += 1
+                    summary.detail.append({
+                        "candidate_id": cand_id, "action": "still_pending",
+                        "actual": actual, "expected": expected,
+                        "elapsed_hours": round(elapsed_h, 2),
+                    })
             elif stage == "awaiting_freight_info":
                 summary.still_pending += 1
                 summary.detail.append({

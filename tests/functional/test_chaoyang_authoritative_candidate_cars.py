@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+
+from sop_hub.sop.workflow_task_executor import (
+    _event_excel_batch_specs,
+    _persist_authoritative_candidate_cars,
+)
+
+
+def test_authoritative_95306_cars_overwrite_candidate_count_for_excel_specs(tmp_path):
+    db = tmp_path / "sop.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE inspection_ingestion_candidates ("
+        " id TEXT PRIMARY KEY, source_image_path TEXT, ship_name TEXT,"
+        " release_batch_id TEXT, car_numbers_json TEXT, candidate_status TEXT,"
+        " wagon_count INTEGER, parsed_json TEXT, updated_at TEXT)"
+    )
+    notice_cars = [f"18{i:05d}" for i in range(48)]
+    authoritative = notice_cars[:46]
+    conn.execute(
+        "INSERT INTO inspection_ingestion_candidates "
+        "(id, source_image_path, ship_name, release_batch_id, car_numbers_json, "
+        " candidate_status, wagon_count) "
+        "VALUES ('cand1','/tmp/notice.jpg','马兰幸福','batch1',?,'matched',48)",
+        (json.dumps(notice_cars),),
+    )
+
+    _persist_authoritative_candidate_cars(
+        conn,
+        candidate_id="cand1",
+        car_numbers=authoritative,
+        recover={
+            "window_total_count": 46,
+            "notice_only": notice_cars[46:],
+            "missing_from_notice": [],
+            "corrections": [],
+        },
+    )
+    conn.commit()
+
+    row = conn.execute(
+        "SELECT car_numbers_json, wagon_count, parsed_json "
+        "FROM inspection_ingestion_candidates WHERE id='cand1'"
+    ).fetchone()
+    conn.close()
+
+    assert len(json.loads(row[0])) == 46
+    assert row[1] == 46
+    parsed = json.loads(row[2])
+    assert parsed["authoritative_cars"]["notice_only"] == notice_cars[46:]
+
+    specs, all_matched, ships = _event_excel_batch_specs("cand1", db)
+    assert all_matched is True
+    assert ships == ["马兰幸福"]
+    assert specs == [("batch1", authoritative)]

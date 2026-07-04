@@ -541,6 +541,51 @@ def _event_excel_batch_specs(
     return specs, all_matched, ships
 
 
+def _persist_authoritative_candidate_cars(
+    conn: sqlite3.Connection,
+    *,
+    candidate_id: str,
+    car_numbers: list[str],
+    recover: dict[str, Any] | None = None,
+) -> None:
+    """把 95306 窗口恢复出的权威车号回写候选。
+
+    候选最初来自 VLM/OCR,可能把排车也抽成装车。后续发运 Excel 分块和看板都读
+    `car_numbers_json` / `wagon_count`,所以链路一旦确认 95306 权威车号,必须把候选
+    同步收敛到同一口径。
+    """
+    clean = [str(c).strip() for c in car_numbers if str(c or "").strip()]
+    try:
+        import json as _json
+        payload = {
+            "source": "95306_window_recover",
+            "window_total_count": (recover or {}).get("window_total_count"),
+            "notice_only": (recover or {}).get("notice_only") or [],
+            "missing_from_notice": (recover or {}).get("missing_from_notice") or [],
+            "corrections": (recover or {}).get("corrections") or [],
+        }
+        conn.execute(
+            "UPDATE inspection_ingestion_candidates "
+            "SET car_numbers_json=?, wagon_count=?, parsed_json=?, updated_at=datetime('now') "
+            "WHERE id=?",
+            (
+                _json.dumps(clean, ensure_ascii=False),
+                len(clean),
+                _json.dumps({"authoritative_cars": payload}, ensure_ascii=False),
+                candidate_id,
+            ),
+        )
+    except sqlite3.OperationalError:
+        # 精简测试库可能没有 parsed_json 列。
+        import json as _json
+        conn.execute(
+            "UPDATE inspection_ingestion_candidates "
+            "SET car_numbers_json=?, wagon_count=?, updated_at=datetime('now') "
+            "WHERE id=?",
+            (_json.dumps(clean, ensure_ascii=False), len(clean), candidate_id),
+        )
+
+
 def _inbox_elapsed_hours(message_id: str, db_path: Path) -> float | None:
     """消息到现在多少小时(超时判断基准)。用 message_inbox.created_at(带 +08:00 时区,
     解析可靠);**不用 received_datetime**——那列是裸北京时间,parse_any_timestamp 会当 UTC
@@ -1381,32 +1426,8 @@ def _execute_chaoyang_inspection_chain(
             conn.commit()
         authoritative_loading = recover["loading_car_nos"]
         if authoritative_loading:
-            # 跟通知单 footer.zhuangche_jieshu 再 sanity 一道
-            expected = int((ext_data.get("footer") or {}).get("zhuangche_jieshu") or 0)
-            if expected and len(authoritative_loading) != expected:
-                conn.execute(
-                    "UPDATE inspection_ingestion_candidates "
-                    "SET candidate_status='pending_review', "
-                    "    reason=?, updated_at=datetime('now') WHERE id=?",
-                    (
-                        f"window 反推 {len(authoritative_loading)} 车 ≠ "
-                        f"通知单 footer.zhuangche_jieshu {expected}",
-                        candidate_id,
-                    ),
-                )
-                conn.commit()
-                return {
-                    "action": "executed",
-                    "status": "skipped",
-                    "output_json": {
-                        "stage": "95306_window_recover",
-                        "recover_result": recover,
-                        "footer_zhuangche_jieshu": expected,
-                        "matched_release_batch_id": matched_batch_id,
-                        "candidate_id": candidate_id,
-                        "candidate_status": "pending_review",
-                    },
-                }
+            # footer/VLM 数量只作为观测。朝钢发运以 95306 窗口权威车号为准,
+            # 通知单上多出的 notice_only 通常是排车或 OCR/录入多抽,不应阻断发送/上传。
             # 2026-06-06:保留通知单物理顺序(列车机车头到尾)。
             # authoritative_loading 是 95306 ticketed_at 序,直接用会让发运
             # excel 顺序错乱。业务铁律:车号顺序 = 通知单 seq 顺序,因为这是
@@ -1420,6 +1441,13 @@ def _execute_chaoyang_inspection_chain(
             kept_set = set(notice_kept)
             extras = [c for c in authoritative_loading if c not in kept_set]
             loading_car_nos = notice_kept + extras
+            _persist_authoritative_candidate_cars(
+                conn,
+                candidate_id=candidate_id,
+                car_numbers=loading_car_nos,
+                recover=recover,
+            )
+            conn.commit()
 
         # ── 4. Query 95306 per car_no, build wagon_shipments rows ─
         if not RAIL_DB.exists():
@@ -1497,13 +1525,13 @@ def _execute_chaoyang_inspection_chain(
 
         # ── 4.5. Guard:必须全部 loading 车都已落库才能继续 ───────────
         # 业务铁律:95306 票延迟时(支票晚到 1-2 h),不能用半套数据
-        # 出 excel。期望数 = footer.zhuangche_jieshu(VLM 抽的实装),
-        # 兜底 = len(loading_car_nos)。
+        # 出 excel。已通过 95306 窗口恢复时,期望数以权威车号为准;footer/VLM
+        # 只做观测,不能把排车/OCR 多抽重新变成闸。
         # 实际数 = DB 中 batch_id+本次 car_nos 的实际行数(idempotent
         # 重跑也对 — 不依赖 inserted 计数)。
-        expected_count = (
-            int((ext_data.get("footer") or {}).get("zhuangche_jieshu") or 0)
-            or len(loading_car_nos)
+        footer_count = int((ext_data.get("footer") or {}).get("zhuangche_jieshu") or 0)
+        expected_count = len(loading_car_nos) if authoritative_loading else (
+            footer_count or len(loading_car_nos)
         )
         placeholders = ",".join("?" * len(loading_car_nos))
         db_count = conn.execute(
@@ -1532,6 +1560,7 @@ def _execute_chaoyang_inspection_chain(
                     "candidate_id": candidate_id,
                     "loading_car_count": len(loading_car_nos),
                     "expected_count": expected_count,
+                    "footer_zhuangche_jieshu": footer_count or None,
                     "actual_in_db_count": db_count,
                     "wagon_shipments_inserted": inserted,
                     "wagon_shipments_no_95306_match": no_match,

@@ -23,13 +23,6 @@ _LOCKED_DISPATCH_STATES = frozenset({
 })
 ZHONGTANG_PROJECT = "中唐特钢铁矿发运项目"
 WUGANG_PROJECT = "乌兰浩特钢铁铁矿发运项目"
-NON_SOP_INSPECTION_TOKENS = (
-    "乌兰浩特铁",
-    "乌兰浩特",
-    "乌钢",
-    "沈阳盛京颐昇",
-    "盛京颐昇",
-)
 FALLBACK_BUSINESS_SOP_TOKENS = {
     "zt_steel_baseline",
     ZHONGTANG_PROJECT,
@@ -103,18 +96,6 @@ def canonicalize_ship_text(text: Optional[str]) -> Optional[str]:
 
 def _inspection_payload_text(payload: Dict[str, Any]) -> str:
     return to_searchable_text(payload)
-
-
-def _is_explicit_non_sop_inspection_payload(payload: Dict[str, Any]) -> bool:
-    """Return True for inspection slips that clearly belong outside managed SOPs.
-
-    The pending-review path is valuable for ambiguous shared-group slips, but it
-    should not collect clearly unrelated projects such as 乌兰浩特/乌钢 sheets.
-    """
-    if payload.get("_agent_sop_authorized") is True:
-        return False
-    text = _inspection_payload_text(payload)
-    return any(token in text for token in NON_SOP_INSPECTION_TOKENS)
 
 
 def _existing_path_or_empty(value: Any) -> str:
@@ -1153,6 +1134,69 @@ class BusinessDataAgent:
         ids = match.get("release_batch_ids") or []
         return ids[0] if match.get("status") == "candidate" and len(ids) == 1 else None
 
+    @staticmethod
+    def _cargo_anchor_variants(cargo_name: str) -> list[str]:
+        cargo = str(cargo_name or "").strip()
+        if not cargo:
+            return []
+        variants = {cargo}
+        if "铁矿" in cargo or cargo == "铁":
+            variants.update({"铁", "铁矿", "铁矿粉"})
+        if "镍矿" in cargo or cargo == "镍":
+            variants.update({"镍", "镍矿"})
+        if "大豆" in cargo:
+            variants.add("大豆")
+        return [item for item in variants if item]
+
+    def _text_has_managed_inspection_flow(self, text: str) -> bool:
+        rows = self.db.execute(
+            """
+            SELECT destination_station, cargo_name
+            FROM release_dispatch_match_rules
+            WHERE status IN ('active', 'completed')
+              AND COALESCE(destination_station,'') <> ''
+              AND COALESCE(cargo_name,'') <> ''
+            UNION
+            SELECT destination_station, cargo_name
+            FROM release_batches
+            WHERE dispatch_status IN ('pending_freight','enriched','loading')
+              AND COALESCE(destination_station,'') <> ''
+              AND COALESCE(cargo_name,'') <> ''
+            """
+        ).fetchall()
+        for row in rows:
+            dest = str(row["destination_station"] or "").strip()
+            if not dest or dest not in text:
+                continue
+            if any(cargo in text for cargo in self._cargo_anchor_variants(row["cargo_name"])):
+                return True
+        return False
+
+    @staticmethod
+    def _text_has_known_station_cargo_flow(text: str) -> bool:
+        try:
+            from sop_hub.engines.inspection_slip import CARGO_TYPES, STATIONS
+        except Exception:
+            return False
+        has_station = any(station and station in text for station in STATIONS)
+        has_cargo = any(cargo and cargo in text for cargo in CARGO_TYPES)
+        return bool(has_station and has_cargo)
+
+    def _should_ignore_unmanaged_inspection_payload(self, payload: Dict[str, Any]) -> bool:
+        """Ignore inspection slips whose station+cargo flow is outside managed SOPs.
+
+        This is a whitelist gate: station+cargo strings like ``乌兰浩特铁`` are
+        treated as flow anchors, not blacklist words. If the flow matches active
+        release rules / open release batches, keep the candidate path; otherwise
+        ignore it instead of hanging a pending review candidate.
+        """
+        if payload.get("_agent_sop_authorized") is True:
+            return False
+        text = _inspection_payload_text(payload)
+        if self._text_has_managed_inspection_flow(text):
+            return False
+        return self._text_has_known_station_cargo_flow(text)
+
     def _split_payload_by_ship_rules(
         self, payload: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
@@ -1356,10 +1400,10 @@ class BusinessDataAgent:
         status = str(match.get("status") or "pending")
         reason = str(match.get("reason") or "no_release_batch_candidate")
         release_batch_ids = [str(item) for item in (match.get("release_batch_ids") or []) if item]
-        if status != "candidate" and _is_explicit_non_sop_inspection_payload(payload):
+        if status != "candidate" and self._should_ignore_unmanaged_inspection_payload(payload):
             return {
                 "status": "ignored",
-                "reason": "ignored_explicit_non_sop_inspection",
+                "reason": "ignored_unmanaged_inspection_flow",
                 "candidate_ids": [],
                 "release_batch_ids": [],
                 "wagon_count": len(car_numbers),

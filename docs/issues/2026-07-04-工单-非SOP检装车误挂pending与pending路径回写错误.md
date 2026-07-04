@@ -14,7 +14,7 @@
 - 装车：51 节
 - 排车：1 节
 
-该业务不属于当前受管 SOP 项目，不应进入人工 `pending_review`。
+其中 `乌兰浩特铁` 是“流向 + 货物”的业务写法，类似 `汐子铁`、`四平铁`；它不是项目黑名单词。该业务不属于当前受管 SOP 项目，是因为 `乌兰浩特 + 铁` 没有命中当前受管项目的发运规则 / 放货批次流向白名单，不应进入人工 `pending_review`。
 
 ## 问题
 
@@ -32,7 +32,8 @@
 
 代码修复：
 
-- `BusinessDataAgent.ingest_inspection_payload` 增加明确非 SOP 检装车忽略闸：没有匹配到有效发运规则，且抽取文本明确包含 `乌兰浩特铁` / `乌兰浩特` / `乌钢` / `沈阳盛京颐昇` / `盛京颐昇` 时，返回 `ignored_explicit_non_sop_inspection`，不创建候选。
+- `BusinessDataAgent.ingest_inspection_payload` 增加未受管流向忽略闸：没有匹配到有效发运规则，且抽取文本出现可识别的“站名 + 货物”流向，但该流向没有命中当前受管项目的 `release_dispatch_match_rules` / 开放 `release_batches` 白名单时，返回 `ignored_unmanaged_inspection_flow`，不创建候选。
+- 2026-07-04 追认修正：原实现短暂使用 `乌兰浩特铁` / `乌兰浩特` 等黑名单 token 判断，这会误解业务字段含义；现已改为白名单流向判断，`汐子铁`、`汐子铁矿`、`四平铁` 等已受管流向不会被误丢弃。
 - 候选路径回写改为优先使用真实存在的图片路径；若群目录路径不存在但 `extraction_json_path` 指向 `_pending/.../json/*_result.json`，则反推并回写 `_pending/.../images/*.jpg`。
 
 数据修正：
@@ -40,18 +41,19 @@
 - 候选 `d073d258530c52240b3d571f3a85c4c589099755` 已改为：
   - `status=ignored`
   - `candidate_status=ignored_non_sop`
-  - `reason=ignored_explicit_non_sop_inspection`
+  - `reason=ignored_unmanaged_inspection_flow`
   - `source_image_path=/Users/qicai21/Documents/bussiness-artifacts/wechat_images/_pending/2026-07/images/464_82998b7c4009a86081e3ec7cdaf7dcee.jpg`
 - `message_inbox.wx_2026-07_320` 已改为：
   - `processing_status=ignored`
-  - `summary=[ignored_non_sop_inspection] 乌兰浩特/春日莲花检装车非当前SOP项目`
+  - `summary=[ignored_unmanaged_inspection_flow] 乌兰浩特铁/春日莲花检装车未命中当前受管流向`
   - `raw_standard_image_path` / `msg_path` / `raw_msg_path` 指向实际 `_pending` 图片路径。
 
 验证：
 
 - `PYTHONPATH=src python3 -m pytest tests/test_data_agent.py -q`
 - 新增用例覆盖：
-  - 明确非 SOP 检装车不建候选；
+  - 未受管流向检装车不建候选；
+  - 已受管流向即便出现代理/收货人文本，也不被误丢弃；
   - `_pending` JSON 反推真实图片路径；
   - 原有 unmatched split group 丢弃逻辑仍通过。
 - 当前 `inspection_ingestion_candidates` 中已无 `pending_review` 候选。

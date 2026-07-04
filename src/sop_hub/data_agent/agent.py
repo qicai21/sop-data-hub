@@ -111,6 +111,8 @@ def _is_explicit_non_sop_inspection_payload(payload: Dict[str, Any]) -> bool:
     The pending-review path is valuable for ambiguous shared-group slips, but it
     should not collect clearly unrelated projects such as 乌兰浩特/乌钢 sheets.
     """
+    if payload.get("_agent_sop_authorized") is True:
+        return False
     text = _inspection_payload_text(payload)
     return any(token in text for token in NON_SOP_INSPECTION_TOKENS)
 
@@ -1406,7 +1408,10 @@ class BusinessDataAgent:
         # extraction_json_path / source_image_path 去算 loading_rows 和
         # footer.zhuangche_jieshu。之前三个都不回填 → 执行器报
         # "no inspection candidate" 或 "extraction JSON not found"。三个一起补。
-        if source_file_name:
+        _has_message_inbox = bool(self.db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='message_inbox'"
+        ).fetchone())
+        if source_file_name and _has_message_inbox:
             _stem = source_file_name.rsplit(".", 1)[0]
             _cols = {
                 str(r["name"])
@@ -1460,6 +1465,17 @@ class BusinessDataAgent:
                     "WHERE message_id=?",
                     (candidate_id, _ib["message_id"] or ""),
                 )
+                if _resolved_image_path:
+                    _path_cols = [
+                        c for c in ("raw_standard_image_path", "msg_path", "raw_msg_path")
+                        if c in _cols
+                    ]
+                    if _path_cols:
+                        _sets = ", ".join(f"{c}=?" for c in _path_cols)
+                        self.db.execute(
+                            f"UPDATE message_inbox SET {_sets} WHERE message_id=?",
+                            [*([_resolved_image_path] * len(_path_cols)), _ib["message_id"] or ""],
+                        )
                 self.db.commit()
 
         # ── infer ship/dest/cargo/project_id 三层级联 ────────────────

@@ -189,6 +189,33 @@ class TestBusinessDataAgent:
         assert res["reason"] == "ignored_explicit_non_sop_inspection"
         assert count == 0
 
+    def test_sop_authorized_inspection_is_not_blocked_by_non_sop_tokens(self, tmp_db):
+        agent = BusinessDataAgent()
+        payload = {
+            "is_inspection": True,
+            "_agent_sop_authorized": True,
+            "project": "zhongtang_special_steel",
+            "rows": [
+                {"seq": 1, "car_no": "4941680", "cargo_info_raw": "空排"},
+                {"seq": 2, "car_no": "4916304", "cargo_info_raw": "宝丽"},
+                {"seq": 3, "car_no": "4920661", "cargo_info_raw": "沙子铁矿粉"},
+            ],
+            "meta": {"daoxian": "煤四", "jieshu": 3},
+        }
+
+        res = agent.ingest_inspection_payload(
+            payload,
+            source_file_name="baoli_authorized_non_sop_tokens.jpg",
+            group_name="中唐特钢发运群",
+        )
+        count = agent.db.execute(
+            "SELECT COUNT(*) FROM inspection_ingestion_candidates"
+        ).fetchone()[0]
+
+        assert res["status"] != "ignored"
+        assert res["reason"] != "ignored_explicit_non_sop_inspection"
+        assert count == 1
+
     def test_inspection_candidate_uses_existing_pending_image_path(self, tmp_db, tmp_path):
         agent = BusinessDataAgent()
         for col in (
@@ -251,11 +278,16 @@ class TestBusinessDataAgent:
             "SELECT source_image_path, extraction_json_path, message_id "
             "FROM inspection_ingestion_candidates"
         ).fetchone()
+        inbox = agent.db.execute(
+            "SELECT raw_standard_image_path FROM message_inbox "
+            "WHERE message_id='wx_test_pending_path'"
+        ).fetchone()
 
         assert res["status"] == "pending"
         assert row["source_image_path"] == str(image_path)
         assert row["extraction_json_path"] == str(json_path)
         assert row["message_id"] == "wx_test_pending_path"
+        assert inbox["raw_standard_image_path"] == str(image_path)
 
     def test_ingest_and_list(self, tmp_db):
         """Test basic ingest -> list cycle"""

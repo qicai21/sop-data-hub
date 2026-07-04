@@ -31,6 +31,11 @@ def test_task_type_routing_per_project_and_flow():
         "jilin_jingang_jinzhou", "departure_flow", "detect_departure_message"
     ) == "jljg_departure_text_chain"
 
+    # jiusan internal soybean departure text → ledger reconciliation chain
+    assert wts._resolve_task_type(
+        "jiusan", "departure_flow", "detect_departure_message"
+    ) == "jiusan_departure_text_reconcile"
+
     # 中唐 inspection → zhongtang_inspection_chain
     assert wts._resolve_task_type(
         "zhongtang_special_steel", "inspection_notice_flow", "create_inspection_candidate"

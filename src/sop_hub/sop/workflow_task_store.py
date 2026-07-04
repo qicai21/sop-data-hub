@@ -147,6 +147,10 @@ def _resolve_task_type(project_id: str, flow_name: str, node_name: str) -> str:
             and flow_name == "departure_flow"
             and node_name == "detect_departure_message"):
         return "jljg_departure_text_chain"
+    if (project_id == "jiusan"
+            and flow_name == "departure_flow"
+            and node_name == "detect_departure_message"):
+        return "jiusan_departure_text_reconcile"
     # R78: 朝阳检装车通知单 → 全链(match → 95306 → wagons → excel)
     # 节点名:live_service 分类管线实际产出 create_inspection_candidate
     # (run_live_service.py),repair 路径用 extract_inspection_notice —— 两个都收,

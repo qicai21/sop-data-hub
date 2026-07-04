@@ -26,6 +26,7 @@ project_meta:
     - "诚信"
     - "昆娜"
     - "玛格丽特"
+    - "美国"
   has_inspection_notice: false
   departure_confirmation_source: "rail95306_xts_account"
   # 全程跟踪到 confirmed_received。九三大豆结算同样依赖到货,跟 jilin/中唐

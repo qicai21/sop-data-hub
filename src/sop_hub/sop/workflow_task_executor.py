@@ -101,13 +101,19 @@ def _mark_task(db_path: Path, task_id: int, status: str, **extra) -> None:
 
 
 def _update_message_inbox_status(
-    db_path: Path, message_id: str, status: str,
+    db_path: Path, message_id: str, status: str, message_inbox_id: int | None = None,
 ) -> None:
     conn = sqlite3.connect(str(db_path))
-    conn.execute(
-        "UPDATE message_inbox SET processing_status = ?, updated_at = ? WHERE message_id = ?",
-        (status, _now_iso(), message_id),
-    )
+    if message_inbox_id:
+        conn.execute(
+            "UPDATE message_inbox SET processing_status = ?, updated_at = ? WHERE id = ?",
+            (status, _now_iso(), message_inbox_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE message_inbox SET processing_status = ?, updated_at = ? WHERE message_id = ?",
+            (status, _now_iso(), message_id),
+        )
     conn.commit()
     conn.close()
 
@@ -140,6 +146,7 @@ def run_workflow_task(
     task_type = rd["task_type"]
     task_status = rd["task_status"]
     message_id = rd["message_id"]
+    message_inbox_id = rd.get("message_inbox_id")
     input_json = json.loads(rd["input_json"]) if rd.get("input_json") else {}
     conn.close()
 
@@ -160,6 +167,11 @@ def run_workflow_task(
     try:
         if task_type == "jljg_departure_text_chain":
             result = _execute_jljg_departure(input_json, message_id, db_path=db, task_id=task_id)
+        elif task_type == "jiusan_departure_text_reconcile":
+            from sop_hub.sop.jiusan_departure_reconcile import (
+                reconcile_jiusan_departure_text,
+            )
+            result = reconcile_jiusan_departure_text(input_json, db_path=db)
         elif task_type == "create_release_batch":
             result = _execute_create_release_batch(input_json, message_id, db_path=db)
         elif task_type in ("chaoyang_inspection_chain",
@@ -223,7 +235,7 @@ def run_workflow_task(
     # 别把它误标 task_failed/skipped)
     if result.get("action") != "deferred":
         mi_status = MESSAGE_INBOX_STATUS_MAP.get(status, "task_failed")
-        _update_message_inbox_status(db, message_id, mi_status)
+        _update_message_inbox_status(db, message_id, mi_status, message_inbox_id)
 
     return {
         "task_id": task_id,

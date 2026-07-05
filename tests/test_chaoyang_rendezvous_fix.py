@@ -36,6 +36,68 @@ def test_send_idempotency_key_uses_car_set_not_only_batch_and_count():
     assert first != second_same_count
 
 
+def test_sent_same_car_set_event_detects_legacy_key_duplicate(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "t.db"
+    conn = sqlite3.connect(str(db))
+    conn.executescript("""
+    CREATE TABLE wagon_shipments (
+      batch_id TEXT, source_message_id TEXT, car_no TEXT
+    );
+    CREATE TABLE external_action_log (
+      id INTEGER PRIMARY KEY,
+      project_id TEXT,
+      action_type TEXT,
+      action_status TEXT,
+      message_id TEXT,
+      idempotency_key TEXT,
+      executed_at TEXT
+    );
+    """)
+    conn.executemany(
+        "INSERT INTO wagon_shipments VALUES (?,?,?)",
+        [
+            ("batch-1", "wx_old", "1000001"),
+            ("batch-1", "wx_old", "1000002"),
+            ("batch-1", "wx_old", "1000003"),
+            ("batch-1", "wx_other", "2000001"),
+            ("batch-1", "wx_other", "2000002"),
+            ("batch-1", "wx_other", "2000003"),
+        ],
+    )
+    conn.execute(
+        "INSERT INTO external_action_log VALUES (?,?,?,?,?,?,?)",
+        (
+            1,
+            "zhongtang_special_steel",
+            "send_shipping_excel_wechat",
+            "executed",
+            "wx_old",
+            "zhongtang_special_steel:send_shipping_excel_wechat:batches:batch-1:3",
+            "2026-07-04T19:20:10+08:00",
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    dup = w._find_sent_same_car_set_event(
+        db_path=db,
+        project_id="zhongtang_special_steel",
+        batch_specs=[("batch-1", ["1000003", "1000001", "1000002"])],
+    )
+    assert dup is not None
+    assert dup["source_message_id"] == "wx_old"
+    assert dup["external_action_log_id"] == 1
+
+    not_dup = w._find_sent_same_car_set_event(
+        db_path=db,
+        project_id="zhongtang_special_steel",
+        batch_specs=[("batch-1", ["2000001", "2000002", "2000003"])],
+    )
+    assert not_dup is None
+
+
 def test_query_filters_exclude_stale(tmp_path):
     """复现今早:matched/车数对不上/陈年 候选都不该被选;只选 新鲜+车数对的。"""
     import sqlite3

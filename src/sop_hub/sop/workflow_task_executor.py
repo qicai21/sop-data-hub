@@ -561,6 +561,71 @@ def _event_send_biz_key(
     return f"batches:{batch_key}:cars:{digest}:{wagon_count}"
 
 
+def _find_sent_same_car_set_event(
+    *,
+    db_path: Path | str,
+    project_id: str,
+    batch_specs: list[tuple[str, list[str] | None]],
+) -> dict[str, Any] | None:
+    """Find an already-sent physical event with the same batch/car set.
+
+    This is a migration-compatible guard for the 2026-07-04 idempotency-key
+    change. Older send logs used only `batch_id + wagon_count`; a delayed
+    duplicate candidate re-running after the key change would not hit the new
+    car-set digest. The durable physical identity is already in
+    wagon_shipments: same batch_id + exact same car_no set + an executed send for
+    that source_message_id means the event was sent.
+    """
+    expected: dict[str, set[str]] = {}
+    for batch_id, cars in batch_specs:
+        clean = {str(c).strip() for c in (cars or []) if str(c or "").strip()}
+        if batch_id and clean:
+            expected[str(batch_id)] = clean
+    if not expected:
+        return None
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        candidates: dict[str, dict[str, set[str]]] = {}
+        for batch_id, expected_cars in expected.items():
+            rows = conn.execute(
+                """SELECT source_message_id, car_no
+                   FROM wagon_shipments
+                   WHERE batch_id=? AND source_message_id IS NOT NULL
+                     AND source_message_id != ''""",
+                (batch_id,),
+            ).fetchall()
+            for r in rows:
+                src = str(r["source_message_id"] or "").strip()
+                car = str(r["car_no"] or "").strip()
+                if not src or not car:
+                    continue
+                candidates.setdefault(src, {}).setdefault(batch_id, set()).add(car)
+
+        for source_message_id, by_batch in candidates.items():
+            if any(by_batch.get(bid, set()) != cars for bid, cars in expected.items()):
+                continue
+            sent = conn.execute(
+                """SELECT id, idempotency_key, executed_at
+                   FROM external_action_log
+                   WHERE project_id=? AND action_type='send_shipping_excel_wechat'
+                     AND action_status='executed' AND message_id=?
+                   ORDER BY id DESC LIMIT 1""",
+                (project_id, source_message_id),
+            ).fetchone()
+            if sent:
+                return {
+                    "source_message_id": source_message_id,
+                    "external_action_log_id": sent["id"],
+                    "idempotency_key": sent["idempotency_key"],
+                    "executed_at": sent["executed_at"],
+                }
+    finally:
+        conn.close()
+    return None
+
+
 def _persist_authoritative_candidate_cars(
     conn: sqlite3.Connection,
     *,
@@ -1706,30 +1771,43 @@ def _execute_chaoyang_inspection_chain(
                         send_info = {"skipped": True, "idempotency_key": _idem,
                                      "reason": "该检装车单发运excel已发(幂等跳过)"}
                     else:
-                        from sop_hub.sop.send_excel import send_to_wechat
-                        target = _resolve_send_target(project_id)
-                        if not target:
-                            send_info = {"skipped": True, "reason": "no send_report target in yaml"}
+                        _same_event = _find_sent_same_car_set_event(
+                            db_path=db_path,
+                            project_id=project_id,
+                            batch_specs=_specs,
+                        )
+                        if _same_event:
+                            send_info = {
+                                "skipped": True,
+                                "idempotency_key": _idem,
+                                "reason": "同一批次同一组车号已发送(兼容旧幂等键)",
+                                "duplicate_of": _same_event,
+                            }
                         else:
-                            plan_external_action(
-                                db_path=db_path, workflow_task_id=task_id,
-                                message_id=message_id or "", project_id=project_id,
-                                action_type="send_shipping_excel_wechat",
-                                idempotency_key=_idem, target_system="wechat",
-                                artifact_path=_mb.output_path,
-                            )
-                            msg = (f"发运数据 {'+'.join(_ships)} 共{_mb.wagon_count}车"
-                                   f"(按批次分块,{len(_specs)}船)")
-                            sr = send_to_wechat(target=target, message=msg, file_path=_mb.output_path)
-                            if sr.success:
-                                mark_external_action_executed(
-                                    _idem, db_path=db_path,
-                                    response_json={"sent": True, "target": target},
-                                    artifact_path=_mb.output_path)
-                            send_info = {"skipped": False, "target": target, "message": msg,
-                                         "success": sr.success,
-                                         "output_tail": (sr.output or "")[-300:],
-                                         "error": sr.error, "idempotency_key": _idem}
+                            from sop_hub.sop.send_excel import send_to_wechat
+                            target = _resolve_send_target(project_id)
+                            if not target:
+                                send_info = {"skipped": True, "reason": "no send_report target in yaml"}
+                            else:
+                                plan_external_action(
+                                    db_path=db_path, workflow_task_id=task_id,
+                                    message_id=message_id or "", project_id=project_id,
+                                    action_type="send_shipping_excel_wechat",
+                                    idempotency_key=_idem, target_system="wechat",
+                                    artifact_path=_mb.output_path,
+                                )
+                                msg = (f"发运数据 {'+'.join(_ships)} 共{_mb.wagon_count}车"
+                                       f"(按批次分块,{len(_specs)}船)")
+                                sr = send_to_wechat(target=target, message=msg, file_path=_mb.output_path)
+                                if sr.success:
+                                    mark_external_action_executed(
+                                        _idem, db_path=db_path,
+                                        response_json={"sent": True, "target": target},
+                                        artifact_path=_mb.output_path)
+                                send_info = {"skipped": False, "target": target, "message": msg,
+                                             "success": sr.success,
+                                             "output_tail": (sr.output or "")[-300:],
+                                             "error": sr.error, "idempotency_key": _idem}
         except Exception as exc:
             send_info = {"skipped": False, "error": str(exc)}
 

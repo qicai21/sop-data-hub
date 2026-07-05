@@ -448,8 +448,14 @@ def create_wagon_shipments_from_candidates(
             _wcols = {r[1] for r in sop_conn.execute("PRAGMA table_info(wagon_shipments)")}
             if "loading_line" not in _wcols:
                 sop_conn.execute("ALTER TABLE wagon_shipments ADD COLUMN loading_line TEXT")
+            if "dispatch_train_code" not in _wcols:
+                sop_conn.execute("ALTER TABLE wagon_shipments ADD COLUMN dispatch_train_code TEXT")
+            sop_conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_wagon_shipments_dispatch_train_code "
+                "ON wagon_shipments(dispatch_train_code)"
+            )
         except Exception as _exc:
-            result.warnings.append(f"ensure loading_line column failed: {_exc}")
+            result.warnings.append(f"ensure wagon shipment extension columns failed: {_exc}")
 
         for plan in insert_plans:
             wagon_id = _gen_wagon_id(plan.ydid, release_batch_id)
@@ -557,6 +563,14 @@ def create_wagon_shipments_from_candidates(
                 sop_conn.commit()
         except Exception as exc:
             result.warnings.append(f"wagon_container_shipments dual-write failed: {exc}")
+
+        try:
+            from sop_hub.sop.dispatch_train_code import assign_dispatch_train_codes
+            train_res = assign_dispatch_train_codes(sop_conn)
+            if train_res.get("updated"):
+                sop_conn.commit()
+        except Exception as exc:
+            result.warnings.append(f"dispatch_train_code assignment failed: {exc}")
 
         # ── 10. Update release_batches progress ──────────────────────
         set_clauses = []

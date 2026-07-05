@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS wagon_container_shipments (
     freight_fee REAL NOT NULL DEFAULT 0,      -- 票面国铁运费(元)
     detail_json TEXT NOT NULL DEFAULT '{}',   -- 原始 95306/同步明细
     loading_line TEXT,                        -- 作业道线:七道/八道/煤五...
+    dispatch_train_code TEXT,                 -- 同列发车标识,跨 lot/船共用
 
     -- 项目元
     project_id TEXT,
@@ -80,6 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_wcs_batch ON wagon_container_shipments(batch_id);
 CREATE INDEX IF NOT EXISTS idx_wcs_car_ydid ON wagon_container_shipments(car_no, ydid);
 CREATE INDEX IF NOT EXISTS idx_wcs_project_ship ON wagon_container_shipments(project_id, ship_name);
 CREATE INDEX IF NOT EXISTS idx_wcs_stage ON wagon_container_shipments(latest_stage_key);
+CREATE INDEX IF NOT EXISTS idx_wcs_dispatch_train_code ON wagon_container_shipments(dispatch_train_code);
 """
 
 

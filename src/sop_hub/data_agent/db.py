@@ -504,10 +504,15 @@ def migrate_wagon_shipments_schema(connection: sqlite3.Connection) -> None:
         "source_group_id": "TEXT",
         # 2026-06-06 #111:跨 lot 拆箱 JSON map(NULL=整车按 batch_id 整划归)
         "container_batch_map": "TEXT",
+        "dispatch_train_code": "TEXT",
     }
     for field, type_def in new_fields.items():
         if field not in columns:
             connection.execute(f"ALTER TABLE wagon_shipments ADD COLUMN {field} {type_def}")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_wagon_shipments_dispatch_train_code "
+        "ON wagon_shipments(dispatch_train_code)"
+    )
     connection.commit()
 
 
@@ -546,6 +551,7 @@ def migrate_wagon_container_shipments_schema(connection: sqlite3.Connection) -> 
                 freight_fee REAL NOT NULL DEFAULT 0,
                 detail_json TEXT NOT NULL DEFAULT '{}',
                 loading_line TEXT,
+                dispatch_train_code TEXT,
                 project_id TEXT,
                 ship_name TEXT,
                 consignor TEXT,
@@ -566,10 +572,15 @@ def migrate_wagon_container_shipments_schema(connection: sqlite3.Connection) -> 
         "freight_fee": "REAL NOT NULL DEFAULT 0",
         "detail_json": "TEXT NOT NULL DEFAULT '{}'",
         "loading_line": "TEXT",
+        "dispatch_train_code": "TEXT",
     }
     for field, type_def in new_fields.items():
         if field not in columns:
             connection.execute(f"ALTER TABLE wagon_container_shipments ADD COLUMN {field} {type_def}")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_wcs_dispatch_train_code "
+        "ON wagon_container_shipments(dispatch_train_code)"
+    )
     connection.commit()
 
 

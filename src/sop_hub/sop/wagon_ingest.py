@@ -45,7 +45,7 @@ CANONICAL_COLUMNS = [
     "container_no", "waybill_no", "ydid", "czydid", "cargo_count",
     "transport_mode_code", "transport_mode_name", "project_id", "ship_name",
     "dispatch_status", "source_message_id", "source_group_id",
-    "loading_line", "hph", "created_at", "updated_at",
+    "loading_line", "hph", "dispatch_train_code", "created_at", "updated_at",
 ]
 
 # 落库后用这些字段在「已有行」上刷新 95306 状态(幂等 re-sync,保留 created_at)
@@ -269,6 +269,7 @@ def build_wagon_row(
         # 装车线路:调用方归一好传进来(canonicalize_loading_line),或 ticket 自带
         "loading_line": loading_line or (ticket.get("loading_line") or ""),
         "hph": extract_hph(ticket),   # 货票号(全项目必备,2026-06-17)
+        "dispatch_train_code": "",
         "created_at": now,
         "updated_at": now,
     }
@@ -284,6 +285,12 @@ def upsert_wagons(conn: sqlite3.Connection, rows: list[dict], batch_id: str) -> 
         conn.execute("ALTER TABLE wagon_shipments ADD COLUMN hph TEXT")
     if "trip_seq" not in _cols:
         conn.execute("ALTER TABLE wagon_shipments ADD COLUMN trip_seq INTEGER")
+    if "dispatch_train_code" not in _cols:
+        conn.execute("ALTER TABLE wagon_shipments ADD COLUMN dispatch_train_code TEXT")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_wagon_shipments_dispatch_train_code "
+        "ON wagon_shipments(dispatch_train_code)"
+    )
     existing = {r[0] for r in conn.execute(
         "SELECT id FROM wagon_shipments WHERE batch_id=?", (batch_id,))}
     new_n = 0
@@ -355,12 +362,15 @@ def ingest_wagons(
     try:
         new_n, ref_n = upsert_wagons(conn, rows, batch_id)
         trip_n = recompute_trip_seq(conn, batch_id)   # 列序号自愈重算
+        from sop_hub.sop.dispatch_train_code import assign_dispatch_train_codes
+        train_code_res = assign_dispatch_train_codes(conn, tables=("wagon_shipments",))
         conn.commit()
     finally:
         conn.close()
 
     out: dict = {"new": new_n, "refreshed": ref_n, "total": len(rows),
-                 "batch_id": batch_id, "trip_seq_rows": trip_n}
+                 "batch_id": batch_id, "trip_seq_rows": trip_n,
+                 "dispatch_train_code_rows": train_code_res.get("updated", 0)}
     if recompute:
         from sop_hub.sop.shipped_weight import compute_for_release_batch
         sw = compute_for_release_batch(batch_id, db_path=db_path)

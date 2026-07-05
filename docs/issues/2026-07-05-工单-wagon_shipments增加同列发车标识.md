@@ -1,5 +1,7 @@
 # 2026-07-05 工单 - wagon_shipments 增加同列发车标识
 
+状态：已完成
+
 ## 背景
 
 `fee_manager` 在制作中唐 2026 年 6 月辅助作业审核分配表时发现：费用侧需要按“每一列车”生成审核分项，但当前 `sop_agent.db.wagon_shipments` 没有稳定的同列标识，只能临时根据 `ticketed_at / ydid / hph / loaded_at / departed_at` 推断列边界。
@@ -80,3 +82,30 @@
 - `fee_manager` 当前临时用 `ticketed_at / ydid / hph` 推断列边界。
 - 本工单落地后，`fee_manager` 应同步调整为读取 `dispatch_train_code`。
 - 费用审核分配表、对账单、现场确认单将以该字段作为最小列级结算单元锚点。
+
+## 处理记录
+
+2026-07-05：
+
+1. 新增 `src/sop_hub/sop/dispatch_train_code.py`，统一负责同列发车标识：
+   - 优先按 `source_message_id` 合并同一实际发车列，允许跨 `release_batch / ship_name`。
+   - 无来源消息的历史行保守回落到 `project_id + 日期 + batch_id + 道线 + 到站`。
+   - 编码格式按项目短码 + 日期 + 当日列序号，例如 `gqz2606271`。
+2. `wagon_shipments` 与 `wagon_container_shipments` 均新增 `dispatch_train_code` 字段和索引。
+3. 新发运入库链路自动补码：
+   - `wagon_ingest.ingest_wagons`
+   - `create_wagon_shipments_from_candidates`
+4. 新增历史回填脚本：
+   - `scripts/backfill_dispatch_train_code.py`
+5. 已对真实库执行回填：
+   - `wagon_shipments`: 12137 行，缺失 0 行
+   - `wagon_container_shipments`: 8250 行，缺失 0 行
+6. 验收样例：
+   - `2026-06-06` 鞍子河 52 车：`gqz2606061`
+   - `2026-06-23` 贝拉 48 车：`gqz2606231`
+   - `2026-06-27` 丰收散运 50 车 + 贝拉 3 车：共用 `gqz2606271`
+   - `2026-06-28` 丰收散运 60 车：`gqz2606281`
+   - `2026-06-28` 丰收散运 55 车：`gqz2606282`
+7. 测试：
+   - `.venv/bin/python -m pytest tests/test_dispatch_train_code.py tests/functional/test_wagon_ingest.py tests/test_r82_contract_fee_schema.py tests/functional/test_e2e_jilin_lanqi_50cars.py -q`
+   - 12 passed

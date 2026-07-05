@@ -109,3 +109,37 @@
 7. 测试：
    - `.venv/bin/python -m pytest tests/test_dispatch_train_code.py tests/functional/test_wagon_ingest.py tests/test_r82_contract_fee_schema.py tests/functional/test_e2e_jilin_lanqi_50cars.py -q`
    - 12 passed
+
+## 复盘修正
+
+2026-07-05 用户复核中唐全量列统计时指出：早期历史数据出现大量“一车一号”，不符合“相近制票时间视为一列”的业务口径。
+
+根因：
+
+1. 历史补录数据中存在 `backfill_remaining|...|货票号` 这类逐票 `source_message_id`，不能作为整列锚点。
+2. 也存在 `xichi_xlsx_backfill_20260612`、`backfill_联合_...` 这类整批 Excel 回填 source/group，跨度可能覆盖多天或多批次，也不能作为整列锚点。
+3. 初版逻辑过度信任 source/group，导致两类错误：
+   - 逐票 source 被拆成一车一号。
+   - 批量 backfill source 被合成超大列。
+
+修正口径：
+
+1. `source_message_id` 含 `backfill` 时，一律视为非可靠整列来源。
+2. 非可靠 backfill 来源同时忽略 `source_group_id`。
+3. 非可靠来源按 `project_id + batch_id + 日期 + 作业线路 + 到站` 分桶，再按相近 `ticketed_at` 聚类。
+4. 时间聚类同时限制：
+   - 相邻票最大间隔：30 分钟。
+   - 单簇最大跨度：60 分钟。
+5. 真实微信发车/检装车来源仍允许跨 `release_batch / ship_name` 合并同一实际列。
+
+复核结果：
+
+- 中唐全量列统计：185 列，7176 车。
+- 中唐 2026 年 6 月至今：15 列，697 车。
+- `2026-01-07` 非凡：51 车合并为 `gqz2601071`。
+- `2026-06-27` 丰收散运 50 车 + 贝拉 3 车：仍共用 `gqz2606271`。
+- `2026-07-04` 宝丽两列 53 车：分别为 `gqz2607041` 与 `gqz2607042`。
+
+补充测试：
+
+- `tests/test_dispatch_train_code.py` 增加 backfill 逐票 source 按相近制票时间聚类的回归测试。

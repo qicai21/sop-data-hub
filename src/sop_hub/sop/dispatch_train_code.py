@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Iterable
 
 
@@ -35,6 +36,7 @@ class TrainRow:
     destination_name: str
     event_date: str
     event_time: str
+    event_dt: datetime | None
     existing_code: str
 
 
@@ -79,17 +81,40 @@ def ensure_dispatch_train_schema(conn: sqlite3.Connection) -> None:
         )
 
 
-def _first_date(*values: str) -> tuple[str, str]:
+def _parse_dt(value: str) -> datetime | None:
+    value = (value or "").strip()
+    if not value:
+        return None
+    m = re.search(
+        r"(20\d{2})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?",
+        value,
+    )
+    if m:
+        y, mo, d, hh, mm, ss = m.groups()
+        return datetime(
+            int(y),
+            int(mo),
+            int(d),
+            int(hh or 0),
+            int(mm or 0),
+            int(ss or 0),
+        )
+    m = re.fullmatch(r"(20\d{2})(\d{2})(\d{2})", value)
+    if m:
+        y, mo, d = m.groups()
+        return datetime(int(y), int(mo), int(d))
+    return None
+
+
+def _first_date(*values: str) -> tuple[str, str, datetime | None]:
     for value in values:
         value = (value or "").strip()
         if not value:
             continue
-        m = re.search(r"(20\d{2})[-/](\d{1,2})[-/](\d{1,2})", value)
-        if m:
-            y, mo, d = m.groups()
-            date = f"{y}-{int(mo):02d}-{int(d):02d}"
-            return date, value
-    return "1970-01-01", ""
+        dt = _parse_dt(value)
+        if dt:
+            return dt.date().isoformat(), value, dt
+    return "1970-01-01", "", None
 
 
 def _code_date(date: str) -> str:
@@ -119,20 +144,36 @@ def _project_prefix(project_id: str) -> str:
     return (letters[:3] or "prj")
 
 
-def _group_key(row: TrainRow) -> str:
-    if row.source_message_id:
-        return f"src:{row.project_id}:{row.source_message_id}"
-    if row.source_group_id:
-        return f"group:{row.project_id}:{row.source_group_id}:{row.event_date}"
-    parts = [
-        "batch",
+def _is_reliable_train_source(source_message_id: str) -> bool:
+    source = (source_message_id or "").strip()
+    if not source:
+        return False
+    # Legacy/manual backfills often stamped one source per waybill, e.g.
+    # `backfill_remaining|非凡|GZDZW0438945`; those are not train-level sources.
+    if "backfill" in source.lower():
+        return False
+    return True
+
+
+def _static_group_key(row: TrainRow) -> str:
+    return ":".join([
+        "time",
         row.project_id,
         row.event_date,
         row.batch_id,
         row.loading_line,
         row.destination_name,
-    ]
-    return ":".join(parts)
+    ])
+
+
+def _group_key(row: TrainRow) -> str | None:
+    if row.source_message_id and not _is_reliable_train_source(row.source_message_id):
+        return None
+    if row.source_message_id:
+        return f"src:{row.project_id}:{row.source_message_id}"
+    if row.source_group_id:
+        return f"group:{row.project_id}:{row.source_group_id}:{row.event_date}"
+    return None
 
 
 def _iter_rows(conn: sqlite3.Connection, tables: Iterable[str]) -> list[TrainRow]:
@@ -161,10 +202,12 @@ def _iter_rows(conn: sqlite3.Connection, tables: Iterable[str]) -> list[TrainRow
         ]
         query = f"SELECT {', '.join(select_cols)} FROM {table}"
         for r in conn.execute(query):
-            date, event_time = _first_date(
+            date, event_time, event_dt = _first_date(
+                # Same-train boundaries are defined by nearby ticketing time;
+                # date-only loaded/departed fields must not override it.
+                r["ticketed_at"],
                 r["departed_at"],
                 r["loaded_at"],
-                r["ticketed_at"],
                 r["accepted_at"],
                 r["created_at"],
             )
@@ -183,10 +226,74 @@ def _iter_rows(conn: sqlite3.Connection, tables: Iterable[str]) -> list[TrainRow
                     destination_name=(r["destination_name"] or "").strip(),
                     event_date=date,
                     event_time=event_time,
+                    event_dt=event_dt,
                     existing_code=(r["dispatch_train_code"] or "").strip(),
                 )
             )
     return rows
+
+
+def _build_groups(
+    rows: list[TrainRow],
+    *,
+    max_gap_minutes: int,
+    max_span_minutes: int,
+) -> dict[str, TrainGroup]:
+    groups: dict[str, TrainGroup] = {}
+    temporal_rows: list[TrainRow] = []
+    for row in rows:
+        key = _group_key(row)
+        if key is None:
+            temporal_rows.append(row)
+            continue
+        _add_to_group(groups, key, row)
+
+    buckets: dict[str, list[TrainRow]] = {}
+    for row in temporal_rows:
+        buckets.setdefault(_static_group_key(row), []).append(row)
+
+    for bucket_key, bucket_rows in buckets.items():
+        bucket_rows.sort(key=lambda r: (r.event_dt or datetime.min, r.event_time, r.row_id))
+        cluster_no = 0
+        last_dt: datetime | None = None
+        cluster_start_dt: datetime | None = None
+        for row in bucket_rows:
+            should_start = (
+                last_dt is None
+                or row.event_dt is None
+                or (row.event_dt - last_dt).total_seconds() > max_gap_minutes * 60
+                or (
+                    cluster_start_dt is not None
+                    and (row.event_dt - cluster_start_dt).total_seconds() > max_span_minutes * 60
+                )
+            )
+            if should_start:
+                cluster_no += 1
+                cluster_start_dt = row.event_dt
+            key = f"{bucket_key}:cluster:{cluster_no}"
+            _add_to_group(groups, key, row)
+            if row.event_dt is not None:
+                last_dt = row.event_dt
+    return groups
+
+
+def _add_to_group(groups: dict[str, TrainGroup], key: str, row: TrainRow) -> None:
+    g = groups.get(key)
+    if g is None:
+        g = TrainGroup(
+            project_id=row.project_id,
+            event_date=row.event_date,
+            group_key=key,
+            min_time=row.event_time,
+        )
+        groups[key] = g
+    if row.event_time and (not g.min_time or row.event_time < g.min_time):
+        g.min_time = row.event_time
+    if row.event_date < g.event_date:
+        g.event_date = row.event_date
+    if row.existing_code:
+        g.existing_codes.append(row.existing_code)
+    g.rows.append(row)
 
 
 def assign_dispatch_train_codes(
@@ -194,43 +301,33 @@ def assign_dispatch_train_codes(
     *,
     tables: Iterable[str] = TABLES,
     overwrite: bool = False,
+    max_gap_minutes: int = 30,
+    max_span_minutes: int = 60,
 ) -> dict[str, int]:
     """Fill `dispatch_train_code` for existing wagon rows.
 
     Priority:
-    1. Same `source_message_id` = same physical departure train, even across
-       release batches or ship names.
+    1. Reliable same `source_message_id` = same physical departure train, even
+       across release batches or ship names.
     2. Existing code on any row in that group is preserved and propagated.
-    3. Missing-source legacy rows fall back to a conservative batch/date group.
+    3. Missing/unreliable-source legacy rows fall back to nearby ticket time
+       clustering within a project/date/destination/loading-line bucket.
     """
     conn.row_factory = sqlite3.Row
     ensure_dispatch_train_schema(conn)
     rows = _iter_rows(conn, tables)
 
-    groups: dict[str, TrainGroup] = {}
-    for row in rows:
-        key = _group_key(row)
-        g = groups.get(key)
-        if g is None:
-            g = TrainGroup(
-                project_id=row.project_id,
-                event_date=row.event_date,
-                group_key=key,
-                min_time=row.event_time,
-            )
-            groups[key] = g
-        if row.event_time and (not g.min_time or row.event_time < g.min_time):
-            g.min_time = row.event_time
-        if row.event_date < g.event_date:
-            g.event_date = row.event_date
-        if row.existing_code:
-            g.existing_codes.append(row.existing_code)
-        g.rows.append(row)
+    groups = _build_groups(
+        rows,
+        max_gap_minutes=max_gap_minutes,
+        max_span_minutes=max_span_minutes,
+    )
 
     used_by_day: dict[tuple[str, str], set[str]] = {}
-    for g in groups.values():
-        for code in g.existing_codes:
-            used_by_day.setdefault((g.project_id, g.event_date), set()).add(code)
+    if not overwrite:
+        for g in groups.values():
+            for code in g.existing_codes:
+                used_by_day.setdefault((g.project_id, g.event_date), set()).add(code)
 
     updates = 0
     by_day: dict[tuple[str, str], list[TrainGroup]] = {}

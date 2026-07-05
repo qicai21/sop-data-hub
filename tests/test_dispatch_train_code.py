@@ -131,3 +131,49 @@ def test_existing_code_is_preserved_and_propagated(tmp_path):
         for row in conn.execute("SELECT id, dispatch_train_code FROM wagon_shipments")
     }
     assert codes == {"w1": "cg2607013", "w2": "cg2607013"}
+
+
+def test_backfill_per_waybill_sources_cluster_by_nearby_ticket_time(tmp_path):
+    _, conn = _make_db(tmp_path)
+    rows = []
+    for index in range(1, 5):
+        rows.append(
+            (
+                f"w{index}",
+                "zhongtang_special_steel",
+                "B1",
+                f"backfill_remaining|非凡|GZDZW04389{index}",
+                f"2026-01-07 12:13:0{index}",
+                f"gqz260107{index}",
+            )
+        )
+    rows.append(
+        (
+            "w5",
+            "zhongtang_special_steel",
+            "B1",
+            "backfill_remaining|非凡|GZDZW0438999",
+            "2026-01-07 15:20:00",
+            "gqz2601075",
+        )
+    )
+    conn.execute("ALTER TABLE wagon_shipments ADD COLUMN dispatch_train_code TEXT")
+    conn.executemany(
+        """
+        INSERT INTO wagon_shipments (
+            id, project_id, batch_id, source_message_id, ticketed_at, dispatch_train_code
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+
+    assign_dispatch_train_codes(conn, overwrite=True, max_gap_minutes=30)
+
+    codes = {
+        row[0]: row[1]
+        for row in conn.execute(
+            "SELECT id, dispatch_train_code FROM wagon_shipments ORDER BY id"
+        )
+    }
+    assert codes["w1"] == codes["w2"] == codes["w3"] == codes["w4"] == "gqz2601071"
+    assert codes["w5"] == "gqz2601072"

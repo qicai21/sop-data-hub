@@ -139,6 +139,15 @@ def test_morning_report_matching_header_day_uses_cutoff_date():
     assert warn == ""
 
 
+def test_dashboard_cargo_label_prefers_specific_product_name():
+    import cli_dashboard as dashboard
+
+    assert dashboard._display_cargo_name({
+        "cargo_name": "铁矿粉",
+        "cargo_product_name": "混合粉",
+    }) == "混合粉"
+
+
 def test_concurrent_returns_summed_not_overwritten():
     # 两列同时到站(互不 supersede)且均<5h → 返空箱**求和**(根治旧版覆盖只剩末列的 bug)
     st = _state({

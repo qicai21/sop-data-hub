@@ -67,6 +67,19 @@ SPLIT_PLANS = {
     ],
 }
 
+SHIP_CARGO_PRODUCTS = {
+    # cargo_name=货物品类/匹配类别; cargo_product_name=具体货物品名/展示用。
+    "环球信任": "混合粉",
+}
+
+
+def cargo_category_for_ship(ship: str) -> str:
+    return "铁矿粉"
+
+
+def cargo_product_for_ship(ship: str) -> str:
+    return SHIP_CARGO_PRODUCTS.get(ship, "铁矿粉")
+
 
 def split_ship(conn, ship):
     """对单船拆 lot。返回 (lot_id_list, summary)。"""
@@ -115,12 +128,13 @@ def split_ship(conn, ship):
     conn.execute("""
       UPDATE release_batches SET
         plan_id=?, notice_date=?, batch_date=?, batch_key=?,
+        cargo_name=?, cargo_product_name=?,
         actual_wagon_count=?, batch_quantity=?, total_planned_quantity=?,
-        commissioner_note=?, updated_at=datetime('now')
+        commissioner_note=NULL, updated_at=datetime('now')
       WHERE id=?
     """, (plan_id_0, ds_0, ds_0, new_key_0,
+          cargo_category_for_ship(ship), cargo_product_for_ship(ship),
           len(bucket_0), total_w0, total_w0,
-          f"待补充:大船+合同 (plan_id 已挂)",
           lot01_id))
     actions.append(f"  lot01 -> plan={plan_id_0} | {len(bucket_0)} 车 | {ds_0}")
 
@@ -146,7 +160,7 @@ def split_ship(conn, ship):
             is_weighed, updated_at
           )
           SELECT
-            ?, ?, project, ship_name, cargo_name, cargo_product_name,
+            ?, ?, project, ship_name, ?, ?,
             consignor, consignee,
             ?, destination_station, origin_station,
             ?, ?, ?, ?, ?, 1, ?,
@@ -155,7 +169,8 @@ def split_ship(conn, ship):
             is_weighed, datetime('now')
           FROM release_batches WHERE id=?
         """, (new_id, new_key,
-              "待补充:大船+合同 (plan_id 已挂)",
+              cargo_category_for_ship(ship), cargo_product_for_ship(ship),
+              None,
               ds, ds, seq, total_w, total_w, len(bucket),
               plan_id, lot01_id))
         # 重链 wagon

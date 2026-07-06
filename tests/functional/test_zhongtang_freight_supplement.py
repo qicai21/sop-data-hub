@@ -159,7 +159,7 @@ def test_enrich_only_open_batches_considered(tmp_path: Path):
     assert res["status"] == "suspended"
 
 
-def test_executor_retries_zhongtang_freight_after_batch_becomes_ready(tmp_path: Path):
+def test_executor_retries_zhongtang_freight_after_batch_becomes_ready(tmp_path: Path, monkeypatch):
     """回归 2026-06-27 工单:
     首次货运补充消息早到、批次未到可匹配态时应返回 pending;
     后续批次就绪后重跑同任务,应自动填入计划号/合同号并推进到 enriched。
@@ -175,6 +175,10 @@ def test_executor_retries_zhongtang_freight_after_batch_becomes_ready(tmp_path: 
     conn.close()
 
     from sop_hub.sop.workflow_task_executor import _execute_freight_detail_enrichment
+    monkeypatch.setattr(
+        "sop_hub.sop.send_excel.send_to_wechat",
+        lambda *a, **kw: None,
+    )
 
     input_json = {
         "text_content": SAMPLE_FENGSHOU,

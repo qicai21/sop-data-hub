@@ -1694,6 +1694,13 @@ def _execute_chaoyang_inspection_chain(
         except Exception as exc:
             sw = {"ok": False, "error": str(exc)}
 
+        lifecycle_loading_info = _advance_loading_after_wagon_ingest(
+            matched_batch_id,
+            project_id=project_id,
+            db_path=db_path,
+            actual_in_db_count=db_count,
+        )
+
         # ── 6. Generate excel ─────────────────────────────────────
         # excel 只导出"本次单子"的车号,不是 batch 历史累计。
         try:
@@ -1872,7 +1879,11 @@ def _execute_chaoyang_inspection_chain(
         # shipped_is_completed 模式(朝阳钢铁)且本批已发满 → 立刻关 batch。
         # full_track_to_received 模式(吉林/中唐/九三)留 in_progress,
         # 等 95306 到货 daemon 后续标 confirmed_received 再关。
-        lifecycle_info: dict[str, Any] = {"mode": "", "closed_now": False}
+        lifecycle_info: dict[str, Any] = {
+            "mode": "",
+            "closed_now": False,
+            "loading_advance": lifecycle_loading_info,
+        }
         try:
             mode = _resolve_lifecycle_mode(project_id)
             lifecycle_info["mode"] = mode
@@ -2001,6 +2012,35 @@ def _resolve_lifecycle_mode(project_id: str) -> str:
     if mode in ("shipped_is_completed", "full_track_to_received"):
         return mode
     return "full_track_to_received"
+
+
+def _advance_loading_after_wagon_ingest(
+    release_batch_id: str,
+    *,
+    project_id: str,
+    db_path: str | Path,
+    actual_in_db_count: int,
+) -> dict[str, Any]:
+    """Advance a batch to loading once the inspection chain has wagon facts.
+
+    中唐/朝钢检装车链路不是通用 executor_runner,所以车列入库后需要在这里补上
+    `enriched -> loading` 的生命周期推进。pending_freight 仍由上游货运信息闸挡住;
+    更后状态交给 advance_lifecycle 做 noop/rejected,避免回退。
+    """
+    if actual_in_db_count <= 0:
+        return {"skipped": True, "reason": "no_wagon_facts_in_db"}
+    try:
+        from sop_hub.sop.lifecycle_transition import advance_lifecycle
+
+        return advance_lifecycle(
+            release_batch_id,
+            "loading",
+            reason=f"{project_id} inspection chain wagon facts ingested",
+            triggered_by=f"{project_id}.inspection_chain",
+            db_path=str(db_path),
+        )
+    except Exception as exc:
+        return {"action": "error", "error": str(exc)}
 
 
 

@@ -50,7 +50,16 @@ def _mk_db(db_path: Path, batches: list[dict]) -> None:
             project TEXT, ship_name TEXT, import_ship_name TEXT,
             cargo_name TEXT, cargo_product_name TEXT,
             contract_no TEXT, plan_id TEXT, order_identifier TEXT,
-            batch_sequence TEXT, dispatch_status TEXT, updated_at TEXT )"""
+            batch_sequence TEXT, dispatch_status TEXT,
+            dispatch_status_note TEXT, dispatch_status_updated_at TEXT,
+            updated_at TEXT )"""
+    )
+    conn.execute(
+        """CREATE TABLE message_inbox (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id TEXT,
+            created_at TEXT
+        )"""
     )
     for i, b in enumerate(batches):
         conn.execute(
@@ -148,3 +157,57 @@ def test_enrich_only_open_batches_considered(tmp_path: Path):
                  "dispatch_status": "confirmed_received"}])
     res = enrich_zt(extract_zhongtang_freight_supplement(SAMPLE_ANZIHE), apply=True, db_path=db)
     assert res["status"] == "suspended"
+
+
+def test_executor_retries_zhongtang_freight_after_batch_becomes_ready(tmp_path: Path):
+    """回归 2026-06-27 工单:
+    首次货运补充消息早到、批次未到可匹配态时应返回 pending;
+    后续批次就绪后重跑同任务,应自动填入计划号/合同号并推进到 enriched。
+    """
+    db = tmp_path / "t.db"
+    _mk_db(db, [])
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "INSERT INTO message_inbox (message_id, created_at) VALUES (?, ?)",
+        ("wx_retry_zt_1", "2026-07-06 11:35:00+08:00"),
+    )
+    conn.commit()
+    conn.close()
+
+    from sop_hub.sop.workflow_task_executor import _execute_freight_detail_enrichment
+
+    input_json = {
+        "text_content": SAMPLE_FENGSHOU,
+        "group_name": "中唐特钢发运群",
+        "sop_project_id": "zhongtang_special_steel",
+    }
+    first = _execute_freight_detail_enrichment(
+        input_json, "wx_retry_zt_1", db_path=db,
+    )
+    assert first["status"] == "pending"
+    assert first["action"] == "waiting_match"
+    assert first["output_json"]["waiting_reason"] in (
+        "通知单/批次未到",
+        "对不上在途船(待批次就绪)",
+    )
+
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "INSERT INTO release_batches (id, batch_key, project, ship_name, cargo_name, "
+        "plan_id, batch_sequence, dispatch_status) VALUES (?,?,?,?,?,?,?,?)",
+        ("b1", "k1", "zhongtang_special_steel", "丰收散运", "铁矿粉", "", "lot08", "pending_freight"),
+    )
+    conn.commit()
+    conn.close()
+
+    second = _execute_freight_detail_enrichment(
+        input_json, "wx_retry_zt_1", db_path=db,
+    )
+    assert second["status"] == "succeeded"
+    assert second["action"] == "executed"
+
+    row = _row(db, "b1")
+    assert row["plan_id"] == "90260500008"
+    assert row["contract_no"] == "ZLZT-2026050801"
+    assert row["cargo_product_name"] == "纽曼粉"
+    assert row["dispatch_status"] == "enriched"

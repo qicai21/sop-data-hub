@@ -43,3 +43,21 @@ def tmp_db(tmp_path: Path):
     os.environ["BUSINESS_DATA_AGENT_DB_PATH"] = str(db_path)
     yield db_path
     os.environ.pop("BUSINESS_DATA_AGENT_DB_PATH", None)
+
+
+@pytest.fixture(autouse=True)
+def _block_real_wechat_send(monkeypatch):
+    """Default safety rail: tests must not send real WeChat messages.
+
+    Individual tests can still override this monkeypatch when they need to
+    inspect call parameters or emulate failures.
+    """
+
+    class _FakeSendResult:
+        success = True
+        error = ""
+
+    monkeypatch.setattr(
+        "sop_hub.sop.send_excel.send_to_wechat",
+        lambda *a, **kw: _FakeSendResult(),
+    )

@@ -242,6 +242,32 @@ class TestBusinessDataAgent:
 
     def test_sop_authorized_inspection_is_not_blocked_by_unmanaged_flow_gate(self, tmp_db):
         agent = BusinessDataAgent()
+        agent.db.execute(
+            """
+            INSERT INTO release_dispatch_match_rules (
+              id, release_batch_id, project, ship_name, destination_station,
+              cargo_name, matching_str, matching_tokens_json, status, priority
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "rule-managed-xizi-authorized",
+                "batch-managed-xizi-authorized",
+                "zhongtang_special_steel",
+                "宝丽",
+                "汐子",
+                "铁矿",
+                "zhongtang_special_steel 宝丽 汐子 铁矿 lot01",
+                json.dumps({
+                    "ship": ["宝丽"],
+                    "destination": ["汐子"],
+                    "cargo": ["铁矿", "铁矿粉", "铁"],
+                    "all": ["zhongtang_special_steel", "宝丽", "汐子", "铁矿", "lot01"],
+                }, ensure_ascii=False),
+                "active",
+                100,
+            ),
+        )
+        agent.db.commit()
         payload = {
             "is_inspection": True,
             "_agent_sop_authorized": True,
@@ -266,6 +292,35 @@ class TestBusinessDataAgent:
         assert res["status"] != "ignored"
         assert res["reason"] != "ignored_unmanaged_inspection_flow"
         assert count == 1
+
+    def test_sop_authorized_unmanaged_flow_is_ignored(self, tmp_db):
+        agent = BusinessDataAgent()
+        payload = {
+            "is_inspection": True,
+            "_agent_sop_authorized": True,
+            "project": "jilin_jingang_jinzhou",
+            "rows": [
+                {"seq": 1, "car_no": "1718247", "cargo_info_raw": "乌兰浩特铁矿粉"},
+                {"seq": 2, "car_no": "1585311", "cargo_info_raw": "沈阳盛京颐昇代"},
+                {"seq": 3, "car_no": "1554910", "cargo_info_raw": "春日莲花"},
+                {"seq": 4, "car_no": "1500583", "cargo_info_raw": "41节"},
+            ],
+            "meta": {"daoxian": "煤五", "jieshu": 44},
+            "footer": {"zhuangche_jieshu": 41, "paiche_jieshu": 3},
+        }
+
+        res = agent.ingest_inspection_payload(
+            payload,
+            source_file_name="wugang_spring_lotus_authorized.jpg",
+            group_name="铁晟业务工作群",
+        )
+        count = agent.db.execute(
+            "SELECT COUNT(*) FROM inspection_ingestion_candidates"
+        ).fetchone()[0]
+
+        assert res["status"] == "ignored"
+        assert res["reason"] == "ignored_unmanaged_inspection_flow"
+        assert count == 0
 
     def test_inspection_candidate_uses_existing_pending_image_path(self, tmp_db, tmp_path):
         agent = BusinessDataAgent()

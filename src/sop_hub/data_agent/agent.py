@@ -1149,6 +1149,9 @@ class BusinessDataAgent:
         return [item for item in variants if item]
 
     def _text_has_managed_inspection_flow(self, text: str) -> bool:
+        for bad, good in STATION_OCR_CORRECTIONS.items():
+            if bad in text:
+                text = text.replace(bad, good)
         rows = self.db.execute(
             """
             SELECT destination_station, cargo_name
@@ -1190,8 +1193,6 @@ class BusinessDataAgent:
         release rules / open release batches, keep the candidate path; otherwise
         ignore it instead of hanging a pending review candidate.
         """
-        if payload.get("_agent_sop_authorized") is True:
-            return False
         text = _inspection_payload_text(payload)
         if self._text_has_managed_inspection_flow(text):
             return False

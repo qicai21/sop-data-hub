@@ -57,3 +57,44 @@
   - `_pending` JSON 反推真实图片路径；
   - 原有 unmatched split group 丢弃逻辑仍通过。
 - 当前 `inspection_ingestion_candidates` 中已无 `pending_review` 候选。
+
+## 2026-07-06 复发与补强
+
+复发样例：
+
+- message_id: `wx_2026-07_502`
+- 群：`铁晟业务工作群`
+- 图片：`646_b1e2904b4c42c5916f15cc0e58bb7939.jpg`
+- 解析内容：`乌兰浩特铁矿粉 / 沈阳盛京颐昇代 / 春日莲花 / 41节`，排车 3 节，总 44 车。
+
+复发原因：
+
+- `春日莲花` 因历史 lot01 属于吉林金钢，仍在 `jilin_jingang_jinzhou` 的 `known_ships` 中。
+- 图片项目推断阶段按 known ship 将整张检装车单授权给吉林金钢。
+- 入候选阶段旧逻辑遇到 `_agent_sop_authorized=True` 时直接绕过未受管流向闸，导致 `乌兰浩特铁矿粉` 这类非当前 SOP 流向仍进入 `pending_review`。
+
+补强：
+
+1. 删除 `_agent_sop_authorized=True` 对未受管流向闸的绕行。
+2. 受管流向判断前先应用 `STATION_OCR_CORRECTIONS`，保证 `沙子铁矿粉` 等汐子 OCR 误读仍能命中中唐受管流向，不会被误忽略。
+3. 增加回归测试：
+   - 已授权但 `乌兰浩特铁矿粉/春日莲花` 未命中受管流向时必须 `ignored_unmanaged_inspection_flow`。
+   - 已授权且 `沙子铁矿粉/宝丽` 命中汐子受管规则时不能被误忽略。
+
+数据修正：
+
+- 候选 `9a3533d4cb0b096ce0c1304105be7930e1356a9f` 已改为：
+  - `status=ignored`
+  - `candidate_status=ignored_non_sop`
+  - `reason=ignored_unmanaged_inspection_flow`
+  - `source_image_path=/Users/qicai21/Documents/bussiness-artifacts/wechat_images/_pending/2026-07/images/646_b1e2904b4c42c5916f15cc0e58bb7939.jpg`
+- `message_inbox.wx_2026-07_502` 已改为：
+  - `processing_status=ignored`
+  - `summary=[ignored_unmanaged_inspection_flow] 乌兰浩特铁矿粉/春日莲花检装车未命中当前受管流向`
+  - 图片路径回写到真实 `_pending` 路径。
+
+验证：
+
+- `.venv/bin/python -m pytest tests/test_data_agent.py tests/test_sop_project_inference.py -q`
+- 42 passed
+- 当前 `inspection_ingestion_candidates` 中已无 `pending_review` 候选。

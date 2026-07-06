@@ -20,6 +20,7 @@ import os
 import re
 import sqlite3
 import sys
+from datetime import datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -37,8 +38,12 @@ CONTAINER_BATCH = "e96f4b3b83c74b4891c6b0957f6989bb827de45b"  # 和谐1 集装�
 
 
 # ── 1. 拉最新晨报(GROUP093 微信原始库)──────────────────────────────────
-def pull_latest_morning_report() -> tuple[str, str] | None:
-    """返回 (日, 正文) of 最新晨报,无则 None。锚点 截止N日 + 装车情况。"""
+def pull_latest_morning_report() -> tuple[str, str, str] | None:
+    """返回 (截止日号, 正文, 微信发送日期) of 最新晨报,无则 None。
+
+    锚点 截止N日 + 装车情况。微信发送日期用于兜底:现场晨报表头偶发忘改日号,
+    不能让当日快照被昨日已存在记录幂等挡住。
+    """
     sys.path.insert(0, str(WX_AGENT / "src"))
     from wechat_ops_agent.db.query import query_contact_messages  # noqa: E402
     keys = json.loads(WX_KEYS.read_text())
@@ -65,7 +70,30 @@ def pull_latest_morning_report() -> tuple[str, str] | None:
                     best = (ct, mt.group(1), c)
     if not best:
         return None
-    return best[1], best[2]
+    msg_date = datetime.fromtimestamp(best[0]).strftime("%Y-%m-%d")
+    return best[1], best[2], msg_date
+
+
+def resolve_snapshot_date(cutoff_day: str, message_date: str) -> tuple[str, str]:
+    """Resolve snapshot_date and return (date, warning).
+
+    正常晨报:微信发送日期与正文"截止N日"同一天,按截止日记。
+    异常晨报:表头日号忘改,但微信发送日期已经是新一天,按消息日期记并留审计说明。
+    """
+    msg_date = datetime.strptime(message_date[:10], "%Y-%m-%d")
+    day = int(cutoff_day)
+    try:
+        cutoff_date = msg_date.replace(day=day)
+    except ValueError:
+        return message_date[:10], (
+            f"⚠ 晨报截止日号{cutoff_day}无法拼入消息月份,已按微信发送日期{message_date[:10]}记账。"
+        )
+    if cutoff_date.date() != msg_date.date():
+        return message_date[:10], (
+            f"⚠ 晨报表头写截止{cutoff_day}日,微信发送日期为{message_date[:10]},"
+            f"已按发送日期记账。"
+        )
+    return cutoff_date.strftime("%Y-%m-%d"), ""
 
 
 # ── 2. 解析晨报箱节点 ──────────────────────────────────────────────────
@@ -118,14 +146,14 @@ def main(apply: bool = False, dry_run: bool = False) -> None:
     if not rep:
         print("✗ GROUP093 没拉到晨报")
         return
-    day, text = rep
+    day, text, message_date = rep
     nodes = parse_report(text)
     conn = sqlite3.connect(str(SOP_DB))
     transit_empty, pool = compute_returns_and_pool(conn)
     conn.close()
 
     from sop_hub.utils.time import now_iso_beijing
-    snap_date = now_iso_beijing()[:8] + f"{int(day):02d}"  # YYYY-MM-DD(取当月+晨报日)
+    snap_date, date_warn = resolve_snapshot_date(day, message_date)
     nodes["transit_empty"] = transit_empty
     # ground330_empty 反推平物理池(硬证据);<0 则归 0 并告警
     known = (nodes["port_loaded"] + nodes["port_empty"] + nodes["xtz_loaded"]
@@ -146,6 +174,8 @@ def main(apply: bool = False, dry_run: bool = False) -> None:
     print(f"  昨装{nodes['_loaded_box']} 发运{nodes['_shipped_box']}")
     if warn:
         print("  " + warn)
+    if date_warn:
+        print("  " + date_warn)
 
     # 幂等 + 不覆盖人工:今日快照已存在 → 跳过(人工按流量口径精修过的保留,auto 只填空缺日)
     conn0 = sqlite3.connect(str(SOP_DB))
@@ -166,7 +196,7 @@ def main(apply: bool = False, dry_run: bool = False) -> None:
     ensure_schema(conn)
     note = (f"auto从GROUP093晨报截止{day}日:返空取95306返空列、330空反推平物理池(unique箱{pool});"
             f"昨装{nodes['_loaded_box']}发{nodes['_shipped_box']}。"
-            f"港空/330若按流量口径精修请人工--record覆盖。{warn}")
+            f"港空/330若按流量口径精修请人工--record覆盖。{date_warn}{warn}")
     record(conn, snapshot_date=snap_date, project="jiusan", ship_name=POOL_KEY,
            nodes={k: v for k, v in nodes.items() if not k.startswith("_")},
            inferred="ground330_empty", source="auto_morning_report", note=note,

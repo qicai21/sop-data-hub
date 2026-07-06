@@ -125,6 +125,20 @@ def test_pool_key_is_project_level():
     assert ing2.POOL_KEY == jcb.POOL_KEY
 
 
+def test_morning_report_header_day_typo_uses_message_date():
+    date, warn = ing.resolve_snapshot_date("5", "2026-07-06")
+
+    assert date == "2026-07-06"
+    assert "表头写截止5日" in warn
+
+
+def test_morning_report_matching_header_day_uses_cutoff_date():
+    date, warn = ing.resolve_snapshot_date("6", "2026-07-06")
+
+    assert date == "2026-07-06"
+    assert warn == ""
+
+
 def test_concurrent_returns_summed_not_overwritten():
     # 两列同时到站(互不 supersede)且均<5h → 返空箱**求和**(根治旧版覆盖只剩末列的 bug)
     st = _state({

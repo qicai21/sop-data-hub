@@ -119,6 +119,42 @@ def _update_message_inbox_status(
     conn.close()
 
 
+def _count_batch_rows_for_event(
+    conn: sqlite3.Connection,
+    *,
+    batch_id: str,
+    project_id: str,
+    ydids: list[str] | None = None,
+    car_nos: list[str] | None = None,
+) -> int:
+    """按事件唯一键统计本次事件已落库行数。
+
+    整车项目(朝钢/中唐)要求以 ydid 为准;没有 ydid 时宁可返回 0 等下一轮 95306,
+    也不退回裸 car_no 把旧趟复用车号算进来。
+    其他项目才允许 car_no fallback。
+    """
+    if ydids:
+        placeholders = ",".join("?" * len(ydids))
+        return int(conn.execute(
+            f"SELECT COUNT(*) FROM wagon_shipments "
+            f"WHERE batch_id=? AND ydid IN ({placeholders})",
+            (batch_id, *ydids),
+        ).fetchone()[0] or 0)
+
+    if project_id in ("chaoyang_steel", "zhongtang_special_steel"):
+        return 0
+
+    if car_nos:
+        placeholders = ",".join("?" * len(car_nos))
+        return int(conn.execute(
+            f"SELECT COUNT(*) FROM wagon_shipments "
+            f"WHERE batch_id=? AND car_no IN ({placeholders})",
+            (batch_id, *car_nos),
+        ).fetchone()[0] or 0)
+
+    return 0
+
+
 # ── Core execution ───────────────────────────────────────────────────────
 
 def run_workflow_task(
@@ -1676,20 +1712,13 @@ def _execute_chaoyang_inspection_chain(
         expected_count = len(loading_car_nos) if authoritative_loading else (
             footer_count or len(loading_car_nos)
         )
-        if loading_ydids:
-            placeholders = ",".join("?" * len(loading_ydids))
-            db_count = conn.execute(
-                f"SELECT COUNT(*) FROM wagon_shipments "
-                f"WHERE batch_id=? AND ydid IN ({placeholders})",
-                (matched_batch_id, *loading_ydids),
-            ).fetchone()[0]
-        else:
-            placeholders = ",".join("?" * len(loading_car_nos))
-            db_count = conn.execute(
-                f"SELECT COUNT(*) FROM wagon_shipments "
-                f"WHERE batch_id=? AND car_no IN ({placeholders})",
-                (matched_batch_id, *loading_car_nos),
-            ).fetchone()[0]
+        db_count = _count_batch_rows_for_event(
+            conn,
+            batch_id=matched_batch_id,
+            project_id=project_id,
+            ydids=loading_ydids,
+            car_nos=loading_car_nos,
+        )
 
         if db_count < expected_count:
             # 票尚未全部到达 → 挂 pending_95306_match,等延迟验证器

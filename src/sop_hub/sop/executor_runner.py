@@ -222,6 +222,76 @@ def _find_release_batch(
     return rb
 
 
+def _fetch_event_wagon_ids(
+    conn: sqlite3.Connection,
+    batch_id: str,
+    *,
+    ydids: list[str] | None = None,
+    car_nos: list[str] | None = None,
+) -> list[str]:
+    """按事件唯一键收口本次 wagon ids。
+
+    优先按 ydid(整车/集装箱都更稳);仅在没有 ydid 时,才允许退回 car_no。
+    这样同一批次内复用车号时,不会把旧趟 wagon 一起捞出来。
+    """
+    if ydids:
+        placeholders = ",".join("?" * len(ydids))
+        rows = conn.execute(
+            f"SELECT id FROM wagon_shipments "
+            f"WHERE batch_id=? AND ydid IN ({placeholders})",
+            (batch_id, *ydids),
+        ).fetchall()
+        return [r["id"] for r in rows]
+
+    if car_nos:
+        placeholders = ",".join("?" * len(car_nos))
+        rows = conn.execute(
+            f"SELECT id FROM wagon_shipments "
+            f"WHERE batch_id=? AND car_no IN ({placeholders})",
+            (batch_id, *car_nos),
+        ).fetchall()
+        return [r["id"] for r in rows]
+
+    return []
+
+
+def _fetch_event_boxes_for_batch(
+    conn: sqlite3.Connection,
+    batch_id: str,
+    *,
+    ydids: list[str] | None = None,
+    car_nos: list[str] | None = None,
+) -> tuple[set[str], set[str]]:
+    """取本次事件在某个 batch 下的箱集合与 box|wagon 键集合。"""
+    if ydids:
+        placeholders = ",".join("?" * len(ydids))
+        rows = conn.execute(
+            f"SELECT box_no, car_no FROM wagon_container_shipments "
+            f"WHERE batch_id=? AND ydid IN ({placeholders})",
+            (batch_id, *ydids),
+        )
+    elif car_nos:
+        placeholders = ",".join("?" * len(car_nos))
+        rows = conn.execute(
+            f"SELECT box_no, car_no FROM wagon_container_shipments "
+            f"WHERE batch_id=? AND car_no IN ({placeholders})",
+            (batch_id, *car_nos),
+        )
+    else:
+        return set(), set()
+
+    boxes: set[str] = set()
+    keys: set[str] = set()
+    for row in rows:
+        box_no = str(row["box_no"] or "").strip()
+        car_no = str(row["car_no"] or "").strip()
+        if box_no:
+            boxes.add(box_no)
+        if box_no and car_no:
+            keys.add(f"{box_no}|{car_no}")
+    return boxes, keys
+
+
 def find_release_batch_with_reason(
     ship_name: str,
     destination: str,
@@ -458,17 +528,20 @@ def run_departure_executor_chain(
                     p.wagon_no for p in wagon_result.plans
                     if p.action in ("insert", "skip_existing") and p.wagon_no
                 ]
-                if inserted_car_nos:
+                inserted_ydids = [
+                    p.ydid for p in wagon_result.plans
+                    if p.action in ("insert", "skip_existing") and p.ydid
+                ]
+                if inserted_ydids or inserted_car_nos:
                     import sqlite3 as _sql
                     _c = _sql.connect(str(db_path))
                     _c.row_factory = _sql.Row
-                    in_ph = ",".join("?" * len(inserted_car_nos))
-                    rows = _c.execute(
-                        f"SELECT id FROM wagon_shipments "
-                        f"WHERE car_no IN ({in_ph}) AND batch_id=?",
-                        (*inserted_car_nos, preview.release_batch_id),
-                    ).fetchall()
-                    event_wagon_ids = [r["id"] for r in rows]
+                    event_wagon_ids = _fetch_event_wagon_ids(
+                        _c,
+                        preview.release_batch_id,
+                        ydids=inserted_ydids,
+                        car_nos=inserted_car_nos,
+                    )
                     _c.close()
 
             # ── Step 4b: plan-aware allocation(#111 Phase 2 2026-06-06)──
@@ -590,29 +663,22 @@ def run_departure_executor_chain(
                         _cp = _sqlp.connect(str(db_path)); _cp.row_factory = _sqlp.Row
 
                         def _event_boxes_for(_bid: str) -> set:
-                            if not inserted_car_nos:
-                                return set()
-                            _pph = ",".join("?" * len(inserted_car_nos))
-                            return {
-                                _r["box_no"] for _r in _cp.execute(
-                                    f"SELECT box_no FROM wagon_container_shipments "
-                                    f"WHERE batch_id=? AND car_no IN ({_pph})",
-                                    (_bid, *inserted_car_nos))
-                                if _r["box_no"]
-                            }
+                            _boxes, _keys = _fetch_event_boxes_for_batch(
+                                _cp,
+                                _bid,
+                                ydids=inserted_ydids,
+                                car_nos=inserted_car_nos,
+                            )
+                            return _boxes
 
                         def _event_box_wagon_keys_for(_bid: str) -> set:
-                            if not inserted_car_nos:
-                                return set()
-                            _pph = ",".join("?" * len(inserted_car_nos))
-                            return {
-                                f"{_r['box_no']}|{_r['car_no']}"
-                                for _r in _cp.execute(
-                                    f"SELECT box_no, car_no FROM wagon_container_shipments "
-                                    f"WHERE batch_id=? AND car_no IN ({_pph})",
-                                    (_bid, *inserted_car_nos))
-                                if _r["box_no"] and _r["car_no"]
-                            }
+                            _boxes, _keys = _fetch_event_boxes_for_batch(
+                                _cp,
+                                _bid,
+                                ydids=inserted_ydids,
+                                car_nos=inserted_car_nos,
+                            )
+                            return _keys
                         try:
                             for oid in factory_result.order_identifier_groups.keys():
                                 # 每个 order_identifier 反查一次(对应 1 个 release_batch)
@@ -655,19 +721,15 @@ def run_departure_executor_chain(
                         # 改:用 inserted_car_nos 把 expected 收窄到本次 80 箱。
                         event_boxes: set[str] = set()
                         event_box_wagon_keys: set[str] = set()
-                        if inserted_car_nos:
+                        if inserted_ydids or inserted_car_nos:
                             import sqlite3 as _sqlv
                             _cv = _sqlv.connect(str(db_path)); _cv.row_factory = _sqlv.Row
-                            _bph = ",".join("?" * len(inserted_car_nos))
-                            for _r in _cv.execute(
-                                f"SELECT box_no, car_no FROM wagon_container_shipments "
-                                f"WHERE batch_id=? AND car_no IN ({_bph})",
-                                (preview.release_batch_id, *inserted_car_nos),
-                            ):
-                                if _r["box_no"]:
-                                    event_boxes.add(_r["box_no"])
-                                if _r["box_no"] and _r["car_no"]:
-                                    event_box_wagon_keys.add(f"{_r['box_no']}|{_r['car_no']}")
+                            event_boxes, event_box_wagon_keys = _fetch_event_boxes_for_batch(
+                                _cv,
+                                preview.release_batch_id,
+                                ydids=inserted_ydids,
+                                car_nos=inserted_car_nos,
+                            )
                             _cv.close()
                         verify = verify_factory_upload(
                             order_id="", release_batch_id=preview.release_batch_id,

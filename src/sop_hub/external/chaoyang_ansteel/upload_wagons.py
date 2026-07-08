@@ -323,33 +323,49 @@ def _wagons_from_query_response(body: dict[str, Any]) -> list[dict[str, str]]:
     return out
 
 
+def _today_site_car_counts(
+    site_wagons: list[dict[str, str]],
+    today_yyyymmdd: str,
+) -> Counter[str]:
+    """门户返回是整单累计;朝钢只看"今天写入门户"的车号集合。
+
+    现场核对已确认:门户 `WAYBILL_TIME` 不是铁路 `ticketed_at`,更接近门户写入时间。
+    因此不能拿 `car_no + 铁路制票时间` 做跨系统唯一键,否则会把真正已上传的本次车
+    全部判成 missing。对朝钢门户来说,当前能稳定落地的口径是:
+
+    - presence: 本次 car_no 是否出现在**今天的门户返回**里
+    - unique:   今天的门户返回里,该 car_no 是否只出现 1 次
+    """
+    return Counter(
+        str(w.get("wagonno", "")).strip()
+        for w in site_wagons
+        if str(w.get("wagonno", "")).strip()
+        and str(w.get("waybill_time", "")).startswith(today_yyyymmdd)
+    )
+
+
 # ── 反查对账(2026-06-29 口径:present + unique,按 car_no)──────────────
 
 
 def reconcile_uploaded_cars(
-    uploaded_car_nos: set[str],
+    uploaded_wagons: list[WagonForUpload],
     site_wagons: list[dict[str, str]],
     today_yyyymmdd: str,
 ) -> tuple[set[str], list[str], list[str], list[str]]:
     """朝钢反查对账。门户按 plan 反查返回整单全量累计 + 收货端偶发删数,
-    故**不做整批对齐**,只校验本次上传车号:
-      present: 都出现在返回里(否则计入 missing)
-      unique : 在返回里各自仅一条(否则计入 duplicate)
-    extra 仅取"今天上传日期"里多出的车,作告警/观测,不参与成败判定。
-    返回 (verified, missing, duplicate, extra)。与吉林 box_no 口径对齐(键=car_no)。
+    故**不做整批对齐**,只校验本次上传车号在"今天门户返回"里的状态:
+      present: `car_no` 出现在今天返回里(否则计入 missing)
+      unique : `car_no` 在今天返回里仅一条(否则计入 duplicate)
+    extra 仅取今天多出的车号,作告警/观测,不参与成败判定。
+    返回 (verified, missing, duplicate, extra)。
     """
-    site_counts: Counter[str] = Counter(
-        w["wagonno"] for w in site_wagons if w.get("wagonno")
-    )
-    site_carnos = set(site_counts)
-    verified = uploaded_car_nos & site_carnos
-    missing = sorted(uploaded_car_nos - site_carnos)
-    duplicate = sorted(c for c in uploaded_car_nos if site_counts[c] > 1)
-    today_returned = {
-        w["wagonno"] for w in site_wagons
-        if w.get("waybill_time", "").startswith(today_yyyymmdd)
-    }
-    extra = sorted(today_returned - uploaded_car_nos)
+    site_counts = _today_site_car_counts(site_wagons, today_yyyymmdd)
+    uploaded_cars = {str(w.car_no or "").strip() for w in uploaded_wagons if str(w.car_no or "").strip()}
+    site_cars = set(site_counts)
+    verified = uploaded_cars & site_cars
+    missing = sorted(uploaded_cars - site_cars)
+    duplicate = sorted(car for car in uploaded_cars if site_counts[car] > 1)
+    extra = sorted(site_cars - uploaded_cars)
     return verified, missing, duplicate, extra
 
 
@@ -422,12 +438,19 @@ def upload_and_verify(
     try:
         _pre = _wagons_from_query_response(
             call_query_wmwm19(session=session, plan_raw=target_plan.raw))
-        _pre_carnos = {w["wagonno"] for w in _pre if w.get("wagonno")}
+        today_yyyymmdd = datetime.now().strftime("%Y%m%d")
+        _pre_counts = _today_site_car_counts(_pre, today_yyyymmdd)
     except Exception:
-        _pre_carnos = set()
-    if _pre_carnos:
-        _already = [w for w in wagons if w.car_no in _pre_carnos]
-        wagons = [w for w in wagons if w.car_no not in _pre_carnos]
+        _pre_counts = Counter()
+    if _pre_counts:
+        _already = [
+            w for w in wagons
+            if str(w.car_no or "").strip() in _pre_counts
+        ]
+        wagons = [
+            w for w in wagons
+            if str(w.car_no or "").strip() not in _pre_counts
+        ]
         if not wagons:
             return UploadResult(
                 success=True,
@@ -466,14 +489,13 @@ def upload_and_verify(
     site_wagons = _wagons_from_query_response(verify_body)
 
     # 6. 对账(2026-06-29 口径:present + unique,按 car_no;不做整批对齐)
-    uploaded_carnos = {w.car_no for w in wagons}
     today_yyyymmdd = datetime.now().strftime("%Y%m%d")
     verified, missing, duplicate, extra = reconcile_uploaded_cars(
-        uploaded_carnos, site_wagons, today_yyyymmdd)
+        wagons, site_wagons, today_yyyymmdd)
 
     # 通过 = 本次车号全部出现(missing==0)且各自唯一(duplicate==0)。
     success = (len(missing) == 0 and len(duplicate) == 0
-               and len(verified) == len(uploaded_carnos))
+               and len(verified) == len(wagons))
     return UploadResult(
         success=success,
         uploaded_count=len(wagons),

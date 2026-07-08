@@ -98,3 +98,15 @@ def test_matched_routes_directly_when_new(tmp_path):
     assert not stats["warn_new_unmatched"]
     row = c.execute("SELECT batch_id, ship_name FROM wagon_shipments WHERE ydid='YD_CX2'").fetchone()
     assert (row["batch_id"], row["ship_name"]) == ("BC", "诚信")
+
+
+def test_resolve_fallback_ship_never_returns_finished_ship(tmp_path):
+    c = _make_db(tmp_path)
+    c.execute("ALTER TABLE release_batches ADD COLUMN dispatch_status TEXT")
+    c.execute("ALTER TABLE release_batches ADD COLUMN notice_date TEXT")
+    c.execute("ALTER TABLE release_batches ADD COLUMN created_at TEXT")
+    c.execute("ALTER TABLE release_batches ADD COLUMN dispatch_status_updated_at TEXT")
+    c.execute("UPDATE release_batches SET dispatch_status='confirmed_received', notice_date='2026-06-09', created_at='2026-06-09', updated_at='2026-07-08', dispatch_status_updated_at='2026-07-08' WHERE ship_name='和谐1'")
+    c.execute("UPDATE release_batches SET dispatch_status='enriched', notice_date='2026-07-02', created_at='2026-07-02', updated_at='2026-07-08', dispatch_status_updated_at='2026-07-08' WHERE ship_name='诚信'")
+    c.commit()
+    assert m.resolve_fallback_ship(c) == "诚信"

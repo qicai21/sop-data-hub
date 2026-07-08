@@ -37,21 +37,53 @@ PROJECT = "jiusan"
 SINCE = "2026-06-09"
 CONSIGNOR = "锦州港物流发展有限公司"
 CONSIGNEE = "九三集团铁岭大豆科技有限公司"
-# 未命中台账的全新散粮车的兜底落点(单船期/通知单未到时)。命中台账的会自愈纠正,
-# 故此兜底只是临时落点;不要因此放弃 WARN。和谐1 发完后不再默认堆它:兜底 = 当前唯一
-# 活跃船(lot02 loading);无/多个活跃船时退回 FALLBACK_SHIP_DEFAULT(#issue-20260627)。
-FALLBACK_SHIP_DEFAULT = "和谐1"
+# 未命中台账的全新散粮车只能临时落到**当前未完结 lot02**。
+# 绝不能退回已 confirmed_received 的历史船。
+UNFINISHED_STATUSES = (
+    "loading",
+    "pending_freight",
+    "enriched",
+    "all_loaded",
+    "tracking",
+    "delivered",
+)
 
 
-def resolve_fallback_ship(conn: sqlite3.Connection) -> str:
-    """未命中台账的全新散粮车落点 = 当前唯一在发(loading)的 lot02 船。
-    恰好一个活跃船 → 它;否则 → FALLBACK_SHIP_DEFAULT。"""
+def resolve_fallback_ship(conn: sqlite3.Connection) -> str | None:
+    """未命中台账的全新散粮车临时落点。
+
+    优先唯一 loading 船;否则取最新未完结船。
+    若没有任何未完结 lot02,返回 None,只告警不硬落到历史船。
+    """
     loading = [
         r["ship_name"] for r in conn.execute(
             "SELECT ship_name FROM release_batches WHERE project=? AND batch_sequence='lot02' "
             "AND dispatch_status='loading' AND ship_name IS NOT NULL", (PROJECT,))
     ]
-    return loading[0] if len(loading) == 1 else FALLBACK_SHIP_DEFAULT
+    if len(loading) == 1:
+        return loading[0]
+    newest_unfinished = conn.execute(
+        """
+        SELECT ship_name
+        FROM release_batches
+        WHERE project=? AND batch_sequence='lot02'
+          AND ship_name IS NOT NULL
+          AND dispatch_status IN ({})
+        ORDER BY CASE dispatch_status
+          WHEN 'loading' THEN 0
+          WHEN 'pending_freight' THEN 1
+          WHEN 'enriched' THEN 2
+          WHEN 'all_loaded' THEN 3
+          WHEN 'tracking' THEN 4
+          WHEN 'delivered' THEN 5
+          ELSE 9
+        END,
+        coalesce(dispatch_status_updated_at, updated_at, notice_date, created_at) DESC
+        LIMIT 1
+        """.format(",".join("?" * len(UNFINISHED_STATUSES))),
+        (PROJECT, *UNFINISHED_STATUSES),
+    ).fetchone()
+    return newest_unfinished["ship_name"] if newest_unfinished else None
 
 
 def stable_hash(*parts: str) -> str:

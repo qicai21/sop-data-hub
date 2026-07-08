@@ -83,41 +83,54 @@ def fetch_wagons(
     db_path: str | Path,
     batch_id: str,
     car_nos: list[str] | None = None,
+    ydids: list[str] | None = None,
     date_prefix: str | None = None,
 ) -> list[WagonForUpload]:
     """从 wagon_shipments 拉某 batch 的车。
 
-    优先 car_nos(明确车号列表 — 给 chain 用,跟 excel 同一批);
+    优先 ydids(本次运单唯一集合)；其次 car_nos(明确车号列表 — 给 chain 用,跟 excel 同一批);
     fallback date_prefix(如 '2026-06-02',按 ticketed_at LIKE — 给 CLI 用)。
     都没给 = 拉整个 batch。
     """
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
-        if car_nos:
+        if ydids:
+            placeholders = ",".join("?" * len(ydids))
+            sql = (
+                f"SELECT car_no, ticketed_at, ydid FROM wagon_shipments "
+                f"WHERE batch_id = ? AND ydid IN ({placeholders}) "
+                f"ORDER BY ticketed_at, car_no"
+            )
+            args = [batch_id, *ydids]
+        elif car_nos:
             placeholders = ",".join("?" * len(car_nos))
             sql = (
-                f"SELECT car_no, ticketed_at FROM wagon_shipments "
+                f"SELECT car_no, ticketed_at, ydid FROM wagon_shipments "
                 f"WHERE batch_id = ? AND car_no IN ({placeholders}) "
                 f"ORDER BY ticketed_at, car_no"
             )
             args = [batch_id, *car_nos]
         elif date_prefix:
             sql = (
-                "SELECT car_no, ticketed_at FROM wagon_shipments "
+                "SELECT car_no, ticketed_at, ydid FROM wagon_shipments "
                 "WHERE batch_id = ? AND ticketed_at LIKE ? "
                 "ORDER BY ticketed_at, car_no"
             )
             args = [batch_id, f"{date_prefix}%"]
         else:
             sql = (
-                "SELECT car_no, ticketed_at FROM wagon_shipments "
+                "SELECT car_no, ticketed_at, ydid FROM wagon_shipments "
                 "WHERE batch_id = ? ORDER BY ticketed_at, car_no"
             )
             args = [batch_id]
         rows = conn.execute(sql, args).fetchall()
     finally:
         conn.close()
+
+    if ydids:
+        order = {str(y): i for i, y in enumerate(ydids)}
+        rows = sorted(rows, key=lambda r: order.get(str(r["ydid"] or ""), 1_000_000))
 
     out: list[WagonForUpload] = []
     for r in rows:
@@ -350,12 +363,13 @@ def upload_and_verify(
     ship_name: str,
     transport_plan_no: str | None = None,
     car_nos: list[str] | None = None,
+    ydids: list[str] | None = None,
     date_prefix: str | None = None,
     verify_sleep_seconds: int = 2,
 ) -> UploadResult:
     """全流程:登录 → wmwm01 找 plan → 拉车 → 上传 → 反查 → 对账。
 
-    car_nos / date_prefix 二选一(优先 car_nos,给 chain 用)。
+    ydids / car_nos / date_prefix 三选一(优先 ydid,给 chain 用)。
     """
     # 1. 登录
     auth, session = login()
@@ -392,7 +406,7 @@ def upload_and_verify(
     # 3. DB 拉车
     wagons = fetch_wagons(
         db_path=db_path, batch_id=batch_id,
-        car_nos=car_nos, date_prefix=date_prefix,
+        car_nos=car_nos, ydids=ydids, date_prefix=date_prefix,
     )
     if not wagons:
         return UploadResult(

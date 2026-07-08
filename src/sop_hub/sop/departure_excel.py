@@ -178,6 +178,7 @@ def _extract_rows(
     *,
     db_path: str | Path | None = None,
     car_nos: list[str] | None = None,
+    ydids: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
     """Return (per-wagon dicts, batch_context dict, error_str).
 
@@ -195,7 +196,24 @@ def _extract_rows(
             return [], {}, f"release_batch not found: {release_batch_id}"
         batch = dict(rb)
 
-        if car_nos:
+        if ydids:
+            placeholders = ",".join("?" * len(ydids))
+            ws_rows = conn.execute(
+                f"SELECT * FROM wagon_shipments "
+                f"WHERE batch_id=? AND ydid IN ({placeholders})",
+                (release_batch_id, *ydids),
+            ).fetchall()
+            ydid_order = {str(y): i for i, y in enumerate(ydids)}
+            car_order = {str(c): i for i, c in enumerate(car_nos or [])}
+            ws_rows = sorted(
+                ws_rows,
+                key=lambda r: (
+                    ydid_order.get(str(r["ydid"] or ""), 1_000_000),
+                    car_order.get(str(r["car_no"] or ""), 1_000_000),
+                    str(r["ticketed_at"] or ""),
+                ),
+            )
+        elif car_nos:
             placeholders = ",".join("?" * len(car_nos))
             ws_rows = conn.execute(
                 f"SELECT * FROM wagon_shipments "
@@ -499,6 +517,7 @@ def generate_departure_excel(
     output_dir: str | Path | None = None,
     db_path: str | Path | None = None,
     car_nos: list[str] | None = None,
+    ydids: list[str] | None = None,
 ) -> ExcelGenerationResult:
     """Generate departure Excel for one release_batch.
 
@@ -538,7 +557,7 @@ def generate_departure_excel(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     rows, ctx, err = _extract_rows(
-        release_batch_id, db_path=db_path, car_nos=car_nos,
+        release_batch_id, db_path=db_path, car_nos=car_nos, ydids=ydids,
     )
     if err:
         return ExcelGenerationResult(release_batch_id=release_batch_id, error=err)
@@ -1035,7 +1054,7 @@ def main() -> int:
 
 
 def generate_multibatch_departure_excel(
-    batch_specs: list[tuple[str, list[str] | None]],
+    batch_specs: list[tuple[str, list[str] | None, list[str] | None]],
     *,
     project_id: str,
     output_dir: str | Path | None = None,
@@ -1046,7 +1065,7 @@ def generate_multibatch_departure_excel(
     **按批次成块**——每块 = 船名小标题 + 列头 + 该批次记录 + 该批次货运 footer + 空行,
     批次间**不混排**。与 generate_dispatch_event_excel(跨 batch 按 ticketed_at 合并
     一张表)互补:整车多船(中唐贝拉+丰收散运)用本函数,集装箱单事件跨 lot 用那个。
-    batch_specs: [(release_batch_id, car_nos|None), ...] 按展示顺序传入。
+    batch_specs: [(release_batch_id, car_nos|None, ydids|None), ...] 按展示顺序传入。
     """
     if not batch_specs:
         return DispatchEventExcelResult(error="batch_specs is empty")
@@ -1070,8 +1089,10 @@ def generate_multibatch_departure_excel(
     used_batch_ids: list[str] = []
     ships_used: list[str] = []
 
-    for rbid, car_nos in batch_specs:
-        rows, ctx, err = _extract_rows(rbid, db_path=db_path, car_nos=car_nos)
+    for rbid, car_nos, ydids in batch_specs:
+        rows, ctx, err = _extract_rows(
+            rbid, db_path=db_path, car_nos=car_nos, ydids=ydids
+        )
         if err or not rows:
             continue
         ship = (ctx.get("ship_name") or "") if isinstance(ctx, dict) else ""

@@ -20,15 +20,15 @@ def test_count_and_age_guards_exist():
 def test_send_idempotency_key_uses_car_set_not_only_batch_and_count():
     batch = "batch-1"
     first = w._event_send_biz_key(
-        [(batch, ["1000001", "1000002", "1000003"])],
+        [(batch, ["1000001", "1000002", "1000003"], None)],
         wagon_count=3,
     )
     first_reordered = w._event_send_biz_key(
-        [(batch, ["1000003", "1000001", "1000002"])],
+        [(batch, ["1000003", "1000001", "1000002"], None)],
         wagon_count=3,
     )
     second_same_count = w._event_send_biz_key(
-        [(batch, ["2000001", "2000002", "2000003"])],
+        [(batch, ["2000001", "2000002", "2000003"], None)],
         wagon_count=3,
     )
 
@@ -84,7 +84,7 @@ def test_sent_same_car_set_event_detects_legacy_key_duplicate(tmp_path):
     dup = w._find_sent_same_car_set_event(
         db_path=db,
         project_id="zhongtang_special_steel",
-        batch_specs=[("batch-1", ["1000003", "1000001", "1000002"])],
+        batch_specs=[("batch-1", ["1000003", "1000001", "1000002"], None)],
     )
     assert dup is not None
     assert dup["source_message_id"] == "wx_old"
@@ -93,9 +93,49 @@ def test_sent_same_car_set_event_detects_legacy_key_duplicate(tmp_path):
     not_dup = w._find_sent_same_car_set_event(
         db_path=db,
         project_id="zhongtang_special_steel",
-        batch_specs=[("batch-1", ["2000001", "2000002", "2000003"])],
+        batch_specs=[("batch-1", ["2000001", "2000002", "2000003"], None)],
     )
     assert not_dup is None
+
+
+def test_send_idempotency_prefers_ydid_when_available():
+    batch = "batch-1"
+    first = w._event_send_biz_key(
+        [(batch, ["1000001", "1000002"], ["YD2", "YD1"])],
+        wagon_count=2,
+    )
+    same_ydid_different_car = w._event_send_biz_key(
+        [(batch, ["9999991", "9999992"], ["YD1", "YD2"])],
+        wagon_count=2,
+    )
+    other_ydid = w._event_send_biz_key(
+        [(batch, ["1000001", "1000002"], ["YD1", "YD3"])],
+        wagon_count=2,
+    )
+
+    assert first == same_ydid_different_car
+    assert first != other_ydid
+
+
+def test_ansteel_upload_biz_key_uses_ydid_not_only_batch_and_count():
+    first = w._ansteel_upload_biz_key(
+        "batch-1",
+        [{"ydid": "YD2", "car_no": "1000002"}, {"ydid": "YD1", "car_no": "1000001"}],
+        ["1000001", "1000002"],
+    )
+    same_ydid_different_car = w._ansteel_upload_biz_key(
+        "batch-1",
+        [{"ydid": "YD1", "car_no": "2000001"}, {"ydid": "YD2", "car_no": "2000002"}],
+        ["2000001", "2000002"],
+    )
+    other_ydid = w._ansteel_upload_biz_key(
+        "batch-1",
+        [{"ydid": "YD1", "car_no": "1000001"}, {"ydid": "YD3", "car_no": "1000003"}],
+        ["1000001", "1000003"],
+    )
+
+    assert first == same_ydid_different_car
+    assert first != other_ydid
 
 
 def test_query_filters_exclude_stale(tmp_path):

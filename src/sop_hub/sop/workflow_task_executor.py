@@ -496,10 +496,10 @@ def _execute_create_release_batch(
 
 def _event_excel_batch_specs(
     candidate_id: str, db_path: Path | str,
-) -> tuple[list[tuple[str, list[str] | None]], bool, list[str]]:
+) -> tuple[list[tuple[str, list[str] | None, list[str] | None]], bool, list[str]]:
     """发运 excel = **一张简装车通知单(source_image)的数据展现**(2026-06-27 用户确认,
     全项目统一)。按 source_image_path 聚同单兄弟候选,返回:
-      - batch_specs: [(release_batch_id, car_nos), ...] 按候选顺序(每船一块);
+      - batch_specs: [(release_batch_id, car_nos, ydids), ...] 按候选顺序(每船一块);
       - all_matched: 同单的船是否都已 matched(False → 调用方等齐再合成,不发半截);
       - ship_names: 同单船名列表。
     car_nos 取候选自带的 car_numbers_json(本次单子的车,非批次累计)。
@@ -513,7 +513,7 @@ def _event_excel_batch_specs(
             (candidate_id,),
         ).fetchone()
         src = row["source_image_path"] if row else None
-        q = ("SELECT ship_name, release_batch_id, car_numbers_json, candidate_status "
+        q = ("SELECT ship_name, release_batch_id, car_numbers_json, parsed_json, candidate_status "
              "FROM inspection_ingestion_candidates WHERE ")
         if src:
             sibs = conn.execute(q + "source_image_path=? ORDER BY id", (src,)).fetchall()
@@ -523,27 +523,40 @@ def _event_excel_batch_specs(
         conn.close()
     _matched = ("matched", "matched_by_inference")
     all_matched = bool(sibs) and all(s["candidate_status"] in _matched for s in sibs)
-    specs: list[tuple[str, list[str] | None]] = []
+    specs: list[tuple[str, list[str] | None, list[str] | None]] = []
     ships: list[str] = []
     for s in sibs:
         bid = s["release_batch_id"]
         if not bid:
             continue
         cars = None
+        ydids = None
         cnj = s["car_numbers_json"]
         if cnj:
             try:
                 cars = [str(x).strip() for x in _json.loads(cnj) if x]
             except Exception:
                 cars = None
-        specs.append((bid, cars))
+        parsed = s["parsed_json"]
+        if parsed:
+            try:
+                pobj = _json.loads(parsed)
+                shipments = ((pobj or {}).get("authoritative_cars") or {}).get("shipments") or []
+                ydids = [
+                    str(x.get("ydid") or "").strip()
+                    for x in shipments
+                    if str(x.get("ydid") or "").strip()
+                ]
+            except Exception:
+                ydids = None
+        specs.append((bid, cars, ydids))
         if s["ship_name"]:
             ships.append(s["ship_name"])
     return specs, all_matched, ships
 
 
 def _event_send_biz_key(
-    batch_specs: list[tuple[str, list[str] | None]],
+    batch_specs: list[tuple[str, list[str] | None, list[str] | None]],
     wagon_count: int,
 ) -> str:
     """Build a send idempotency business key for one physical inspection event.
@@ -553,19 +566,39 @@ def _event_send_biz_key(
     while a later train with different cars gets a different key.
     """
     parts: list[str] = []
-    for batch_id, cars in sorted(batch_specs, key=lambda item: item[0]):
-        clean = sorted(str(c).strip() for c in (cars or []) if str(c or "").strip())
-        parts.append(f"{batch_id}:{','.join(clean)}")
+    for batch_id, cars, ydids in sorted(batch_specs, key=lambda item: item[0]):
+        clean_ydids = sorted(str(y).strip() for y in (ydids or []) if str(y or "").strip())
+        if clean_ydids:
+            parts.append(f"{batch_id}:ydid:{','.join(clean_ydids)}")
+        else:
+            clean_cars = sorted(str(c).strip() for c in (cars or []) if str(c or "").strip())
+            parts.append(f"{batch_id}:car:{','.join(clean_cars)}")
     digest = hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
-    batch_key = ",".join(sorted(batch_id for batch_id, _ in batch_specs))
+    batch_key = ",".join(sorted(batch_id for batch_id, _, _ in batch_specs))
     return f"batches:{batch_key}:cars:{digest}:{wagon_count}"
+
+
+def _ansteel_upload_biz_key(
+    batch_id: str,
+    tickets: list[dict[str, Any]],
+    fallback_car_nos: list[str],
+) -> str:
+    parts = [
+        str(t.get("ydid") or "").strip()
+        for t in tickets
+        if str(t.get("ydid") or "").strip()
+    ]
+    digest = hashlib.sha1(
+        "|".join(sorted(parts or [str(c).strip() for c in fallback_car_nos if str(c or '').strip()])).encode("utf-8")
+    ).hexdigest()[:16]
+    return f"{batch_id}:cars:{digest}:{len(fallback_car_nos)}"
 
 
 def _find_sent_same_car_set_event(
     *,
     db_path: Path | str,
     project_id: str,
-    batch_specs: list[tuple[str, list[str] | None]],
+    batch_specs: list[tuple[str, list[str] | None, list[str] | None]],
 ) -> dict[str, Any] | None:
     """Find an already-sent physical event with the same batch/car set.
 
@@ -577,7 +610,7 @@ def _find_sent_same_car_set_event(
     that source_message_id means the event was sent.
     """
     expected: dict[str, set[str]] = {}
-    for batch_id, cars in batch_specs:
+    for batch_id, cars, _ydids in batch_specs:
         clean = {str(c).strip() for c in (cars or []) if str(c or "").strip()}
         if batch_id and clean:
             expected[str(batch_id)] = clean
@@ -631,6 +664,7 @@ def _persist_authoritative_candidate_cars(
     *,
     candidate_id: str,
     car_numbers: list[str],
+    shipments: list[dict[str, Any]] | None = None,
     recover: dict[str, Any] | None = None,
 ) -> None:
     """把 95306 窗口恢复出的权威车号回写候选。
@@ -649,6 +683,15 @@ def _persist_authoritative_candidate_cars(
             "missing_from_notice": (recover or {}).get("missing_from_notice") or [],
             "corrections": (recover or {}).get("corrections") or [],
         }
+        if shipments:
+            payload["shipments"] = [
+                {
+                    "car_no": str(s.get("car_no") or "").strip(),
+                    "ydid": str(s.get("ydid") or "").strip(),
+                }
+                for s in shipments
+                if str(s.get("ydid") or "").strip()
+            ]
         conn.execute(
             "UPDATE inspection_ingestion_candidates "
             "SET car_numbers_json=?, wagon_count=?, parsed_json=?, updated_at=datetime('now') "
@@ -1569,6 +1612,20 @@ def _execute_chaoyang_inspection_chain(
         finally:
             rail.close()
 
+        loading_ydids = [
+            str(t.get("ydid") or "").strip()
+            for t in tickets
+            if str(t.get("ydid") or "").strip()
+        ]
+        _persist_authoritative_candidate_cars(
+            conn,
+            candidate_id=candidate_id,
+            car_numbers=loading_car_nos,
+            shipments=tickets,
+            recover=recover,
+        )
+        conn.commit()
+
         # ── 4b. 统一入库口(ingest_wagons)──────────────────────────
         # build_wagon_row 内部已处理 标载(车型推)/ hph / dispatch_status。
         # dispatch_status='completed' 维持朝阳"发运即定稿"口径(已交付的会被
@@ -1619,12 +1676,20 @@ def _execute_chaoyang_inspection_chain(
         expected_count = len(loading_car_nos) if authoritative_loading else (
             footer_count or len(loading_car_nos)
         )
-        placeholders = ",".join("?" * len(loading_car_nos))
-        db_count = conn.execute(
-            f"SELECT COUNT(*) FROM wagon_shipments "
-            f"WHERE batch_id=? AND car_no IN ({placeholders})",
-            (matched_batch_id, *loading_car_nos),
-        ).fetchone()[0]
+        if loading_ydids:
+            placeholders = ",".join("?" * len(loading_ydids))
+            db_count = conn.execute(
+                f"SELECT COUNT(*) FROM wagon_shipments "
+                f"WHERE batch_id=? AND ydid IN ({placeholders})",
+                (matched_batch_id, *loading_ydids),
+            ).fetchone()[0]
+        else:
+            placeholders = ",".join("?" * len(loading_car_nos))
+            db_count = conn.execute(
+                f"SELECT COUNT(*) FROM wagon_shipments "
+                f"WHERE batch_id=? AND car_no IN ({placeholders})",
+                (matched_batch_id, *loading_car_nos),
+            ).fetchone()[0]
 
         if db_count < expected_count:
             # 票尚未全部到达 → 挂 pending_95306_match,等延迟验证器
@@ -1707,7 +1772,7 @@ def _execute_chaoyang_inspection_chain(
             from sop_hub.sop.departure_excel import generate_departure_excel
             excel_result = generate_departure_excel(
                 matched_batch_id, project_id=project_id,
-                car_nos=loading_car_nos,
+                car_nos=loading_car_nos, ydids=loading_ydids,
             )
             excel_info = {
                 "path": excel_result.output_path,
@@ -1836,8 +1901,11 @@ def _execute_chaoyang_inspection_chain(
                 plan_external_action as _pea,
                 mark_external_action_executed as _mae,
             )
-            _uidem = _bik(project_id, "upload_ansteel_consignee",
-                          f"{matched_batch_id}:{len(loading_car_nos)}")
+            _uidem = _bik(
+                project_id,
+                "upload_ansteel_consignee",
+                _ansteel_upload_biz_key(matched_batch_id, tickets, loading_car_nos),
+            )
             try:
                 _pea(db_path=db_path, workflow_task_id=task_id, message_id=message_id or "",
                      project_id=project_id, action_type="upload_ansteel_consignee",
@@ -1852,7 +1920,8 @@ def _execute_chaoyang_inspection_chain(
                     db_path=str(db_path),
                     batch_id=matched_batch_id,
                     ship_name=ship,
-                    car_nos=loading_car_nos,  # 用本次单子的精确车号集
+                    car_nos=loading_car_nos,
+                    ydids=loading_ydids,
                 )
                 upload_info = {
                     "skipped": False,

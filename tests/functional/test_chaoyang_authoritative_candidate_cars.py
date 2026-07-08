@@ -32,6 +32,10 @@ def test_authoritative_95306_cars_overwrite_candidate_count_for_excel_specs(tmp_
         conn,
         candidate_id="cand1",
         car_numbers=authoritative,
+        shipments=[
+            {"car_no": car_no, "ydid": f"Y{i+1}"}
+            for i, car_no in enumerate(authoritative)
+        ],
         recover={
             "window_total_count": 46,
             "notice_only": notice_cars[46:],
@@ -51,8 +55,11 @@ def test_authoritative_95306_cars_overwrite_candidate_count_for_excel_specs(tmp_
     assert row[1] == 46
     parsed = json.loads(row[2])
     assert parsed["authoritative_cars"]["notice_only"] == notice_cars[46:]
+    assert parsed["authoritative_cars"]["shipments"][0] == {
+        "car_no": authoritative[0], "ydid": "Y1"
+    }
 
     specs, all_matched, ships = _event_excel_batch_specs("cand1", db)
     assert all_matched is True
     assert ships == ["马兰幸福"]
-    assert specs == [("batch1", authoritative)]
+    assert specs == [("batch1", authoritative, [f"Y{i+1}" for i in range(46)])]

@@ -148,6 +148,27 @@ def test_dashboard_cargo_label_prefers_specific_product_name():
     }) == "混合粉"
 
 
+def test_dashboard_keeps_full_jilin_order_identifier():
+    import cli_dashboard as dashboard
+
+    panel = dashboard.panel_project("jilin_jingang_jinzhou", [{
+        "ship_name": "蓝鳍",
+        "cargo_name": "铁矿粉",
+        "cargo_product_name": "麦克粉",
+        "batch_sequence": "lot01",
+        "batch_date": "2026-05-20",
+        "batch_quantity": 10000,
+        "shipped_weight_tons": 5000,
+        "remaining_weight_tons": 5000,
+        "actual_wagon_count": 47,
+        "today_wagon": 0,
+        "dispatch_status": "loading",
+        "order_identifier": "CGR20260520095954",
+    }])
+
+    assert any("CGR20260520095954" in dashboard._strip_ansi(line) for line in panel)
+
+
 def test_concurrent_returns_summed_not_overwritten():
     # 两列同时到站(互不 supersede)且均<5h → 返空箱**求和**(根治旧版覆盖只剩末列的 bug)
     st = _state({

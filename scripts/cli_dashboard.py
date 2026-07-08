@@ -428,7 +428,7 @@ def list_daemons() -> list[dict[str, Any]]:
 # ── 渲染 panel ────────────────────────────────────────────────────────
 
 
-PANEL_WIDTH = 112
+PANEL_WIDTH = 114
 
 
 def _box(title: str, lines: list[str], width: int = PANEL_WIDTH) -> list[str]:
@@ -464,7 +464,7 @@ def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
     ton_w = 8
     unit_w = 11
     status_w = 15
-    plan_w = 16
+    plan_w = 17
 
     # 表头(用 _pad_disp 按终端 cell 宽度对齐 — 中文 2 cell)
     header = (

@@ -36,7 +36,8 @@ def _seed_db(path):
           origin_name TEXT,
           destination_name TEXT,
           container_numbers_json TEXT,
-          container_no TEXT
+          container_no TEXT,
+          source_message_id TEXT
         );
         """
     )
@@ -45,12 +46,12 @@ def _seed_db(path):
         ("batch1", "chaoyang_steel", "马兰幸福", "铁矿粉", "麦克粉", "朝阳西", "C1", "O1"),
     )
     rows = [
-        ("old-1", "batch1", "1644106", "YD-old-1", "2026-07-05 18:26:31", 70, "C70", "高桥镇", "朝阳西", None, None),
-        ("old-2", "batch1", "1664992", "YD-old-2", "2026-07-05 18:26:35", 70, "C70", "高桥镇", "朝阳西", None, None),
-        ("new-1", "batch1", "1644106", "YD-new-1", "2026-07-08 10:51:07", 70, "C70", "高桥镇", "朝阳西", None, None),
-        ("new-2", "batch1", "1664992", "YD-new-2", "2026-07-08 10:51:15", 70, "C70", "高桥镇", "朝阳西", None, None),
+        ("old-1", "batch1", "1644106", "YD-old-1", "2026-07-05 18:26:31", 70, "C70", "高桥镇", "朝阳西", None, None, "wx_old"),
+        ("old-2", "batch1", "1664992", "YD-old-2", "2026-07-05 18:26:35", 70, "C70", "高桥镇", "朝阳西", None, None, "wx_old"),
+        ("new-1", "batch1", "1644106", "YD-new-1", "2026-07-08 10:51:07", 70, "C70", "高桥镇", "朝阳西", None, None, "wx_new"),
+        ("new-2", "batch1", "1664992", "YD-new-2", "2026-07-08 10:51:15", 70, "C70", "高桥镇", "朝阳西", None, None, "wx_new"),
     ]
-    conn.executemany("INSERT INTO wagon_shipments VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
+    conn.executemany("INSERT INTO wagon_shipments VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     conn.commit()
     conn.close()
 
@@ -107,6 +108,26 @@ def test_executor_runner_fetch_event_wagon_ids_prefers_ydids(tmp_path):
         conn.close()
 
     assert len(ids) == 2
+
+
+def test_executor_runner_fetch_event_wagon_ids_prefers_source_message_id(tmp_path):
+    db = tmp_path / "sop.db"
+    _seed_db(db)
+
+    conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
+    try:
+        ids = _fetch_event_wagon_ids(
+            conn,
+            "batch1",
+            source_message_id="wx_new",
+            ydids=["YD-old-1", "YD-old-2", "YD-new-1", "YD-new-2"],
+            car_nos=["1644106", "1664992"],
+        )
+    finally:
+        conn.close()
+
+    assert set(ids) == {"new-1", "new-2"}
 
 
 def test_executor_runner_fetch_event_boxes_prefers_ydids(tmp_path):

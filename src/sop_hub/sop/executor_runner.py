@@ -226,14 +226,27 @@ def _fetch_event_wagon_ids(
     conn: sqlite3.Connection,
     batch_id: str,
     *,
+    source_message_id: str = "",
     ydids: list[str] | None = None,
     car_nos: list[str] | None = None,
 ) -> list[str]:
     """按事件唯一键收口本次 wagon ids。
 
-    优先按 ydid(整车/集装箱都更稳);仅在没有 ydid 时,才允许退回 car_no。
-    这样同一批次内复用车号时,不会把旧趟 wagon 一起捞出来。
+    优先按 source_message_id 收当前消息实际入库的车;这能避免 95306 时间窗
+    混入上一趟旧票时,把旧 event 的 skip_existing 也并进本次发运 excel / 上传。
+    若当前消息尚未在库中留 source_message_id,再按 ydid(整车/集装箱都更稳);
+    仅在没有 ydid 时,才允许退回 car_no。这样同一批次内复用车号时,不会把
+    旧趟 wagon 一起捞出来。
     """
+    if source_message_id:
+        rows = conn.execute(
+            "SELECT id FROM wagon_shipments "
+            "WHERE batch_id=? AND source_message_id=?",
+            (batch_id, source_message_id),
+        ).fetchall()
+        if rows:
+            return [r["id"] for r in rows]
+
     if ydids:
         placeholders = ",".join("?" * len(ydids))
         rows = conn.execute(
@@ -539,6 +552,7 @@ def run_departure_executor_chain(
                     event_wagon_ids = _fetch_event_wagon_ids(
                         _c,
                         preview.release_batch_id,
+                        source_message_id=event.message_id,
                         ydids=inserted_ydids,
                         car_nos=inserted_car_nos,
                     )

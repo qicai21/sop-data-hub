@@ -42,6 +42,25 @@ AGENTS = [
     "锦港物流", "鞍钢集团朝阳钢铁", "新铁晟"
 ]
 
+
+def _canonicalize_cargo_info_raw(text: str) -> str:
+    """Normalize closed-set station OCR confusions inside inspection JSON rows.
+
+    This runs before anchor/inheritance so the persisted JSON and later matching
+    layers share the same station wording.
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return raw
+    try:
+        from sop_hub.data_agent.agent import STATION_OCR_CORRECTIONS
+        for bad, good in STATION_OCR_CORRECTIONS.items():
+            if bad in raw:
+                raw = raw.replace(bad, good)
+    except Exception:
+        pass
+    return raw
+
 ENTRY_PROMPT = """你是一个图片版式分析专家。请仔细观察提供的图片，判断它是否为“检装车通知单”。
 1. **统计标题数量**：图片中出现了几个完整的“锦州港...检、装车通知单”抬头标题？如果宽度很长且有两个标题，说明是横向拼接的双页单据（通常 50-100 车）。
 2. **预估总车数**：观察序号或页头“节数”，是否超过 50 车？
@@ -290,7 +309,7 @@ class InspectionSlipEngine:
                 "seq": seq,
                 "car_type": str(row.get("car_type", "")).strip(),
                 "car_no": str(row.get("car_no", "")).strip(),
-                "cargo_info_raw": str(row.get("cargo_info_raw", "")).strip(),
+                "cargo_info_raw": _canonicalize_cargo_info_raw(str(row.get("cargo_info_raw", "")).strip()),
                 "remark": str(row.get("remark", "")).strip(),
                 "defect": bool(row.get("defect", False)),
             }

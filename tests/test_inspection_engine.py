@@ -22,6 +22,15 @@ class TestNormalizeRows:
         assert rows[0]["car_no"] == "1234567"
         assert rows[1]["remark"] == "装高1.5"
 
+    def test_station_ocr_corrections_apply_to_cargo_info_raw(self):
+        raw = [
+            {"seq": 1, "car_type": "70", "car_no": "1234567", "cargo_info_raw": "沙子铁矿粉", "remark": "", "defect": False},
+            {"seq": 2, "car_type": "70", "car_no": "7654321", "cargo_info_raw": "沱子铁矿粉", "remark": "", "defect": False},
+        ]
+        rows = self.engine._normalize_rows("normal", raw, page_index=1, side_name="left")
+        assert rows[0]["cargo_info_raw"] == "汐子铁矿粉"
+        assert rows[1]["cargo_info_raw"] == "汐子铁矿粉"
+
     def test_alumina_extra_fields(self):
         raw = [
             {"seq": 1, "car_type": "C64", "car_no": "1234567", "cargo_info_raw": "", "tarp_no": "T001", "piece_count": 40, "defect": False},
@@ -84,6 +93,17 @@ class TestApplyInheritance:
         # All rows should belong to the 汐子铁矿粉 batch
         for row in rows:
             assert "汐子铁矿粉" in row["cargo_info_effective"]
+
+    def test_anchor_detection_after_station_ocr_correction(self):
+        rows = [
+            {"seq": 1, "car_no": "1111111", "cargo_info_raw": "沙子铁矿粉/宝丽", "remark": "", "defect": False},
+            {"seq": 2, "car_no": "2222222", "cargo_info_raw": "", "remark": "", "defect": False},
+        ]
+        rows = self.engine._normalize_rows("normal", rows, page_index=1, side_name="left")
+        self.engine._apply_inheritance(rows)
+        assert rows[0]["cargo_info_raw"] == "汐子铁矿粉/宝丽"
+        assert rows[0]["cargo_info_effective"].startswith("汐子铁矿粉")
+        assert rows[1]["cargo_info_effective"].startswith("汐子铁矿粉")
 
 
 class TestValidateResult:

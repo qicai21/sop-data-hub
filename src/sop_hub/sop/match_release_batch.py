@@ -5,8 +5,7 @@ chaoyang.yaml inspection_notice_flow.match_release_batch 节点引用了
 这个 action 名,但代码侧之前没人实现。
 
 业务规则:
-  1. 优先级:dispatch_status='in_progress' > 'suspended';不挑
-     'completed' / 'review_needed' / 'cancelled'(这些 batch 已经不接收新车)
+  1. 只接受 lifecycle 的 open batch;终态 batch 不接收新车
   2. 单一候选:直接采纳
   3. 多个候选:挂 pending_review,把候选 id 全数返回供人工指认
   4. 0 候选:返回 no_match,由调用方决定挂起 reason
@@ -44,8 +43,6 @@ class ReleaseBatchMatch:
 # #125 lifecycle 8 phase:open 状态 = enriched/loading(可接装车),其他阶段拒
 _OPEN_STATUSES = ("loading", "enriched")
 _FACT_STATUSES = ("loading", "enriched", "pending_freight")
-# 优先 loading(正在装),其次 enriched(等装);pending_freight 只允许车列事实入库,不允许发运输出。
-_STATUS_PRIORITY = {"loading": 1, "enriched": 2, "pending_freight": 3}
 
 
 def match_release_batch_by_ship_destination_cargo(
@@ -120,8 +117,6 @@ def match_release_batch_by_ship_destination_cargo(
             if tightened:
                 candidates = tightened
 
-        candidates.sort(key=lambda c: _STATUS_PRIORITY.get(c.get("dispatch_status") or "", 9))
-
         if len(candidates) == 1:
             return ReleaseBatchMatch(
                 matched_release_batch_id=candidates[0]["id"],
@@ -129,23 +124,13 @@ def match_release_batch_by_ship_destination_cargo(
                 matched_dispatch_status=candidates[0]["dispatch_status"] or "",
             )
 
-        # 多 candidate 时优先 loading;若只 1 个 loading + 多个 enriched → 自动选 loading
-        top_status = candidates[0]["dispatch_status"] or ""
-        if top_status == "loading" and sum(
-            1 for c in candidates if c["dispatch_status"] == "loading"
-        ) == 1:
-            return ReleaseBatchMatch(
-                matched_release_batch_id=candidates[0]["id"],
-                candidate_release_batch_ids=[c["id"] for c in candidates],
-                reason="single_loading_among_candidates",
-                matched_dispatch_status=top_status,
-                notes=[f"chose unique loading over {len(candidates)-1} enriched"],
-            )
-
         return ReleaseBatchMatch(
             candidate_release_batch_ids=[c["id"] for c in candidates],
             reason="multiple_candidates",
-            notes=[f"{len(candidates)} open batches; needs human assignment"],
+            notes=[
+                f"{len(candidates)} open batches; needs human assignment",
+                "do not prefer an older loading lot over a newer enriched lot",
+            ],
         )
 
     finally:

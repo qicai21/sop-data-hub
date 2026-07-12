@@ -61,14 +61,14 @@ def _scan_project_yamls(sop_dir: Path) -> dict[str, Path]:
     return out
 
 
-def _load_project_rule(project_id: str, sop_dir: Path | None = None) -> dict | None:
+def _load_project_meta(project_id: str, sop_dir: Path | None = None) -> dict:
     sop_dir = sop_dir or DEFAULT_SOP_DIR
     file_map = _scan_project_yamls(sop_dir)
     path = file_map.get(project_id)
     if not path:
-        return None
+        return {}
     sop = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return (sop.get("project_meta", {}) or {}).get("shipped_weight_rule")
+    return sop.get("project_meta", {}) or {}
 
 
 def _format_basis(per_wagon_expr: dict, wagon_row: dict, value: Any) -> str:
@@ -114,7 +114,8 @@ def _compute_inner(release_batch_id: str, conn: sqlite3.Connection,
     batch = dict(batch_row)
     project_id = batch.get("project") or ""
 
-    rule = _load_project_rule(project_id, sop_dir)
+    project_meta = _load_project_meta(project_id, sop_dir)
+    rule = project_meta.get("shipped_weight_rule")
     if not rule:
         return {"ok": False, "error": "no_shipped_weight_rule",
                 "release_batch_id": release_batch_id, "project": project_id}
@@ -124,10 +125,11 @@ def _compute_inner(release_batch_id: str, conn: sqlite3.Connection,
     #  新嵌套:{container: {...}, bulk: {...}}   → 按本 lot 运输方式选子规则
     #          集装箱业务数据在 wagon_container_shipments(box 级),走 container 源;
     #          整车/散粮在 wagon_shipments,走 bulk 源。
-    is_container = False
+    is_container = bool(project_meta.get("is_container_business"))
     if "container" in rule or "bulk" in rule:
-        tmode = batch.get("transport_mode") or ""
-        is_container = "集装箱" in tmode
+        if not is_container:
+            tmode = batch.get("transport_mode") or ""
+            is_container = "集装箱" in tmode
         sub = rule.get("container") if is_container else rule.get("bulk")
         if not sub:
             return {"ok": False, "error": "no_shipped_weight_rule",

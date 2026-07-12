@@ -42,14 +42,13 @@ project_meta:
     rationale: "结算依赖 95306 已交付时间;wagon 全部到货后才标 confirmed_received"
 
   # ── 已发运重量计算规则(集装箱 / 按箱数) ─────────────────
-  # 用 sop-data-hub/src/sop_hub/calc DSL 表达。集装箱业务约定:每箱 32.28 吨,
-  # 不依赖 marked_weight(它是铁路计费重量)。每节车通常 2 个箱(cargo_count=2)。
+  # 集装箱业务约定:每箱 32.28 吨,来源必须是箱级表,
+  # 不依赖 marked_weight(铁路计费重量)或车级表的 cargo_count。
   # 2026-06-05 用户校订:32.3 → 32.28(仅限本项目精度)
   shipped_weight_rule:
-    per_wagon:
-      op: multiply
-      lhs: $wagon.cargo_count
-      rhs: 32.28
+    container:
+      source: wagon_container_shipments_in_release_batch
+      per_box: 32.28
 
   # 业务模式标志:集装箱发运(dashboard 按"箱数"显示而不是"车数")
   is_container_business: true

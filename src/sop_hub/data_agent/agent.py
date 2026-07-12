@@ -94,6 +94,25 @@ def canonicalize_ship_text(text: Optional[str]) -> Optional[str]:
     return SHIP_OCR_CORRECTIONS.get(raw, raw)
 
 
+def _source_file_order(value: Optional[str]) -> int:
+    """Best-effort ordering key for WeChat-exported source files.
+
+    Typical image/file names carry a monotonic numeric prefix like `880_xxx.jpg`.
+    We use that prefix to prevent an older replayed notice from overwriting a
+    later corrected notice for the same batch_key.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return -1
+    m = re.match(r"(\d+)_", text)
+    if not m:
+        return -1
+    try:
+        return int(m.group(1))
+    except ValueError:
+        return -1
+
+
 def _inspection_payload_text(payload: Dict[str, Any]) -> str:
     return to_searchable_text(payload)
 
@@ -477,18 +496,21 @@ class BusinessDataAgent:
         )
         inserted: List[ReleaseBatchRecord] = []
         for normalized in normalized_rows:
-            # If the remark was flagged as review_needed, override dispatch_status
-            is_review_needed = bool(normalized.pop("_review_needed", False))
-            if is_review_needed:
-                normalized["dispatch_status"] = "review_needed"
-                normalized["dispatch_status_note"] = "OCR序列号匹配但日期/重量不一致，需人工核实"
-
             batch_key = normalized["batch_key"]
             existing = self.get_by_batch_key(batch_key)
             if existing is not None:
-                # Already exists — skip.
-                inserted.append(existing)
-                continue
+                existing_order = _source_file_order(existing.source_file_name)
+                incoming_order = _source_file_order(normalized.get("source_file_name"))
+                if existing_order >= 0 and incoming_order >= 0 and incoming_order < existing_order:
+                    inserted.append(existing)
+                    continue
+            # If the remark was flagged as review_needed, keep a human-facing note
+            # but do not write an out-of-schema dispatch_status value.
+            is_review_needed = bool(normalized.pop("_review_needed", False))
+            if is_review_needed:
+                normalized["dispatch_status_note"] = "OCR序列号匹配但日期/重量不一致，需人工核实"
+                if existing is not None:
+                    normalized["dispatch_status"] = existing.dispatch_status
             # OCR容错(#release-batch-robustness 缺口1):疑似放货日期误读
             # → 归并到现存 OPEN 同序号批 + 告警(不建重复批、不破坏第N批→lotN)。
             misread_into = self._find_open_batch_same_sequence(normalized)

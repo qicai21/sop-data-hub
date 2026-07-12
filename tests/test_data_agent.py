@@ -539,6 +539,64 @@ class TestBusinessDataAgent:
         assert len(after) == 1                              # 不重复建
         assert after[lot01.id].dispatch_status == "loading"  # 进行中批次未被锁逻辑破坏
 
+    def test_in_progress_batch_resend_updates_existing_batch_quantity(self, tmp_db):
+        """同 batch_key 的更正通知单必须真正更新已有批次，而不是在 Python 层短路 skip。
+
+        业务实证: 朝钢 马兰幸福 lot02 先发 10000 吨，后补正为 20000 吨。
+        第二张通知单命中同一 lot 后，应走 ON CONFLICT 更新 batch_quantity。
+        """
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "header_info": {"通知日期": "2026年7月9日"},
+            "business_info": {"船名": "马兰幸福", "发货单位": "", "收货单位": ""},
+            "cargo_info": {"货物名称": "铁矿", "运输方式": "铁路"},
+            "special_matter": "到站:朝阳西",
+            "remarks": [{"date": "7月9日", "sequence": "第二次", "plan": "10000吨（铁路 朝阳西）", "raw_line": "7月9日第二次下达计划：10000吨（铁路 朝阳西）"}],
+            "project": "chaoyang_steel",
+        }
+        recs = agent.ingest_release_batch(payload, source_file_name="malanxingfu_v1.json")
+        assert len(recs) == 1
+        lot02 = recs[0]
+        assert lot02.batch_quantity == 10000
+
+        payload_resend = json.loads(json.dumps(payload))
+        payload_resend["remarks"][0]["plan"] = "20000吨（铁路 朝阳西）"
+        payload_resend["remarks"][0]["raw_line"] = "7月9日第二次下达计划：20000吨（铁路 朝阳西）"
+        agent.ingest_release_batch(payload_resend, source_file_name="malanxingfu_v2.json")
+
+        after = {r.id: r for r in agent.list_release_batches()}
+        assert len(after) == 1
+        updated = after[lot02.id]
+        assert updated.batch_quantity == 20000
+        assert updated.source_file_name == "malanxingfu_v2.json"
+
+    def test_older_source_file_replay_does_not_override_newer_corrected_batch(self, tmp_db):
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "header_info": {"通知日期": "2026年7月9日"},
+            "business_info": {"船名": "马兰幸福", "发货单位": "", "收货单位": ""},
+            "cargo_info": {"货物名称": "铁矿", "运输方式": "铁路"},
+            "special_matter": "到站:朝阳西",
+            "remarks": [{"date": "7月9日", "sequence": "第二次", "plan": "10000吨（铁路 朝阳西）", "raw_line": "7月9日第二次下达计划：10000吨（铁路 朝阳西）"}],
+            "project": "chaoyang_steel",
+        }
+        recs = agent.ingest_release_batch(payload, source_file_name="880_old.json")
+        lot02 = recs[0]
+
+        newer = json.loads(json.dumps(payload))
+        newer["remarks"][0]["plan"] = "20000吨（铁路 朝阳西）"
+        newer["remarks"][0]["raw_line"] = "7月9日第二次下达计划：20000吨（铁路 朝阳西）"
+        agent.ingest_release_batch(newer, source_file_name="904_new.json")
+
+        older_replay = json.loads(json.dumps(payload))
+        agent.ingest_release_batch(older_replay, source_file_name="880_old.json")
+
+        after = {r.id: r for r in agent.list_release_batches()}
+        assert after[lot02.id].batch_quantity == 20000
+        assert after[lot02.id].source_file_name == "904_new.json"
+
     def test_misread_release_date_merges_into_open_same_sequence_lot(self, tmp_db):
         """OCR容错 #release-batch-robustness 缺口1:放货日期被 VLM 误读(6.23→5.23),
         与某 OPEN 同序号 lot 仅日期不同 → 归并到现存批 + 告警,绝不建重复批、不破坏第N批→lotN。"""

@@ -1350,6 +1350,9 @@ def _execute_chaoyang_inspection_chain(
     import hashlib
     import json as _json
     import sqlite3 as _sql
+    from sop_hub.sop.inspection_95306_synthesize import (
+        supersede_synth_candidates_for_real_notice,
+    )
     from sop_hub.sop.match_release_batch import (
         match_release_batch_by_ship_destination_cargo,
     )
@@ -1461,6 +1464,7 @@ def _execute_chaoyang_inspection_chain(
         if not loading_car_nos:
             return {"action": "failed", "status": "failed",
                     "error_message": "no non-defect car_no in extraction JSON"}
+        candidate_source = str(ext_data.get("source") or "")
 
         # ── 3. Match release_batch ─────────────────────────────────
         m = match_release_batch_by_ship_destination_cargo(
@@ -1821,6 +1825,17 @@ def _execute_chaoyang_inspection_chain(
             (matched_batch_id, candidate_id),
         )
         conn.commit()
+        superseded_synth_ids: list[str] = []
+        if candidate_source != "95306_synthesized":
+            superseded_synth_ids = supersede_synth_candidates_for_real_notice(
+                conn,
+                survivor_candidate_id=candidate_id,
+                project_id=project_id,
+                ship=ship,
+                dest=dest,
+                wagon_count=len(loading_car_nos),
+                event_time=str(notice_ts or cand_d.get("created_at") or ""),
+            )
 
         # "第几列" = 该批次的**实际发车趟次**(wagon_shipments 不同制票日去重)。
         # #issue-20260623:旧逻辑数 matched 候选数 → 有的趟走 95306 同步/合成没留
@@ -2032,6 +2047,7 @@ def _execute_chaoyang_inspection_chain(
             "output_json": {
                 "matched_release_batch_id": matched_batch_id,
                 "candidate_id": candidate_id,
+                "superseded_synth_candidate_ids": superseded_synth_ids,
                 "ship_name": ship,
                 "nth_loading": nth,
                 "loading_car_count": len(loading_car_nos),

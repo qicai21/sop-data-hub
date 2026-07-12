@@ -6,7 +6,10 @@ import sqlite3
 
 import pytest
 
-from sop_hub.sop.inspection_95306_synthesize import synthesize_candidate_from_95306
+from sop_hub.sop.inspection_95306_synthesize import (
+    supersede_synth_candidates_for_real_notice,
+    synthesize_candidate_from_95306,
+)
 
 
 def _rail_db(tmp_path, cars):
@@ -111,3 +114,42 @@ def test_synthesize_filters_other_ship(tmp_path):
     )
     assert res["status"] == "ok" and len(res["car_nos"]) == 2
     assert "9900001" not in res["car_nos"]
+
+
+def test_real_notice_supersedes_matching_synth_candidate(tmp_path):
+    conn = _sop_db(tmp_path)
+    conn.execute(
+        """
+        INSERT INTO inspection_ingestion_candidates (
+          id, source_file_name, status, reason, group_name, message_id, project_id,
+          ship_name, destination, cargo_name, candidate_status, wagon_count,
+          car_numbers_json, payload_json, created_at, updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            "synth-1", "95306_synth:中联发", "candidate",
+            "synthesized_from_95306_no_inspection_notice", "铁晟业务工作群",
+            "wx_text_1", "chaoyang_steel", "中联发", "朝阳西", "铁矿粉",
+            "pending_review", 3, '["1600000","1600001","1600002"]',
+            json.dumps({"source": "95306_synthesized"}, ensure_ascii=False),
+            "2026-06-19 03:20:00", "2026-06-19 03:20:00",
+        ),
+    )
+    conn.commit()
+
+    superseded = supersede_synth_candidates_for_real_notice(
+        conn,
+        survivor_candidate_id="real-1",
+        project_id="chaoyang_steel",
+        ship="中联发",
+        dest="朝阳西",
+        wagon_count=3,
+        event_time="2026-06-19 04:30:00",
+    )
+
+    row = conn.execute(
+        "SELECT candidate_status, reason FROM inspection_ingestion_candidates WHERE id='synth-1'"
+    ).fetchone()
+    assert superseded == ["synth-1"]
+    assert row[0] == "superseded"
+    assert row[1] == "superseded_by_real_inspection_notice"

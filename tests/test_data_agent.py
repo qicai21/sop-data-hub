@@ -240,7 +240,7 @@ class TestBusinessDataAgent:
         assert res["reason"] == "no_release_batch_candidate"
         assert count == 1
 
-    def test_sop_authorized_inspection_is_not_blocked_by_unmanaged_flow_gate(self, tmp_db):
+    def test_sop_authorized_inspection_from_non_group001_is_ignored(self, tmp_db):
         agent = BusinessDataAgent()
         agent.db.execute(
             """
@@ -289,8 +289,83 @@ class TestBusinessDataAgent:
             "SELECT COUNT(*) FROM inspection_ingestion_candidates"
         ).fetchone()[0]
 
+        assert res["status"] == "ignored"
+        assert res["reason"] == "inspection_image_source_not_allowed"
+        assert count == 0
+
+    def test_inspection_candidate_source_restricted_to_group001_for_zhongtang(self, tmp_db):
+        agent = BusinessDataAgent()
+        payload = {
+            "is_inspection": True,
+            "_agent_sop_authorized": True,
+            "project": "zhongtang_special_steel",
+            "rows": [
+                {"seq": 1, "car_no": "4941680", "cargo_info_raw": "宝丽"},
+                {"seq": 2, "car_no": "4920661", "cargo_info_raw": "汐子铁矿粉"},
+            ],
+        }
+
+        res = agent.ingest_inspection_payload(
+            payload,
+            source_file_name="baoli_from_group013.jpg",
+            group_name="数据单发群",
+        )
+
+        count = agent.db.execute(
+            "SELECT COUNT(*) FROM inspection_ingestion_candidates"
+        ).fetchone()[0]
+        assert res["status"] == "ignored"
+        assert res["reason"] == "inspection_image_source_not_allowed"
+        assert count == 0
+
+    def test_inspection_candidate_source_keeps_group001_for_zhongtang(self, tmp_db):
+        agent = BusinessDataAgent()
+        agent.db.execute(
+            """
+            INSERT INTO release_dispatch_match_rules (
+              id, release_batch_id, project, ship_name, destination_station,
+              cargo_name, matching_str, matching_tokens_json, status, priority
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "rule-managed-group001",
+                "batch-managed-group001",
+                "zhongtang_special_steel",
+                "宝丽",
+                "汐子",
+                "铁矿",
+                "zhongtang_special_steel 宝丽 汐子 铁矿 lot01",
+                json.dumps({
+                    "ship": ["宝丽"],
+                    "destination": ["汐子"],
+                    "cargo": ["铁矿", "铁矿粉", "铁"],
+                    "all": ["zhongtang_special_steel", "宝丽", "汐子", "铁矿", "lot01"],
+                }, ensure_ascii=False),
+                "active",
+                100,
+            ),
+        )
+        agent.db.commit()
+        payload = {
+            "is_inspection": True,
+            "_agent_sop_authorized": True,
+            "project": "zhongtang_special_steel",
+            "rows": [
+                {"seq": 1, "car_no": "4941680", "cargo_info_raw": "宝丽"},
+                {"seq": 2, "car_no": "4920661", "cargo_info_raw": "汐子铁矿粉"},
+            ],
+        }
+
+        res = agent.ingest_inspection_payload(
+            payload,
+            source_file_name="baoli_from_group001.jpg",
+            group_name="铁晟业务工作群",
+        )
+
+        count = agent.db.execute(
+            "SELECT COUNT(*) FROM inspection_ingestion_candidates"
+        ).fetchone()[0]
         assert res["status"] != "ignored"
-        assert res["reason"] != "ignored_unmanaged_inspection_flow"
         assert count == 1
 
     def test_sop_authorized_unmanaged_flow_is_ignored(self, tmp_db):

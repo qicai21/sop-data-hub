@@ -1375,8 +1375,33 @@ class BusinessDataAgent:
         payload: Dict[str, Any],
         source_file_name: Optional[str] = None,
         group_name: Optional[str] = None,
+        group_id: Optional[str] = None,
         include_completed_release_batches: bool = False,
     ) -> Dict[str, Any]:
+        project_id = str((payload or {}).get("project") or "").strip()
+        if project_id:
+            from sop_hub.sop.inspection_source_policy import decide_inspection_image_source
+
+            source_decision = decide_inspection_image_source(
+                project_id=project_id,
+                group_id=group_id,
+                group_name=group_name,
+            )
+            if not source_decision.allowed:
+                return {
+                    "status": "ignored",
+                    "reason": source_decision.reason,
+                    "candidate_ids": [],
+                    "release_batch_ids": [],
+                    "wagon_count": len(
+                        [
+                            str(row.get("car_no") or "").strip()
+                            for row in ((payload or {}).get("rows") or [])
+                            if isinstance(row, dict) and str(row.get("car_no") or "").strip()
+                        ]
+                    ),
+                }
+
         # #130:复合检车单按 ship rule 拆 N 组,各自 ingest
         # #131 (2026-06-08):unmatched 段(无 rule 命中,如乌兰浩特项目未建)
         #   **直接丢弃**,不建 candidate 占位 pending_review。用户决策:不投资

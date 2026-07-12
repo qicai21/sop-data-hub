@@ -190,7 +190,7 @@ listening_tasks:
         trigger_condition: "match_text_template"
         target_node: "create_release_batch"
       - message_type: "image"
-        trigger_condition: "category_in:[出港计划通知单, 检装车通知单]"
+        trigger_condition: "category_in:[出港计划通知单]"
         target_node: "process_business_image"
 
   - group_id: "GROUP001"
@@ -228,11 +228,3 @@ listening_tasks:
         trigger_condition: "category_in:[出港计划通知单]"
         target_node: "create_release_batch"
         supplemental: true
-      - message_type: "image"
-        trigger_condition: "category_in:[检装车通知单]"
-        target_node: "process_inspection_slip"
-        supplemental: true
-        # 2026-06-06:dev/production 双轨已废弃。真正的发送目标在 yaml
-        # flows.report_delivery_flow.send_report.target_group(当前 ["GROUP013"]
-        # 数据单发群)。listening_tasks 只负责"听 + 路由触发节点",不再带
-        # 收件人。

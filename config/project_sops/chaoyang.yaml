@@ -131,10 +131,6 @@ listening_tasks:
         trigger_condition: "category_in:[出港计划通知单]"
         target_node: "detect_release_notice"
         supplemental: true
-      - message_type: "image"
-        trigger_condition: "category_in:[检装车通知单]"
-        target_node: "detect_inspection_notice"
-        supplemental: true
       - message_type: "text"
         trigger_condition: "business_text_context"
         target_node: "capture_business_context"
@@ -168,7 +164,7 @@ flows:
   inspection_notice_flow:
     description: "inspection notice image to 95306 query and wagon_shipments"
     trigger:
-      groups: ["GROUP001", "GROUP013"]
+      groups: ["GROUP001"]
       message_types: ["image"]
       image_category: ["检装车通知单"]
     steps:

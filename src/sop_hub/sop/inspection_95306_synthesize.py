@@ -120,3 +120,63 @@ def synthesize_candidate_from_95306(
     return {"status": "ok", "candidate_id": cand_id, "car_nos": car_nos,
             "cargo_name": cargo_name,
             "message": f"95306 反查合成候选 {len(car_nos)} 车({ship}→{dest})"}
+
+
+def supersede_synth_candidates_for_real_notice(
+    conn: sqlite3.Connection,
+    *,
+    survivor_candidate_id: str,
+    project_id: str,
+    ship: str,
+    dest: str,
+    wagon_count: int,
+    event_time: str,
+    before_hours: float = 12.0,
+    after_hours: float = 6.0,
+) -> list[str]:
+    """Supersede matching 95306 synth placeholders once a real notice candidate wins."""
+    try:
+        base = datetime.strptime(str(event_time).replace("T", " ")[:19], "%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        base = None
+
+    clauses = [
+        "id <> ?",
+        "project_id = ?",
+        "ship_name = ?",
+        "COALESCE(candidate_status, '') <> 'superseded'",
+        "reason = 'synthesized_from_95306_no_inspection_notice'",
+    ]
+    params: list[Any] = [survivor_candidate_id, project_id, ship]
+    if dest:
+        clauses.append("(destination = ? OR destination = '' OR destination IS NULL)")
+        params.append(dest)
+    if wagon_count > 0:
+        clauses.append("COALESCE(wagon_count, 0) = ?")
+        params.append(wagon_count)
+    if base is not None:
+        start = (base - timedelta(hours=before_hours)).strftime("%Y-%m-%d %H:%M:%S")
+        end = (base + timedelta(hours=after_hours)).strftime("%Y-%m-%d %H:%M:%S")
+        clauses.append("created_at BETWEEN ? AND ?")
+        params.extend([start, end])
+
+    rows = conn.execute(
+        "SELECT id FROM inspection_ingestion_candidates WHERE " + " AND ".join(clauses),
+        params,
+    ).fetchall()
+    superseded_ids = [str(row[0]) for row in rows]
+    if not superseded_ids:
+        return []
+
+    conn.executemany(
+        """
+        UPDATE inspection_ingestion_candidates
+        SET candidate_status='superseded',
+            reason='superseded_by_real_inspection_notice',
+            updated_at=?
+        WHERE id=?
+        """,
+        [(_now_iso_beijing(), candidate_id) for candidate_id in superseded_ids],
+    )
+    conn.commit()
+    return superseded_ids

@@ -21,6 +21,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from sop_hub.sop.inspection_source_policy import is_zhongtang_freight_only_group
+
 
 def _default_db_path() -> Path:
     return Path(__file__).resolve().parents[3] / "data" / "sop_agent.db"
@@ -45,6 +47,16 @@ def _read_extraction_project(extraction_json_path: str) -> tuple[str | None, dic
     if data.get("_agent_sop_authorized") is False:
         return None, data
     return (project or None), data
+
+
+def _should_skip_group_policy(*, project: str, group_name: str, label: str) -> tuple[bool, str]:
+    if (
+        str(project or "").strip() == "zhongtang_special_steel"
+        and is_zhongtang_freight_only_group(group_name=group_name)
+        and str(label or "").strip() != "出港计划通知单"
+    ):
+        return True, "zhongtang_group_freight_only_non_notice"
+    return False, ""
 
 
 def promote_classified_image_messages(
@@ -73,7 +85,7 @@ def promote_classified_image_messages(
     conn.row_factory = sqlite3.Row
 
     base_sql = (
-        "SELECT id, message_id, group_name, sop_project_id, extraction_json_path, sop_flow, sop_node "
+        "SELECT id, message_id, group_name, sop_project_id, extraction_json_path, sop_flow, sop_node, classification_label "
         "FROM message_inbox "
         "WHERE processing_status='classified' AND is_sop_msg=1 "
         "  AND COALESCE(sop_flow,'')<>'' AND COALESCE(sop_node,'')<>'' "
@@ -111,6 +123,19 @@ def promote_classified_image_messages(
             details.append(
                 {"id": rid, "message_id": row["message_id"], "action": "skipped",
                  "reason": "no_project_in_extraction", "extraction_path": ext_path}
+            )
+            continue
+        skip, skip_reason = _should_skip_group_policy(
+            project=project,
+            group_name=str(row["group_name"] or ""),
+            label=str(row["classification_label"] or ""),
+        )
+        if skip:
+            skipped += 1
+            details.append(
+                {"id": rid, "message_id": row["message_id"], "action": "skipped",
+                 "reason": skip_reason, "sop_project_id": project,
+                 "group_name": row["group_name"], "label": row["classification_label"]}
             )
             continue
         try:
@@ -186,6 +211,17 @@ def repair_misclassified_ignored(
             skipped += 1
             details.append({"id": rid, "message_id": row["message_id"], "action": "skipped",
                             "reason": "no_project_in_extraction"})
+            continue
+        skip, skip_reason = _should_skip_group_policy(
+            project=project,
+            group_name=str(row["group_name"] or ""),
+            label=str(row["classification_label"] or ""),
+        )
+        if skip:
+            skipped += 1
+            details.append({"id": rid, "message_id": row["message_id"], "action": "skipped",
+                            "reason": skip_reason, "sop_project_id": project,
+                            "group_name": row["group_name"], "label": row["classification_label"]})
             continue
         flow, node = label_route[label]
         conn.execute(

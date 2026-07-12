@@ -100,6 +100,35 @@ def test_route_baoli_to_trigger():
     assert r.sop_project_id == "zhongtang_special_steel"
 
 
+def test_zhongtang_freight_only_group_ignores_inspection_text():
+    r = classify_text_message(
+        MessageEvent(
+            message_id="m2",
+            channel="wechat",
+            group_id="中唐特钢发运群",
+            text="煤四 汐子铁 宝丽 53节",
+            metadata={"group_name": "中唐特钢发运群"},
+        )
+    )
+    assert r.processing_status == "ignored"
+    assert r.sop_flow == ""
+    assert "仅跟踪货运信息" in r.summary
+
+
+def test_zhongtang_freight_only_group_keeps_freight_detail():
+    r = classify_text_message(
+        MessageEvent(
+            message_id="m3",
+            channel="wechat",
+            group_id="中唐特钢发运群",
+            text="船名：宝丽 货名：混合粉 合同号：ZLZT-2026070901 计划号：90260700027",
+            metadata={"group_name": "中唐特钢发运群"},
+        )
+    )
+    assert r.processing_status == "matched_sop"
+    assert r.sop_flow == "freight_detail_flow"
+
+
 def test_route_jilin_still_departure():
     r = classify_text_message(_event("煤六 四平铁 蓝鳍 53节"))
     assert r.sop_node == "detect_departure_message"

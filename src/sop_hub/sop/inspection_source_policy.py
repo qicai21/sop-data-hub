@@ -8,6 +8,10 @@ _GROUP001_NAMES = {
     "铁晟业务工作群-[GROUP001]",
 }
 
+_ZHONGTANG_FREIGHT_ONLY_GROUP_NAMES = {
+    "中唐特钢发运群",
+}
+
 _INSPECTION_IMAGE_SOURCE_POLICY = {
     "zhongtang_special_steel": {"GROUP001"},
     "chaoyang_steel": {"GROUP001"},
@@ -36,6 +40,20 @@ def _normalize_group_id(*, group_id: str | None = None, group_name: str | None =
     if "[GROUP003]" in gname:
         return "GROUP003"
     return ""
+
+
+def is_zhongtang_freight_only_group(
+    *,
+    group_id: str | None = None,
+    group_name: str | None = None,
+) -> bool:
+    gid = str(group_id or "").strip()
+    gname = str(group_name or "").strip()
+    if gid in _ZHONGTANG_FREIGHT_ONLY_GROUP_NAMES:
+        return True
+    if gname in _ZHONGTANG_FREIGHT_ONLY_GROUP_NAMES:
+        return True
+    return False
 
 
 def decide_inspection_image_source(

@@ -22,6 +22,7 @@ from sop_hub.sop.departure_text_parser import (
     _strip_chinese_quotes,
     parse_departure_text,
 )
+from sop_hub.sop.inspection_source_policy import is_zhongtang_freight_only_group
 from sop_hub.sop.monitoring_plan_matcher import MessageEvent
 
 # ── 检验类项目(检装车通知单驱动)──────────────────────────────────────
@@ -311,6 +312,7 @@ def classify_text_message(event: MessageEvent) -> TextRouteResult:
     """
     text = (event.text or "").strip()
     group_id = event.group_id or ""
+    group_name = str(event.metadata.get("group_name") or group_id or "").strip()
     message_id = event.message_id
 
     if not text:
@@ -334,6 +336,33 @@ def classify_text_message(event: MessageEvent) -> TextRouteResult:
             is_sop_msg=False,
             processing_status="ignored",
             summary="[barrier/system] 输出屏障群或系统告警,不触发 SOP",
+        )
+
+    # 2026-07-12 用户决策:中唐特钢发运群只跟踪出港计划/货运信息,不再承接
+    # 发车文本、检装车文本或检装车图片的旁路判断,避免与铁晟业务工作群多来源串扰。
+    if is_zhongtang_freight_only_group(group_id=group_id, group_name=group_name):
+        if _is_freight_detail(text):
+            project = _infer_project_from_text(text)
+            summary = _build_summary(
+                "freight_detail" if project else "freight_detail_unknown_project",
+                text,
+            )
+            return TextRouteResult(
+                message_id=message_id,
+                group_id=group_id,
+                is_sop_msg=True,
+                sop_project_id=project or "",
+                sop_flow="freight_detail_flow",
+                sop_node="enrich_release_batch",
+                summary=summary,
+                processing_status="matched_sop",
+            )
+        return TextRouteResult(
+            message_id=message_id,
+            group_id=group_id,
+            is_sop_msg=False,
+            processing_status="ignored",
+            summary="[group_policy] 中唐特钢发运群仅跟踪货运信息",
         )
 
     # Rule 0: 检验类文本触发器(#143)。复合多船文本或单船 chaoyang/zhongtang

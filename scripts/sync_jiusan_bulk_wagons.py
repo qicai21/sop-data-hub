@@ -9,8 +9,8 @@
 1. 拉 rail DB 高桥镇→新台子 大豆「整车运输」票(2026-06-09 起)
 2. 每票 id=sha1("bulk"|ydid)(船无关,故重路由不换 id);按 ydid 查台账定 ship→lot02 batch
 3. **命中台账**:路由到该船 lot02;已存在但挂错船的 → **重路由纠正**(自愈)
-4. **未命中**:已存在行原样保留(grandfather,历史单船期和谐1不动);全新行暂落和谐1 + WARN
-   —— 通知单一入台账,下趟 sync 自动把它纠正,污染临时且自消
+4. **未命中**:已存在行原样保留(grandfather,历史单船期和谐1不动);全新行仅在存在活动
+   lot02 时暂落该船 + WARN。若所有 lot02 已完结,不写入未知票,只告警待通知单补齐。
 5. 按**每条被改动的 batch** 分别重算 batch_count + 装车重量(yaml shipped_weight_rule.bulk)
 
 集装箱走 sync_jiusan_harmony_wagons.py;散粮车(整车/L 型敞车)走本脚本。
@@ -192,7 +192,7 @@ def build_row(t: dict, now: str, ship: str, batch_id: str) -> dict:
 
 def resolve_routing(
     tickets: list[dict], notice_map: dict[str, str], ship_batches: dict[str, str],
-    fallback_ship: str,
+    fallback_ship: str | None,
 ) -> list[tuple[dict, str, str, bool]]:
     """每票 → (ticket, ship, batch_id, matched)。matched=命中简装车通知单台账(按ydid)。"""
     routed = []
@@ -238,6 +238,7 @@ def upsert_rows(
     new_n = reroute_n = refresh_n = 0
     touched: set[str] = set()
     warn_new_unmatched: list[tuple] = []
+    deferred_new_unmatched: list[tuple] = []
     # 归属变了 → 清核对完毕标记(否则 reconcile 把它当已核对剔除,脏标记卡死)
     rec_clear = (", reconciled_at=NULL, reconcile_source_ref=NULL"
                  if "reconciled_at" in {c[1] for c in conn.execute("PRAGMA table_info(wagon_shipments)")}
@@ -245,9 +246,9 @@ def upsert_rows(
 
     for t, ship, batch_id, matched in routed:
         rid = stable_hash("bulk", t["ydid"])
-        r = build_row(t, now, ship, batch_id)
         if rid in existing:
             cur = existing[rid]
+            r = build_row(t, now, ship or "", batch_id or cur)
             if matched and batch_id and batch_id != cur:
                 # 命中台账但当前挂错船 → 重路由纠正(连 ship_name/source 一起改)+ 清核对标记。
                 conn.execute(
@@ -267,9 +268,14 @@ def upsert_rows(
                 refresh_n += 1
                 touched.add(cur)
         else:
-            # 全新行。未命中台账 → 暂落兜底船 + 记 WARN(待通知单到达自愈)。
+            # 全新行。没有活动批次时，未知票不能误入已完结的历史船。
             if not matched:
-                warn_new_unmatched.append((t["ydid"], t["car_no"], (t["ticketed_at"] or "")[:10]))
+                item = (t["ydid"], t["car_no"], (t["ticketed_at"] or "")[:10])
+                if not batch_id:
+                    deferred_new_unmatched.append(item)
+                    continue
+                warn_new_unmatched.append(item)
+            r = build_row(t, now, ship, batch_id)
             cols = list(r.keys())
             conn.execute(
                 f"INSERT INTO wagon_shipments ({','.join(cols)}) "
@@ -283,6 +289,7 @@ def upsert_rows(
     return {
         "new": new_n, "reroute": reroute_n, "refresh": refresh_n,
         "touched": touched, "warn_new_unmatched": warn_new_unmatched,
+        "deferred_new_unmatched": deferred_new_unmatched,
     }
 
 
@@ -318,10 +325,10 @@ def main(apply: bool = False) -> None:
         ship_batches = load_ship_batches(conn)
         notice_map = load_notice_ship_map(conn)
         fallback_ship = resolve_fallback_ship(conn)
-        if fallback_ship not in ship_batches:
-            print(f"⚠ 缺 {fallback_ship} lot02 批次(release_batches),中止")
-            return
-        print(f"未命中台账兜底落点(当前活跃船)={fallback_ship}")
+        if fallback_ship:
+            print(f"未命中台账兜底落点(当前活跃船)={fallback_ship}")
+        else:
+            print("未命中台账兜底落点=无(所有 lot02 已完结;未知新票不入库)")
         id2ship = {v: k for k, v in ship_batches.items()}
         routed = resolve_routing(tickets, notice_map, ship_batches, fallback_ship)
 
@@ -342,6 +349,11 @@ def main(apply: bool = False) -> None:
             print(f"\n⚠ WARN:{len(stats['warn_new_unmatched'])} 个**全新且未命中通知单**的散粮车,"
                   f"暂落 {fallback_ship}(请尽快入简装车通知单台账,下趟 sync 自动纠正):")
             for ydid, car, day in stats["warn_new_unmatched"][:20]:
+                print(f"    {day}  车号 {car}  ydid {ydid}")
+        if stats["deferred_new_unmatched"]:
+            print(f"\n⚠ WARN:{len(stats['deferred_new_unmatched'])} 个全新且未命中通知单的散粮车,"
+                  "当前没有活动 lot02,未入库(请补微信台账或新建批次):")
+            for ydid, car, day in stats["deferred_new_unmatched"][:20]:
                 print(f"    {day}  车号 {car}  ydid {ydid}")
 
         print(f"\n改动:新增 {stats['new']} / 重路由 {stats['reroute']} / 刷新 {stats['refresh']}")

@@ -100,6 +100,30 @@ def test_matched_routes_directly_when_new(tmp_path):
     assert (row["batch_id"], row["ship_name"]) == ("BC", "诚信")
 
 
+def test_completed_lots_still_accept_notice_mapped_history(tmp_path):
+    c = _make_db(tmp_path)
+    ship_batches = {"和谐1": "BH", "诚信": "BC"}
+    # 全部 lot02 已完成时，已命中内部群台账的历史票仍可补入对应批次。
+    routed = m.resolve_routing(
+        [_ticket("YD_CX_HISTORY", "car_cx")], {"YD_CX_HISTORY": "诚信"}, ship_batches, None,
+    )
+    stats = m.upsert_rows(c, routed, "t1", ship_batches)
+    assert stats["new"] == 1
+    assert not stats["deferred_new_unmatched"]
+    row = c.execute("SELECT batch_id, ship_name FROM wagon_shipments WHERE ydid='YD_CX_HISTORY'").fetchone()
+    assert (row["batch_id"], row["ship_name"]) == ("BC", "诚信")
+
+
+def test_completed_lots_defer_unknown_new_ticket(tmp_path):
+    c = _make_db(tmp_path)
+    ship_batches = {"和谐1": "BH", "诚信": "BC"}
+    routed = m.resolve_routing([_ticket("YD_UNKNOWN", "car_unknown")], {}, ship_batches, None)
+    stats = m.upsert_rows(c, routed, "t1", ship_batches)
+    assert stats["new"] == 0
+    assert stats["deferred_new_unmatched"] == [("YD_UNKNOWN", "car_unknown", "2026-06-19")]
+    assert c.execute("SELECT 1 FROM wagon_shipments WHERE ydid='YD_UNKNOWN'").fetchone() is None
+
+
 def test_resolve_fallback_ship_never_returns_finished_ship(tmp_path):
     c = _make_db(tmp_path)
     c.execute("ALTER TABLE release_batches ADD COLUMN dispatch_status TEXT")

@@ -51,6 +51,8 @@ DEFAULT_DB = Path("data/sop_agent.db")
 # cargo_product_name)属于这类,所以 "自动 enrich" 名副其实。
 AUTO_SAFE_TASK_TYPES = (
     "freight_detail_enrichment",
+    # 九三内部群单船发车文本只写本地分票台账和同步库,不发微信/不传门户。
+    "jiusan_departure_text_reconcile",
 )
 
 # 含对外提交(工厂上传:吉林金钢 / 朝阳鞍钢)的 task_type → 必须 --run-chains 显式

@@ -180,6 +180,27 @@ def _resolve_task_type(project_id: str, flow_name: str, node_name: str) -> str:
     return "generic_sop_task"
 
 
+JIUSAN_INTERNAL_DEPARTURE_GROUP = "铁晟大豆业务内部沟通群"
+
+
+def is_valid_jiusan_internal_departure_row(row: dict[str, Any]) -> bool:
+    """Only the designated Jiushan internal group may create bulk text tasks."""
+    if str(row.get("group_name") or "").strip() != JIUSAN_INTERNAL_DEPARTURE_GROUP:
+        return False
+    text = str(row.get("text_content") or "").strip()
+    if not text:
+        return False
+    from sop_hub.sop.departure_text_parser import parse_departure_text
+
+    candidate = parse_departure_text(
+        text,
+        group_id=JIUSAN_INTERNAL_DEPARTURE_GROUP,
+        message_id=str(row.get("message_id") or ""),
+        message_time=str(row.get("received_datetime") or ""),
+    )
+    return candidate.status == "complete" and candidate.project_id == "jiusan"
+
+
 def _build_input_json(row: dict[str, Any]) -> dict[str, Any]:
     inp: dict[str, Any] = {
         "message_inbox_id": row.get("id"),
@@ -229,6 +250,12 @@ def create_task_from_message_inbox(
             "action": "skipped", "reason": "yaml_has_no_such_flow",
             "project_id": project_id, "flow_name": flow_name,
             "node_name": node_name, "message_inbox_id": message_inbox_id,
+        }
+    if task_type == "jiusan_departure_text_reconcile" and not is_valid_jiusan_internal_departure_row(row_dict):
+        conn.close()
+        return {
+            "action": "skipped", "reason": "jiusan_departure_requires_internal_group_complete_text",
+            "message_inbox_id": message_inbox_id, "task_type": task_type,
         }
     input_json = _build_input_json(row_dict)
     now = _now_iso()

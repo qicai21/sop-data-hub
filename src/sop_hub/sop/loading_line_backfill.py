@@ -513,3 +513,44 @@ def sync_recent_loading_lines(
         "ambiguous": sum(d.status == "ambiguous" for d in decisions),
         "applied_rows": applied,
     }
+
+
+def apply_jiusan_historical_line_defaults(conn: sqlite3.Connection) -> dict[str, int]:
+    """Apply the user-confirmed historical Jiusan line convention to blank rows.
+
+    Bulk wagons are always line 7. A container ticket uses line 8 when there
+    is any bulk-wagon handling record on the same ticket date; otherwise it
+    uses line 7. Existing lines are immutable.
+    """
+    bulk = conn.execute(
+        """
+        UPDATE wagon_shipments
+        SET loading_line='七道', updated_at=CURRENT_TIMESTAMP
+        WHERE project_id='jiusan' AND trim(coalesce(loading_line,''))=''
+        """
+    ).rowcount
+    container_eight = conn.execute(
+        """
+        UPDATE wagon_container_shipments AS wc
+        SET loading_line='八道', updated_at=CURRENT_TIMESTAMP
+        WHERE wc.project_id='jiusan'
+          AND trim(coalesce(wc.loading_line,''))=''
+          AND EXISTS (
+              SELECT 1 FROM wagon_shipments AS ws
+              WHERE ws.project_id='jiusan'
+                AND date(ws.ticketed_at)=date(wc.ticketed_at)
+          )
+        """
+    ).rowcount
+    container_seven = conn.execute(
+        """
+        UPDATE wagon_container_shipments
+        SET loading_line='七道', updated_at=CURRENT_TIMESTAMP
+        WHERE project_id='jiusan' AND trim(coalesce(loading_line,''))=''
+        """
+    ).rowcount
+    return {
+        "bulk_seven": bulk,
+        "container_eight": container_eight,
+        "container_seven": container_seven,
+    }

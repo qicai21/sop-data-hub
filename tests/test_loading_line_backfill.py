@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from sop_hub.sop.loading_line_backfill import (
+    apply_jiusan_historical_line_defaults,
     apply_backfill,
     decide_backfill,
     parse_workgroup_segments,
@@ -195,3 +196,34 @@ def test_recent_sync_is_idempotent_after_filling_lines(tmp_path):
     second = sync_recent_loading_lines(db, since="2026-07-01")
     assert first["applied_rows"] == 1
     assert second["applied_rows"] == 0
+
+
+def test_jiusan_historical_defaults_use_same_day_bulk_as_container_line_eight():
+    conn = _setup_db()
+    try:
+        conn.execute(
+            """
+            INSERT INTO wagon_shipments
+            (id, project_id, dispatch_train_code, ship_name, destination_name, ticketed_at, loading_line)
+            VALUES ('bulk', 'jiusan', 'js2601011', '里奥格兰德', '新台子', '2026-01-01 08:00:00', '')
+            """
+        )
+        conn.executemany(
+            """
+            INSERT INTO wagon_container_shipments
+            (id, project_id, dispatch_train_code, ship_name, destination_name, ticketed_at, ydid, loading_line)
+            VALUES (?, 'jiusan', ?, '里奥格兰德', '新台子', ?, ?, '')
+            """,
+            [
+                ('container-eight', 'js2601012', '2026-01-01 09:00:00', 'C8'),
+                ('container-seven', 'js2601013', '2026-01-02 09:00:00', 'C7'),
+            ],
+        )
+        assert apply_jiusan_historical_line_defaults(conn) == {
+            "bulk_seven": 1, "container_eight": 1, "container_seven": 1,
+        }
+        assert conn.execute("SELECT loading_line FROM wagon_shipments WHERE id='bulk'").fetchone()[0] == '七道'
+        assert conn.execute("SELECT loading_line FROM wagon_container_shipments WHERE id='container-eight'").fetchone()[0] == '八道'
+        assert conn.execute("SELECT loading_line FROM wagon_container_shipments WHERE id='container-seven'").fetchone()[0] == '七道'
+    finally:
+        conn.close()

@@ -31,19 +31,24 @@ PROJECT = "jiusan"
 ORIGIN = "高桥镇"
 DEST = "新台子"
 START = "2026-06-10"
+DOWNLOADS = Path.home() / "Downloads"
 
 # 一票两船 box 级例外:货票号 -> {箱号尾段: 应归船}
-BOX_EXCEPTIONS = {"GZDJW0496546": {"1512630": "诚信"}}
+BOX_EXCEPTIONS = {
+    "GZDJW0496546": {"1512630": "诚信"},
+    "GZDJW0501693": {"3390802": "美国", "6759690": "诚信"},
+    "GZDJT0249088": {"1507280": "美国", "1542721": "诚信"},
+}
 
 
 # ── 额外源:WeChat 文件夹各船最新版货票 ──────────────────────────────
 def _wx_file_dirs():
     base = Path.home() / "Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files"
-    return sorted(base.glob("*/msg/file/2026-*"), reverse=True)
+    return [DOWNLOADS, *sorted(base.glob("*/msg/file/2026-*"), reverse=True)]
 
 
 def _parse_ship_version(fname):
-    m = re.search(r"大豆\s*(\S+?)\s*货票", fname)
+    m = re.search(r"(?:大豆\s*)?(\S+?)\s*货票", fname)
     if not m:
         return None, 0
     v = re.search(r"\((\d+)\)", fname)
@@ -53,26 +58,25 @@ def _parse_ship_version(fname):
 def find_latest_tickets():
     best = {}
     for d in _wx_file_dirs():
-        for f in d.glob("*大豆*货票*.xlsx"):
+        for f in d.glob("*货票*.xlsx"):
             ship, ver = _parse_ship_version(f.name)
             if not ship:
                 continue
-            key = (ver, f.stat().st_mtime)
+            key = (int(d == DOWNLOADS), ver, f.stat().st_mtime)
             if ship not in best or key > best[ship][1]:
                 best[ship] = (f, key)
     return {s: p for s, (p, _k) in best.items()}
 
 
 def _read_sheet_hph(path, sheet):
-    try:
-        ws = openpyxl.load_workbook(path, data_only=True)[sheet]
-    except KeyError:
-        return set()
+    workbook = openpyxl.load_workbook(path, data_only=True)
+    names = [name for name in workbook.sheetnames if name == sheet or name.startswith(sheet)]
     out = set()
-    for r in ws.iter_rows(min_row=4, values_only=True):
-        h = r[3] if len(r) > 3 else None
-        if h and str(h).strip().startswith("GZD"):
-            out.add(str(h).strip())
+    for name in names:
+        for r in workbook[name].iter_rows(min_row=4, values_only=True):
+            h = r[3] if len(r) > 3 else None
+            if h and str(h).strip().startswith("GZD"):
+                out.add(str(h).strip())
     return out
 
 
@@ -174,6 +178,23 @@ class JiusanContainerSpec(_JiusanBase):
             if bid:
                 out[(ydid, box)] = bid
         return out
+
+    def gateable_new_unattributed_keys(self, result, rail, hub) -> set:
+        active = self.active_batch(hub)
+        if not active:
+            return set()
+        row = hub.execute(
+            "SELECT coalesce(batch_date, notice_date) FROM release_batches WHERE id=?", (active,)
+        ).fetchone()
+        start_date = row[0] if row and row[0] else ""
+        if not start_date:
+            return set()
+        dates = self.universe(rail)
+        return {
+            key
+            for key, _batch_id in result.by_cat.get("new_unattributed", [])
+            if (dates.get(key) or {}).get("date", "") >= start_date
+        }
 
     def backfill(self, rail, hub, result, log):
         """新货(源未到)的箱:从 95306 补 hph 列(入库时漏写),不改归属。"""

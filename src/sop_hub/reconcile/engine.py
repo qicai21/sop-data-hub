@@ -63,6 +63,14 @@ class ReconcileSpec:
         必须先写台账,sync 下次跑才认。`routes` = [(key, batch_id), ...]。返回写入笔数。"""
         return 0
 
+    def gateable_new_unattributed_keys(self, result, rail, hub) -> set:
+        """允许完成闸迁移的 NEW_UNATTR key。
+
+        默认保留旧行为:所有新货都可由项目自行决定是否迁移。项目若有历史回灌
+        窗口,应覆盖此方法,排除早于当前活跃批次的历史事实。
+        """
+        return {key for key, _batch_id in result.by_cat.get(NEW_UNATTR, [])}
+
     # ── 完成闸:发完的船不再接新货,新货落当前活跃船 ──────────────
     def active_batch(self, hub):
         """当前唯一在发(loading)的 batch_id;0 或多于1个 → None(交人工)。默认关闸。"""

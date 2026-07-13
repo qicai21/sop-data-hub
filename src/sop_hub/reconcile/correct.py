@@ -106,7 +106,12 @@ def gate_finished_ships(spec, result, rail, hub, log) -> int:
     同 reroute:**先写台账再改 wagon 表**,否则 sync 按台账又把它移回发完的船。
     """
     finished = spec.finished_batches(hub)
-    on_finished = [(k, d) for k, d in result.by_cat.get(NEW_UNATTR, []) if d in finished]
+    gateable = spec.gateable_new_unattributed_keys(result, rail, hub)
+    on_finished = [
+        (k, d)
+        for k, d in result.by_cat.get(NEW_UNATTR, [])
+        if d in finished and k in gateable
+    ]
     if not on_finished:
         return 0
     active = spec.active_batch(hub)

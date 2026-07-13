@@ -146,6 +146,13 @@ def _current_ticketed_trips(conn) -> dict[int, dict]:
     try:
         rows = conn.execute(
             """
+            WITH latest_departed AS (
+              SELECT wbp.home_cycle_no cyc, MAX(wcs.departed_at) latest_departed_at
+              FROM wagon_container_shipments wcs
+              JOIN wagon_body_pool wbp ON wcs.car_no=wbp.car_no AND wbp.project='jiusan'
+              WHERE wcs.project_id='jiusan' AND COALESCE(wcs.departed_at,'')!=''
+              GROUP BY wbp.home_cycle_no
+            )
             SELECT wbp.home_cycle_no cyc, wcs.ship_name,
                    COUNT(DISTINCT wcs.car_no) cars,
                    COUNT(DISTINCT wcs.box_no) boxes,
@@ -154,9 +161,11 @@ def _current_ticketed_trips(conn) -> dict[int, dict]:
                    MAX(wcs.ticketed_at) last_ticketed
             FROM wagon_container_shipments wcs
             JOIN wagon_body_pool wbp ON wcs.car_no=wbp.car_no AND wbp.project='jiusan'
+            LEFT JOIN latest_departed ld ON ld.cyc=wbp.home_cycle_no
             WHERE wcs.project_id='jiusan'
               AND COALESCE(wcs.ticketed_at,'')!=''
               AND COALESCE(wcs.departed_at,'')=''
+              AND wcs.ticketed_at > COALESCE(ld.latest_departed_at, '')
               AND COALESCE(wcs.transport_mode_name,'') LIKE '%集装箱%'
             GROUP BY wbp.home_cycle_no, wcs.ship_name
             ORDER BY wbp.home_cycle_no

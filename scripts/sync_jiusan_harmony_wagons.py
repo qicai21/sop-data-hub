@@ -309,8 +309,20 @@ def main() -> None:
             print(f"  窗口 {w[0]['ticketed_at']}~{w[-1]['ticketed_at']} "
                   f"({len(w)}车) 船分布={ {s: len(v) for s, v in ship_boxes.items()} }")
         recompute_counters(conn, ship_batches, now)
+        from sop_hub.sop.jiusan_cycle_pool import reconcile_recent_cycle_pool
+        cycle_pool = reconcile_recent_cycle_pool(
+            conn,
+            since=now[:10],
+            now=now,
+        )
         conn.commit()
         print(f"COMMIT ✓ 新增 {tot_new} / 刷新 {tot_ref} / 重路由纠正 {tot_rr} box")
+        if cycle_pool["attached_to_existing_cycle"] or cycle_pool["created_new_cycle"]:
+            print(
+                "  循环车体池: "
+                f"补既有列 {len(cycle_pool['attached_to_existing_cycle'])}车 / "
+                f"新列 {len(cycle_pool['created_new_cycle'])}车"
+            )
         if unmatched_boxes:
             if default_ship is None:
                 print(f"⚠️ 未命中台账且当前无未完结 lot01: {unmatched_boxes} box "

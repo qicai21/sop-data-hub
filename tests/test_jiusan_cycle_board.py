@@ -177,3 +177,30 @@ def test_concurrent_returns_summed_not_overwritten():
     })
     assert st["transit_empty_boxes"] == 188
     assert sorted(st["transit_empty_cycs"]) == [1, 2]
+
+
+def test_current_ticketed_ignores_stale_pre_departure_residue():
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.execute("CREATE TABLE wagon_body_pool(car_no TEXT,project TEXT,home_cycle_no INT)")
+    db.execute(
+        """CREATE TABLE wagon_container_shipments (
+            car_no TEXT, box_no TEXT, ydid TEXT, ship_name TEXT, project_id TEXT,
+            ticketed_at TEXT, departed_at TEXT, transport_mode_name TEXT
+        )"""
+    )
+    db.executemany("INSERT INTO wagon_body_pool VALUES(?,?,?)", [
+        ("old4", "jiusan", 4), ("latest4", "jiusan", 4),
+        ("old2", "jiusan", 2), ("pending2", "jiusan", 2),
+    ])
+    db.executemany("INSERT INTO wagon_container_shipments VALUES(?,?,?,?,?,?,?,?)", [
+        ("old4", "b1", "y1", "美国", "jiusan", "2026-07-03 12:00:00", "", "集装箱"),
+        ("latest4", "b2", "y2", "美国", "jiusan", "2026-07-11 14:00:00", "2026-07-11 22:56:00", "集装箱"),
+        ("old2", "b3", "y3", "美国", "jiusan", "2026-07-10 09:00:00", "2026-07-10 14:04:00", "集装箱"),
+        ("pending2", "b4", "y4", "美国", "jiusan", "2026-07-13 02:00:00", "", "集装箱"),
+    ])
+
+    trips = jcb._current_ticketed_trips(db)
+
+    assert set(trips) == {2}
+    assert trips[2]["cars"] == 1

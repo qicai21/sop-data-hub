@@ -6,6 +6,7 @@ from sop_hub.sop.loading_line_backfill import (
     apply_backfill,
     decide_backfill,
     parse_workgroup_segments,
+    sync_recent_loading_lines,
 )
 
 
@@ -20,6 +21,21 @@ def _setup_db() -> sqlite3.Connection:
             ship_name TEXT,
             destination_name TEXT,
             ticketed_at TEXT,
+            loading_line TEXT,
+            updated_at TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE wagon_container_shipments (
+            id TEXT PRIMARY KEY,
+            project_id TEXT,
+            dispatch_train_code TEXT,
+            ship_name TEXT,
+            destination_name TEXT,
+            ticketed_at TEXT,
+            ydid TEXT,
             loading_line TEXT,
             updated_at TEXT
         )
@@ -86,3 +102,96 @@ def test_decide_and_apply_backfill():
         assert remain == 55
     finally:
         conn.close()
+
+
+def test_container_ledger_uses_the_same_group_text_matcher():
+    conn = _setup_db()
+    try:
+        for i in range(1, 48):
+            conn.execute(
+                """
+                INSERT INTO wagon_container_shipments
+                (id, project_id, dispatch_train_code, ship_name, destination_name, ticketed_at, ydid, loading_line)
+                VALUES (?, 'jilin_jingang_jinzhou', 'jg2607091', '马兰希望', '四平',
+                        '2026-07-09 15:10:00', ?, '')
+                """,
+                (f"c{i}", f"Y{i}"),
+            )
+        conn.execute(
+            """
+            INSERT INTO message_inbox(id, group_name, msg_type, received_datetime, text_content)
+            VALUES (2, '铁晟业务工作群', 'text', '2026-07-09 15:05:01', '煤六 四平铁 马兰希望47节')
+            """
+        )
+        decisions = decide_backfill(
+            conn, project_ids=["jilin_jingang_jinzhou"], since="2026-07-01",
+        )
+        assert len(decisions) == 1
+        assert decisions[0].status == "matched"
+        assert decisions[0].group.source_table == "wagon_container_shipments"
+        assert apply_backfill(conn, decisions) == 47
+        assert conn.execute(
+            "SELECT COUNT(*) FROM wagon_container_shipments WHERE loading_line='煤六'"
+        ).fetchone()[0] == 47
+    finally:
+        conn.close()
+
+
+def test_jiusan_missing_rows_use_mode_specific_confirmed_defaults():
+    conn = _setup_db()
+    try:
+        conn.execute(
+            """
+            INSERT INTO wagon_shipments
+            (id, project_id, dispatch_train_code, ship_name, destination_name, ticketed_at, loading_line)
+            VALUES ('b1', 'jiusan', 'js2607011', '美国', '新台子', '2026-07-01 08:00:00', '')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO wagon_container_shipments
+            (id, project_id, dispatch_train_code, ship_name, destination_name, ticketed_at, ydid, loading_line)
+            VALUES ('c1', 'jiusan', 'js2607012', '美国', '新台子', '2026-07-01 09:00:00', 'C1', '')
+            """
+        )
+        decisions = decide_backfill(conn, project_ids=["jiusan"], since="2026-07-01")
+        assert {(d.group.source_table, d.status, d.lane) for d in decisions} == {
+            ("wagon_shipments", "fallback", "七道"),
+            ("wagon_container_shipments", "fallback", "八道"),
+        }
+        assert apply_backfill(conn, decisions) == 2
+    finally:
+        conn.close()
+
+
+def test_recent_sync_is_idempotent_after_filling_lines(tmp_path):
+    db = tmp_path / "sop_agent.db"
+    source = _setup_db()
+    target = sqlite3.connect(db)
+    try:
+        source.backup(target)
+    finally:
+        target.close()
+        source.close()
+    conn = sqlite3.connect(db)
+    conn.execute(
+        """
+        INSERT INTO wagon_shipments
+        (id, project_id, dispatch_train_code, ship_name, destination_name, ticketed_at, loading_line)
+        VALUES ('w-sync', 'chaoyang_steel', 'cg2607129', '马兰幸福', '朝阳西',
+                '2026-07-12 10:00:00', '')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO message_inbox(id, group_name, msg_type, received_datetime, text_content)
+        VALUES (8, '铁晟业务工作群', 'text', '2026-07-12 09:55:00', '煤五 朝阳西铁 马兰幸福1节')
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    first = sync_recent_loading_lines(db, since="2026-07-01")
+    second = sync_recent_loading_lines(db, since="2026-07-01")
+    assert first["applied_rows"] == 1
+    assert second["applied_rows"] == 0

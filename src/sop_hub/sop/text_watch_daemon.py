@@ -45,6 +45,8 @@ logger = logging.getLogger("sop_hub.text_watch")
 
 DEFAULT_INTERVAL_SECONDS = 5
 DEFAULT_DB = Path("data/sop_agent.db")
+LOADING_LINE_SYNC_INTERVAL_SECONDS = 300
+_last_loading_line_sync_at = 0.0
 
 # 内部安全 task_type:只写本地 sop_agent.db,**无任何对外提交** → daemon 每轮
 # 默认自动 apply,不需要任何 flag。#96 freight_detail_enrichment(填
@@ -354,6 +356,20 @@ def run_one_pass(
                 )
         except Exception as exc:
             logger.warning("run_pending_workflow_tasks failed: %s", exc)
+
+    # ── 作业线路兜底:文本先到、95306 后到时,由定期扫描补齐两个运单库。 ──
+    global _last_loading_line_sync_at
+    if time.monotonic() - _last_loading_line_sync_at >= LOADING_LINE_SYNC_INTERVAL_SECONDS:
+        _last_loading_line_sync_at = time.monotonic()
+        try:
+            from sop_hub.sop.loading_line_backfill import sync_recent_loading_lines
+
+            line_sync = sync_recent_loading_lines(db_path)
+            counts["loading_line_sync"] = line_sync
+            if line_sync["applied_rows"] and log_each:
+                logger.info("loading-line sync: %s", line_sync)
+        except Exception as exc:
+            logger.warning("loading-line sync failed: %s", exc)
 
     # ── #127 lifecycle closeout:扫 active phase batch,wagons 全收货推 confirmed_received ──
     try:

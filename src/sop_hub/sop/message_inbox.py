@@ -106,6 +106,8 @@ MESSAGE_INBOX_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_message_inbox_media_status ON message_inbox(media_status);",
     "CREATE INDEX IF NOT EXISTS idx_message_inbox_sop_project ON message_inbox(sop_project_id);",
     "CREATE INDEX IF NOT EXISTS idx_message_inbox_received_datetime ON message_inbox(received_datetime);",
+    "CREATE INDEX IF NOT EXISTS idx_message_inbox_group_type_received "
+    "ON message_inbox(group_name, msg_type, received_datetime);",
 ]
 
 

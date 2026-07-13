@@ -1,10 +1,10 @@
-"""Backfill wagon shipment loading lines from shared workgroup text history.
+"""Backfill loading lines in both SOP shipment ledgers from group text history.
 
 This module is intentionally scoped to maintained tooling, not one-off SQL:
 
 - reads `message_inbox` raw text from the shared workgroup
 - extracts departure-like text segments, including mixed-train messages
-- matches them against missing `wagon_shipments.loading_line` train groups
+- matches them against missing wagon/container shipment train groups
 - optionally writes the canonical loading line back to the DB
 """
 
@@ -40,11 +40,25 @@ DESTINATION_PROJECT = {
     "新台子": "jiusan",
 }
 
+PROJECT_GROUPS = {
+    "jiusan": "铁晟大豆业务内部沟通群",
+    "jilin_jingang_jinzhou": "铁晟业务工作群",
+    "chaoyang_steel": "铁晟业务工作群",
+    "zhongtang_special_steel": "铁晟业务工作群",
+}
+
+_LEDGER_TABLES = ("wagon_shipments", "wagon_container_shipments")
+_JIUSAN_FALLBACK_LINES = {
+    "wagon_shipments": "七道",
+    "wagon_container_shipments": "八道",
+}
+
 _LANE_RE = re.compile(r"(煤[一二三四五六七八九十](?:道)?|[0-9一二三四五六七八九十]+道)")
 
 
 @dataclass(frozen=True)
 class MissingTrainGroup:
+    source_table: str
     project_id: str
     dispatch_train_code: str
     ship_name: str
@@ -93,6 +107,10 @@ def _db_path(db_path: str | Path | None = None) -> Path:
     if db_path:
         return Path(db_path)
     return Path(__file__).resolve().parents[3] / "data" / "sop_agent.db"
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
 
 
 def _load_known_ships_by_project() -> dict[str, set[str]]:
@@ -235,10 +253,22 @@ def load_missing_train_groups(
     conn: sqlite3.Connection,
     *,
     project_ids: Iterable[str],
+    since: str = "",
 ) -> list[MissingTrainGroup]:
+    project_ids = tuple(project_ids)
+    if not project_ids:
+        return []
     ph = ",".join("?" for _ in project_ids)
-    rows = conn.execute(
-        f"""
+    groups: list[MissingTrainGroup] = []
+    for table in _LEDGER_TABLES:
+        columns = _table_columns(conn, table)
+        if not {"project_id", "ticketed_at", "loading_line"} <= columns:
+            continue
+        where_since = " AND ticketed_at >= ?" if since else ""
+        params = [*project_ids, *([since] if since else [])]
+        count_expr = "count(DISTINCT ydid)" if "ydid" in columns else "count(*)"
+        rows = conn.execute(
+            f"""
         SELECT
             project_id,
             dispatch_train_code,
@@ -247,28 +277,32 @@ def load_missing_train_groups(
             date(min(ticketed_at)) AS ticket_date,
             substr(min(ticketed_at), 12, 8) AS ticket_time,
             min(ticketed_at) AS ticketed_at,
-            count(*) AS car_count
-        FROM wagon_shipments
+            {count_expr} AS car_count
+        FROM {table}
         WHERE project_id IN ({ph})
           AND (loading_line IS NULL OR trim(loading_line) = '')
-        GROUP BY project_id, dispatch_train_code, ship_name, destination_name
+          AND COALESCE(ticketed_at, '') != ''
+          {where_since}
+        GROUP BY project_id, date(ticketed_at), dispatch_train_code, ship_name, destination_name
         ORDER BY ticketed_at, dispatch_train_code
         """,
-        tuple(project_ids),
-    ).fetchall()
-    return [
-        MissingTrainGroup(
-            project_id=r[0],
-            dispatch_train_code=r[1] or "",
-            ship_name=r[2] or "",
-            destination_name=r[3] or "",
-            ticket_date=r[4] or "",
-            ticket_time=r[5] or "",
-            ticketed_at=r[6] or "",
-            car_count=int(r[7] or 0),
+            params,
+        ).fetchall()
+        groups.extend(
+            MissingTrainGroup(
+                source_table=table,
+                project_id=r[0],
+                dispatch_train_code=r[1] or "",
+                ship_name=r[2] or "",
+                destination_name=r[3] or "",
+                ticket_date=r[4] or "",
+                ticket_time=r[5] or "",
+                ticketed_at=r[6] or "",
+                car_count=int(r[7] or 0),
+            )
+            for r in rows
         )
-        for r in rows
-    ]
+    return sorted(groups, key=lambda group: (group.ticketed_at, group.source_table))
 
 
 def _minutes_between(a: str, b: str) -> int:
@@ -361,12 +395,24 @@ def decide_backfill(
     conn: sqlite3.Connection,
     *,
     project_ids: Iterable[str],
-    group_name: str = "铁晟业务工作群",
+    group_name: str = "",
+    since: str = "",
 ) -> list[BackfillDecision]:
     decisions: list[BackfillDecision] = []
-    for group in load_missing_train_groups(conn, project_ids=project_ids):
-        candidates = find_candidates_for_group(conn, group, group_name=group_name)
+    for group in load_missing_train_groups(conn, project_ids=project_ids, since=since):
+        source_group = group_name or PROJECT_GROUPS.get(group.project_id, "铁晟业务工作群")
+        candidates = find_candidates_for_group(conn, group, group_name=source_group)
         if not candidates:
+            if group.project_id == "jiusan":
+                decisions.append(
+                    BackfillDecision(
+                        group=group,
+                        status="fallback",
+                        lane=_JIUSAN_FALLBACK_LINES[group.source_table],
+                        note="jiusan_user_confirmed_mode_default",
+                    )
+                )
+                continue
             decisions.append(
                 BackfillDecision(
                     group=group,
@@ -408,21 +454,62 @@ def apply_backfill(
 ) -> int:
     applied = 0
     for decision in decisions:
-        if decision.status != "matched" or not decision.lane:
+        if decision.status not in {"matched", "fallback"} or not decision.lane:
             continue
+        if decision.group.source_table not in _LEDGER_TABLES:
+            continue
+        where_train = "dispatch_train_code = ?" if decision.group.dispatch_train_code else "date(ticketed_at) = ?"
+        train_value = decision.group.dispatch_train_code or decision.group.ticket_date
+        ship_filter = " AND COALESCE(ship_name, '') = ?" if decision.group.ship_name else ""
+        ship_params = [decision.group.ship_name] if decision.group.ship_name else []
         cur = conn.execute(
-            """
-            UPDATE wagon_shipments
+            f"""
+            UPDATE {decision.group.source_table}
             SET loading_line = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE dispatch_train_code = ?
+            WHERE {where_train}
               AND project_id = ?
+              {ship_filter}
               AND (loading_line IS NULL OR trim(loading_line) = '')
             """,
             (
                 decision.lane,
-                decision.group.dispatch_train_code,
+                train_value,
                 decision.group.project_id,
+                *ship_params,
             ),
         )
         applied += cur.rowcount
     return applied
+
+
+def sync_recent_loading_lines(
+    db_path: str | Path | None = None,
+    *,
+    since: str = "",
+    project_ids: Iterable[str] = tuple(PROJECT_GROUPS),
+) -> dict[str, int]:
+    """Apply the maintained text-to-line reconciliation for recent shipment rows.
+
+    This is safe for the text-watch daemon: it only fills blank `loading_line`
+    fields and never rewrites an existing business line.
+    """
+    if not since:
+        from sop_hub.utils.time import now_iso_beijing
+
+        current = datetime.fromisoformat(now_iso_beijing())
+        since = (current - timedelta(days=14)).date().isoformat()
+    conn = sqlite3.connect(str(_db_path(db_path)))
+    try:
+        decisions = decide_backfill(conn, project_ids=project_ids, since=since)
+        applied = apply_backfill(conn, decisions)
+        conn.commit()
+    finally:
+        conn.close()
+    return {
+        "groups": len(decisions),
+        "matched": sum(d.status == "matched" for d in decisions),
+        "fallback": sum(d.status == "fallback" for d in decisions),
+        "unmatched": sum(d.status == "unmatched" for d in decisions),
+        "ambiguous": sum(d.status == "ambiguous" for d in decisions),
+        "applied_rows": applied,
+    }

@@ -13,6 +13,7 @@ from sop_hub.data_agent.agent import (
     project_known_ships,
     hash_text,
 )
+from sop_hub.sop.infer_candidate_context import infer_candidate_context
 
 
 class TestNormalizeChinese:
@@ -143,6 +144,32 @@ class TestBusinessDataAgent:
         assert rule["status"] == "active"
         assert rule["ship_name"] == "贝拉"
         assert "贝拉" in rule["matching_str"]
+
+    def test_all_loaded_release_batch_generates_completed_dispatch_match_rule(self, tmp_db):
+        agent = BusinessDataAgent()
+        agent.db.execute(
+            """
+            INSERT INTO release_batches (
+              id, batch_key, project, ship_name, cargo_name, destination_station,
+              batch_sequence, notice_date, batch_date, batch_quantity,
+              dispatch_status, source_json, searchable_text
+            ) VALUES (
+              'baoli-lot1', 'zhongtang|baoli|lot1', 'zhongtang_special_steel',
+              '宝丽', '铁矿', '汐子', 'lot01', '2026-07-03', '2026-07-03', 10000,
+              'all_loaded', '{}', '宝丽 汐子 铁矿'
+            )
+            """
+        )
+        agent.db.commit()
+
+        agent.refresh_release_dispatch_match_rules()
+
+        rule = agent.db.execute(
+            "SELECT status FROM release_dispatch_match_rules WHERE release_batch_id='baoli-lot1'"
+        ).fetchone()
+
+        assert rule is not None
+        assert rule["status"] == "completed"
 
     def test_non_sop_release_batch_does_not_enter_dispatch_index(self, tmp_db):
         agent = BusinessDataAgent()
@@ -367,6 +394,42 @@ class TestBusinessDataAgent:
         ).fetchone()[0]
         assert res["status"] != "ignored"
         assert count == 1
+
+    def test_infer_candidate_context_ignores_all_loaded_batches(self, tmp_db):
+        agent = BusinessDataAgent()
+        agent.db.execute(
+            """
+            INSERT INTO release_batches (
+              id, batch_key, project, ship_name, cargo_name, destination_station,
+              batch_sequence, notice_date, batch_date, batch_quantity,
+              dispatch_status, source_json, searchable_text
+            ) VALUES (
+              'baoli-old', 'zhongtang|baoli|old', 'zhongtang_special_steel',
+              '宝丽', '铁矿', '汐子', 'lot01', '2026-07-03', '2026-07-03', 10000,
+              'all_loaded', '{}', '宝丽 汐子 铁矿'
+            )
+            """
+        )
+        agent.db.commit()
+
+        payload = {
+            "rows": [
+                {"seq": 1, "car_no": "1701012", "cargo_info_raw": "汐子铁矿粉"},
+                {"seq": 2, "car_no": "1707572", "cargo_info_raw": "宝丽"},
+            ],
+            "meta": {"daoxian": "煤四", "jieshu": 55},
+            "footer": {"zhuangche_jieshu": 55, "paiche_jieshu": 0},
+        }
+
+        inferred = infer_candidate_context(
+            payload,
+            group_name="",
+            received_datetime="",
+            db_path=tmp_db,
+        )
+
+        assert inferred.matched is False
+        assert inferred.candidate_status == "pending_review"
 
     def test_sop_authorized_unmanaged_flow_is_ignored(self, tmp_db):
         agent = BusinessDataAgent()

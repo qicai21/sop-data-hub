@@ -960,11 +960,14 @@ class BusinessDataAgent:
         # #125 lifecycle 8 值 → release_dispatch_match_rules 老 4 值映射
         # (rules.status 仍是 active/completed/suspended/cancelled,只是 chain
         # match 用的缓存,不参与 lifecycle 流转)
+        #
+        # 业务铁律: all_loaded 及之后阶段不能再承接新的检装车/发运匹配。
+        # 它们仍可保留 completed 规则用于审计/受管流向识别,但必须退出 active 池。
         _lc = record.dispatch_status
-        if _lc in ("loading", "all_loaded", "tracking", "delivered",
-                   "enriched", "pending_freight"):
+        if _lc in ("loading", "enriched", "pending_freight"):
             _rule_status = "active"
-        elif _lc in ("confirmed_received", "closed"):
+        elif _lc in ("all_loaded", "tracking", "delivered",
+                     "confirmed_received", "closed"):
             _rule_status = "completed"
         else:
             _rule_status = _lc

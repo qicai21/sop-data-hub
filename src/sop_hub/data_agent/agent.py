@@ -1522,7 +1522,7 @@ class BusinessDataAgent:
                 )
                 if c in _cols
             ]
-            _select_cols = ["message_id", "extraction_json_path", *_image_cols]
+            _select_cols = ["id", "message_id", "extraction_json_path", *_image_cols]
             _ib = self.db.execute(
                 f"SELECT {', '.join(_select_cols)} "
                 "FROM message_inbox "
@@ -1557,8 +1557,8 @@ class BusinessDataAgent:
                 self.db.execute(
                     "UPDATE message_inbox "
                     "SET inspection_candidate_id=COALESCE(NULLIF(inspection_candidate_id,''), ?) "
-                    "WHERE message_id=?",
-                    (candidate_id, _ib["message_id"] or ""),
+                    "WHERE id=?",
+                    (candidate_id, _ib["id"]),
                 )
                 if _resolved_image_path:
                     _path_cols = [
@@ -1568,8 +1568,8 @@ class BusinessDataAgent:
                     if _path_cols:
                         _sets = ", ".join(f"{c}=?" for c in _path_cols)
                         self.db.execute(
-                            f"UPDATE message_inbox SET {_sets} WHERE message_id=?",
-                            [*([_resolved_image_path] * len(_path_cols)), _ib["message_id"] or ""],
+                            f"UPDATE message_inbox SET {_sets} WHERE id=?",
+                            [*([_resolved_image_path] * len(_path_cols)), _ib["id"]],
                         )
                 self.db.commit()
 

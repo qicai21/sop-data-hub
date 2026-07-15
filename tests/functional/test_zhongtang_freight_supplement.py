@@ -13,7 +13,9 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from sop_hub.sop.zhongtang_freight_text_extractor import (
     extract_zhongtang_freight_supplement,
@@ -169,7 +171,7 @@ def test_executor_retries_zhongtang_freight_after_batch_becomes_ready(tmp_path: 
     conn = sqlite3.connect(str(db))
     conn.execute(
         "INSERT INTO message_inbox (message_id, created_at) VALUES (?, ?)",
-        ("wx_retry_zt_1", "2026-07-06 11:35:00+08:00"),
+        ("wx_retry_zt_1", datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()),
     )
     conn.commit()
     conn.close()

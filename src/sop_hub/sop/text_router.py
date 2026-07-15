@@ -476,7 +476,7 @@ def update_message_inbox_with_route(
     *,
     db_path: str | None = None,
 ) -> bool:
-    """Write the text route result back to message_inbox."""
+    """Write a text route result back to its own group-scoped inbox row."""
     import sqlite3
     from pathlib import Path
 
@@ -493,9 +493,12 @@ def update_message_inbox_with_route(
         conn = sqlite3.connect(str(db))
         updates = route.as_inbox_update()
         set_clause = ", ".join(f"{k} = ?" for k in updates)
-        values = list(updates.values()) + [message_id]
+        group_id = route.group_id or ""
+        if not group_id:
+            return False
+        values = list(updates.values()) + [group_id, message_id]
         conn.execute(
-            f"UPDATE message_inbox SET {set_clause} WHERE message_id = ?",
+            f"UPDATE message_inbox SET {set_clause} WHERE group_id = ? AND message_id = ?",
             values,
         )
         conn.commit()

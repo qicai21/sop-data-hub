@@ -16,8 +16,6 @@ Default chat records root: ~/projects/repos/wx-ops-agent/data/chat_records.
 
 from __future__ import annotations
 
-from sop_hub.utils.time import now_iso_beijing as _now_iso_beijing
-
 import argparse
 import json
 import logging
@@ -32,6 +30,7 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from sop_hub.utils.time import now_iso_beijing as _now_iso_beijing
 from sop_hub.sop.dashboard_payload_queue import build_dashboard_payload_queue, write_dashboard_payload_queue
 # dashboard_state_preview removed 2026-06-06: 老 HTML 看板 JSON 预览已废,
 # CLI dashboard 直查 sop_agent.db,中间 JSON 不需要了
@@ -421,6 +420,7 @@ def _retry_waiting_media(
     index = _load_waiting_media_index(runtime_root)
     items = index.get("items", {})
     retried = 0
+    dirty = False
     watcher = WxOpsSourceWatcher(chat_records_root=chat_records_root)
 
     for mid, entry in list(items.items()):
@@ -437,6 +437,7 @@ def _retry_waiting_media(
             )
             entry["status"] = "abandoned"
             entry["abandoned_at"] = _utc_now_iso()
+            dirty = True
             continue
 
         source_file = entry.get("source_file", "")
@@ -444,6 +445,7 @@ def _retry_waiting_media(
         if not source_file:
             logger.warning("waiting_media_retry: no source_file for mid=%s, marking done", mid)
             _mark_waiting_media_done(runtime_root, mid, logger)
+            dirty = True
             continue
 
         # Re-read the payload from the source JSONL
@@ -471,6 +473,7 @@ def _retry_waiting_media(
             # Payload not found — skip, keep in index for now
             entry["retries"] = retries_now + 1
             entry["last_checked_at"] = _utc_now_iso()
+            dirty = True
             continue
 
         # Re-build event through source_watcher (re-evaluates image path)
@@ -495,10 +498,12 @@ def _retry_waiting_media(
             )
             index = _mark_waiting_media_done(runtime_root, mid, logger, index=index)
             retried += 1
+            dirty = True
         else:
             entry["retries"] = retries_now + 1
             entry["last_checked_at"] = _utc_now_iso()
             entry["media_status"] = new_ms
+            dirty = True
             logger.debug("waiting_media_retry: still waiting mid=%s retries=%d", mid, entry["retries"])
 
     if retried:
@@ -508,6 +513,8 @@ def _retry_waiting_media(
             if entry.get("retries", 0) > 0 and mid in index.get("items", {}):
                 index["items"][mid]["retries"] = entry["retries"]
                 index["items"][mid]["last_checked_at"] = entry["last_checked_at"]
+        _save_waiting_media_index(runtime_root, index)
+    elif dirty:
         _save_waiting_media_index(runtime_root, index)
     return retried
 

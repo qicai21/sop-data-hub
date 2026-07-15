@@ -23,6 +23,9 @@ kick() {  # $1=label  $2=描述
 echo "== sop-data-hub 服务(跑本仓代码,改代码后必重启)=="
 kick com.qicai21.sop-data-hub.live-service "live-service 消息入库链"
 kick com.qicai21.sop-data-hub.text-watch  "text-watch 文本链"
+kick com.qicai21.sop-data-hub.jiusan-sync "九三集装箱/散粮同步"
+kick com.qicai21.sop-data-hub.jiusan-bulk-report-ingest "九三散粮晨报入库"
+kick com.qicai21.sop-data-hub.jiusan-morning-reconcile "九三每日晨报对账"
 
 if [ "${1:-}" = "--all" ]; then
   echo "== 其余常驻(有登录/会话/模型态,按需)=="

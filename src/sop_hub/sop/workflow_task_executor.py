@@ -103,7 +103,7 @@ def _mark_task(db_path: Path, task_id: int, status: str, **extra) -> None:
 
 def _update_message_inbox_status(
     db_path: Path, message_id: str, status: str, message_inbox_id: int | None = None,
-) -> None:
+) -> bool:
     conn = sqlite3.connect(str(db_path))
     if message_inbox_id:
         conn.execute(
@@ -111,12 +111,13 @@ def _update_message_inbox_status(
             (status, _now_iso(), message_inbox_id),
         )
     else:
-        conn.execute(
-            "UPDATE message_inbox SET processing_status = ?, updated_at = ? WHERE message_id = ?",
-            (status, _now_iso(), message_id),
-        )
+        # message_id is not globally unique across WeChat groups.  Tasks created
+        # before message_inbox_id existed must not mutate an arbitrary sibling.
+        conn.close()
+        return False
     conn.commit()
     conn.close()
+    return True
 
 
 def _count_batch_rows_for_event(
@@ -417,32 +418,73 @@ def _execute_jljg_departure(
     except Exception as exc:
         output["external_actions_error"] = str(exc)
 
-    # ── R71: 链路真正跑通(无 skip/无 error)→ 标记对外动作 executed ──────
-    if not preview.skipped_reason and not preview.error:
+    # ── R71: 每一项对外动作按真实结果记账 ───────────────────────────
+    # 不能用“整个链无 error”替代步骤结果：上传失败时 Excel 可能已生成，微信也
+    # 可能未发送。相反，也不能把未发生的步骤留成无限期 planned。
+    if external_actions:
         try:
-            from sop_hub.sop.external_action_log import mark_external_action_executed
-            steps = preview.to_dict().get("steps", {})
-            # Generate same keys to match
+            from sop_hub.sop.external_action_log import (
+                build_idempotency_key,
+                mark_external_action_executed,
+                mark_external_action_failed,
+            )
+
+            steps = output.get("steps", {})
             rb_id = preview.release_batch_id or ""
             wc = wagon_count
-            for atype, resp_key, resp_data in [
-                ("generate_shipping_excel", "4_departure_excel",
-                 {"excel_path": steps.get("4_departure_excel", {}).get("path", ""),
-                  "rows": steps.get("4_departure_excel", {}).get("rows", 0)}),
-                ("factory_upload_submit", "5_factory_upload",
-                 {"login_success": steps.get("5_factory_upload", {}).get("login_success", False),
-                  "payloads": steps.get("5_factory_upload", {}).get("payloads", 0),
-                  "success": steps.get("5_factory_upload", {}).get("success", 0),
-                  "failure": steps.get("5_factory_upload", {}).get("failure", 0),
-                  "verified": steps.get("5b_factory_verify", {}).get("verified", False)}),
-                ("send_shipping_excel_wechat", "6_send_excel",
-                 {"sent": steps.get("6_send_excel", {}).get("sent", False),
-                  "target": steps.get("6_send_excel", {}).get("target", "")}),
-            ]:
-                from sop_hub.sop.external_action_log import build_idempotency_key
-                biz = f"{rb_id}:{wc}" if rb_id else f"fallback:{message_id}:{atype}"
-                key = build_idempotency_key("jilin_jingang_jinzhou", atype, biz)
-                mark_external_action_executed(key, db_path=str(db_path), response_json=resp_data)
+            action_outcomes = [
+                (
+                    "generate_shipping_excel",
+                    bool(steps.get("4_departure_excel", {}).get("path")),
+                    {
+                        "excel_path": steps.get("4_departure_excel", {}).get("path", ""),
+                        "rows": steps.get("4_departure_excel", {}).get("rows", 0),
+                    },
+                    "发运 Excel 未成功生成",
+                ),
+                (
+                    "factory_upload_submit",
+                    bool(steps.get("5_factory_upload", {}).get("login_success"))
+                    and int(steps.get("5_factory_upload", {}).get("payloads", 0) or 0) > 0
+                    and int(steps.get("5_factory_upload", {}).get("failure", 0) or 0) == 0
+                    and int(steps.get("5_factory_upload", {}).get("success", 0) or 0)
+                    == int(steps.get("5_factory_upload", {}).get("payloads", 0) or 0)
+                    and bool(steps.get("5b_factory_verify", {}).get("verified"))
+                    and bool(steps.get("5b_factory_verify", {}).get("boxes_ok")),
+                    {
+                        "login_success": steps.get("5_factory_upload", {}).get("login_success", False),
+                        "payloads": steps.get("5_factory_upload", {}).get("payloads", 0),
+                        "success": steps.get("5_factory_upload", {}).get("success", 0),
+                        "failure": steps.get("5_factory_upload", {}).get("failure", 0),
+                        "verified": steps.get("5b_factory_verify", {}).get("verified", False),
+                        "boxes_ok": steps.get("5b_factory_verify", {}).get("boxes_ok", False),
+                    },
+                    "收货人系统上传或反查未完整通过",
+                ),
+                (
+                    "send_shipping_excel_wechat",
+                    bool(steps.get("6_send_excel", {}).get("sent")),
+                    {
+                        "sent": steps.get("6_send_excel", {}).get("sent", False),
+                        "target": steps.get("6_send_excel", {}).get("target", ""),
+                    },
+                    "发运 Excel 未发送到微信",
+                ),
+            ]
+            for action_type, succeeded, response, failure_reason in action_outcomes:
+                business_key = (
+                    f"{rb_id}:{wc}" if rb_id else f"fallback:{message_id}:{action_type}"
+                )
+                key = build_idempotency_key(
+                    "jilin_jingang_jinzhou", action_type, business_key,
+                )
+                if succeeded:
+                    mark_external_action_executed(
+                        key, db_path=str(db_path), response_json=response,
+                    )
+                else:
+                    detail = preview.error.strip() or failure_reason
+                    mark_external_action_failed(key, detail, db_path=str(db_path))
         except Exception as exc:
             output["external_actions_mark_error"] = str(exc)
 

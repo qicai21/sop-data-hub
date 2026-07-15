@@ -19,20 +19,21 @@
     )
 """
 import json
+import sys
+from pathlib import Path
 from typing import Optional
 
-# ── 箱型常量 ──
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "src"))
 
-OPEN_TOP = "open_top"       # 敞顶箱（长顶箱）
-TOP_OPEN = "top_open"        # 顶开门箱
-UNKNOWN_TYPE = "unknown"     # 未知箱型
-
-# ── 箱型重量 ──
-
-CONTAINER_WEIGHTS = {
-    OPEN_TOP: 28.5,   # 敞顶箱：平均装货 28.5 吨/箱
-    TOP_OPEN: 26.7,   # 顶开门箱：平均装货 26.7 吨/箱
-}
+from sop_hub.fees.jiusan_container_types import (  # noqa: E402
+    CONTAINER_WEIGHTS,
+    OPEN_TOP,
+    TOP_OPEN,
+    UNKNOWN_TYPE,
+    classify_container_type as _classify_container_type,
+    container_business_weight,
+)
 
 # ── 散粮车型重量 ──
 
@@ -40,23 +41,6 @@ BULK_WAGON_WEIGHTS = {
     "L18": 60.0,   # 散粮专用车 60 吨/车
     "L70": 69.0,   # 散粮专用车 69 吨/车
 }
-
-# ── 顶开门箱 TBJU 后 3 位区间 ──
-
-TOP_OPEN_TBJU_RANGES = [
-    (594, 620),
-    (705, 711),
-    (758, 781),
-]
-
-
-def _tbju_is_top_open(suffix_3: int) -> bool:
-    """判断 TBJU 后 3 位数字是否属于顶开门箱区间"""
-    for lo, hi in TOP_OPEN_TBJU_RANGES:
-        if lo <= suffix_3 <= hi:
-            return True
-    return False
-
 
 def classify_container_type(container_no: str, freight_fee: Optional[int] = None) -> str:
     """判断单个箱号的箱型
@@ -68,46 +52,12 @@ def classify_container_type(container_no: str, freight_fee: Optional[int] = None
     Returns:
         "open_top"（敞顶箱）| "top_open"（顶开门箱）| "unknown"
     """
-    # freight_fee 优先作为强校验
+    # 旧版95306车级运费仍可作为强校验；新费用链只按箱号规则判型。
     if freight_fee == 176710:
         return TOP_OPEN
     if freight_fee == 193260:
         return OPEN_TOP
-
-    if not container_no:
-        return UNKNOWN_TYPE
-
-    no = container_no.strip().upper()
-
-    # TBCU → 敞顶箱
-    if no.startswith("TBCU"):
-        return OPEN_TOP
-
-    # TBJU → 按后 3 位判断
-    if no.startswith("TBJU"):
-        # 如果箱号有足够的数字位
-        if len(no) >= 7:
-            try:
-                suffix = int(no[4:7])
-            except ValueError:
-                return OPEN_TOP  # 非数字，保守判为敞顶箱
-            if _tbju_is_top_open(suffix):
-                return TOP_OPEN
-            return OPEN_TOP
-        # 箱号过短无法判断，保守判为敞顶箱
-        if len(no) >= 5:
-            return OPEN_TOP
-
-    return UNKNOWN_TYPE
-
-
-def container_business_weight(container_type: str) -> float:
-    """返回指定箱型的单箱业务重量（吨）
-
-    Returns:
-        重量吨数。未知箱型返回 0。
-    """
-    return CONTAINER_WEIGHTS.get(container_type, 0.0)
+    return _classify_container_type(container_no)
 
 
 def parse_container_numbers(

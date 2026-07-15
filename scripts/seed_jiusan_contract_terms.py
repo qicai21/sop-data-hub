@@ -37,10 +37,14 @@ def h(*parts: object) -> str:
 
 def upsert_fee_item_catalog(conn: sqlite3.Connection) -> None:
     rows = [
+        ("route_a_metro_fee", "路线A地铁费", "cost", "ton", 3.75, 0.09, CONTRACT_REF_GAOTIAN, str(GAOTIAN_CONTRACT_PATH), "manual_seed:2026-07-15"),
         ("route_a_wagon_occupancy", "路线A货车占用费", "cost", "ton", 0.64, 0.09, CONTRACT_REF_GAOTIAN, str(GAOTIAN_CONTRACT_PATH), "manual_seed:r82"),
         ("route_a_tarpaulin", "路线A篷布租金", "cost", "box", 12.8, 0.06, CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "manual_seed:r82"),
-        ("route_a_item9", "路线A第9项清理整备服务", "cost", "box", 40.0, 0.06, CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "manual_seed:r82"),
-        ("route_a_item11", "路线A第11项粮食专用箱专项检查", "cost", "box", 80.0, 0.06, CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "manual_seed:r82"),
+        ("route_a_item9", "路线A第9项清理整备服务（扫箱、清箱）", "cost", "box", 40.0, 0.06, CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "manual_seed:2026-07-15"),
+        ("route_a_item10", "路线A第10项洗箱服务", "cost", "box", 100.0, 0.06, CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "manual_seed:2026-07-15"),
+        ("route_a_item11", "路线A第11项粮食专用箱专项检查", "cost", "box", 80.0, 0.06, CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "manual_seed:2026-07-15"),
+        ("route_a_item13", "路线A第13项篷布专项检查服务", "cost", "box", 15.0, 0.06, CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "manual_seed:2026-07-15"),
+        ("route_a_item18", "路线A第18项箱门捆扎施封", "cost", "box", 15.0, 0.06, CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "manual_seed:2026-07-15"),
         ("route_c_pickup_fee", "路线C取送车费", "cost", "car", 32.4, 0.09, CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "manual_seed:r82"),
         ("route_c_wagon_occupancy", "路线C货车占用费", "cost", "ton", 0.64, 0.09, CONTRACT_REF_GAOTIAN, str(GAOTIAN_CONTRACT_PATH), "manual_seed:r82"),
     ]
@@ -85,8 +89,11 @@ def upsert_contract_fee_terms(conn: sqlite3.Connection) -> None:
         ("A", "route_a_wagon_occupancy", "路线A货车占用费", "cost", "marked_weight_tiered", "ton", 0.64, 0.09, "", "锦州高天铁路有限责任公司", CONTRACT_REF_GAOTIAN, str(GAOTIAN_CONTRACT_PATH), "第四条(一)(二)", "疏港普通货物 <300万吨 0.64元/吨, >=300万吨 0.60元/吨"),
         ("A", "route_a_transfer_fee", "路线A诚信倒运费", "cost", "box_trip_count", "box", 444.0, 0.09, "", "诚信集装箱储运", CONTRACT_REF_CHENGXIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线A_三三零", "三三零 444元/箱; 汇总表备注合同已过期待续签"),
         ("A", "route_a_tarpaulin", "路线A篷布租金", "cost", "formula", "box", 12.8, 0.06, "", "锦州港物流发展有限公司", CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线A_三三零", "12.8元/箱 * 70%租用比例; 约30%国铁免费篷布"),
-        ("A", "route_a_item9", "路线A第9项清理整备服务", "cost", "box_trip_count", "box", 40.0, 0.06, "", "二级公司", CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线A_三三零", ""),
-        ("A", "route_a_item11", "路线A第11项粮食专用箱专项检查", "cost", "box_trip_count", "box", 80.0, 0.06, "", "二级公司", CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线A_三三零", ""),
+        ("A", "route_a_item9", "路线A第9项清理整备服务（扫箱、清箱）", "cost", "box_trip_count", "box", 40.0, 0.06, "", "二级公司", CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线A_三三零!A31:C39", "全部集装箱箱次"),
+        ("A", "route_a_item10", "路线A第10项洗箱服务", "cost", "box_trip_count", "box", 100.0, 0.06, "", "二级公司", CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线A_三三零!A31:C39", "全部集装箱箱次"),
+        ("A", "route_a_item11", "路线A第11项粮食专用箱专项检查", "cost", "box_trip_count", "box", 80.0, 0.06, "", "二级公司", CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线A_三三零!A31:C39", "全部集装箱箱次"),
+        ("A", "route_a_item13", "路线A第13项篷布专项检查服务", "cost", "open_top_box_trip_count", "box", 15.0, 0.06, "", "二级公司", CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线A_三三零!A31:C39", "仅限敞顶箱"),
+        ("A", "route_a_item18", "路线A第18项箱门捆扎施封", "cost", "box_trip_count", "box", 15.0, 0.06, "", "二级公司", CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线A_三三零!A31:C39", "全部集装箱箱次"),
         # route C
         ("C", "route_c_income", "路线C运输收入", "income", "confirmed_weight", "ton", 65.13, None, "锦州港物流发展有限公司", "", CONTRACT_REF_MAIN, str(JIUSAN_CONTRACT_PATH), "sheet=P008_大豆_路线C_新台子", "route C 收入拆分:50.07@9% + 15.06@6%; 当前先按总价落"),
         ("C", "nrf_cost", "国铁运费", "cost", "freight_fee_sum", "batch", None, 0.09, "", "中国铁路", CONTRACT_REF_MAIN, str(SUMMARY_XLSX), "sheet=P008_大豆_路线C_新台子", "票面国铁费从 wagon_shipments.freight_fee 汇总"),

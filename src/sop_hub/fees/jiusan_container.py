@@ -117,7 +117,11 @@ def calc_route_a_fee_items(
     transfer_amount: float,
     tarpaulin_amount: float,
     item9_amount: float,
+    item10_amount: float,
     item11_amount: float,
+    item13_amount: float,
+    item13_box_count: int,
+    item18_amount: float,
     source_ref: str,
 ) -> list[ContainerFeeItemCalc]:
     out: list[ContainerFeeItemCalc] = []
@@ -127,7 +131,10 @@ def calc_route_a_fee_items(
         "route_a_transfer_fee": transfer_amount,
         "route_a_tarpaulin": tarpaulin_amount,
         "route_a_item9": item9_amount,
+        "route_a_item10": item10_amount,
         "route_a_item11": item11_amount,
+        "route_a_item13": item13_amount,
+        "route_a_item18": item18_amount,
     }
     qty_overrides = {
         "route_a_metro_fee": ("ton", railway_weight, "marked_weight_x_line_rate", railway_weight),
@@ -135,7 +142,10 @@ def calc_route_a_fee_items(
         "route_a_transfer_fee": ("box", float(box_trip_count), "box_trip_count", float(box_trip_count)),
         "route_a_tarpaulin": ("box", float(box_trip_count), "formula", float(box_trip_count)),
         "route_a_item9": ("box", float(box_trip_count), "box_trip_count", float(box_trip_count)),
+        "route_a_item10": ("box", float(box_trip_count), "box_trip_count", float(box_trip_count)),
         "route_a_item11": ("box", float(box_trip_count), "box_trip_count", float(box_trip_count)),
+        "route_a_item13": ("box", float(item13_box_count), "open_top_box_trip_count", float(item13_box_count)),
+        "route_a_item18": ("box", float(box_trip_count), "box_trip_count", float(box_trip_count)),
     }
 
     for code, item in terms.items():

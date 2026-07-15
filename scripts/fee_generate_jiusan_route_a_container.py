@@ -29,6 +29,12 @@ from sop_hub.fees.jiusan_container import (  # noqa: E402
     resolve_line_rate,
     stable_hash,
 )
+from sop_hub.fees.jiusan_container_types import (  # noqa: E402
+    OPEN_TOP,
+    TOP_OPEN,
+    UNKNOWN_TYPE,
+    classify_container_type,
+)
 from sop_hub.utils.time import now_iso_beijing  # noqa: E402
 
 DB = REPO / "data" / "sop_agent.db"
@@ -52,7 +58,10 @@ REQUIRED_CODES = [
     "route_a_transfer_fee",
     "route_a_tarpaulin",
     "route_a_item9",
+    "route_a_item10",
     "route_a_item11",
+    "route_a_item13",
+    "route_a_item18",
 ]
 
 
@@ -247,6 +256,21 @@ def _line_rate_amount(
     return round(total, 2), missing
 
 
+def _container_type_counts(members: list[dict]) -> tuple[int, int]:
+    counts = {OPEN_TOP: 0, TOP_OPEN: 0, UNKNOWN_TYPE: 0}
+    unknown_boxes: list[str] = []
+    for member in members:
+        box_no = str(member.get("box_no") or "").strip()
+        container_type = classify_container_type(box_no)
+        counts[container_type] += 1
+        if container_type == UNKNOWN_TYPE:
+            unknown_boxes.append(box_no or "<empty>")
+    if unknown_boxes:
+        sample = ",".join(unknown_boxes[:10])
+        raise SystemExit(f"存在无法识别箱型的箱号，不能计算第13项: count={len(unknown_boxes)} sample={sample}")
+    return counts[OPEN_TOP], counts[TOP_OPEN]
+
+
 def _upsert_batch(
     conn: sqlite3.Connection,
     *,
@@ -265,6 +289,7 @@ def _upsert_batch(
     batch_id = stable_hash(PROJECT, "container_fee_batch", batch["ship_name"], LOT)
     source_ref = f"wagon_container_shipments:{batch['ship_name']}:{LOT}:{batch['id']}"
     box_count = len(members)
+    open_top_count, top_open_count = _container_type_counts(members)
     wagon_count = len({m["car_no"] for m in members if m.get("car_no")})
     railway_weight, freight_sum, ydid_count = _local_container_railway_allocations(conn, batch["id"])
     metro_default = float((terms.get("route_a_metro_fee") or {}).get("default_rate") or 3.75)
@@ -276,9 +301,15 @@ def _upsert_batch(
     tarpaulin_rate = float((terms.get("route_a_tarpaulin") or {}).get("default_rate") or 0.0)
     tarpaulin_amount = round(box_count * tarpaulin_rate * 0.7, 2)
     item9_rate = float((terms.get("route_a_item9") or {}).get("default_rate") or 0.0)
+    item10_rate = float((terms.get("route_a_item10") or {}).get("default_rate") or 0.0)
     item11_rate = float((terms.get("route_a_item11") or {}).get("default_rate") or 0.0)
+    item13_rate = float((terms.get("route_a_item13") or {}).get("default_rate") or 0.0)
+    item18_rate = float((terms.get("route_a_item18") or {}).get("default_rate") or 0.0)
     item9_amount = round(box_count * item9_rate, 2)
+    item10_amount = round(box_count * item10_rate, 2)
     item11_amount = round(box_count * item11_rate, 2)
+    item13_amount = round(open_top_count * item13_rate, 2)
+    item18_amount = round(box_count * item18_rate, 2)
     event_date = min((str(m.get("ticketed_at") or "")[:10] for m in members if m.get("ticketed_at")), default=batch["notice_date"])
 
     conn.execute("DELETE FROM fee_batch_member WHERE fee_batch_id=?", (batch_id,))
@@ -317,7 +348,9 @@ def _upsert_batch(
             "codex",
             now,
             now,
-            f"ydid_count={ydid_count};trip_box_count={box_count};railway_weight={railway_weight};missing_lines={','.join(missing_lines) if missing_lines else ''}",
+            f"ydid_count={ydid_count};trip_box_count={box_count};open_top_count={open_top_count};"
+            f"top_open_count={top_open_count};railway_weight={railway_weight};"
+            f"missing_lines={','.join(missing_lines) if missing_lines else ''}",
         ),
     )
 
@@ -367,7 +400,11 @@ def _upsert_batch(
         transfer_amount=transfer_amount,
         tarpaulin_amount=tarpaulin_amount,
         item9_amount=item9_amount,
+        item10_amount=item10_amount,
         item11_amount=item11_amount,
+        item13_amount=item13_amount,
+        item13_box_count=open_top_count,
+        item18_amount=item18_amount,
         source_ref=source_ref,
     )
     for item in fee_items:
@@ -418,6 +455,8 @@ def _upsert_batch(
         "railway_weight": railway_weight,
         "freight_sum": freight_sum,
         "metro_amount": metro_amount,
+        "open_top_count": open_top_count,
+        "top_open_count": top_open_count,
     }
 
 
@@ -448,7 +487,8 @@ def main() -> None:
                 f"  ship={o['ship_name']} batch={o['batch_id']} wagons={o['wagon_count']} "
                 f"box_trips={o['box_count']} confirmed_weight={o['confirmed_weight']} "
                 f"railway_weight={o['railway_weight']} freight={o['freight_sum']} "
-                f"metro={o['metro_amount']}"
+                f"metro={o['metro_amount']} open_top={o['open_top_count']} "
+                f"top_open={o['top_open_count']}"
             )
     finally:
         conn.close()

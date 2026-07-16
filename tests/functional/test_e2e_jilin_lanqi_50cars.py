@@ -4,9 +4,9 @@
   1. parse_departure_text("煤六 50节 四平铁 蓝鳍") → DepartureCandidate
   2. find_release_batch_with_reason → 命中 loading lot
   3. query_95306_shipments_by_window → 50 wagons (fixture 95306 db)
-  4. create_wagon_shipments_from_candidates → 50 行 wagon_shipments
-     + 100 行 wagon_container_shipments(box 级,Phase 3 双写)
-  5. allocate_wagons → 按 plan 分到 lot03/05/06,2 split 车 box.batch_id 拆
+  4. create_wagon_shipments_from_candidates → 100 行 wagon_container_shipments
+     (吉林不再写 wagon_shipments)
+  5. allocate_container_ydids → 按 plan 分到 lot03/05/06,2 split 车 box.batch_id 拆
   6. generate_dispatch_event_excel → 52 rows / 50 wagons
 
   跳过 step 6+ (factory_upload / verify / send_excel — 外部 HTTP,
@@ -249,7 +249,7 @@ def test_e2e_jilin_lanqi_50cars_chain_step1_to_step5(jilin_e2e_dbs):
     assert wr.status == "safe_to_apply"
     assert wr.inserted_count == 50
 
-    # 新表(wagon_container_shipments)Phase 3 双写应有 100 box
+    # 吉林以箱级表为唯一事实源；旧表不应再新增车级行。
     conn = sqlite3.connect(str(sop_db))
     n_wagons = conn.execute(
         "SELECT COUNT(*) FROM wagon_shipments WHERE project_id='jilin_jingang_jinzhou'"
@@ -258,18 +258,14 @@ def test_e2e_jilin_lanqi_50cars_chain_step1_to_step5(jilin_e2e_dbs):
         "SELECT COUNT(*) FROM wagon_container_shipments WHERE project_id='jilin_jingang_jinzhou'"
     ).fetchone()[0]
     conn.close()
-    assert n_wagons == 50, f"老表应有 50 wagon (got {n_wagons})"
-    assert n_boxes == 100, f"新表应有 100 box (Phase 3 双写) (got {n_boxes})"
+    assert n_wagons == 0, f"吉林不应写老表 (got {n_wagons})"
+    assert n_boxes == 100, f"新表应有 100 box (got {n_boxes})"
 
-    # ── Step 4b: allocate_wagons ──────────────────────────────────
-    from sop_hub.sop.dispatch_plan import allocate_wagons
-    conn = sqlite3.connect(str(sop_db))
-    new_wagon_ids = [r[0] for r in conn.execute(
-        "SELECT id FROM wagon_shipments WHERE source_message_id='wx_367_e2e'"
-    ).fetchall()]
-    conn.close()
-    alloc = allocate_wagons(
-        new_wagon_ids, "jilin_jingang_jinzhou", "蓝鳍",
+    # ── Step 4b: allocate_container_ydids ─────────────────────────
+    from sop_hub.sop.dispatch_plan import allocate_container_ydids
+    new_ydids = [p.ydid for p in wr.plans if p.action == "insert"]
+    alloc = allocate_container_ydids(
+        new_ydids, "jilin_jingang_jinzhou", "蓝鳍",
         db_path=str(sop_db), force_overwrite=True,
     )
     assert not alloc.error, f"allocate error: {alloc.error}"
@@ -286,8 +282,9 @@ def test_e2e_jilin_lanqi_50cars_chain_step1_to_step5(jilin_e2e_dbs):
     ).fetchall()
     conn.close()
     by_id = {r[0]: (r[1], r[2]) for r in rows}
-    assert by_id["lot03"] == (92, "completed")
-    assert by_id["lot05"] == (92, "completed")
+    # fixture 未预置历史箱级行；计数必须服从箱级事实而非旧计划累计值。
+    assert by_id["lot03"] == (1, "completed")
+    assert by_id["lot05"] == (20, "completed")
     assert by_id["lot06"][0] == 79, f"lot06 应吃 79 box (got {by_id['lot06']})"
     assert by_id["lot06"][1] == "active"
 
@@ -318,9 +315,7 @@ def test_e2e_jilin_lanqi_50cars_chain_step1_to_step5(jilin_e2e_dbs):
 
     # ── Step 5: generate_dispatch_event_excel ─────────────────────
     from sop_hub.sop.departure_excel import generate_dispatch_event_excel
-    excel = generate_dispatch_event_excel(
-        wagon_ids=new_wagon_ids, db_path=str(sop_db),
-    )
+    excel = generate_dispatch_event_excel(container_ydids=new_ydids, db_path=str(sop_db))
     # 误差容忍:模板可能写不出文件(yaml 模板 lookup),但 row 数据应该正确
     # 50 wagons:48 整车 1 行 + 2 split 各 2 行 = 52
     if not excel.error:

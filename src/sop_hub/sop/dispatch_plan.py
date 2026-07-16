@@ -426,6 +426,126 @@ def allocate_wagons(
         conn.close()
 
 
+def allocate_container_ydids(
+    ydids: list[str],
+    project_id: str,
+    ship_name: str,
+    *,
+    db_path: str | Path | None = None,
+    force_overwrite: bool = False,
+) -> AllocationResult:
+    """Allocate a container event directly from its box-level facts.
+
+    This is the canonical allocator for 吉林金钢.  It deliberately never reads
+    or writes ``wagon_shipments``: an event is identified by 95306 ``ydid`` and
+    every ``ydid + box_no`` is assigned once in ``wagon_container_shipments``.
+    """
+    result = AllocationResult()
+    ids = [str(value).strip() for value in ydids if str(value).strip()]
+    if not ids:
+        result.error = "ydids is empty"
+        return result
+
+    conn = _conn(db_path)
+    try:
+        placeholders = ",".join("?" * len(ids))
+        boxes = conn.execute(
+            f"SELECT id, ydid, car_no, box_no, batch_id FROM wagon_container_shipments "
+            f"WHERE project_id=? AND ship_name=? AND ydid IN ({placeholders}) "
+            f"ORDER BY ticketed_at ASC, car_no ASC, box_position ASC, box_no ASC",
+            (project_id, ship_name, *ids),
+        ).fetchall()
+        if not boxes:
+            result.error = "no wagon_container_shipments found for given ydids"
+            return result
+
+        plans = conn.execute(
+            "SELECT * FROM release_batch_dispatch_plan "
+            "WHERE project_id=? AND ship_name=? AND status='active' "
+            "ORDER BY priority_order ASC, release_batch_id ASC",
+            (project_id, ship_name),
+        ).fetchall()
+        if not plans:
+            return result  # no explicit box plan: retain the matched release batch
+
+        queue: list[dict[str, Any]] = []
+        event_placeholders = ",".join("?" * len(ids))
+        for plan in plans:
+            if force_overwrite:
+                # 新事件先按匹配 lot 落箱，随后才按 plan 重分。计算基线时必须
+                # 排除这批 placeholder，否则首个 lot 会虚增到 plan 已超额。
+                actual = conn.execute(
+                    f"SELECT COUNT(*) FROM wagon_container_shipments WHERE batch_id=? "
+                    f"AND ydid NOT IN ({event_placeholders})",
+                    (plan["release_batch_id"], *ids),
+                ).fetchone()[0]
+            else:
+                actual = conn.execute(
+                    "SELECT COUNT(*) FROM wagon_container_shipments WHERE batch_id=?",
+                    (plan["release_batch_id"],),
+                ).fetchone()[0]
+            recorded = int(plan["allocated_box_count"] or 0)
+            planned = int(plan["planned_box_count"] or 0)
+            # A stale plan must not silently consume another event. It needs an
+            # explicit data repair, then the next trigger can allocate normally.
+            if actual > planned:
+                result.error = (
+                    f"plan invariant violated: {plan['release_batch_id']} "
+                    f"actual_boxes={actual} > planned_box_count={planned}"
+                )
+                return result
+            queue.append({
+                "release_batch_id": plan["release_batch_id"],
+                "remaining": max(0, planned - max(recorded, actual)),
+                "newly_allocated": 0,
+            })
+        if all(item["remaining"] <= 0 for item in queue):
+            result.error = "all active plans already full"
+            return result
+
+        all_plan_ids = {p["release_batch_id"] for p in conn.execute(
+            "SELECT release_batch_id FROM release_batch_dispatch_plan "
+            "WHERE project_id=? AND ship_name=?", (project_id, ship_name)
+        )}
+        head = 0
+        for row in boxes:
+            if not force_overwrite and row["batch_id"] in all_plan_ids:
+                continue
+            while head < len(queue) and queue[head]["remaining"] <= 0:
+                head += 1
+            if head >= len(queue):
+                result.error = (
+                    f"plan exhausted while assigning ydid={row['ydid']} box={row['box_no']}"
+                )
+                return result
+            target = queue[head]["release_batch_id"]
+            conn.execute(
+                "UPDATE wagon_container_shipments SET batch_id=?, updated_at=? WHERE id=?",
+                (target, _now_iso(), row["id"]),
+            )
+            queue[head]["remaining"] -= 1
+            queue[head]["newly_allocated"] += 1
+            result.allocations_by_batch[target] = result.allocations_by_batch.get(target, 0) + 1
+
+        for item in queue:
+            bid = item["release_batch_id"]
+            actual = conn.execute(
+                "SELECT COUNT(*) FROM wagon_container_shipments WHERE batch_id=?", (bid,)
+            ).fetchone()[0]
+            status = "completed" if item["remaining"] == 0 else "active"
+            conn.execute(
+                "UPDATE release_batch_dispatch_plan SET allocated_box_count=?, status=?, updated_at=? "
+                "WHERE release_batch_id=?",
+                (actual, status, _now_iso(), bid),
+            )
+            if status == "completed" and item["newly_allocated"]:
+                result.closed_batches.append(bid)
+        conn.commit()
+        return result
+    finally:
+        conn.close()
+
+
 # ── Lot 反查(主 + 副)─────────────────────────────────────────────────
 
 

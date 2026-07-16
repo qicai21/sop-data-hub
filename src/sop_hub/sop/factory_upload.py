@@ -453,7 +453,8 @@ class DispatchEventUploadResult:
 
 
 def _build_event_upload_payloads(
-    wagon_ids: list[str], config: FactoryUploadConfig, *,
+    wagon_ids: list[str] | None, config: FactoryUploadConfig, *,
+    container_ydids: list[str] | None = None,
     db_path: str | Path | None = None,
 ) -> tuple[list[WagonUploadPayload], list[str], str]:
     """Build upload payloads from explicit wagon_ids spanning batches.
@@ -461,20 +462,30 @@ def _build_event_upload_payloads(
     Returns (payloads, release_batch_ids, error). Each wagon's payload uses its
     own batch's contract_no / order_identifier / cargo_name / ship_name.
     """
-    if not wagon_ids:
-        return [], [], "wagon_ids is empty"
+    wagon_ids = wagon_ids or []
+    container_ydids = container_ydids or []
+    if not wagon_ids and not container_ydids:
+        return [], [], "wagon_ids or container_ydids is empty"
     sop_path = Path(db_path) if db_path else SOP_DB_PATH
     if not sop_path.exists():
         return [], [], f"DB not found: {sop_path}"
     conn = sqlite3.connect(str(sop_path))
     conn.row_factory = sqlite3.Row
     try:
-        in_ph = ",".join("?" * len(wagon_ids))
-        wagons = conn.execute(
-            f"SELECT * FROM wagon_shipments WHERE id IN ({in_ph}) "
-            f"ORDER BY ticketed_at ASC, car_no ASC",
-            wagon_ids,
-        ).fetchall()
+        if container_ydids:
+            in_ph = ",".join("?" * len(container_ydids))
+            wagons = conn.execute(
+                f"SELECT car_no, ydid, project_id, ticketed_at, batch_id "
+                f"FROM wagon_container_shipments WHERE ydid IN ({in_ph}) "
+                f"GROUP BY car_no, ydid ORDER BY ticketed_at ASC, car_no ASC",
+                container_ydids,
+            ).fetchall()
+        else:
+            in_ph = ",".join("?" * len(wagon_ids))
+            wagons = conn.execute(
+                f"SELECT * FROM wagon_shipments WHERE id IN ({in_ph}) "
+                f"ORDER BY ticketed_at ASC, car_no ASC", wagon_ids,
+            ).fetchall()
         if not wagons:
             return [], [], f"no wagons found for given {len(wagon_ids)} ids"
         batch_ids_set: set[str] = {w["batch_id"] for w in wagons if w["batch_id"]}
@@ -641,12 +652,13 @@ def _build_event_upload_payloads(
 
 
 def upload_dispatch_event_wagons(
-    wagon_ids: list[str],
+    wagon_ids: list[str] | None = None,
     *,
     project_id: str = "jilin_jingang_jinzhou",
     preview: bool = False,
     db_path: str | Path | None = None,
     validate: bool = True,
+    container_ydids: list[str] | None = None,
 ) -> DispatchEventUploadResult:
     """Upload wagons of a per-dispatch-event to factory system.
 
@@ -661,7 +673,7 @@ def upload_dispatch_event_wagons(
     result = DispatchEventUploadResult(project_id=project_id, preview=preview)
 
     # ── 步骤1:上传前校验(堵整批 + 核车数/箱数)──────────────────
-    if validate:
+    if validate and not container_ydids:
         from sop_hub.sop.upload_validation import validate_dispatch_event_upload
         sop_path0 = Path(db_path) if db_path else SOP_DB_PATH
         v = validate_dispatch_event_upload(wagon_ids, db_path=sop_path0)
@@ -678,7 +690,7 @@ def upload_dispatch_event_wagons(
     result.login_success = True
 
     payloads, batch_ids, build_error = _build_event_upload_payloads(
-        wagon_ids, config, db_path=db_path,
+        wagon_ids, config, container_ydids=container_ydids, db_path=db_path,
     )
     if build_error:
         result.login_error = build_error

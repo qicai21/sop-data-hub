@@ -20,7 +20,8 @@ from sop_hub.sop.shipment_query_window import (
 
 BATCH_ID = "rb_test_001"
 SHIP_NAME = "蓝鳍"
-PROJECT = "jilin_jingang_jinzhou"
+# 通用旧车级入库回归；吉林箱级唯一事实源由 e2e 专项覆盖。
+PROJECT = "test_wagon_project"
 
 
 # ── Helpers ────────────────────────────────────────────────────────────

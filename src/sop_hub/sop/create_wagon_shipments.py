@@ -269,13 +269,17 @@ def create_wagon_shipments_from_candidates(
             result.warnings.append(f"release_batch_id not found: {release_batch_id}")
             return result
         ship_name = rb["ship_name"] or ""
+        # 吉林金钢集装箱业务以箱级表为唯一事实源。旧 wagon_shipments 仅保留
+        # 迁移前审计快照，不能再被新入库或分票流程改写。
+        jilin_container_only = (rb["project"] or "") == "jilin_jingang_jinzhou"
 
         # ── 2. Get existing wagon_shipments for this batch ───────────
         existing_ws: dict[str, str] = {}  # key → wagon_id
         existing_wagon_keys: set[str] = set()
         try:
+            source_table = "wagon_container_shipments" if jilin_container_only else "wagon_shipments"
             for row in sop_conn.execute(
-                "SELECT id, car_no, waybill_no, ydid FROM wagon_shipments WHERE batch_id = ?",
+                f"SELECT id, car_no, waybill_no, ydid FROM {source_table} WHERE batch_id = ?",
                 (release_batch_id,),
             ):
                 existing_ws[row["id"]] = row["car_no"] or ""
@@ -288,8 +292,9 @@ def create_wagon_shipments_from_candidates(
         # ── 3. Get all existing wagon_shipments (cross-batch conflict check) ──
         existing_cross_batch: dict[str, str] = {}  # ydid → batch_id(按 ydid,非 car_no)
         try:
+            source_table = "wagon_container_shipments" if jilin_container_only else "wagon_shipments"
             for row in sop_conn.execute(
-                "SELECT ydid, batch_id FROM wagon_shipments WHERE ydid IS NOT NULL AND ydid != ''"
+                f"SELECT ydid, batch_id FROM {source_table} WHERE ydid IS NOT NULL AND ydid != ''"
             ):
                 yd = row["ydid"]
                 if yd and row["batch_id"] != release_batch_id:
@@ -299,14 +304,15 @@ def create_wagon_shipments_from_candidates(
 
         # ── 4. Check wagon_shipments schema ──────────────────────────
         ws_columns: set[str] = set()
-        try:
-            ws_columns = {
-                r[1] for r in sop_conn.execute("PRAGMA table_info(wagon_shipments)").fetchall()
-            }
-        except sqlite3.OperationalError:
-            result.schema_missing_fields.append("table:wagon_shipments")
-            result.status = "schema_missing"
-            return result
+        if not jilin_container_only:
+            try:
+                ws_columns = {
+                    r[1] for r in sop_conn.execute("PRAGMA table_info(wagon_shipments)").fetchall()
+                }
+            except sqlite3.OperationalError:
+                result.schema_missing_fields.append("table:wagon_shipments")
+                result.status = "schema_missing"
+                return result
 
         required_cols = [
             "id", "departure_id", "batch_id", "car_no", "car_model", "cargo_name",
@@ -315,9 +321,10 @@ def create_wagon_shipments_from_candidates(
             "container_no", "waybill_no", "project_id", "ship_name",
             "dispatch_status", "source_message_id", "source_group_id",
         ]
-        for col in required_cols:
-            if col not in ws_columns:
-                result.schema_missing_fields.append(f"column:wagon_shipments.{col}")
+        if not jilin_container_only:
+            for col in required_cols:
+                if col not in ws_columns:
+                    result.schema_missing_fields.append(f"column:wagon_shipments.{col}")
 
         # ── 5. Get candidates and filter ─────────────────────────────
         candidates = list(shipment_query_result.candidates)
@@ -444,20 +451,21 @@ def create_wagon_shipments_from_candidates(
         loading_line = canonicalize_loading_line(
             getattr(departure_candidate, "lane_or_track", "") or ""
         )
-        try:
-            _wcols = {r[1] for r in sop_conn.execute("PRAGMA table_info(wagon_shipments)")}
-            if "loading_line" not in _wcols:
-                sop_conn.execute("ALTER TABLE wagon_shipments ADD COLUMN loading_line TEXT")
-            if "dispatch_train_code" not in _wcols:
-                sop_conn.execute("ALTER TABLE wagon_shipments ADD COLUMN dispatch_train_code TEXT")
-            sop_conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_wagon_shipments_dispatch_train_code "
-                "ON wagon_shipments(dispatch_train_code)"
-            )
-        except Exception as _exc:
-            result.warnings.append(f"ensure wagon shipment extension columns failed: {_exc}")
+        if not jilin_container_only:
+            try:
+                _wcols = {r[1] for r in sop_conn.execute("PRAGMA table_info(wagon_shipments)")}
+                if "loading_line" not in _wcols:
+                    sop_conn.execute("ALTER TABLE wagon_shipments ADD COLUMN loading_line TEXT")
+                if "dispatch_train_code" not in _wcols:
+                    sop_conn.execute("ALTER TABLE wagon_shipments ADD COLUMN dispatch_train_code TEXT")
+                sop_conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_wagon_shipments_dispatch_train_code "
+                    "ON wagon_shipments(dispatch_train_code)"
+                )
+            except Exception as _exc:
+                result.warnings.append(f"ensure wagon shipment extension columns failed: {_exc}")
 
-        for plan in insert_plans:
+        for plan in ([] if jilin_container_only else insert_plans):
             wagon_id = _gen_wagon_id(plan.ydid, release_batch_id)
             # cargo_count = 该车箱数。shipped_weight_rule(集装箱业务)按
             # `cargo_count × 单箱重` 算已发重量,不写这个字段 → 已发恒为 0、
@@ -561,6 +569,9 @@ def create_wagon_shipments_from_candidates(
                         except sqlite3.IntegrityError:
                             pass
                 sop_conn.commit()
+                if jilin_container_only:
+                    # result 的计数口径仍是本次入库的运单数，不是箱数。
+                    result.inserted_count = len(insert_plans)
         except Exception as exc:
             result.warnings.append(f"wagon_container_shipments dual-write failed: {exc}")
 

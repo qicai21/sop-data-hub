@@ -528,6 +528,7 @@ def run_departure_executor_chain(
             # 维持单 batch 老路径(适合 1 lot in_progress 的简单场景)。
             plan_mode = False
             event_wagon_ids: list[str] = []
+            event_container_ydids: list[str] = []
             # ── 本次发车事件的 wagon_ids ──────────────────────────────
             # = 这条消息刚 INSERT(或幂等命中)的、有车号的车。与有无
             # dispatch_plan 无关 —— 发运 excel/upload 必须 per-event,单 lot
@@ -545,7 +546,8 @@ def run_departure_executor_chain(
                     p.ydid for p in wagon_result.plans
                     if p.action in ("insert", "skip_existing") and p.ydid
                 ]
-                if inserted_ydids or inserted_car_nos:
+                event_container_ydids = inserted_ydids
+                if (inserted_ydids or inserted_car_nos) and candidate.project_id != "jilin_jingang_jinzhou":
                     import sqlite3 as _sql
                     _c = _sql.connect(str(db_path))
                     _c.row_factory = _sql.Row
@@ -562,9 +564,7 @@ def run_departure_executor_chain(
             # 仅多 lot 共存(有 active plan)时需要按 box 拆分到各 lot;无 plan
             # 的单 lot 项目不分配,但上面已拿到 event_wagon_ids 照样走 per-event。
             try:
-                from sop_hub.sop.dispatch_plan import (
-                    list_active_plans, allocate_wagons,
-                )
+                from sop_hub.sop.dispatch_plan import list_active_plans, allocate_wagons, allocate_container_ydids
                 ship_name = preview.release_batch_ship or rb.get("ship_name") or ""
                 project_id_local = candidate.project_id
                 active_plans = (
@@ -572,13 +572,20 @@ def run_departure_executor_chain(
                     if (project_id_local and ship_name)
                     else []
                 )
-                if active_plans and event_wagon_ids:
+                if active_plans and (event_wagon_ids or event_container_ydids):
                     # force_overwrite=True:本次新 INSERT 的 wagon,step 3 给了
                     # placeholder batch_id(指向 active plan 的一个 lot),
                     # allocate_wagons 老幂等检查会误判已分配 → 全堆 placeholder lot。
-                    alloc = allocate_wagons(
-                        event_wagon_ids, project_id_local, ship_name,
-                        db_path=db_path, force_overwrite=True,
+                    alloc = (
+                        allocate_container_ydids(
+                            event_container_ydids, project_id_local, ship_name,
+                            db_path=db_path, force_overwrite=True,
+                        )
+                        if project_id_local == "jilin_jingang_jinzhou"
+                        else allocate_wagons(
+                            event_wagon_ids, project_id_local, ship_name,
+                            db_path=db_path, force_overwrite=True,
+                        )
                     )
                     plan_mode = True
                     preview.error += "" if not alloc.error else f"plan_alloc: {alloc.error}; "
@@ -618,12 +625,14 @@ def run_departure_executor_chain(
                     except Exception as exc:
                         preview.error += f"backfill_fields: {exc}; "
                 try:
-                    if event_wagon_ids:
+                    if event_wagon_ids or event_container_ydids:
                         # 发运 excel 永远 per-event(#107):本次事件涉及的
                         # wagon_ids,跨 lot 合并一张表。不再有"整批兜底"。
                         from sop_hub.sop.departure_excel import generate_dispatch_event_excel
                         excel_result = generate_dispatch_event_excel(
-                            wagon_ids=event_wagon_ids, db_path=db_path,
+                            wagon_ids=event_wagon_ids,
+                            container_ydids=(event_container_ydids or None),
+                            db_path=db_path,
                         )
                         preview.excel_path = excel_result.output_path
                         preview.excel_rows = getattr(excel_result, "row_count", 0)
@@ -637,12 +646,13 @@ def run_departure_executor_chain(
                     preview.error += f"excel: {exc}; "
 
                 try:
-                    if event_wagon_ids:
+                    if event_wagon_ids or event_container_ydids:
                         # 工厂上传同样 per-event:只传本次事件的箱,不传整批。
                         from sop_hub.sop.factory_upload import upload_dispatch_event_wagons
                         factory_result = upload_dispatch_event_wagons(
                             wagon_ids=event_wagon_ids,
                             project_id=candidate.project_id,
+                            container_ydids=(event_container_ydids or None),
                             db_path=db_path,
                         )
                         preview.factory_login = factory_result.login_success

@@ -646,24 +646,47 @@ class DispatchEventExcelResult:
 
 
 def _fetch_event_wagons_and_batches(
-    wagon_ids: list[str], *, db_path: str | Path | None = None,
+    wagon_ids: list[str] | None = None, *,
+    container_ydids: list[str] | None = None,
+    db_path: str | Path | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], str]:
     """Return (wagon_rows ordered by ticketed_at, batch_id→batch_dict, error)."""
-    if not wagon_ids:
-        return [], {}, "wagon_ids is empty"
+    wagon_ids = wagon_ids or []
+    container_ydids = container_ydids or []
+    if not wagon_ids and not container_ydids:
+        return [], {}, "wagon_ids or container_ydids is empty"
     db = Path(db_path) if db_path else SOP_DB
     conn = sqlite3.connect(str(db))
     conn.row_factory = sqlite3.Row
     try:
-        in_ph = ",".join("?" * len(wagon_ids))
-        wagons = conn.execute(
-            f"SELECT * FROM wagon_shipments WHERE id IN ({in_ph}) "
-            f"ORDER BY ticketed_at ASC, car_no ASC",
-            wagon_ids,
-        ).fetchall()
+        if container_ydids:
+            in_ph = ",".join("?" * len(container_ydids))
+            box_rows = conn.execute(
+                f"SELECT * FROM wagon_container_shipments WHERE ydid IN ({in_ph}) "
+                f"ORDER BY ticketed_at ASC, car_no ASC, box_position ASC",
+                container_ydids,
+            ).fetchall()
+            grouped: dict[tuple[str, str], list[sqlite3.Row]] = {}
+            for row in box_rows:
+                grouped.setdefault((row["car_no"] or "", row["ydid"] or ""), []).append(row)
+            wagons = []
+            for rows in grouped.values():
+                first = dict(rows[0])
+                first["container_numbers_json"] = __import__("json").dumps(
+                    [r["box_no"] for r in rows]
+                )
+                first["container_no"] = "/".join(r["box_no"] for r in rows)
+                # event renderer only needs wagon-shaped facts; source remains box-level.
+                wagons.append(first)
+        else:
+            in_ph = ",".join("?" * len(wagon_ids))
+            wagons = [dict(r) for r in conn.execute(
+                f"SELECT * FROM wagon_shipments WHERE id IN ({in_ph}) "
+                f"ORDER BY ticketed_at ASC, car_no ASC", wagon_ids,
+            ).fetchall()]
         if not wagons:
-            return [], {}, f"no wagon_shipments found for the given {len(wagon_ids)} wagon_ids"
-        batch_ids = sorted({r["batch_id"] for r in wagons if r["batch_id"]})
+            return [], {}, "no shipment facts found for this event"
+        batch_ids = sorted({r["batch_id"] for r in wagons if r.get("batch_id")})
         if not batch_ids:
             return [], {}, "no batch_id on any wagon"
         b_ph = ",".join("?" * len(batch_ids))
@@ -678,7 +701,7 @@ def _fetch_event_wagons_and_batches(
                 f"per-event excel requires single-project wagons; got "
                 f"{sorted(projects)}"
             )
-        return [dict(w) for w in wagons], batches, ""
+        return wagons, batches, ""
     finally:
         conn.close()
 
@@ -753,12 +776,13 @@ def _build_event_row(
 
 
 def generate_dispatch_event_excel(
-    wagon_ids: list[str],
+    wagon_ids: list[str] | None = None,
     *,
     project_id: str | None = None,
     output_dir: str | Path | None = None,
     db_path: str | Path | None = None,
     filename_override: str | None = None,
+    container_ydids: list[str] | None = None,
 ) -> DispatchEventExcelResult:
     """Generate per-dispatch-event excel(跨 batch 合并一张表)。
 
@@ -769,7 +793,9 @@ def generate_dispatch_event_excel(
       output_dir: 不传则按主 batch(车数最多那个)的 archive 路径落盘。
       filename_override: 不传则用 yaml file_naming.pattern + car_count。
     """
-    wagons, batches, err = _fetch_event_wagons_and_batches(wagon_ids, db_path=db_path)
+    wagons, batches, err = _fetch_event_wagons_and_batches(
+        wagon_ids, container_ydids=container_ydids, db_path=db_path,
+    )
     if err:
         return DispatchEventExcelResult(error=err)
 

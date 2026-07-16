@@ -62,17 +62,26 @@ def _batch_has_dispatch_plan(conn: sqlite3.Connection, batch_id: str) -> bool:
     ).fetchone() is not None
 
 
-def _batch_wagon_stage_summary(conn: sqlite3.Connection, batch_id: str) -> dict[str, Any]:
+def _batch_wagon_stage_summary(
+    conn: sqlite3.Connection, batch_id: str, project_id: str = "",
+) -> dict[str, Any]:
     """Return {'total','received','all_received','has_container','last_ticketed'}.
 
     同时数 wagon_shipments(散粮/整车)+ wagon_container_shipments(集装箱)——
     否则集装箱批 total=0、永远 all_received=False、永不关批(和谐1 lot01 卡 loading
     根因:原 closeout 只查 wagon_shipments)。表不存在(测试最小 schema)时跳过。
     """
+    # 吉林金钢已切到箱级唯一事实源。旧车级表是迁移前的审计快照，若仍将两表
+    # 相加会把同一批集装箱重复计入 closeout。
+    tables = (
+        ("wagon_container_shipments",)
+        if project_id == "jilin_jingang_jinzhou"
+        else ("wagon_shipments", "wagon_container_shipments")
+    )
     total = received = 0
     last_tk = ""
     has_container = False
-    for tbl in ("wagon_shipments", "wagon_container_shipments"):
+    for tbl in tables:
         try:
             row = conn.execute(
                 f"SELECT COUNT(*) AS total, "
@@ -146,7 +155,7 @@ def run_lifecycle_closeout(
                 result["held"] += 1
                 continue
             mode = _yaml_lifecycle_mode(project)
-            summary = _batch_wagon_stage_summary(conn, bid)
+            summary = _batch_wagon_stage_summary(conn, bid, project)
 
             # shipped_is_completed:all_loaded 直接 closed(发完即结算)
             if mode == "shipped_is_completed" and phase == lc.ALL_LOADED:

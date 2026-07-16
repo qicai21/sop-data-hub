@@ -135,6 +135,12 @@ def _backfill_local_ticket_fields(conn: sqlite3.Connection, batch_id: str) -> in
             """,
             ydids,
         ).fetchall():
+            total_box_rows = conn.execute(
+                "SELECT COUNT(*) FROM wagon_container_shipments WHERE ydid=?",
+                (str(r["ydid"]),),
+            ).fetchone()[0] or 0
+            per_box_fee = (float(r["freight_fee"] or 0.0) / float(total_box_rows)
+                           if total_box_rows else 0.0)
             cur = conn.execute(
                 """
                 UPDATE wagon_container_shipments
@@ -143,7 +149,7 @@ def _backfill_local_ticket_fields(conn: sqlite3.Connection, batch_id: str) -> in
                     updated_at=?
                 WHERE ydid=?
                 """,
-                (float(r["freight_fee"] or 0.0), str(r["detail_json"] or "{}"), now_iso_beijing(), str(r["ydid"])),
+                (per_box_fee, str(r["detail_json"] or "{}"), now_iso_beijing(), str(r["ydid"])),
             )
             updated += cur.rowcount
     finally:
@@ -157,7 +163,7 @@ def _local_container_railway_allocations(conn: sqlite3.Connection, batch_id: str
         SELECT ydid,
                COUNT(*) AS batch_box_rows,
                MAX(COALESCE(marked_weight, 0)) AS marked_weight,
-               MAX(COALESCE(freight_fee, 0)) AS freight_fee
+               SUM(COALESCE(freight_fee, 0)) AS freight_fee
         FROM wagon_container_shipments
         WHERE batch_id=?
         GROUP BY ydid

@@ -9,6 +9,7 @@ import sqlite3
 import pytest
 
 from sop_hub.sop.wagon_ingest import (
+    backfill_event_fields_from_95306,
     build_wagon_row,
     compute_cargo_count,
     gen_wagon_id,
@@ -127,3 +128,89 @@ def test_ingest_no_rule_project_skips_safely(db):
     assert res["new"] == 1
     # compute 返回 no_shipped_weight_rule,不抛
     assert res["recompute_ok"] is False
+
+
+def test_ingest_refreshes_existing_freight_fee(db):
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        """
+        INSERT INTO wagon_shipments (
+            id, batch_id, car_no, car_model, cargo_name, origin_name, destination_name,
+            ticketed_at, status_name, marked_weight, freight_fee, ydid, project_id,
+            ship_name, dispatch_status, source_message_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            gen_wagon_id("y1", "B"),
+            "B", "c1", "C70E", "钢材", "朝阳", "锦州",
+            "2026-06-11 10:00:00", "已发车", 70.0, 0, "y1",
+            "chaoyang_steel", "宝腾海", "loading", "t", "2026-06-15", "2026-06-15",
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    tickets = [_ticket("y1", "c1", "C70E", freight_fee=294530, latest_stage_key="departed")]
+    res = ingest_wagons("B", tickets, project_id="chaoyang_steel",
+                        ship_name="宝腾海", db_path=db, source_message_id="t",
+                        now="2026-06-15")
+    assert res["new"] == 0
+    assert res["refreshed"] == 1
+
+    conn = sqlite3.connect(str(db))
+    row = conn.execute(
+        "SELECT freight_fee, latest_stage_key FROM wagon_shipments WHERE id=?",
+        (gen_wagon_id("y1", "B"),),
+    ).fetchone()
+    conn.close()
+    assert row[0] == "294530" or row[0] == 294530
+    assert row[1] == "departed"
+
+
+def test_backfill_event_fields_from_95306_fills_freight_fee(tmp_path):
+    sop_db = tmp_path / "sop.db"
+    rail_db = tmp_path / "rail.sqlite3"
+
+    conn = sqlite3.connect(str(sop_db))
+    conn.execute(
+        """CREATE TABLE wagon_shipments (
+            id TEXT PRIMARY KEY, ydid TEXT, car_model TEXT, marked_weight REAL,
+            hph TEXT, freight_fee REAL, updated_at TEXT
+        )"""
+    )
+    conn.execute(
+        "CREATE TABLE wagon_container_shipments (id TEXT PRIMARY KEY, ydid TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO wagon_shipments VALUES ('w1','yd1','',NULL,'',0,'2026-06-15')"
+    )
+    conn.commit()
+    conn.close()
+
+    rail = sqlite3.connect(str(rail_db))
+    rail.execute(
+        """CREATE TABLE shipments (
+            ydid TEXT, car_model TEXT, freight_fee INTEGER,
+            raw_core_json TEXT
+        )"""
+    )
+    rail.execute(
+        "INSERT INTO shipments VALUES ('yd1','C70E',294530,'{\"hph\":\"HPH001\"}')"
+    )
+    rail.commit()
+    rail.close()
+
+    out = backfill_event_fields_from_95306(
+        ["w1"], db_path=sop_db, rail_db_path=rail_db,
+    )
+
+    conn = sqlite3.connect(str(sop_db))
+    row = conn.execute(
+        "SELECT car_model, marked_weight, hph, freight_fee FROM wagon_shipments WHERE id='w1'"
+    ).fetchone()
+    conn.close()
+    assert out["car_model"] == 1
+    assert out["marked_weight"] == 1
+    assert out["hph"] == 1
+    assert out["freight_fee"] == 1
+    assert row == ("C70E", 70.0, "HPH001", 294530.0)

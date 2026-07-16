@@ -27,6 +27,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 from sop_hub.utils.time import now_iso_beijing  # noqa: E402
+from sop_hub.sop.wagon_container_shipments import split_freight_fee_across_boxes  # noqa: E402
 
 SOP_DB = REPO / "data" / "sop_agent.db"
 RAIL_DB = Path("/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3")
@@ -166,6 +167,10 @@ def assign_cycle(conn, cars: set[str], ship: str, first_date: str, now: str) -> 
 
 
 def build_box_row(t: dict, box: str, pos: int, ship: str, batch_id: str, cycle_id: str, now: str) -> dict:
+    try:
+        box_count = len([b for b in json.loads(t.get("container_numbers_json") or "[]") if b]) or 2
+    except Exception:
+        box_count = 2
     return {
         "id": stable_hash(t["car_no"], box, t["ydid"]),  # 船无关 → 重路由不换 id
         "car_no": t["car_no"], "box_no": box, "box_position": pos,
@@ -179,6 +184,7 @@ def build_box_row(t: dict, box: str, pos: int, ship: str, batch_id: str, cycle_i
         "origin_name": t["origin_name"], "destination_name": t["destination_name"],
         "transport_mode_code": t["transport_mode_code"], "transport_mode_name": t["transport_mode_name"],
         "cargo_name": t["cargo_name"], "marked_weight": t["marked_weight"],
+        "freight_fee": split_freight_fee_across_boxes(t.get("freight_fee"), box_count),
         "project_id": PROJECT, "ship_name": ship,
         "consignor": "锦州港物流发展有限公司", "consignee": "国家粮食和物资储备局辽宁局三三0处",
         "dispatch_status": "loading",
@@ -205,20 +211,20 @@ def upsert_rows(conn, rows: list[dict], existing: dict[str, str]) -> tuple[int, 
                 conn.execute(
                     f"""UPDATE wagon_container_shipments SET batch_id=?, ship_name=?,
                        status_name=?, latest_stage_key=?, latest_stage_name=?, latest_event_time=?,
-                       departed_at=?, arrived_at=?, delivered_at=?, cycle_id=?, updated_at=?{rec_clear}
+                       departed_at=?, arrived_at=?, delivered_at=?, cycle_id=?, freight_fee=?, updated_at=?{rec_clear}
                        WHERE id=?""",
                     (r["batch_id"], r["ship_name"], r["status_name"], r["latest_stage_key"],
                      r["latest_stage_name"], r["latest_event_time"], r["departed_at"], r["arrived_at"],
-                     r["delivered_at"], r["cycle_id"], r["updated_at"], rid))
+                     r["delivered_at"], r["cycle_id"], r["freight_fee"], r["updated_at"], rid))
                 existing[rid] = r["batch_id"]; reroute_n += 1
             else:
                 conn.execute(
                     """UPDATE wagon_container_shipments SET status_name=?, latest_stage_key=?,
                        latest_stage_name=?, latest_event_time=?, departed_at=?, arrived_at=?,
-                       delivered_at=?, updated_at=? WHERE id=?""",
+                       delivered_at=?, freight_fee=?, updated_at=? WHERE id=?""",
                     (r["status_name"], r["latest_stage_key"], r["latest_stage_name"],
                      r["latest_event_time"], r["departed_at"], r["arrived_at"], r["delivered_at"],
-                     r["updated_at"], rid)); refresh_n += 1
+                     r["freight_fee"], r["updated_at"], rid)); refresh_n += 1
         else:
             cols = list(r.keys())
             conn.execute(f"INSERT INTO wagon_container_shipments ({','.join(cols)}) "

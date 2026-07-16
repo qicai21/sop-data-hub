@@ -52,7 +52,7 @@ CANONICAL_COLUMNS = [
 _REFRESH_FIELDS = [
     "status_name", "latest_stage_key", "latest_stage_name", "latest_event_time",
     "departed_at", "arrived_at", "delivered_at", "confirmed_received_at",
-    "marked_weight", "dispatch_status", "updated_at",
+    "marked_weight", "freight_fee", "dispatch_status", "updated_at",
 ]
 
 
@@ -134,9 +134,9 @@ def backfill_event_fields_from_95306(
       - car_model、hph ← 95306(rail);
       - **marked_weight = 车型推标载**(marked_load_from_car_model,**不取 rail 的计费/装载
         重量**;2026-06-27 起 marked_weight 语义统一为「标载」)。
-    **idempotent**:只补缺,已有值不动。返回 {"marked_weight","hph","car_model"} 各补几条。
+    **idempotent**:只补缺,已有值不动。返回 {"marked_weight","hph","car_model","freight_fee"} 各补几条。
     """
-    out = {"marked_weight": 0, "hph": 0, "car_model": 0}
+    out = {"marked_weight": 0, "hph": 0, "car_model": 0, "freight_fee": 0}
     if not wagon_ids:
         return out
     from sop_hub.sop.query_95306_shipments import _resolve_rail_db_path
@@ -148,7 +148,7 @@ def backfill_event_fields_from_95306(
     try:
         in_ph = ",".join("?" * len(wagon_ids))
         wagons = hub.execute(
-            f"SELECT id, ydid, car_model, marked_weight, hph FROM wagon_shipments WHERE id IN ({in_ph})",
+            f"SELECT id, ydid, car_model, marked_weight, hph, freight_fee FROM wagon_shipments WHERE id IN ({in_ph})",
             wagon_ids,
         ).fetchall()
         need = [
@@ -157,6 +157,7 @@ def backfill_event_fields_from_95306(
                 w["marked_weight"] in (None, 0, "")
                 or not (w["hph"] or "").strip()
                 or not (w["car_model"] or "").strip()
+                or w["freight_fee"] in (None, 0, "")
             )
         ]
         if not need:
@@ -173,7 +174,7 @@ def backfill_event_fields_from_95306(
         try:
             yph = ",".join("?" * len(ydids))
             rmap = {
-                r["ydid"]: (r["car_model"], extract_hph(dict(r)))
+                r["ydid"]: (r["car_model"], extract_hph(dict(r)), r["freight_fee"])
                 for r in rail.execute(
                     f"SELECT * FROM shipments WHERE ydid IN ({yph})", ydids
                 )
@@ -181,7 +182,7 @@ def backfill_event_fields_from_95306(
         finally:
             rail.close()
         for w in need:
-            rail_cm, hph = rmap.get(w["ydid"], ("", ""))
+            rail_cm, hph, rail_freight_fee = rmap.get(w["ydid"], ("", "", None))
             car_model = (w["car_model"] or rail_cm or "").strip()
             # car_model 回填(标载推断的依据)
             if not (w["car_model"] or "").strip() and rail_cm:
@@ -197,6 +198,9 @@ def backfill_event_fields_from_95306(
             if not (w["hph"] or "").strip() and hph:
                 hub.execute("UPDATE wagon_shipments SET hph=? WHERE id=?", (hph, w["id"]))
                 out["hph"] += 1
+            if w["freight_fee"] in (None, 0, "") and rail_freight_fee not in (None, "", 0):
+                hub.execute("UPDATE wagon_shipments SET freight_fee=? WHERE id=?", (rail_freight_fee, w["id"]))
+                out["freight_fee"] += 1
         hub.commit()
     finally:
         hub.close()

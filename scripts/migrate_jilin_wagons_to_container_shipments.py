@@ -25,7 +25,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 DB = REPO / "data" / "sop_agent.db"
 
-from sop_hub.sop.wagon_container_shipments import ensure_schema
+from sop_hub.sop.wagon_container_shipments import ensure_schema, split_freight_fee_across_boxes
 
 
 def _row_boxes(row: dict) -> list[str]:
@@ -86,10 +86,10 @@ def main():
                         delivered_at, accepted_at, loaded_at,
                         status_name, latest_stage_key, latest_stage_name, latest_event_time,
                         origin_name, destination_name, transport_mode_code, transport_mode_name,
-                        cargo_name, marked_weight,
+                        cargo_name, marked_weight, freight_fee,
                         project_id, ship_name, consignor, consignee, dispatch_status,
                         source_message_id, source_group_id, created_at, updated_at
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         row_id, wd["car_no"], box, idx, wd["ydid"], wd.get("czydid"),
@@ -102,6 +102,7 @@ def main():
                         wd.get("origin_name"), wd.get("destination_name"),
                         wd.get("transport_mode_code"), wd.get("transport_mode_name"),
                         wd.get("cargo_name"), wd.get("marked_weight"),
+                        split_freight_fee_across_boxes(wd.get("freight_fee"), len(boxes)),
                         wd.get("project_id"), wd.get("ship_name"),
                         wd.get("shipper_name"), wd.get("consignee_name"),
                         wd.get("dispatch_status", "in_progress"),

@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS wagon_container_shipments (
     -- box / wagon 级混合
     cargo_name TEXT,
     marked_weight REAL,                        -- 车级标载(沿用 95306;每箱列拿同值)
-    freight_fee REAL NOT NULL DEFAULT 0,      -- 票面国铁运费(元)
+    freight_fee REAL NOT NULL DEFAULT 0,      -- 票面国铁运费(分;按该 ydid 箱数平分到每箱)
     detail_json TEXT NOT NULL DEFAULT '{}',   -- 原始 95306/同步明细
     loading_line TEXT,                        -- 作业道线:七道/八道/煤五...
     dispatch_train_code TEXT,                 -- 同列发车标识,跨 lot/船共用
@@ -105,6 +105,26 @@ def is_container_business_project(project_id: str) -> bool:
     except Exception:
         return False
     return bool((raw.get("project_meta") or {}).get("is_container_business"))
+
+
+def split_freight_fee_across_boxes(
+    raw_freight_fee: Any,
+    box_count: int,
+) -> float:
+    """Return per-box freight fee in the same unit as rail shipments.freight_fee.
+
+    Current local convention:
+      - rail95306 shipments.freight_fee stores integer fen
+      - wagon_container_shipments stores the per-box share of that fen amount
+    """
+    try:
+        total = float(raw_freight_fee or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+    count = int(box_count or 0)
+    if count <= 0:
+        return 0.0
+    return total / float(count)
 
 
 def insert_box_rows(

@@ -41,6 +41,7 @@ SYNC_FIELDS = [
     "transport_mode_code",
     "transport_mode_name",
     "marked_weight",
+    "freight_fee",
     "cargo_count",
     "container_numbers_json",
     "accepted_at",

@@ -3,10 +3,17 @@ from __future__ import annotations
 from sop_hub.fees.jiusan_container import calc_route_a_fee_items, container_billing_weight, load_route_a_config
 from sop_hub.fees.jiusan_container_types import OPEN_TOP, TOP_OPEN, UNKNOWN_TYPE, classify_container_type
 from sop_hub.fees.reconciliation import group_ship_fee_rows
+from sop_hub.sop.wagon_container_shipments import split_freight_fee_across_boxes
 
 
 def test_container_billing_weight():
     assert container_billing_weight(630, 28.4) == 17892.0
+
+
+def test_split_freight_fee_across_boxes():
+    assert split_freight_fee_across_boxes(193260, 2) == 96630.0
+    assert split_freight_fee_across_boxes(220540, 2) == 110270.0
+    assert split_freight_fee_across_boxes(None, 2) == 0.0
 
 
 def test_route_a_metro_fee_uses_marked_weight_not_box_count():

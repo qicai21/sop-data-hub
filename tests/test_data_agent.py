@@ -893,6 +893,29 @@ class TestShipNameOcrGuard:
         assert records == []
         assert agent.list_release_batches() == []
 
+    def test_known_ocean_conqueror_keeps_only_siping_plan(self, tmp_db):
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "project": "jilin_jingang_jinzhou",
+            "header_info": {"通知日期": "2026年7月17日"},
+            "business_info": {"船名": "海洋征服者", "发货单位": "", "收货单位": ""},
+            "cargo_info": {"货物名称": "铁矿", "总重里": "3000", "运输方式": "铁路"},
+            "special_matter": "到站：四平",
+            "remarks": [
+                {"date": "7月8日", "sequence": "第一次", "plan": "3600吨（铁路 乌兰浩特）", "raw_line": ""},
+                {"date": "7月10日", "sequence": "第二次", "plan": "2500吨（铁路 乌兰浩特）", "raw_line": ""},
+                {"date": "7月17日", "sequence": "第三次", "plan": "3000吨（铁路 四平）", "raw_line": ""},
+            ],
+        }
+
+        records = agent.ingest_release_batch(payload, source_file_name="ocean_conqueror_0717.json")
+
+        assert len(records) == 1
+        assert records[0].ship_name == "海洋征服者"
+        assert records[0].destination_station == "四平"
+        assert records[0].batch_quantity == 3000.0
+
 
 class TestHashText:
     def test_deterministic(self):

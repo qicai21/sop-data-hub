@@ -842,6 +842,10 @@ class TestCanonicalizeShip:
 
 
 class TestProjectKnownShips:
+    def test_jiusan_known_ships_loaded_from_yaml(self):
+        ships = project_known_ships("jiusan")
+        assert "勇气" in ships
+
     def test_jilin_known_ships_loaded_from_yaml(self):
         ships = project_known_ships("jilin_jingang_jinzhou")
         assert "蓝鳍" in ships

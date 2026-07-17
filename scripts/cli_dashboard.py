@@ -225,6 +225,19 @@ _PLAN_NO_FIELD = {
 }
 
 
+# 6 月已人工确认发运完毕的批次只占用看板空间，不再需要作为在途事项展示。
+# 仍保留 tracking / delivered，以及其他月份的 all_loaded，避免掩盖真实跟踪任务。
+_HIDDEN_ALL_LOADED_MONTHS = frozenset({"2026-06"})
+
+
+def _is_hidden_completed_batch(batch: dict[str, Any]) -> bool:
+    """Return whether this batch is intentionally omitted from the dashboard."""
+    if batch.get("dispatch_status") != "all_loaded":
+        return False
+    batch_day = str(batch.get("batch_date") or batch.get("notice_date") or "")
+    return any(batch_day.startswith(month) for month in _HIDDEN_ALL_LOADED_MONTHS)
+
+
 def _plan_no_for(project_id: str, b: dict[str, Any]) -> str:
     field = _PLAN_NO_FIELD.get(project_id)
     if field:
@@ -314,7 +327,10 @@ def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
         if not proj:
             # 早期脏数据(无 project 字段)— 不显示,避免干扰
             continue
-        by_project.setdefault(proj, []).append(dict(r))
+        batch = dict(r)
+        if _is_hidden_completed_batch(batch):
+            continue
+        by_project.setdefault(proj, []).append(batch)
     return by_project
 
 

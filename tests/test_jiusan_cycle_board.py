@@ -169,6 +169,20 @@ def test_dashboard_keeps_full_jilin_order_identifier():
     assert any("CGR20260520095954" in dashboard._strip_ansi(line) for line in panel)
 
 
+def test_dashboard_hides_only_june_all_loaded_batches():
+    import cli_dashboard as dashboard
+
+    assert dashboard._is_hidden_completed_batch({
+        "dispatch_status": "all_loaded", "batch_date": "2026-06-28",
+    })
+    assert not dashboard._is_hidden_completed_batch({
+        "dispatch_status": "loading", "batch_date": "2026-06-28",
+    })
+    assert not dashboard._is_hidden_completed_batch({
+        "dispatch_status": "all_loaded", "batch_date": "2026-07-01",
+    })
+
+
 def test_concurrent_returns_summed_not_overwritten():
     # 两列同时到站(互不 supersede)且均<5h → 返空箱**求和**(根治旧版覆盖只剩末列的 bug)
     st = _state({

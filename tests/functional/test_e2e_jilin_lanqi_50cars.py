@@ -297,6 +297,16 @@ def test_e2e_jilin_lanqi_50cars_chain_step1_to_step5(jilin_e2e_dbs):
     conn.close()
     assert all(c == 2 for _, c in splits), f"2 个 split 车,box 跨 2 lot: {splits}"
 
+    # 箱级事实源可直接生成收货人上传 payload，不能再依赖旧车级
+    # container_batch_map 字段。
+    from sop_hub.sop.factory_upload import _build_event_upload_payloads, _load_factory_config
+    payloads, _, upload_error = _build_event_upload_payloads(
+        [], _load_factory_config("jilin_jingang_jinzhou"),
+        container_ydids=new_ydids, db_path=str(sop_db),
+    )
+    assert not upload_error
+    assert len(payloads) == 100
+
     # ── Step 4c: lifecycle 触发器(plan 满推 all_loaded)─────────
     # allocate_wagons 自己不触发,chain 才触发;这里手动触发对应 closed_batches
     from sop_hub.sop.lifecycle_transition import advance_lifecycle

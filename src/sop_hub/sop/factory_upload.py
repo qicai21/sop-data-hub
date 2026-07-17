@@ -475,7 +475,10 @@ def _build_event_upload_payloads(
         if container_ydids:
             in_ph = ",".join("?" * len(container_ydids))
             wagons = conn.execute(
-                f"SELECT car_no, ydid, project_id, ticketed_at, batch_id "
+                # 兼容下面旧车级路径的批次集合收集。吉林箱级事实源没有
+                # container_batch_map，显式投影 NULL 而非让 sqlite3.Row KeyError。
+                f"SELECT car_no, ydid, project_id, ticketed_at, batch_id, "
+                f"NULL AS container_batch_map "
                 f"FROM wagon_container_shipments WHERE ydid IN ({in_ph}) "
                 f"GROUP BY car_no, ydid ORDER BY ticketed_at ASC, car_no ASC",
                 container_ydids,

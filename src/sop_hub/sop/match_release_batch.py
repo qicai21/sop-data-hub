@@ -124,6 +124,33 @@ def match_release_batch_by_ship_destination_cargo(
                 matched_dispatch_status=candidates[0]["dispatch_status"] or "",
             )
 
+        # 多个开放批次原则上不自动猜。只有业务已明确设置唯一最小优先级时，
+        # 才将该规则作为确定性分配依据。
+        try:
+            candidate_ids = [c["id"] for c in candidates]
+            rule_rows = db_conn.execute(
+                "SELECT release_batch_id, priority FROM release_dispatch_match_rules "
+                f"WHERE status='active' AND release_batch_id IN ({','.join('?' * len(candidate_ids))})",
+                candidate_ids,
+            ).fetchall()
+        except sqlite3.OperationalError:
+            rule_rows = []  # Minimal/legacy DB fixtures may omit this table.
+        priorities = {
+            row["release_batch_id"]: int(row["priority"])
+            for row in rule_rows
+            if row["priority"] is not None
+        }
+        if priorities:
+            minimum = min(priorities.values())
+            preferred = [c for c in candidates if priorities.get(c["id"]) == minimum]
+            if len(preferred) == 1:
+                return ReleaseBatchMatch(
+                    matched_release_batch_id=preferred[0]["id"],
+                    reason="explicit_priority",
+                    matched_dispatch_status=preferred[0]["dispatch_status"] or "",
+                    notes=[f"active dispatch rule priority={minimum}"],
+                )
+
         return ReleaseBatchMatch(
             candidate_release_batch_ids=[c["id"] for c in candidates],
             reason="multiple_candidates",

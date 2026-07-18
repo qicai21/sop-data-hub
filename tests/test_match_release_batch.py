@@ -49,3 +49,30 @@ def test_same_ship_multiple_lots_never_prefers_old_loading_lot():
     assert result.reason == "multiple_candidates"
     assert result.matched_release_batch_id is None
     assert result.candidate_release_batch_ids == ["lot2", "lot1"]
+
+
+def test_explicit_priority_resolves_multiple_open_lots():
+    conn = _conn()
+    conn.executemany(
+        "INSERT INTO release_batches VALUES (?,?,?,?,?,?,?,?,?)",
+        [
+            ("lot03", "zhongtang_special_steel", "宝丽", "汐子", "铁矿", "麦克粉", "enriched", "2026-07-17", "2026-07-17"),
+            ("lot04", "zhongtang_special_steel", "宝丽", "汐子", "铁矿", "麦克粉", "enriched", "2026-07-18", "2026-07-18"),
+        ],
+    )
+    conn.execute(
+        "CREATE TABLE release_dispatch_match_rules "
+        "(release_batch_id TEXT, status TEXT, priority INTEGER)"
+    )
+    conn.executemany(
+        "INSERT INTO release_dispatch_match_rules VALUES (?,?,?)",
+        [("lot03", "active", 10), ("lot04", "active", 20)],
+    )
+
+    result = match_release_batch_by_ship_destination_cargo(
+        project_id="zhongtang_special_steel", ship_name="宝丽",
+        destination_station="汐子", cargo_name="铁矿", db_conn=conn,
+    )
+
+    assert result.reason == "explicit_priority"
+    assert result.matched_release_batch_id == "lot03"

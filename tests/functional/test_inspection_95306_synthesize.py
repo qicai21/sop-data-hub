@@ -136,6 +136,12 @@ def test_real_notice_supersedes_matching_synth_candidate(tmp_path):
         ),
     )
     conn.commit()
+    # A failed chain can overwrite its human-facing reason, but it must remain
+    # recognizable as a synthesized placeholder through payload_json.source.
+    conn.execute(
+        "UPDATE inspection_ingestion_candidates SET reason='multiple_candidates' WHERE id='synth-1'"
+    )
+    conn.commit()
 
     superseded = supersede_synth_candidates_for_real_notice(
         conn,

@@ -6,6 +6,7 @@ import sqlite3
 from sop_hub.sop.workflow_task_executor import (
     _event_excel_batch_specs,
     _persist_authoritative_candidate_cars,
+    _validated_manual_candidate_context,
 )
 
 
@@ -63,3 +64,30 @@ def test_authoritative_95306_cars_overwrite_candidate_count_for_excel_specs(tmp_
     assert all_matched is True
     assert ships == ["马兰幸福"]
     assert specs == [("batch1", authoritative, [f"Y{i+1}" for i in range(46)])]
+
+
+def test_manual_binding_returns_open_batch_context_for_ocr_candidate(tmp_path):
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.execute(
+        "CREATE TABLE release_batches (id TEXT, project TEXT, ship_name TEXT, "
+        "destination_station TEXT, cargo_name TEXT, dispatch_status TEXT)"
+    )
+    db.execute(
+        "INSERT INTO release_batches VALUES ('lot3', 'chaoyang_steel', '马兰幸福', '朝阳西', '铁矿', 'enriched')"
+    )
+    candidate = {
+        # A prior field-check may replace reason with pending_review's cause;
+        # the durable audit anchor is payload_json._manual_assignment.
+        "reason": "candidate_missing_ship_dest_project",
+        "release_batch_id": "lot3",
+        "payload_json": json.dumps({"_manual_assignment": {"release_batch_id": "lot3"}}),
+    }
+
+    assert _validated_manual_candidate_context(db, candidate) == {
+        "id": "lot3",
+        "project_id": "chaoyang_steel",
+        "ship_name": "马兰幸福",
+        "destination": "朝阳西",
+        "cargo_name": "铁矿",
+    }

@@ -51,6 +51,42 @@ def _now_iso() -> str:
     return now_iso_beijing()
 
 
+def _validated_manual_candidate_context(
+    conn: sqlite3.Connection, candidate: dict[str, Any],
+) -> dict[str, str] | None:
+    """Return an audited manual binding and its current open-batch context.
+
+    A same-ship successor lot can make normal ship/destination matching
+    ambiguous.  Manual assignment is intentionally explicit in payload_json;
+    never trust a bare candidate.release_batch_id, which may have come from an
+    earlier automatic attempt.  The batch context also repairs a candidate that
+    was created from an image before OCR/project inference completed.
+    """
+    try:
+        payload = json.loads(candidate.get("payload_json") or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    assignment = payload.get("_manual_assignment") or {}
+    assigned_id = str(assignment.get("release_batch_id") or "").strip()
+    if not assigned_id or assigned_id != str(candidate.get("release_batch_id") or ""):
+        return None
+    row = conn.execute(
+        """SELECT id, project, ship_name, destination_station, cargo_name FROM release_batches
+           WHERE id=?
+             AND dispatch_status IN ('pending_freight','enriched','loading')""",
+        (assigned_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": str(row["id"]),
+        "project_id": str(row["project"] or ""),
+        "ship_name": str(row["ship_name"] or ""),
+        "destination": str(row["destination_station"] or ""),
+        "cargo_name": str(row["cargo_name"] or ""),
+    }
+
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_ROOT = REPO_ROOT / "runtime"
 
@@ -1448,6 +1484,24 @@ def _execute_chaoyang_inspection_chain(
         dest = (cand_d.get("destination") or "").strip()
         cargo = (cand_d.get("cargo_name") or "").strip()
         project_id = (cand_d.get("project_id") or "").strip()
+        manual_context = _validated_manual_candidate_context(conn, cand_d)
+        if manual_context:
+            # Manual assignment points to an open batch and is itself audited.
+            # It may repair a bare OCR candidate without weakening ordinary
+            # project authorization/match guards for non-manual candidates.
+            ship = ship or manual_context["ship_name"]
+            dest = dest or manual_context["destination"]
+            project_id = project_id or manual_context["project_id"]
+            cargo = cargo or manual_context["cargo_name"]
+            # Keep the candidate itself audit-complete after a manual decision.
+            # A later verifier/dashboard query must not need to re-parse payload.
+            conn.execute(
+                """UPDATE inspection_ingestion_candidates
+                   SET project_id=?, ship_name=?, destination=?, cargo_name=?,
+                       updated_at=datetime('now') WHERE id=?""",
+                (project_id, ship, dest, cargo, candidate_id),
+            )
+            conn.commit()
         if not (ship and dest and project_id):
             # #issue-20260619:ship/dest/project 推不出来 ≠ 硬失败。候选此前 infer
             # 已挂 pending_review(no-ship 必挂起铁律),链应**优雅跳过**、保住候选给
@@ -1509,12 +1563,19 @@ def _execute_chaoyang_inspection_chain(
         candidate_source = str(ext_data.get("source") or "")
 
         # ── 3. Match release_batch ─────────────────────────────────
+        manual_batch_id = None
+        if manual_context and (
+            manual_context["project_id"] == project_id
+            and manual_context["ship_name"] == ship
+            and manual_context["destination"] == dest
+        ):
+            manual_batch_id = manual_context["id"]
         m = match_release_batch_by_ship_destination_cargo(
             project_id=project_id, ship_name=ship,
             destination_station=dest, cargo_name=cargo, db_conn=conn,
             allow_pending_freight_for_facts=True,
         )
-        if m.reason in ("no_open_batch", "no_match", "multiple_candidates"):
+        if not manual_batch_id and m.reason in ("no_open_batch", "no_match", "multiple_candidates"):
             conn.execute(
                 "UPDATE inspection_ingestion_candidates "
                 "SET candidate_status='pending_review', reason=?, "
@@ -1534,7 +1595,7 @@ def _execute_chaoyang_inspection_chain(
                 },
             }
 
-        matched_batch_id = m.matched_release_batch_id
+        matched_batch_id = manual_batch_id or m.matched_release_batch_id
 
         # ── 4a. 95306 时间窗反推 → 真装车权威列表(治本) ───────────────
         # VLM 可能把真装车误标排车(无理由 defect)→ 通知单 loading 漏算 1 车。

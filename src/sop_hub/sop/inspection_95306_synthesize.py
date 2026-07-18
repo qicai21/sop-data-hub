@@ -145,7 +145,10 @@ def supersede_synth_candidates_for_real_notice(
         "project_id = ?",
         "ship_name = ?",
         "COALESCE(candidate_status, '') <> 'superseded'",
-        "reason = 'synthesized_from_95306_no_inspection_notice'",
+        # A failed chain may replace reason with multiple_candidates / another
+        # review cause. payload_json.source is the durable synthesis identity.
+        "(reason = 'synthesized_from_95306_no_inspection_notice' "
+        " OR json_extract(payload_json, '$.source') = '95306_synthesized')",
     ]
     params: list[Any] = [survivor_candidate_id, project_id, ship]
     if dest:

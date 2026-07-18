@@ -545,8 +545,17 @@ def auto_enrich_release_batches_from_zhongtang_supplement(
                 "supplement_ship_name": supplement_ship,
                 "plan_id": plan_id, "contract_no": contract, "results": [],
             }
-        need = [r for r in same_ship
-                if not _is_non_empty(r["plan_id"] if "plan_id" in available else None)]
+        # `plan_id` is the canonical Zhongtang field. A small number of
+        # historical batches were populated through the generic UI into
+        # `order_identifier`; treat that legacy value as occupied too, or a
+        # newly-created lot becomes falsely ambiguous with the older batch.
+        def _batch_plan_ref(row: sqlite3.Row) -> str:
+            for column in ("plan_id", "order_identifier"):
+                if column in available and _is_non_empty(row[column]):
+                    return str(row[column]).strip()
+            return ""
+
+        need = [r for r in same_ship if not _batch_plan_ref(r)]
         if len(need) > 1:
             return {  # 规则1:多个同船批次缺计划号 → 歧义,挂起人工指定
                 "status": "suspended",
@@ -560,10 +569,9 @@ def auto_enrich_release_batches_from_zhongtang_supplement(
             # 同船批次计划号都已填 → **不再整体 no_op**(2026-06-27 丰收散运工单:那样
             # 会漏填 品名/数量 等其它字段)。本货运对应 plan_id/contract 精确匹配的那个
             # 批次,补它**缺的**其它字段(已填字段在下面循环按 _is_non_empty skip,不覆盖)。
-            _has_plan = "plan_id" in available
             rows = [
                 r for r in same_ship
-                if (plan_id and _has_plan and (r["plan_id"] or "").strip() == plan_id)
+                if (plan_id and _batch_plan_ref(r) == plan_id)
                 or (contract and (r["contract_no"] or "").strip() == contract)
             ]
             if not rows:

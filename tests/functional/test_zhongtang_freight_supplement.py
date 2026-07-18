@@ -65,10 +65,11 @@ def _mk_db(db_path: Path, batches: list[dict]) -> None:
     )
     for i, b in enumerate(batches):
         conn.execute(
-            "INSERT INTO release_batches (id, batch_key, project, ship_name, cargo_name, "
-            "plan_id, batch_sequence, dispatch_status) VALUES (?,?,?,?,?,?,?,?)",
-            (b["id"], f"k{i}", "zhongtang_special_steel", b["ship_name"], "铁矿粉",
-             b.get("plan_id", ""), f"lot0{i + 1}", b.get("dispatch_status", "loading")),
+        "INSERT INTO release_batches (id, batch_key, project, ship_name, cargo_name, "
+        "plan_id, order_identifier, batch_sequence, dispatch_status) VALUES (?,?,?,?,?,?,?,?,?)",
+        (b["id"], f"k{i}", "zhongtang_special_steel", b["ship_name"], "铁矿粉",
+             b.get("plan_id", ""), b.get("order_identifier", ""),
+             f"lot0{i + 1}", b.get("dispatch_status", "loading")),
         )
     conn.commit()
     conn.close()
@@ -124,6 +125,23 @@ def test_enrich_ambiguous_same_ship_suspends(tmp_path: Path):
     assert set(res["candidate_batch_ids"]) == {"b1", "b2"}
     assert not (_row(db, "b1")["plan_id"] or "")     # 都没被填
     assert not (_row(db, "b2")["plan_id"] or "")
+
+
+def test_enrich_legacy_order_identifier_does_not_create_false_ambiguity(tmp_path: Path):
+    """历史批次的计划号仅存 order_identifier 时，不能与新 lot 争夺货运文本。"""
+    db = tmp_path / "t.db"
+    _mk_db(
+        db,
+        [
+            {"id": "old", "ship_name": "鞍子河", "order_identifier": "90260600005"},
+            {"id": "new", "ship_name": "鞍子河", "plan_id": ""},
+        ],
+    )
+    res = enrich_zt(extract_zhongtang_freight_supplement(SAMPLE_ANZIHE), apply=True, db_path=db)
+    assert res["status"] == "applied"
+    assert res["matched_count"] == 1
+    assert _row(db, "new")["plan_id"] == "90260600006"
+    assert _row(db, "old")["plan_id"] == ""
 
 
 def test_enrich_ship_not_found_suspends(tmp_path: Path):

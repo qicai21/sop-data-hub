@@ -75,6 +75,11 @@ def resolve_default_ship(conn) -> str | None:
         "AND dispatch_status='loading' AND ship_name IS NOT NULL", (PROJECT,))]
     if len(loading) == 1:
         return loading[0]
+    if len(loading) > 1:
+        # A new vessel may be released while an earlier vessel is still loading.
+        # Without the box-level ledger, choosing the newest lot silently moves
+        # historical circulation into the new vessel. Defer instead.
+        return None
     newest_unfinished = conn.execute(
         """
         SELECT ship_name
@@ -106,6 +111,26 @@ def load_taizhang(conn) -> dict[tuple[str, str], str]:
             "SELECT ydid, box_no, ship_name FROM container_loading_notice")}
     except sqlite3.OperationalError:
         return {}  # 台账表还没建(首次)
+
+
+def resolve_box_ship(
+    *,
+    taizhang: dict[tuple[str, str], str],
+    existing: dict[str, str],
+    batch_to_ship: dict[str, str],
+    car_no: str,
+    ydid: str,
+    box_no: str,
+    default_ship: str | None,
+) -> str | None:
+    """Resolve one box without allowing a later fallback to reroute history."""
+    ledger_ship = taizhang.get((ydid, box_no))
+    if ledger_ship:
+        return ledger_ship
+    existing_batch = existing.get(stable_hash(car_no, box_no, ydid))
+    if existing_batch:
+        return batch_to_ship.get(existing_batch)
+    return default_ship
 
 
 def fetch_rail_tickets() -> list[dict]:
@@ -276,6 +301,7 @@ def main() -> None:
     conn = sqlite3.connect(str(SOP_DB))
     try:
         ship_batches = load_ship_batches(conn)
+        batch_to_ship = {batch_id: ship for ship, batch_id in ship_batches.items()}
         taizhang = load_taizhang(conn)
         default_ship = resolve_default_ship(conn)
         existing = {r[0]: r[1] for r in conn.execute(
@@ -294,7 +320,15 @@ def main() -> None:
             ship_boxes: dict[str, list[tuple]] = defaultdict(list)  # ship → [(t, box, pos)]
             for t in w:
                 for pos, box in enumerate(json.loads(t["container_numbers_json"] or "[]"), 1):
-                    ship = taizhang.get((t["ydid"], box))
+                    ship = resolve_box_ship(
+                        taizhang=taizhang,
+                        existing=existing,
+                        batch_to_ship=batch_to_ship,
+                        car_no=t["car_no"],
+                        ydid=t["ydid"],
+                        box_no=box,
+                        default_ship=default_ship,
+                    )
                     if ship is None:
                         unmatched_boxes += 1
                         if default_ship is None:

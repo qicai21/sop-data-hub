@@ -55,3 +55,30 @@ def test_resolve_default_ship_returns_none_when_all_finished(tmp_path):
     )
     c.commit()
     assert m.resolve_default_ship(c) is None
+
+
+def test_resolve_default_ship_returns_none_when_multiple_loading_lots(tmp_path):
+    c = _make_db(tmp_path)
+    c.execute(
+        "INSERT INTO release_batches VALUES "
+        "('US','jiusan','lot01','美国','loading','2026-07-02','2026-07-02','2026-07-17','2026-07-17')"
+    )
+    c.execute(
+        "INSERT INTO release_batches VALUES "
+        "('CQ','jiusan','lot01','勇气','loading','2026-07-17','2026-07-17','2026-07-17','2026-07-17')"
+    )
+    c.commit()
+    assert m.resolve_default_ship(c) is None
+
+
+def test_existing_box_keeps_its_batch_when_ledger_has_no_route():
+    rid = m.stable_hash("1800001", "TBJU0000001", "YDID1")
+    assert m.resolve_box_ship(
+        taizhang={},
+        existing={rid: "US"},
+        batch_to_ship={"US": "美国", "CQ": "勇气"},
+        car_no="1800001",
+        ydid="YDID1",
+        box_no="TBJU0000001",
+        default_ship="勇气",
+    ) == "美国"

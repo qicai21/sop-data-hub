@@ -344,6 +344,60 @@ def _compatible_segment(group: MissingTrainGroup, seg: ParsedSegment) -> bool:
     return True
 
 
+def _chat_records_root() -> Path:
+    # Sibling repo layout: …/repos/sop-data-hub + …/repos/wx-ops-agent
+    return Path(__file__).resolve().parents[4] / "wx-ops-agent" / "data" / "chat_records"
+
+
+def _iter_chat_record_texts(
+    group_name: str,
+    *,
+    start: str,
+    end: str,
+) -> list[tuple[int, str, str]]:
+    """Load text messages from wx-ops-agent monthly jsonl ledgers.
+
+    Returns list of (synthetic_id, received_datetime, text). Used when
+    message_inbox misses historical lines still present in chat_records.
+    """
+    root = _chat_records_root() / group_name
+    if not root.is_dir():
+        return []
+    out: list[tuple[int, str, str]] = []
+    seq = 0
+    for path in sorted(root.glob("202*.jsonl")):
+        try:
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    import json as _json
+
+                    row = _json.loads(line)
+                except Exception:
+                    continue
+                if (row.get("msg-type") or row.get("msg_type") or "") != "text":
+                    continue
+                text = (row.get("msg-content") or row.get("msg_content") or "").strip()
+                if not text:
+                    continue
+                t = row.get("time") or row.get("received_datetime") or ""
+                if isinstance(t, (int, float)) or (isinstance(t, str) and t.isdigit()):
+                    try:
+                        t = datetime.fromtimestamp(int(t)).strftime("%Y-%m-%d %H:%M:%S")
+                    except Exception:
+                        continue
+                t = str(t).replace("T", " ")[:19]
+                if t < start[:19] or t > end[:19]:
+                    continue
+                seq += 1
+                out.append((-seq, t, text))  # negative id = not inbox
+        except OSError:
+            continue
+    return out
+
+
 def find_candidates_for_group(
     conn: sqlite3.Connection,
     group: MissingTrainGroup,
@@ -369,6 +423,18 @@ def find_candidates_for_group(
         """,
         (group_name, start, end),
     ).fetchall()
+
+    # Supplement with chat_records ledger (covers texts never ingested to inbox).
+    seen_texts = {(str(r[1] or "")[:19], (r[2] or "").strip()) for r in rows}
+    for syn_id, received_datetime, text_content in _iter_chat_record_texts(
+        group_name, start=start, end=end
+    ):
+        key = (received_datetime[:19], text_content.strip())
+        if key in seen_texts:
+            continue
+        seen_texts.add(key)
+        rows = list(rows)
+        rows.append((syn_id, received_datetime, text_content))
 
     out: list[CandidateMatch] = []
     for inbox_id, received_datetime, text_content in rows:

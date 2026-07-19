@@ -65,6 +65,15 @@ def test_extract_jilin_not_captured():
     assert extract_inspection_text_triggers("煤六 四平铁 蓝鳍 53节") == []
 
 
+def test_extract_ignores_fractional_compartment_counts():
+    """金通铜分舱文本的 ``0.5节`` 不能被截成中唐船的 ``5节``。"""
+    text = (
+        "煤六 32节 马林铜（金通）10.5节贝拉1舱（1-11后箱），"
+        "0.5节联邦4舱（11前箱），21.5节 联邦1舱（12-32）标“△”为木板箱"
+    )
+    assert extract_inspection_text_triggers(text) == []
+
+
 # ── 2. 路由 ──────────────────────────────────────────────────────────────
 def _event(text: str) -> MessageEvent:
     return MessageEvent(

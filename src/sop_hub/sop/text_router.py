@@ -14,6 +14,7 @@ Rules (priority order):
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -218,6 +219,27 @@ def _project_default_dest(project_id: str) -> str:
     return ""
 
 
+def _integer_car_count_matches(text: str) -> list[Any]:
+    """Return only whole-number ``N车/N节`` matches.
+
+    The shared departure regex can start at the fractional part of ``0.5节``.
+    A fractional compartment count is never a valid train departure count.
+    """
+    return [
+        match for match in _RE_CAR_COUNT.finditer(text)
+        if match.start() == 0 or text[match.start() - 1] not in {".", "．"}
+    ]
+
+
+def _has_fractional_count_immediately_before(text: str, pos: int) -> bool:
+    """Recognize a compartment marker such as ``10.5节贝拉``.
+
+    A preceding total count may belong to another cargo section, so this must
+    suppress the broad backward-count fallback as well as the decimal itself.
+    """
+    return bool(re.search(r"\d+[.．]\d+\s*(?:车|节)\s*$", text[max(0, pos - 16):pos]))
+
+
 def extract_inspection_text_triggers(text: str) -> list[dict[str, Any]]:
     """从(可能复合多船的)发运文本里抽出检验类触发器段。
 
@@ -255,16 +277,21 @@ def extract_inspection_text_triggers(text: str) -> list[dict[str, Any]]:
     for i, (pos, ship, proj) in enumerate(occ):
         if ship in seen_ships:
             continue
+        if _has_fractional_count_immediately_before(norm, pos):
+            # ``10.5节贝拉1舱`` means compartment allocation, not a 贝拉
+            # departure. Do not fall back to an unrelated earlier total.
+            continue
         # 本船的"领地"= 上一个船名之后 ~ 下一个船名之前。车数优先在船名后
         # (常态 "鞍子河5节"),没有再到船名前回找(数量前置,如
         # "14道52节 朝阳西铁 中联发" —— 52节 在前、隔了"朝阳西铁")。
         seg_start = (occ[i - 1][0] + len(occ[i - 1][1])) if i > 0 else 0
         seg_end = occ[i + 1][0] if i + 1 < len(occ) else len(norm)
         forward = norm[pos + len(ship):seg_end]
-        m = _RE_CAR_COUNT.search(forward)
+        forward_matches = _integer_car_count_matches(forward)
+        m = forward_matches[0] if forward_matches else None
         if not m:
             # 回找整个船名前领地(不再限 8 字符),取最靠近本船的(最后一个)车数
-            backs = list(_RE_CAR_COUNT.finditer(norm[seg_start:pos]))
+            backs = _integer_car_count_matches(norm[seg_start:pos])
             m = backs[-1] if backs else None
         if not m:
             continue

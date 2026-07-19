@@ -1557,6 +1557,10 @@ def _execute_chaoyang_inspection_chain(
                         if r.get("car_no") and not r.get("defect")]
         loading_car_nos = [str(r.get("car_no") or "").strip()
                            for r in loading_rows if r.get("car_no")]
+        # 页脚实装数优先于 VLM 非 defect 列表（防排车混入导致多 3 车等）
+        from sop_hub.sop.inspection_window_recover import apply_footer_loading_cap
+        _footer = (ext_data.get("footer") or {}) if isinstance(ext_data, dict) else {}
+        loading_car_nos = apply_footer_loading_cap(loading_car_nos, _footer)
         if not loading_car_nos:
             return {"action": "failed", "status": "failed",
                     "error_message": "no non-defect car_no in extraction JSON"}

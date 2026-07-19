@@ -225,9 +225,16 @@ def run_lifecycle_closeout(
                     if summary["last_ticketed"] > cutoff:
                         result["held_active"] = result.get("held_active", 0) + 1
                         continue
+                # 散粮欠装闸只约束仍在装的 loading：趟间部分车已交付≠lot 装完。
+                # 一旦业务已标 all_loaded（发运完毕），剩余计划吨位只是计划余量，
+                # 不应再挡住 95306 全交付 → confirmed_received（中唐停车场根因）。
                 rem = b["remaining_weight_tons"]
-                if (rem is not None and float(rem) > _BULK_REMAINING_TOLERANCE_T
-                        and not _batch_has_dispatch_plan(conn, bid)):
+                if (
+                    phase == lc.LOADING
+                    and rem is not None
+                    and float(rem) > _BULK_REMAINING_TOLERANCE_T
+                    and not _batch_has_dispatch_plan(conn, bid)
+                ):
                     result["held_underfilled"] += 1
                     continue
                 # 装车道线等必要字段：缺则停在 all_loaded/loading，不假推进交付确认

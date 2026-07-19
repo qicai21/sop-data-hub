@@ -451,3 +451,24 @@ def autocorrect_config_from_env() -> dict[str, Any]:
         "max_correct_edit_distance": _int("INSPECTION_CAR_NO_MAX_EDIT_DIST", 2),
         "max_correct_pairs": _int("INSPECTION_CAR_NO_MAX_PAIRS", 3),
     }
+
+
+def apply_footer_loading_cap(
+    loading_car_nos: list[str],
+    footer: dict[str, Any] | None,
+) -> list[str]:
+    """When VLM keeps 排车 in the non-defect list, prefer footer 实装 count.
+
+    Notice footer fields (zhuangche_jieshu / paiche_jieshu) are the business
+    authority for 实装 vs 排车 when present. Cap keeps notice order (first N).
+    """
+    if not footer or not loading_car_nos:
+        return list(loading_car_nos)
+    raw = footer.get("zhuangche_jieshu")
+    try:
+        zhuangche = int(raw) if raw is not None and str(raw).strip() != "" else 0
+    except (TypeError, ValueError):
+        zhuangche = 0
+    if zhuangche <= 0 or len(loading_car_nos) <= zhuangche:
+        return list(loading_car_nos)
+    return list(loading_car_nos[:zhuangche])

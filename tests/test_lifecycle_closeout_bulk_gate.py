@@ -175,6 +175,30 @@ def test_missing_loading_line_holds_even_if_delivered(tmp_path):
     assert _status(db, "bulk_noline") == "all_loaded"
 
 
+def test_all_loaded_bulk_not_held_by_remaining_tons(tmp_path):
+    """已 all_loaded 的散粮批：即使 remaining>100，全车收货仍应推 confirmed_received。"""
+    db = _make_db(tmp_path)
+    c = sqlite3.connect(str(db))
+    c.execute("ALTER TABLE wagon_shipments ADD COLUMN loading_line TEXT")
+    c.execute(
+        "INSERT INTO release_batches (id, project, ship_name, batch_sequence, dispatch_status, "
+        "dispatch_status_note, remaining_weight_tons, batch_quantity) "
+        "VALUES ('bulk_all_loaded', 'zhongtang_special_steel', '贝拉', 'lot05', 'all_loaded', '', 149.9, 10000)"
+    )
+    for i in range(3):
+        c.execute(
+            "INSERT INTO wagon_shipments (id, batch_id, latest_stage_key, loading_line) "
+            "VALUES (?,?,?,?)",
+            (f"bal{i}", "bulk_all_loaded", "delivered", "煤四"),
+        )
+    c.commit()
+    c.close()
+    r = run_lifecycle_closeout(db_path=db)
+    assert r.get("held_underfilled", 0) == 0
+    assert r["advanced"] == 1
+    assert _status(db, "bulk_all_loaded") == "confirmed_received"
+
+
 def test_unloaded_status_name_counts_as_received(tmp_path):
     """status_name=已卸车 计收货。"""
     db = _make_db(tmp_path)

@@ -56,7 +56,9 @@ def main() -> int:
             )
 
         if args.apply:
-            applied = apply_backfill(conn, matched)
+            # matched + jiusan fallback only; never apply ambiguous/unmatched
+            applyable = [d for d in decisions if d.status in ("matched", "fallback")]
+            applied = apply_backfill(conn, applyable)
             conn.commit()
             print(f"applied_rows={applied}")
     finally:

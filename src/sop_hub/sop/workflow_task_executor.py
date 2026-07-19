@@ -2067,31 +2067,61 @@ def _execute_chaoyang_inspection_chain(
                 from sop_hub.external.chaoyang_ansteel.upload_wagons import (
                     upload_and_verify,
                 )
-                ur = upload_and_verify(
-                    db_path=str(db_path),
-                    batch_id=matched_batch_id,
-                    ship_name=ship,
-                    car_nos=loading_car_nos,
-                    ydids=loading_ydids,
-                )
-                upload_info = {
-                    "skipped": False,
-                    "success": ur.success,
-                    "uploaded": ur.uploaded_count,
-                    "server_returned": ur.server_returned_count,
-                    "verified": ur.verified_count,
-                    "missing": ur.missing_car_nos,
-                    "extra": ur.extra_car_nos,
-                    "plan": ur.plan_summary,
-                    "error": ur.error,
-                }
-                if ur.success:
-                    try:
-                        _mae(_uidem, db_path=db_path, response_json={
-                            "uploaded": ur.uploaded_count, "verified": ur.verified_count,
-                            "server_returned": ur.server_returned_count})
-                    except Exception:
-                        pass
+                # chaoyang.yaml: order_identifier = 回运计划号 = transport_plan_no。
+                # 必须传入,禁止仅按船名在 30 天窗内取第一条 plan(会把 lot3 车
+                # 传到 lot2 计划号上 — 2026-07-19 马兰幸福 52 车事故)。
+                _plan_row = conn.execute(
+                    "SELECT order_identifier, plan_id FROM release_batches WHERE id=?",
+                    (matched_batch_id,),
+                ).fetchone()
+                _transport_plan_no = ""
+                if _plan_row:
+                    _transport_plan_no = (
+                        str(_plan_row[0] or "").strip()
+                        or str(_plan_row[1] or "").strip()
+                    )
+                if not _transport_plan_no:
+                    upload_info = {
+                        "skipped": False,
+                        "success": False,
+                        "error": (
+                            f"chaoyang upload blocked: batch {matched_batch_id[:12]} "
+                            f"missing order_identifier/plan_id (回运计划号)"
+                        ),
+                    }
+                    ur = None
+                else:
+                    ur = upload_and_verify(
+                        db_path=str(db_path),
+                        batch_id=matched_batch_id,
+                        ship_name=ship,
+                        transport_plan_no=_transport_plan_no,
+                        car_nos=loading_car_nos,
+                        ydids=loading_ydids,
+                    )
+                if ur is not None:
+                    upload_info = {
+                        "skipped": False,
+                        "success": ur.success,
+                        "uploaded": ur.uploaded_count,
+                        "server_returned": ur.server_returned_count,
+                        "verified": ur.verified_count,
+                        "missing": ur.missing_car_nos,
+                        "extra": ur.extra_car_nos,
+                        "plan": ur.plan_summary,
+                        "transport_plan_no": _transport_plan_no,
+                        "error": ur.error,
+                    }
+                    if ur.success:
+                        try:
+                            _mae(_uidem, db_path=db_path, response_json={
+                                "uploaded": ur.uploaded_count,
+                                "verified": ur.verified_count,
+                                "server_returned": ur.server_returned_count,
+                                "transport_plan_no": _transport_plan_no,
+                            })
+                        except Exception:
+                            pass
             except Exception as exc:
                 upload_info = {"skipped": False, "error": str(exc)}
 

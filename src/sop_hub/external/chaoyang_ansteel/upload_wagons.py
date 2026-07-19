@@ -407,17 +407,31 @@ def upload_and_verify(
                 error=f"wmwm01 按回运计划号 {transport_plan_no!r} 查不到 plan",
             )
     else:
+        # 船名窗口兜底极危险:同船多 lot / 多回运计划时 next() 取第一条会串计划号
+        # (2026-07-19 马兰幸福 lot3 52 车误挂 lot2 计划)。无 transport_plan_no 时
+        # 若同船命中 >1 条 plan → 直接失败,要求调用方传回运计划号。
         today = datetime.now()
         begin = (today - timedelta(days=30)).strftime("%Y%m%d")
         end = (today + timedelta(days=1)).strftime("%Y%m%d")
         plans, _ = query_wmwm01(session=session, date_begin=begin, date_end=end)
-        target_plan = next((p for p in plans if p.ship_cname == ship_name), None)
-        if target_plan is None:
+        ship_plans = [p for p in plans if p.ship_cname == ship_name]
+        if not ship_plans:
             return UploadResult(
                 success=False,
                 error=f"wmwm01 找不到 ship_name={ship_name!r} 的 plan,只有 "
                       f"{[p.ship_cname for p in plans]}",
             )
+        if len(ship_plans) > 1:
+            plan_nos = [getattr(p, "transport_plan_no", "") or getattr(p, "allot_plan_no", "")
+                        for p in ship_plans]
+            return UploadResult(
+                success=False,
+                error=(
+                    f"wmwm01 ship_name={ship_name!r} 命中 {len(ship_plans)} 条 plan "
+                    f"{plan_nos}; 必须传入 transport_plan_no=回运计划号,禁止按船名猜"
+                ),
+            )
+        target_plan = ship_plans[0]
 
     # 3. DB 拉车
     wagons = fetch_wagons(

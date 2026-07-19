@@ -218,7 +218,12 @@ def _try_evidence_scoring(
         return None
     # 唯一性:第二名必须严格低于最高分
     if len(scored) > 1 and scored[1][1] == top[1]:
-        return {"_tied": True, "tied_count": sum(1 for x in scored if x[1] == top[1])}
+        tied = [item for item in scored if item[1] == top[1]]
+        return {
+            "_tied": True,
+            "tied_count": len(tied),
+            "tied_batches": [dict(item[0]) for item in tied],
+        }
 
     b = top[0]
     return {
@@ -302,6 +307,49 @@ def infer_candidate_context(
                 evidence=scoring["evidence"],
             )
         if scoring and scoring.get("_tied"):
+            tied_batches = scoring.get("tied_batches") or []
+            identities = {
+                (
+                    str(batch.get("project") or ""),
+                    str(batch.get("ship_name") or ""),
+                    str(batch.get("destination_station") or ""),
+                    str(batch.get("cargo_name") or ""),
+                )
+                for batch in tied_batches
+            }
+            # Multiple lots of one identical business flow are intentionally
+            # indistinguishable in OCR evidence. In that narrow case, defer to
+            # the explicit dispatch-rule priority rather than inventing a tie.
+            if len(identities) == 1:
+                project_id, ship_name, destination, cargo_name = identities.pop()
+                from sop_hub.sop.match_release_batch import (
+                    match_release_batch_by_ship_destination_cargo,
+                )
+                priority_match = match_release_batch_by_ship_destination_cargo(
+                    project_id=project_id,
+                    ship_name=ship_name,
+                    destination_station=destination,
+                    cargo_name=cargo_name,
+                    db_conn=conn,
+                )
+                if priority_match.reason == "explicit_priority" and priority_match.matched_release_batch_id:
+                    selected = next(
+                        batch for batch in tied_batches
+                        if batch["id"] == priority_match.matched_release_batch_id
+                    )
+                    return InferenceResult(
+                        matched=True,
+                        source="evidence_scoring",
+                        candidate_status="matched_by_inference",
+                        reason="explicit_priority",
+                        ship_name=selected["ship_name"],
+                        destination=selected["destination_station"],
+                        cargo_name=selected["cargo_name"],
+                        project_id=selected["project"],
+                        release_batch_id=selected["id"],
+                        score=0,
+                        evidence=[*priority_match.notes, "evidence_tie_resolved"],
+                    )
             return InferenceResult(
                 matched=False, source="evidence_scoring",
                 candidate_status="pending_review",

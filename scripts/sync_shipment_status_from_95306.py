@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sync 95306 shipment status snapshots into sop_agent.db wagon_shipments.
+"""Sync 95306 shipment status into sop_agent.db fact tables.
 
 Usage:
   Dry-run:
@@ -10,9 +10,9 @@ Usage:
     python scripts/sync_shipment_status_from_95306.py \\
       --project-id jilin_jingang_jinzhou --ship-name 蓝鳍 --apply
 
-Reads wagon_shipments from sop_agent.db, queries 95306_collection.sqlite3
-for latest shipment status, and writes departed_at / arrived_at / delivered_at
-back into sop_agent.db (only with --apply).
+Reads wagon_shipments and/or wagon_container_shipments (吉林优先箱级),
+matches 95306 by ydid then car_no, writes time fields + status_name +
+latest_stage_key (only with --apply). Never writes the 95306 DB.
 """
 
 from __future__ import annotations

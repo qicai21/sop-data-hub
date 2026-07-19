@@ -208,6 +208,91 @@ def test_unmatched_wagon():
     assert "9999999" in result.unmatched_wagons
 
 
+# ── 11. Container fact table + ydid match ─────────────────────────────
+
+
+def test_container_sync_by_ydid_writes_stage_and_status():
+    """吉林箱级表：按 ydid 匹配 95306，回写 status_name + latest_stage_key。"""
+    import tempfile
+    from pathlib import Path
+
+    sop = sqlite3.connect(":memory:")
+    sop.row_factory = sqlite3.Row
+    rail = sqlite3.connect(":memory:")
+    rail.row_factory = sqlite3.Row
+
+    sop.execute(
+        """CREATE TABLE release_batches (
+            id TEXT PRIMARY KEY, project TEXT, ship_name TEXT,
+            destination_station TEXT, dispatch_status TEXT,
+            dispatch_status_updated_at TEXT
+        )"""
+    )
+    sop.execute(
+        """CREATE TABLE wagon_container_shipments (
+            id TEXT PRIMARY KEY, batch_id TEXT, car_no TEXT, box_no TEXT,
+            ydid TEXT, destination_name TEXT, ship_name TEXT, project_id TEXT,
+            ticketed_at TEXT, departed_at TEXT, arrived_at TEXT, delivered_at TEXT,
+            status_name TEXT, latest_stage_key TEXT, updated_at TEXT
+        )"""
+    )
+    # No wagon_shipments table — pure container project path
+    sop.execute(
+        "INSERT INTO release_batches VALUES (?,?,?,?,?,?)",
+        ("b1", PROJECT_ID, SHIP_NAME, "四平", "all_loaded", None),
+    )
+    sop.execute(
+        """INSERT INTO wagon_container_shipments
+           (id, batch_id, car_no, box_no, ydid, destination_name, ship_name, project_id,
+            status_name, latest_stage_key)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        ("c1", "b1", "1625630", "TBJU1111111", "YD_1625630_001", "四平",
+         SHIP_NAME, PROJECT_ID, "", ""),
+    )
+    rail.execute(
+        """CREATE TABLE shipments (
+            ydid TEXT PRIMARY KEY, car_no TEXT, destination_name TEXT,
+            ticketed_at TEXT, departed_at TEXT, arrived_at TEXT, delivered_at TEXT,
+            status_name TEXT, latest_stage_name TEXT
+        )"""
+    )
+    rail.execute(
+        """INSERT INTO shipments VALUES (?,?,?,?,?,?,?,?,?)""",
+        (
+            "YD_1625630_001", "1625630", "四平",
+            "2026-05-23", "2026-05-23 06:00:00", "2026-05-24", "2026-05-24 15:00:00",
+            "货物已交付", "交付",
+        ),
+    )
+    sop.commit()
+    rail.commit()
+
+    sop_path = Path(tempfile.mktemp(suffix=".db"))
+    rail_path = Path(tempfile.mktemp(suffix=".db"))
+    try:
+        d = sqlite3.connect(str(sop_path)); sop.backup(d); d.close()
+        d = sqlite3.connect(str(rail_path)); rail.backup(d); d.close()
+        sync = ShipmentStatusSync(sop_db_path=sop_path, rail_db_path=rail_path)
+        result = sync.sync(project_id=PROJECT_ID, ship_name=SHIP_NAME, dry_run=False)
+        assert result.total_wagons == 1
+        assert result.matched_count == 1
+        assert result.unmatched_count == 0
+        assert any(u.field == "latest_stage_key" and u.new_value == "delivered" for u in result.updates)
+        assert any(u.field == "status_name" for u in result.updates)
+
+        conn = sqlite3.connect(str(sop_path))
+        row = conn.execute(
+            "SELECT status_name, latest_stage_key, delivered_at FROM wagon_container_shipments WHERE id='c1'"
+        ).fetchone()
+        conn.close()
+        assert row[0] in ("货物已交付", "交付")
+        assert row[1] == "delivered"
+        assert row[2]  # delivered_at filled
+    finally:
+        sop_path.unlink(missing_ok=True)
+        rail_path.unlink(missing_ok=True)
+
+
 # ── Helpers ───────────────────────────────────────────────────────────
 
 

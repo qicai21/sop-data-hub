@@ -1,15 +1,16 @@
-"""Sync 95306 shipment status snapshots into sop_agent.db wagon_shipments.
+"""Sync 95306 shipment status snapshots into sop_agent.db shipment fact tables.
 
-Reads wagon_shipments for a project + ship_name, queries 95306_collection.sqlite3
-for latest status, and writes departed_at / arrived_at / delivered_at back.
+Reads wagon_shipments and/or wagon_container_shipments for a project + ship_name,
+queries 95306_collection.sqlite3 for latest status, and writes time fields plus
+status_name / latest_stage_key back.
 
-Matching priority: ydid → car_no + destination_name.
-Status mapping: 已发车→dispatched, 到站→arrived, 交付→delivered.
+Matching priority: ydid → car_no + destination_name → car_no.
+Status mapping: 已发车→dispatched, 到站→arrived, 交付/确认收货/已卸车→delivered.
 
 This module:
-- reads sop_agent.db (wagon_shipments + release_batches)
+- reads sop_agent.db (wagon_* + release_batches)
 - reads 95306_collection.sqlite3 (shipments table, read-only)
-- writes sop_agent.db (UPDATE wagon_shipments) ONLY with --apply
+- writes sop_agent.db ONLY with --apply / dry_run=False
 - does NOT write 95306 DB, modify YAML, generate Excel, or send reports
 """
 
@@ -49,6 +50,23 @@ STAGE_TO_DISPATCH_STATUS: dict[str, str] = {
     "已发车": "dispatched",
 }
 
+STATUS_NAME_TO_STAGE_KEY: dict[str, str] = {
+    "交付": "delivered",
+    "货物已交付": "delivered",
+    "已交付": "delivered",
+    "确认收货": "delivered",
+    "已卸车": "unloading_completed",
+    "到站": "arrived",
+    "已到站": "arrived",
+    "发车": "departed",
+    "已发车": "departed",
+    "已制单": "ticketed",
+    "制票": "ticketed",
+}
+
+_TABLE_WAGON = "wagon_shipments"
+_TABLE_CONTAINER = "wagon_container_shipments"
+
 # R39: Default rule — if SOP does not declare additional manual confirmation,
 # 95306 "交付" status implies confirmed_received.
 # This can be overridden by SOP YAML in the future.
@@ -60,7 +78,7 @@ DEFAULT_CONFIRMED_RECEIVED_RULE = (
 
 @dataclass
 class WagonRow:
-    """A wagon_shipments row to sync."""
+    """A wagon_shipments or wagon_container_shipments row to sync."""
     db_id: str
     batch_id: str
     car_no: str
@@ -70,7 +88,9 @@ class WagonRow:
     arrived_at: str = ""
     delivered_at: str = ""
     status_name: str = ""
+    latest_stage_key: str = ""
     dispatch_status: str = ""
+    source_table: str = _TABLE_WAGON
 
 
 @dataclass
@@ -89,7 +109,7 @@ class ShipmentSnapshot:
 
 @dataclass
 class UpdatePlan:
-    """A planned update for one wagon."""
+    """A planned update for one shipment fact row."""
     db_id: str
     car_no: str
     field: str
@@ -97,6 +117,7 @@ class UpdatePlan:
     new_value: str
     source: str  # "95306"
     reason: str = ""
+    source_table: str = _TABLE_WAGON
 
 
 @dataclass
@@ -188,44 +209,45 @@ class ShipmentStatusSync:
             dry_run=dry_run,
         )
 
-        # ── 1. Load wagon_shipments ───────────────────────────────────
-        wagons = self._load_wagons(project_id=project_id, ship_name=ship_name)
+        # ── 1. Load shipment fact rows (wagon + container) ───────────
+        wagons = self._load_units(project_id=project_id, ship_name=ship_name)
         result.total_wagons = len(wagons)
         if not wagons:
             return result
 
-        # ── 2. Check schema ──────────────────────────────────────────
-        sop_cols = self._sop_wagon_columns()
-        for col in ("departed_at", "arrived_at", "delivered_at"):
-            if col not in sop_cols:
-                result.schema_missing_fields.append(col)
+        # ── 2. Check schema for tables we actually load ─────────────
+        if any(w.source_table == _TABLE_WAGON for w in wagons):
+            sop_cols = self._table_columns(_TABLE_WAGON)
+            for col in ("departed_at", "arrived_at", "delivered_at"):
+                if col not in sop_cols:
+                    result.schema_missing_fields.append(col)
 
-        # ── 3. Query 95306 for each wagon ────────────────────────────
+        # ── 3. Query 95306 for each unit ─────────────────────────────
         updates: list[UpdatePlan] = []
         unmatched: list[str] = []
-        wagons_updated: set[str] = set()
+        matched_ids: set[str] = set()
 
         for wagon in wagons:
             snapshot = self._find_snapshot(wagon)
             if snapshot is None:
-                unmatched.append(wagon.car_no)
+                unmatched.append(wagon.ydid or wagon.car_no or wagon.db_id)
                 continue
 
-            # Map fields from snapshot
+            matched_ids.add(wagon.db_id)
             stage = snapshot.latest_stage_name or snapshot.status_name or ""
             fields_to_update = STATUS_TO_FIELDS.get(stage, [])
+            # Also try status_name key if stage label alone missed
+            if not fields_to_update and snapshot.status_name:
+                fields_to_update = STATUS_TO_FIELDS.get(snapshot.status_name, [])
 
             for field in fields_to_update:
                 new_value = getattr(snapshot, field, "") or ""
                 old_value = getattr(wagon, field, "") or ""
-
                 if not new_value:
                     continue
-
-                # Don't overwrite existing non-NULL values
-                if old_value and old_value.strip():
+                # Don't overwrite existing non-NULL time values
+                if old_value and str(old_value).strip():
                     continue
-
                 updates.append(UpdatePlan(
                     db_id=wagon.db_id,
                     car_no=wagon.car_no,
@@ -234,9 +256,8 @@ class ShipmentStatusSync:
                     new_value=new_value,
                     source="95306",
                     reason=f"95306 status={stage}",
+                    source_table=wagon.source_table,
                 ))
-
-                # Count by field
                 if field == "departed_at":
                     result.departed_update_count += 1
                 elif field == "arrived_at":
@@ -244,10 +265,37 @@ class ShipmentStatusSync:
                 elif field == "delivered_at":
                     result.delivered_update_count += 1
 
-            wagons_updated.add(wagon.db_id)
+            # status_name / latest_stage_key: always refresh from 95306 when present
+            snap_status = snapshot.status_name or stage
+            if snap_status and snap_status != (wagon.status_name or ""):
+                updates.append(UpdatePlan(
+                    db_id=wagon.db_id,
+                    car_no=wagon.car_no,
+                    field="status_name",
+                    old_value=wagon.status_name or "",
+                    new_value=snap_status,
+                    source="95306",
+                    reason=f"95306 status_name={snap_status}",
+                    source_table=wagon.source_table,
+                ))
+            stage_key = STATUS_NAME_TO_STAGE_KEY.get(stage) or STATUS_NAME_TO_STAGE_KEY.get(
+                snapshot.status_name or "", ""
+            )
+            if stage_key and stage_key != (wagon.latest_stage_key or ""):
+                updates.append(UpdatePlan(
+                    db_id=wagon.db_id,
+                    car_no=wagon.car_no,
+                    field="latest_stage_key",
+                    old_value=wagon.latest_stage_key or "",
+                    new_value=stage_key,
+                    source="95306",
+                    reason=f"95306 stage→{stage_key}",
+                    source_table=wagon.source_table,
+                ))
 
-            # Also plan dispatch_status update for the batch
-            new_dispatch = STAGE_TO_DISPATCH_STATUS.get(stage, "")
+            new_dispatch = STAGE_TO_DISPATCH_STATUS.get(stage, "") or STAGE_TO_DISPATCH_STATUS.get(
+                snapshot.status_name or "", ""
+            )
             if new_dispatch and new_dispatch != wagon.dispatch_status:
                 updates.append(UpdatePlan(
                     db_id=wagon.db_id,
@@ -257,24 +305,22 @@ class ShipmentStatusSync:
                     new_value=new_dispatch,
                     source="95306",
                     reason=f"95306 stage={stage}",
+                    source_table=wagon.source_table,
                 ))
 
         result.updates = updates
         result.unmatched_wagons = unmatched
         result.update_count = len(updates)
-
-        # Count matched wagons (those with at least one update OR successfully found)
-        result.matched_count = sum(
-            1 for w in wagons
-            if any(u.db_id == w.db_id for u in updates)
-        )
+        result.matched_count = len(matched_ids)
         result.unmatched_count = result.total_wagons - result.matched_count
 
         # ── 4. Batch-level suggestion ─────────────────────────────────
-        delivered_wagons = sum(
-            1 for u in updates if u.field == "delivered_at"
+        delivered_units = sum(1 for u in updates if u.field == "delivered_at")
+        stage_delivered = sum(
+            1 for u in updates
+            if u.field == "latest_stage_key" and u.new_value in ("delivered", "unloading_completed")
         )
-        if delivered_wagons >= result.total_wagons:
+        if delivered_units >= result.total_wagons or stage_delivered >= result.total_wagons:
             result.batch_level_suggestion = "confirmed_received_candidate"
             result.batch_dispatch_status = "delivered"
         elif result.arrived_update_count >= result.total_wagons:
@@ -286,71 +332,158 @@ class ShipmentStatusSync:
 
         # ── 5. Apply writes ──────────────────────────────────────────
         if not dry_run:
-            self._apply_updates(updates, project_id=project_id, ship_name=ship_name)
+            self._apply_updates(updates)
 
         return result
 
     # ── internal ──────────────────────────────────────────────────────
 
-    def _load_wagons(
+    def _load_units(
         self, *, project_id: str = "", ship_name: str = ""
     ) -> list[WagonRow]:
-        """Load wagon_shipments joined with release_batches."""
+        """Load wagon and/or container fact rows joined with release_batches.
+
+        Jilin uses container table as sole live fact source — skip wagon rows
+        for that project so frozen car-level audit snapshots are not re-synced.
+        """
         conn = sqlite3.connect(str(self.sop_db_path))
         conn.row_factory = sqlite3.Row
         try:
-            sql = """
-                SELECT ws.id, ws.batch_id, ws.car_no,
-                       ws.departed_at, ws.arrived_at,
-                       ws.destination_name, ws.status_name,
-                       rb.dispatch_status, rb.project
-                FROM wagon_shipments ws
-                JOIN release_batches rb ON ws.batch_id = rb.id
-                WHERE rb.ship_name = ?
-            """
-            params: list[Any] = [ship_name]
-            sql += " ORDER BY ws.ticketed_at"
+            aliases = self._project_aliases(project_id)
+            units: list[WagonRow] = []
 
-            rows = conn.execute(sql, params).fetchall()
+            load_wagons = True
+            if project_id and "jilin_jingang" in project_id:
+                load_wagons = False
+            # If only containers exist for this ship, prefer them for any project
+            has_container = self._table_exists(conn, _TABLE_CONTAINER)
 
-            # Post-filter by project_id if provided.
-            # The release_batches.project field may store legacy names
-            # (e.g. "吉林金钢-锦州港铁矿发运项目") rather than SOP project_ids
-            # (e.g. "jilin_jingang_jinzhou").
-            if project_id:
-                project_id_aliases = {project_id}
-                if "jilin_jingang" in project_id:
-                    project_id_aliases.add("吉林金钢-锦州港铁矿发运项目")
-                rows = [
-                    r for r in rows
-                    if (r["project"] or "") in project_id_aliases
-                ]
-
-            return [
-                WagonRow(
-                    db_id=row["id"],
-                    batch_id=row["batch_id"],
-                    car_no=row["car_no"],
-                    destination_name=row["destination_name"] or "",
-                    departed_at=row["departed_at"] or "",
-                    arrived_at=row["arrived_at"] or "",
-                    delivered_at=ShipmentStatusSync._safe_col(row, "delivered_at"),
-                    status_name=row["status_name"] or "",
-                    dispatch_status=row["dispatch_status"] or "",
+            if load_wagons and self._table_exists(conn, _TABLE_WAGON):
+                units.extend(
+                    self._load_from_table(
+                        conn, _TABLE_WAGON, ship_name=ship_name, aliases=aliases,
+                    )
                 )
-                for row in rows
-            ]
+            if has_container:
+                units.extend(
+                    self._load_from_table(
+                        conn, _TABLE_CONTAINER, ship_name=ship_name, aliases=aliases,
+                    )
+                )
+            # Auto-detect jilin-like: ship has only containers in open lots
+            if load_wagons and has_container and not units:
+                units.extend(
+                    self._load_from_table(
+                        conn, _TABLE_CONTAINER, ship_name=ship_name, aliases=aliases,
+                    )
+                )
+            return units
         finally:
             conn.close()
 
-    def _sop_wagon_columns(self) -> set[str]:
-        """Get wagon_shipments column names."""
+    @staticmethod
+    def _project_aliases(project_id: str) -> set[str] | None:
+        if not project_id:
+            return None
+        aliases = {project_id}
+        if "jilin_jingang" in project_id:
+            aliases.add("吉林金钢-锦州港铁矿发运项目")
+        return aliases
+
+    def _load_from_table(
+        self,
+        conn: sqlite3.Connection,
+        table: str,
+        *,
+        ship_name: str,
+        aliases: set[str] | None,
+    ) -> list[WagonRow]:
+        cols = self._table_columns_conn(conn, table)
+        if "batch_id" not in cols or "id" not in cols:
+            return []
+        # Build SELECT with graceful missing columns
+        def col(name: str, alias: str | None = None) -> str:
+            a = alias or name
+            return f"t.{name} AS {a}" if name in cols else f"'' AS {a}"
+
+        select_sql = ", ".join([
+            "t.id",
+            "t.batch_id",
+            col("car_no"),
+            col("ydid"),
+            col("destination_name"),
+            col("departed_at"),
+            col("arrived_at"),
+            col("delivered_at"),
+            col("status_name"),
+            col("latest_stage_key"),
+            "rb.dispatch_status",
+            "rb.project",
+        ])
+        ship_pred = (
+            "COALESCE(t.ship_name, rb.ship_name, '') = ?"
+            if "ship_name" in cols
+            else "COALESCE(rb.ship_name,'') = ?"
+        )
+        sql = (
+            f"SELECT {select_sql} FROM {table} t "
+            f"JOIN release_batches rb ON t.batch_id = rb.id "
+            f"WHERE {ship_pred}"
+        )
+        rows = conn.execute(sql, (ship_name,)).fetchall()
+        if aliases is not None:
+            filtered = []
+            for r in rows:
+                proj = r["project"] or ""
+                # fact.project_id when present is already not in SELECT; filter rb.project
+                if proj in aliases:
+                    filtered.append(r)
+                    continue
+                # jilin legacy: project field may already be snake id
+            rows = filtered
+        return [
+            WagonRow(
+                db_id=row["id"],
+                batch_id=row["batch_id"],
+                car_no=row["car_no"] or "",
+                ydid=row["ydid"] or "",
+                destination_name=row["destination_name"] or "",
+                departed_at=row["departed_at"] or "",
+                arrived_at=row["arrived_at"] or "",
+                delivered_at=row["delivered_at"] or "",
+                status_name=row["status_name"] or "",
+                latest_stage_key=row["latest_stage_key"] or "",
+                dispatch_status=row["dispatch_status"] or "",
+                source_table=table,
+            )
+            for row in rows
+        ]
+
+    def _table_columns(self, table: str) -> set[str]:
         conn = sqlite3.connect(str(self.sop_db_path))
         try:
-            rows = conn.execute("PRAGMA table_info(wagon_shipments)").fetchall()
-            return {row[1] for row in rows}
+            return self._table_columns_conn(conn, table)
         finally:
             conn.close()
+
+    @staticmethod
+    def _table_columns_conn(conn: sqlite3.Connection, table: str) -> set[str]:
+        try:
+            return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        except sqlite3.OperationalError:
+            return set()
+
+    @staticmethod
+    def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        ).fetchone()
+        return row is not None
+
+    def _sop_wagon_columns(self) -> set[str]:
+        """Backward-compatible alias."""
+        return self._table_columns(_TABLE_WAGON)
 
     @staticmethod
     def _release_batch_columns(conn: sqlite3.Connection) -> set[str]:
@@ -364,40 +497,39 @@ class ShipmentStatusSync:
     def _find_snapshot(self, wagon: WagonRow) -> ShipmentSnapshot | None:
         """Find the matching 95306 shipment snapshot.
 
-        Priority: ydid → car_no + destination_name.
+        Priority: ydid → car_no + destination_name → car_no.
         """
         conn = sqlite3.connect(str(self.rail_db_path))
         conn.row_factory = sqlite3.Row
+        select_sql = """
+            SELECT ydid, car_no, destination_name,
+                   ticketed_at, departed_at, arrived_at, delivered_at,
+                   status_name, latest_stage_name
+            FROM shipments
+        """
         try:
-            # Prioritize: car_no + destination_name for this project
+            if wagon.ydid:
+                row = conn.execute(
+                    select_sql + " WHERE ydid = ? LIMIT 1",
+                    (wagon.ydid,),
+                ).fetchone()
+                if row:
+                    return self._row_to_snapshot(row)
+
             if wagon.car_no and wagon.destination_name:
                 row = conn.execute(
-                    """
-                    SELECT ydid, car_no, destination_name,
-                           ticketed_at, departed_at, arrived_at, delivered_at,
-                           status_name, latest_stage_name
-                    FROM shipments
-                    WHERE car_no = ? AND destination_name = ?
-                    ORDER BY ticketed_at DESC
-                    LIMIT 1
-                    """,
+                    select_sql
+                    + " WHERE car_no = ? AND destination_name = ? "
+                    + "ORDER BY ticketed_at DESC LIMIT 1",
                     (wagon.car_no, wagon.destination_name),
                 ).fetchone()
                 if row:
                     return self._row_to_snapshot(row)
 
-            # Fallback: car_no only
             if wagon.car_no:
                 row = conn.execute(
-                    """
-                    SELECT ydid, car_no, destination_name,
-                           ticketed_at, departed_at, arrived_at, delivered_at,
-                           status_name, latest_stage_name
-                    FROM shipments
-                    WHERE car_no = ?
-                    ORDER BY ticketed_at DESC
-                    LIMIT 1
-                    """,
+                    select_sql
+                    + " WHERE car_no = ? ORDER BY ticketed_at DESC LIMIT 1",
                     (wagon.car_no,),
                 ).fetchone()
                 if row:
@@ -429,105 +561,76 @@ class ShipmentStatusSync:
         except (IndexError, KeyError):
             return ""
 
-    def _apply_updates(
-        self,
-        updates: list[UpdatePlan],
-        *,
-        project_id: str = "",
-        ship_name: str = "",
-    ) -> None:
-        """Write updates to sop_agent.db.
+    def _apply_updates(self, updates: list[UpdatePlan]) -> None:
+        """Write updates to sop_agent.db fact tables (wagon and/or container).
 
-        Writes time fields (departed_at, arrived_at, delivered_at) and
-        dispatch_status.  Also applies the default confirmed_received rule:
-        if all wagons are delivered per 95306 and the SOP does not require
-        manual confirmation, auto-sets confirmed_received_at on each wagon
-        and on the release_batch.
+        Time fields only fill empties (planned upstream). status_name /
+        latest_stage_key always refresh. Does not rewrite 95306 DB.
         """
         conn = sqlite3.connect(str(self.sop_db_path))
         try:
-            # Get existing columns to skip missing ones
-            existing_cols = self._sop_wagon_columns()
             existing_rb_cols = self._release_batch_columns(conn)
-
-            # Group time-field updates by db_id
-            time_updates: dict[str, dict[str, str]] = {}
-            dispatch_updates: dict[str, str] = {}
-            delivered_wagon_ids: set[str] = set()
-            last_delivered_at: str = ""
+            # Group field updates by (table, id)
+            by_row: dict[tuple[str, str], dict[str, str]] = {}
+            id_to_table: dict[str, str] = {}
+            delivered_ids: set[str] = set()
+            last_delivered_at = ""
 
             for u in updates:
-                if u.field in ("departed_at", "arrived_at", "delivered_at"):
-                    if u.field in existing_cols:
-                        time_updates.setdefault(u.db_id, {})[u.field] = u.new_value
-                    if u.field == "delivered_at":
-                        delivered_wagon_ids.add(u.db_id)
-                        last_delivered_at = u.new_value
-                elif u.field == "dispatch_status":
-                    dispatch_updates[u.db_id] = u.new_value
+                if u.field == "dispatch_status":
+                    # Batch-level only; resolve later
+                    continue
+                table = u.source_table or _TABLE_WAGON
+                cols = self._table_columns_conn(conn, table)
+                if u.field not in cols:
+                    continue
+                by_row.setdefault((table, u.db_id), {})[u.field] = u.new_value
+                id_to_table[u.db_id] = table
+                if u.field == "delivered_at":
+                    delivered_ids.add(u.db_id)
+                    last_delivered_at = u.new_value
 
-            # ── Write time-field updates ────────────────────────────
-            for db_id, fields in time_updates.items():
+            for (table, db_id), fields in by_row.items():
                 sets = ", ".join(f"{k} = ?" for k in fields)
+                if "updated_at" in self._table_columns_conn(conn, table):
+                    sets += ", updated_at = CURRENT_TIMESTAMP"
                 vals = list(fields.values()) + [db_id]
-                conn.execute(
-                    f"UPDATE wagon_shipments SET {sets} WHERE id = ?", vals
-                )
+                conn.execute(f"UPDATE {table} SET {sets} WHERE id = ?", vals)
 
-            # ── R39: Default confirmed_received rule ─────────────────
-            # If ALL wagons have delivered_at updates, auto-set
-            # confirmed_received_at on each wagon AND on the release_batch.
-            total_wagons = len(time_updates)
-            if (
-                "confirmed_received_at" in existing_cols
-                and delivered_wagon_ids
-                and len(delivered_wagon_ids) >= total_wagons
-                and total_wagons > 0
-            ):
-                for db_id in delivered_wagon_ids:
+            # confirmed_received_at on wagon table only (legacy R39)
+            for db_id in delivered_ids:
+                table = id_to_table.get(db_id, _TABLE_WAGON)
+                cols = self._table_columns_conn(conn, table)
+                if "confirmed_received_at" in cols and last_delivered_at:
                     conn.execute(
-                        "UPDATE wagon_shipments SET confirmed_received_at = ? "
-                        "WHERE id = ? AND confirmed_received_at IS NULL",
+                        f"UPDATE {table} SET confirmed_received_at = ? "
+                        f"WHERE id = ? AND (confirmed_received_at IS NULL OR confirmed_received_at = '')",
                         (last_delivered_at, db_id),
                     )
-                # Also update release_batches
-                if "confirmed_received_at" in existing_rb_cols:
-                    batch_ids = set()
-                    for db_id in delivered_wagon_ids:
-                        row = conn.execute(
-                            "SELECT batch_id FROM wagon_shipments WHERE id = ?",
-                            (db_id,),
-                        ).fetchone()
-                        if row:
-                            batch_ids.add(row[0])
-                    for batch_id in batch_ids:
-                        conn.execute(
-                            "UPDATE release_batches "
-                            "SET confirmed_received_at = ? "
-                            "WHERE id = ? AND confirmed_received_at IS NULL",
-                            (last_delivered_at, batch_id),
-                        )
 
-            # ── Update dispatch_status on release_batches ──────────
-            if dispatch_updates:
-                batch_ids = set()
-                for u in updates:
-                    # Find batch_id from wagon
-                    row = conn.execute(
-                        "SELECT batch_id FROM wagon_shipments WHERE id = ?",
-                        (u.db_id,),
-                    ).fetchone()
-                    if row:
-                        batch_ids.add(row[0])
+            # Resolve batch_ids for any unit that got delivered_at or stage delivered
+            batch_ids: set[str] = set()
+            for u in updates:
+                table = u.source_table or _TABLE_WAGON
+                row = conn.execute(
+                    f"SELECT batch_id FROM {table} WHERE id = ?", (u.db_id,)
+                ).fetchone()
+                if row:
+                    batch_ids.add(row[0])
 
-                final_status = "delivered"  # highest priority
+            # NOTE: do NOT force release_batches.dispatch_status='delivered' here.
+            # Lifecycle closeout owns all_loaded → confirmed_received transitions.
+            # Only stamp confirmed_received_at timestamp on batch when all units delivered.
+            if (
+                "confirmed_received_at" in existing_rb_cols
+                and delivered_ids
+                and last_delivered_at
+            ):
                 for batch_id in batch_ids:
                     conn.execute(
-                        """UPDATE release_batches
-                           SET dispatch_status = ?,
-                               dispatch_status_updated_at = datetime('now')
-                           WHERE id = ?""",
-                        (final_status, batch_id),
+                        "UPDATE release_batches SET confirmed_received_at = ? "
+                        "WHERE id = ? AND (confirmed_received_at IS NULL OR confirmed_received_at = '')",
+                        (last_delivered_at, batch_id),
                     )
 
             conn.commit()

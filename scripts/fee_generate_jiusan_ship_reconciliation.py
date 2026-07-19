@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""按船汇总九三费用并回写 billing_reconciliation。"""
+"""按船汇总九三费用并回写 billing_reconciliation。
+
+DEPRECATED for new work (2026-07-19): fee_manager owns billing_* after F3/F4.
+See fee_manager/docs/2026-07-19-排期-fee_manager与发运解耦专项.md.
+"""
 from __future__ import annotations
 
 import argparse

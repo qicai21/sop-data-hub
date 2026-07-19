@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """九三大豆 route C 散粮费用生成 + 现场确认单落地。
 
+DEPRECATED for new work (2026-07-19):
+  Fee generation belongs in sibling repo ``fee_manager`` (see
+  fee_manager/docs/2026-07-19-排期-fee_manager与发运解耦专项.md F4).
+  Do not extend this script for shipping automation; do not mix fee PRs
+  into inspection/status-sync sessions. Kept only as transitional entry
+  until F4 migration.
+
 按 bulk_loading_notice_wagon 的 notice_date + ship_name + track + lot 分组，生成：
   - fee_item_catalog 种子
   - fee_batch

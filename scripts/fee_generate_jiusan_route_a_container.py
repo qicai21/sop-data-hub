@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """九三大豆 route A 集装箱费用生成。
 
+DEPRECATED for new work (2026-07-19):
+  Prefer fee_manager (F4 migrate). See
+  fee_manager/docs/2026-07-19-排期-fee_manager与发运解耦专项.md.
+  Do not extend from shipping-automation sessions.
+
 按 release_batch(lot01) 生成：
   - fee_item_catalog 种子
   - fee_batch

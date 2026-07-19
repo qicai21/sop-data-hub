@@ -3,6 +3,17 @@
 数据运维等会话发现的功能/缺陷问题写在本目录（`YYYY-MM-DD-简述.md`），
 由「系统开发」会话处理（修改/开发/测试）。
 
+## 费用工单不进本目录
+
+费用结算、对账单、客户单价、开票、`fee_record` / `settlement_plan` 双轨等，一律写到 sibling 仓：
+
+- 仓库：`/Users/qicai21/projects/repos/fee_manager`
+- 排期：`fee_manager/docs/2026-07-19-排期-fee_manager与发运解耦专项.md`
+- 工单：`fee_manager/docs/issues/`
+
+本仓 `issues/` **只服务发运自动化**（检装、95306、lifecycle、Excel/上传等）。  
+历史费用工单已在 `archived/` 的，保留作审计；**新建费用单禁止再开在 sop-data-hub。**
+
 ## 目录纪律
 
 | 目录 | 含义 |

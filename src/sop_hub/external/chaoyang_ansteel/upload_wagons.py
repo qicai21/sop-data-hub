@@ -104,11 +104,17 @@ def fetch_wagons(
             )
             args = [batch_id, *ydids]
         elif car_nos:
+            # 循环车号同 batch 会多趟：无 ydid 时只取每个 car_no 最新 ticketed_at
+            # 一行，避免 07-08 马兰幸福 22 车串 07-05 旧趟（32 行/错上传口径）。
             placeholders = ",".join("?" * len(car_nos))
             sql = (
-                f"SELECT car_no, ticketed_at, ydid FROM wagon_shipments "
-                f"WHERE batch_id = ? AND car_no IN ({placeholders}) "
-                f"ORDER BY ticketed_at, car_no"
+                f"SELECT w.car_no, w.ticketed_at, w.ydid FROM wagon_shipments w "
+                f"WHERE w.batch_id = ? AND w.car_no IN ({placeholders}) "
+                f"AND w.ticketed_at = ("
+                f"  SELECT MAX(w2.ticketed_at) FROM wagon_shipments w2 "
+                f"  WHERE w2.batch_id = w.batch_id AND w2.car_no = w.car_no"
+                f") "
+                f"ORDER BY w.ticketed_at, w.car_no"
             )
             args = [batch_id, *car_nos]
         elif date_prefix:

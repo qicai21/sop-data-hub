@@ -7,7 +7,9 @@
 - 验证器每被触发(rail95306-sync 同步完一轮 / 手动 / launchd):
   - 对每个 pending 候选,re-trigger chain → 票/货运信息齐就 succeed
   - 超 6 h 仍未到齐 → 标 timeout_manual_review + 通知人工
-- 不动 in_progress / completed / matched 等其他状态
+  - 另扫可自愈的 pending_review(如 multiple_candidates / no_open_batch)：
+    优先级配置后或 open lot 变化后应能重试,不再静默沉底
+- 不动 matched / archived / timeout_manual_review 等终态
 
 调用:
   python3 -m sop_hub.sop.pending_match_verifier            # 默认 6h timeout
@@ -164,23 +166,49 @@ def _retry_chain(
     )
 
 
+# pending_review reasons that may self-heal without human payload edits
+_RETRYABLE_PENDING_REVIEW_REASONS: frozenset[str] = frozenset({
+    "multiple_candidates",
+    "no_open_batch",
+    "no_match",
+    "bad_input",
+})
+
+
+def _is_retryable_pending_review(reason: str | None) -> bool:
+    r = (reason or "").strip()
+    if r in _RETRYABLE_PENDING_REVIEW_REASONS:
+        return True
+    # infer tie reasons e.g. multi_candidate_tied:2
+    if r.startswith("multi_candidate_tied"):
+        return True
+    return False
+
+
 def verify_pending_candidates(
     *,
     db_path: str | Path = "data/sop_agent.db",
     timeout_hours: float = 6.0,
     send_timeout_notice: bool = True,
 ) -> VerifierSummary:
-    """主入口:扫描 pending_95306_match / pending_freight_info,逐个重试。"""
+    """主入口:扫描可重试 pending 候选,逐个重试。"""
     summary = VerifierSummary()
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
             "SELECT id, group_name, source_file_name, ship_name, candidate_status, "
-            "       release_batch_id, created_at, updated_at "
+            "       release_batch_id, created_at, updated_at, reason "
             "FROM inspection_ingestion_candidates "
-            "WHERE candidate_status IN ('pending_95306_match','pending_freight_info')"
+            "WHERE candidate_status IN ("
+            "  'pending_95306_match','pending_freight_info','pending_review'"
+            ")"
         ).fetchall()
+        rows = [
+            r for r in rows
+            if (r["candidate_status"] or "") != "pending_review"
+            or _is_retryable_pending_review(r["reason"] if "reason" in r.keys() else None)
+        ]
     finally:
         conn.close()
 
@@ -283,7 +311,10 @@ if __name__ == "__main__":
     )
 
     p = argparse.ArgumentParser(
-        description="Scan pending_95306_match candidates and retry/timeout."
+        description=(
+            "Scan pending_95306_match / pending_freight_info / "
+            "retryable pending_review and retry/timeout."
+        )
     )
     p.add_argument("--db", default="data/sop_agent.db",
                    help="path to sop_agent.db (default: data/sop_agent.db)")

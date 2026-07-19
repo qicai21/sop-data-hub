@@ -91,6 +91,40 @@ def test_fetch_wagons_uses_ydids_to_avoid_reused_car_duplicates(tmp_path):
     assert [w.waybill_time for w in wagons] == ["20260708105107", "20260708105115"]
 
 
+def test_fetch_wagons_car_no_only_keeps_latest_ticket_per_car(tmp_path):
+    """无 ydid 时不得把同车号旧趟一并捞出。"""
+    db = tmp_path / "sop.db"
+    _seed_db(db)
+
+    wagons = fetch_wagons(
+        db_path=db,
+        batch_id="batch1",
+        car_nos=["1644106", "1664992"],
+        # ydids omitted on purpose
+    )
+
+    assert len(wagons) == 2
+    assert [w.car_no for w in wagons] == ["1644106", "1664992"]
+    assert [w.waybill_time for w in wagons] == ["20260708105107", "20260708105115"]
+
+
+def test_departure_excel_car_no_only_keeps_latest_ticket_per_car(tmp_path):
+    db = tmp_path / "sop.db"
+    _seed_db(db)
+
+    rows, ctx, err = _extract_rows(
+        "batch1",
+        db_path=db,
+        car_nos=["1644106", "1664992"],
+    )
+    assert err == ""
+    assert len(rows) == 2
+    assert [r["ticketed_at_raw"] for r in rows] == [
+        "2026-07-08 10:51:07",
+        "2026-07-08 10:51:15",
+    ]
+
+
 def test_executor_runner_fetch_event_wagon_ids_prefers_ydids(tmp_path):
     db = tmp_path / "sop.db"
     _seed_db(db)

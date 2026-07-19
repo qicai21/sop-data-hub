@@ -214,10 +214,15 @@ def _extract_rows(
                 ),
             )
         elif car_nos:
+            # 无 ydid 时每车号只保留最新 ticketed_at，防循环车号串入旧趟
             placeholders = ",".join("?" * len(car_nos))
             ws_rows = conn.execute(
-                f"SELECT * FROM wagon_shipments "
-                f"WHERE batch_id=? AND car_no IN ({placeholders})",
+                f"SELECT w.* FROM wagon_shipments w "
+                f"WHERE w.batch_id=? AND w.car_no IN ({placeholders}) "
+                f"AND w.ticketed_at = ("
+                f"  SELECT MAX(w2.ticketed_at) FROM wagon_shipments w2 "
+                f"  WHERE w2.batch_id=w.batch_id AND w2.car_no=w.car_no"
+                f")",
                 (release_batch_id, *car_nos),
             ).fetchall()
             # 按调用方给的 car_nos 顺序输出 — 对应检装车通知单的 seq,

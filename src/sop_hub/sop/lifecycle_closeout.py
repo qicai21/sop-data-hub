@@ -30,6 +30,15 @@ SOP_DB = REPO_ROOT / "data" / "sop_agent.db"
 # 95306 stage_key 视为"已收货"(≥80 等价集)
 _RECEIVED_STAGES: frozenset[str] = frozenset({"delivered", "unloading_completed"})
 
+# 用户口径：status_name 文本亦可视为已收货（stage 空或滞后时兜底）
+_RECEIVED_STATUS_NAMES: frozenset[str] = frozenset({
+    "货物已交付",
+    "确认收货",
+    "已卸车",
+    "已交付",
+    "交付",
+})
+
 # 哪些 phase 还在 active tracking 范围,扫描候选
 _ACTIVE_PHASES_TO_SCAN: tuple[str, ...] = (
     lc.LOADING, lc.ALL_LOADED, lc.TRACKING, lc.DELIVERED,
@@ -62,14 +71,30 @@ def _batch_has_dispatch_plan(conn: sqlite3.Connection, batch_id: str) -> bool:
     ).fetchone() is not None
 
 
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    try:
+        return {str(r[1]) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    except sqlite3.OperationalError:
+        return set()
+
+
+def _received_predicate_sql(columns: set[str]) -> str:
+    """SQL boolean expr: row counts as 95306-received per user口径."""
+    stage_list = ",".join(f"'{s}'" for s in sorted(_RECEIVED_STAGES))
+    parts = [f"latest_stage_key IN ({stage_list})"]
+    if "status_name" in columns:
+        names = ",".join(f"'{n}'" for n in sorted(_RECEIVED_STATUS_NAMES))
+        parts.append(f"TRIM(COALESCE(status_name,'')) IN ({names})")
+    return "(" + " OR ".join(parts) + ")"
+
+
 def _batch_wagon_stage_summary(
     conn: sqlite3.Connection, batch_id: str, project_id: str = "",
 ) -> dict[str, Any]:
-    """Return {'total','received','all_received','has_container','last_ticketed'}.
+    """Return stage/receipt summary for closeout.
 
-    同时数 wagon_shipments(散粮/整车)+ wagon_container_shipments(集装箱)——
-    否则集装箱批 total=0、永远 all_received=False、永不关批(和谐1 lot01 卡 loading
-    根因:原 closeout 只查 wagon_shipments)。表不存在(测试最小 schema)时跳过。
+    Keys: total, received, all_received, has_container, last_ticketed,
+    missing_loading_line, loading_line_complete.
     """
     # 吉林金钢已切到箱级唯一事实源。旧车级表是迁移前的审计快照，若仍将两表
     # 相加会把同一批集装箱重复计入 closeout。
@@ -78,15 +103,24 @@ def _batch_wagon_stage_summary(
         if project_id == "jilin_jingang_jinzhou"
         else ("wagon_shipments", "wagon_container_shipments")
     )
-    total = received = 0
+    total = received = missing_line = 0
     last_tk = ""
     has_container = False
     for tbl in tables:
+        cols = _table_columns(conn, tbl)
+        if not cols or "batch_id" not in cols:
+            continue
+        recv_pred = _received_predicate_sql(cols)
+        line_expr = (
+            "SUM(CASE WHEN TRIM(COALESCE(loading_line,'')) = '' THEN 1 ELSE 0 END)"
+            if "loading_line" in cols
+            else "0"
+        )
         try:
             row = conn.execute(
                 f"SELECT COUNT(*) AS total, "
-                f"SUM(CASE WHEN latest_stage_key IN ('delivered','unloading_completed') "
-                f"          THEN 1 ELSE 0 END) AS received "
+                f"SUM(CASE WHEN {recv_pred} THEN 1 ELSE 0 END) AS received, "
+                f"{line_expr} AS missing_line "
                 f"FROM {tbl} WHERE batch_id=?",
                 (batch_id,),
             ).fetchone()
@@ -95,23 +129,27 @@ def _batch_wagon_stage_summary(
         n = int(row[0] or 0)
         total += n
         received += int(row[1] or 0)
+        missing_line += int(row[2] or 0)
         if tbl == "wagon_container_shipments" and n > 0:
             has_container = True
         # last_ticketed 单独取:老/测试 schema 可能无 ticketed_at 列,失败不影响计数
-        try:
-            tk = conn.execute(
-                f"SELECT MAX(substr(ticketed_at,1,10)) FROM {tbl} WHERE batch_id=?",
-                (batch_id,)).fetchone()[0]
-            if tk and str(tk) > last_tk:
-                last_tk = str(tk)
-        except sqlite3.OperationalError:
-            pass
+        if "ticketed_at" in cols:
+            try:
+                tk = conn.execute(
+                    f"SELECT MAX(substr(ticketed_at,1,10)) FROM {tbl} WHERE batch_id=?",
+                    (batch_id,)).fetchone()[0]
+                if tk and str(tk) > last_tk:
+                    last_tk = str(tk)
+            except sqlite3.OperationalError:
+                pass
     return {
         "total": total,
         "received": received,
         "all_received": total > 0 and received == total,
         "has_container": has_container,
         "last_ticketed": last_tk,
+        "missing_loading_line": missing_line,
+        "loading_line_complete": total > 0 and missing_line == 0,
     }
 
 
@@ -192,10 +230,19 @@ def run_lifecycle_closeout(
                         and not _batch_has_dispatch_plan(conn, bid)):
                     result["held_underfilled"] += 1
                     continue
+                # 装车道线等必要字段：缺则停在 all_loaded/loading，不假推进交付确认
+                if not summary.get("loading_line_complete", True):
+                    result["held_missing_loading_line"] = (
+                        result.get("held_missing_loading_line", 0) + 1
+                    )
+                    continue
                 r = advance_lifecycle(
                     bid, lc.CONFIRMED_RECEIVED,
-                    reason=(f"95306 stage_key 全 received "
-                            f"({summary['received']}/{summary['total']})"),
+                    reason=(
+                        f"95306 全收货 "
+                        f"({summary['received']}/{summary['total']}; "
+                        f"stage或status_name∈交付/确认收货/已卸车)"
+                    ),
                     triggered_by="lifecycle_closeout",
                     db_path=str(db),
                 )

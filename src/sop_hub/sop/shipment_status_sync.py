@@ -32,12 +32,17 @@ STATUS_TO_FIELDS: dict[str, list[str]] = {
     "交付": ["departed_at", "arrived_at", "delivered_at"],
     "货物已交付": ["departed_at", "arrived_at", "delivered_at"],
     "已交付": ["departed_at", "arrived_at", "delivered_at"],
+    # 用户口径：确认收货 / 已卸车 亦视为交付完成
+    "确认收货": ["departed_at", "arrived_at", "delivered_at"],
+    "已卸车": ["departed_at", "arrived_at", "delivered_at"],
 }
 
 STAGE_TO_DISPATCH_STATUS: dict[str, str] = {
     "交付": "delivered",
     "货物已交付": "delivered",
     "已交付": "delivered",
+    "确认收货": "delivered",
+    "已卸车": "delivered",
     "到站": "arrived",
     "已到站": "arrived",
     "发车": "dispatched",

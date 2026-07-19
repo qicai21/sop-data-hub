@@ -125,3 +125,75 @@ def test_container_recent_held_active(tmp_path):
     assert r.get("held_active") == 1
     assert r["advanced"] == 0
     assert _status(db, "cont_active") == "loading"
+
+
+def test_status_name_confirmation_counts_as_received(tmp_path):
+    """status_name=确认收货 在 stage 为空时亦计收货 → 可推 confirmed_received。"""
+    db = _make_db(tmp_path)
+    c = sqlite3.connect(str(db))
+    c.execute("ALTER TABLE wagon_shipments ADD COLUMN status_name TEXT")
+    c.execute("ALTER TABLE wagon_shipments ADD COLUMN loading_line TEXT")
+    c.execute(
+        "INSERT INTO release_batches (id, project, ship_name, batch_sequence, dispatch_status, "
+        "dispatch_status_note, remaining_weight_tons, batch_quantity) "
+        "VALUES ('bulk_confirm', 'zhongtang_special_steel', '宝丽', 'lot01', 'all_loaded', '', -10, 10000)"
+    )
+    for i in range(3):
+        c.execute(
+            "INSERT INTO wagon_shipments (id, batch_id, latest_stage_key, status_name, loading_line) "
+            "VALUES (?,?,?,?,?)",
+            (f"bc{i}", "bulk_confirm", "", "确认收货", "煤四"),
+        )
+    c.commit()
+    c.close()
+    r = run_lifecycle_closeout(db_path=db)
+    assert r["advanced"] == 1
+    assert _status(db, "bulk_confirm") == "confirmed_received"
+
+
+def test_missing_loading_line_holds_even_if_delivered(tmp_path):
+    """全车 delivered 但缺装车道线 → held_missing_loading_line，不推确认交付。"""
+    db = _make_db(tmp_path)
+    c = sqlite3.connect(str(db))
+    c.execute("ALTER TABLE wagon_shipments ADD COLUMN loading_line TEXT")
+    c.execute(
+        "INSERT INTO release_batches (id, project, ship_name, batch_sequence, dispatch_status, "
+        "dispatch_status_note, remaining_weight_tons, batch_quantity) "
+        "VALUES ('bulk_noline', 'zhongtang_special_steel', '贝拉', 'lot05', 'all_loaded', '', -10, 10000)"
+    )
+    for i in range(3):
+        c.execute(
+            "INSERT INTO wagon_shipments (id, batch_id, latest_stage_key, loading_line) "
+            "VALUES (?,?,?,?)",
+            (f"bn{i}", "bulk_noline", "delivered", ""),
+        )
+    c.commit()
+    c.close()
+    r = run_lifecycle_closeout(db_path=db)
+    assert r.get("held_missing_loading_line") == 1
+    assert r["advanced"] == 0
+    assert _status(db, "bulk_noline") == "all_loaded"
+
+
+def test_unloaded_status_name_counts_as_received(tmp_path):
+    """status_name=已卸车 计收货。"""
+    db = _make_db(tmp_path)
+    c = sqlite3.connect(str(db))
+    c.execute("ALTER TABLE wagon_shipments ADD COLUMN status_name TEXT")
+    c.execute("ALTER TABLE wagon_shipments ADD COLUMN loading_line TEXT")
+    c.execute(
+        "INSERT INTO release_batches (id, project, ship_name, batch_sequence, dispatch_status, "
+        "dispatch_status_note, remaining_weight_tons, batch_quantity) "
+        "VALUES ('bulk_unload', 'zhongtang_special_steel', '环球信任', 'lot08', 'all_loaded', '', 0, 9000)"
+    )
+    for i in range(2):
+        c.execute(
+            "INSERT INTO wagon_shipments (id, batch_id, latest_stage_key, status_name, loading_line) "
+            "VALUES (?,?,?,?,?)",
+            (f"bu{i}", "bulk_unload", "unloading_completed", "已卸车", "煤一"),
+        )
+    c.commit()
+    c.close()
+    r = run_lifecycle_closeout(db_path=db)
+    assert r["advanced"] == 1
+    assert _status(db, "bulk_unload") == "confirmed_received"

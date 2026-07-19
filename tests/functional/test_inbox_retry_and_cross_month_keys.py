@@ -566,8 +566,8 @@ def test_release_batch_pending_match_lifecycle(temp_db):
 
 # ── #127: lifecycle closeout ──────────────────────────────────────
 def test_lifecycle_closeout_advances_when_all_wagons_delivered(temp_db, monkeypatch):
-    """全部 wagon latest_stage_key in (delivered,unloading_completed)
-    → batch 推到 confirmed_received。"""
+    """吉林金钢以箱级表为事实源：全部 box latest_stage_key 已收货
+    → batch 推到 confirmed_received。lotB 仍有 ticketed → 不推。"""
     import sqlite3
     conn = sqlite3.connect(str(temp_db))
     conn.execute("""CREATE TABLE release_batches (
@@ -576,27 +576,38 @@ def test_lifecycle_closeout_advances_when_all_wagons_delivered(temp_db, monkeypa
         dispatch_status_updated_at TEXT, updated_at TEXT,
         remaining_weight_tons REAL, batch_quantity REAL
     )""")  # cc1922f:lifecycle_closeout SELECT 加了这两列(散粮吨位闸)
+    # 吉林 closeout 只读 wagon_container_shipments（车级表为历史快照）
+    conn.execute("""CREATE TABLE wagon_container_shipments (
+        id TEXT PRIMARY KEY, batch_id TEXT, latest_stage_key TEXT,
+        ticketed_at TEXT, loading_line TEXT, status_name TEXT
+    )""")
     conn.execute("""CREATE TABLE wagon_shipments (
         id TEXT PRIMARY KEY, batch_id TEXT, latest_stage_key TEXT
     )""")
     # 2 batches: lotA 全 delivered → 应推; lotB 一半 ticketed → 不推
     conn.executemany(
-        "INSERT INTO release_batches (id, project, ship_name, batch_sequence, dispatch_status) "
-        "VALUES (?,?,?,?,?)",
+        "INSERT INTO release_batches (id, project, ship_name, batch_sequence, dispatch_status, remaining_weight_tons) "
+        "VALUES (?,?,?,?,?,?)",
         [
-            ("lotA", "jilin_jingang_jinzhou", "蓝鳍", "lot1", "all_loaded"),
-            ("lotB", "jilin_jingang_jinzhou", "蓝鳍", "lot2", "loading"),
+            ("lotA", "jilin_jingang_jinzhou", "蓝鳍", "lot1", "all_loaded", 0),
+            ("lotB", "jilin_jingang_jinzhou", "蓝鳍", "lot2", "loading", 0),
         ],
     )
     for i in range(5):
         conn.execute(
-            "INSERT INTO wagon_shipments (id, batch_id, latest_stage_key) VALUES (?,?,?)",
-            (f"wA{i}", "lotA", "delivered" if i < 4 else "unloading_completed"),
+            "INSERT INTO wagon_container_shipments "
+            "(id, batch_id, latest_stage_key, ticketed_at, loading_line) VALUES (?,?,?,?,?)",
+            (f"wA{i}", "lotA",
+             "delivered" if i < 4 else "unloading_completed",
+             "2026-01-01", "煤一"),
         )
     for i in range(5):
         conn.execute(
-            "INSERT INTO wagon_shipments (id, batch_id, latest_stage_key) VALUES (?,?,?)",
-            (f"wB{i}", "lotB", "delivered" if i < 3 else "ticketed"),
+            "INSERT INTO wagon_container_shipments "
+            "(id, batch_id, latest_stage_key, ticketed_at, loading_line) VALUES (?,?,?,?,?)",
+            (f"wB{i}", "lotB",
+             "delivered" if i < 3 else "ticketed",
+             "2026-01-01", "煤一"),
         )
     conn.commit()
     conn.close()

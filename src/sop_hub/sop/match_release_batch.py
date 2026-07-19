@@ -117,6 +117,16 @@ def match_release_batch_by_ship_destination_cargo(
             if tightened:
                 candidates = tightened
 
+        # 分票计划已满或 plan 已 completed 的 lot 不再接新发运（与 all_loaded 停匹配一致）。
+        candidates, full_ids = _exclude_full_dispatch_plan_lots(db_conn, candidates)
+        if not candidates:
+            return ReleaseBatchMatch(
+                reason="no_open_batch",
+                notes=[
+                    f"open batches exist but dispatch plan full/completed: {sorted(full_ids)}",
+                ],
+            )
+
         if len(candidates) == 1:
             return ReleaseBatchMatch(
                 matched_release_batch_id=candidates[0]["id"],
@@ -163,6 +173,50 @@ def match_release_batch_by_ship_destination_cargo(
     finally:
         if own_conn:
             db_conn.close()
+
+
+def _exclude_full_dispatch_plan_lots(
+    db_conn: sqlite3.Connection,
+    candidates: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], set[str]]:
+    """Drop lots whose release_batch_dispatch_plan is completed or at capacity.
+
+    Minimal/legacy fixtures without the plan table are left unchanged.
+    """
+    if not candidates:
+        return candidates, set()
+    try:
+        candidate_ids = [c["id"] for c in candidates]
+        ph = ",".join("?" * len(candidate_ids))
+        plan_rows = db_conn.execute(
+            "SELECT release_batch_id, planned_box_count, allocated_box_count, status "
+            f"FROM release_batch_dispatch_plan WHERE release_batch_id IN ({ph})",
+            candidate_ids,
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return candidates, set()
+
+    full_ids: set[str] = set()
+    for row in plan_rows:
+        rid = row["release_batch_id"] if isinstance(row, sqlite3.Row) else row[0]
+        planned = row["planned_box_count"] if isinstance(row, sqlite3.Row) else row[1]
+        allocated = row["allocated_box_count"] if isinstance(row, sqlite3.Row) else row[2]
+        status = row["status"] if isinstance(row, sqlite3.Row) else row[3]
+        if str(status or "") == "completed":
+            full_ids.add(str(rid))
+            continue
+        try:
+            p = int(planned or 0)
+            a = int(allocated or 0)
+        except (TypeError, ValueError):
+            continue
+        if p > 0 and a >= p:
+            full_ids.add(str(rid))
+
+    if not full_ids:
+        return candidates, set()
+    kept = [c for c in candidates if c["id"] not in full_ids]
+    return kept, full_ids
 
 
 if __name__ == "__main__":

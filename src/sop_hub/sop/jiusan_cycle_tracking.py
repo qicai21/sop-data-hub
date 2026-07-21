@@ -18,7 +18,7 @@ DEFAULT_CACHE = REPO_ROOT / "runtime" / "jiusan_cycle_tracking_latest.json"
 DEFAULT_ACCOUNT = "xts"
 RETURN_EMPTY_HOURS = 10
 PROBES_PER_TRAIN = 4
-TRANSFERRED_CYCLES = frozenset({4})
+TRANSFERRED_CYCLES = frozenset({4, 5})
 
 
 def _parse_time(value: str | None) -> datetime | None:

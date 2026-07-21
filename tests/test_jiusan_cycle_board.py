@@ -126,6 +126,30 @@ def test_pool_key_is_project_level():
     assert ing2.POOL_KEY == jcb.POOL_KEY
 
 
+def test_board_uses_shared_transferred_cycle_register():
+    from sop_hub.sop.jiusan_cycle_tracking import TRANSFERRED_CYCLES
+
+    assert jcb.TRANSFERRED_CYCLES is TRANSFERRED_CYCLES
+
+
+def test_pool_cycles_keeps_transferred_car_count_for_history_display():
+    db = sqlite3.connect(":memory:")
+    db.execute(
+        "CREATE TABLE wagon_body_pool("
+        "car_no TEXT,project TEXT,home_cycle_no INT,status TEXT,"
+        "first_seen_date TEXT,last_seen_date TEXT)"
+    )
+    db.executemany("INSERT INTO wagon_body_pool VALUES(?,?,?,?,?,?)", [
+        ("a", "jiusan", 1, "active", "2026-07-01", "2026-07-20"),
+        ("b", "jiusan", 5, "transferred_out", "2026-07-01", "2026-07-19"),
+    ])
+
+    pool = jcb._pool_cycles(db)
+
+    assert pool[1]["pool_cars"] == 1
+    assert pool[5]["pool_cars"] == 1
+
+
 def test_morning_report_header_day_typo_uses_message_date():
     date, warn = ing.resolve_snapshot_date("5", "2026-07-06")
 

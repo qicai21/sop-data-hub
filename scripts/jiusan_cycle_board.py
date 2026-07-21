@@ -21,6 +21,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "scripts"))
 import cli_dashboard as cd  # noqa: E402  复用渲染风格
+from sop_hub.sop.jiusan_cycle_tracking import TRANSFERRED_CYCLES  # noqa: E402
 
 POOL_KEY = "九三大豆"  # snapshot.ship_name 的项目级 key(工单 2026-06-29 §3a,已迁移);箱数节点=本阶段港总池
 PHASE_START_SHIP = "和谐1"  # 本阶段锚(工单 §3b):集装箱循环从和谐1 起算——总池跨船(和谐1→诚信→…)
@@ -39,7 +40,6 @@ TRACKING_CACHE_MAX_AGE_HOURS = 3
 # 明明已返空却长期显示「港装货」。除非当天确需纠偏,**保持空**;纠偏后请及时清回。
 # 注意:_apply_ops_cycle_override 是「全量替换」——一旦非空,未列入的列位置会被清掉,
 # 故若要钉,须把当天所有在途/在港列一并列全。docs/business-rules/jiusan_cycle_ops_log.md
-TRANSFERRED_CYCLES: frozenset[int] = frozenset({4})  # 调出列,不计入「循环车组N列」
 # node_key → 看板流水线位置; node_label → 列表明细「当前节点」
 OPS_CYCLE_NODES: dict[int, dict] = {}
 
@@ -136,7 +136,8 @@ def _pool_cycles(conn) -> dict[int, dict]:
             SELECT home_cycle_no, COUNT(DISTINCT car_no) cars,
                    MIN(first_seen_date), MAX(last_seen_date)
             FROM wagon_body_pool
-            WHERE project='jiusan' AND status='active' AND home_cycle_no IS NOT NULL
+            WHERE project='jiusan' AND status IN ('active','transferred_out')
+              AND home_cycle_no IS NOT NULL
             GROUP BY home_cycle_no
             ORDER BY home_cycle_no
             """

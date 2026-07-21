@@ -52,6 +52,11 @@ def main() -> int:
         help="After apply, run lifecycle_closeout (ignored on dry-run)",
     )
     p.add_argument("--json", action="store_true", help="Print full JSON report to stdout")
+    p.add_argument(
+        "--jiusan-cycle-tracking",
+        action="store_true",
+        help="Also refresh the four-probe Jiusan cycle tracking cache",
+    )
     args = p.parse_args()
 
     dry_run = not args.apply
@@ -66,6 +71,14 @@ def main() -> int:
         report_dir=args.report_dir,
     )
     d = report.to_dict()
+    cycle_tracking = None
+    if args.jiusan_cycle_tracking:
+        try:
+            from sop_hub.sop.jiusan_cycle_tracking import update_cycle_tracking_cache
+
+            cycle_tracking = update_cycle_tracking_cache(sop_db=args.sop_db, rail_db=args.rail_db)
+        except Exception as exc:  # keep the ordinary status sync report visible
+            cycle_tracking = {"error": str(exc), "error_count": 1, "trains": []}
     if args.json:
         print(json.dumps(d, ensure_ascii=False, indent=2))
     else:
@@ -85,7 +98,17 @@ def main() -> int:
             print(f"closeout={ {k:v for k,v in d['closeout'].items() if k!='advanced_batches'} }")
         if d.get("report_path"):
             print(f"report={d['report_path']}")
-    return 1 if d["totals"]["errors"] else 0
+        if cycle_tracking is not None:
+            print(
+                "jiusan_cycle_tracking="
+                f"trains:{len(cycle_tracking.get('trains') or [])} "
+                f"queries:{cycle_tracking.get('query_count', 0)} "
+                f"errors:{cycle_tracking.get('error_count', 0)}"
+            )
+            if cycle_tracking.get("error"):
+                print(f"jiusan_cycle_tracking_error={cycle_tracking['error']}")
+    cycle_errors = int((cycle_tracking or {}).get("error_count") or 0)
+    return 1 if d["totals"]["errors"] or cycle_errors else 0
 
 
 if __name__ == "__main__":

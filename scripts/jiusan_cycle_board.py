@@ -11,8 +11,10 @@ issue: docs/issues/2026-06-19-九三循环列看板设计.md
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 import sys
+from datetime import datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -25,6 +27,21 @@ PHASE_START_SHIP = "和谐1"  # 本阶段锚(工单 §3b):集装箱循环从和�
 #                            但 departed_at 不回溯到和谐1 之前(项目曾停发,3 月旧船不计)。可调:换船名即换锚。
 DISPLAY = "九三大豆·锦州港集装箱总池"  # 看板口径:项目整体集装箱循环,不拘单船(工单 §二)
 INNER = cd.PANEL_WIDTH - 4  # 内容显示宽
+TRACKING_CACHE = REPO / "runtime" / "jiusan_cycle_tracking_latest.json"
+TRACKING_CACHE_MAX_AGE_HOURS = 3
+
+# ── 运营覆盖(仅人工纠偏用,默认空) ─────────────────────────────────────
+# 列位置默认走 95306 实时自动状态机(_cycle_state);「调出」列由 TRANSFERRED_CYCLES
+# 独立驱动,自动状态机已认(不再依赖本表)。
+#
+# OPS_CYCLE_NODES 只在 95306 自动推断确实错/滞后时,人工临时钉某列位置用;**留空即纯自动**。
+# 历史教训(工单 2026-07-17 类):本表曾硬编码 5 列位置且 3 周无人更新,导致 1 号列
+# 明明已返空却长期显示「港装货」。除非当天确需纠偏,**保持空**;纠偏后请及时清回。
+# 注意:_apply_ops_cycle_override 是「全量替换」——一旦非空,未列入的列位置会被清掉,
+# 故若要钉,须把当天所有在途/在港列一并列全。docs/business-rules/jiusan_cycle_ops_log.md
+TRANSFERRED_CYCLES: frozenset[int] = frozenset({4})  # 调出列,不计入「循环车组N列」
+# node_key → 看板流水线位置; node_label → 列表明细「当前节点」
+OPS_CYCLE_NODES: dict[int, dict] = {}
 
 
 def _phase_start_date(conn) -> str:
@@ -244,6 +261,12 @@ def _cycle_state(conn, now=None) -> dict:
             "latest_delivered": t["last_deliv"], "delivered_boxes": t["deliv"],
             "node_key": "", "node_label": "", "note": "",
         }
+        # 调出列不参与循环位置分配(港重/新台子/返空),避免其旧趟被误推为「在装列」。
+        if int(cyc) in TRANSFERRED_CYCLES:
+            cycle_rows[int(cyc)].update({
+                "node_key": "transferred", "node_label": "调出",
+                "note": "不计入运行中循环列"})
+            continue
         if t["dep"] and not t["arr"]:
             add_pos("transit_loaded", {"cyc": cyc, "boxes": boxes})     # 途重
             cycle_rows[int(cyc)].update({"node_key": "transit_loaded", "node_label": "途重"})
@@ -274,6 +297,8 @@ def _cycle_state(conn, now=None) -> dict:
             add_pos("port_loaded", {"cyc": returned[0][1], "boxes": returned[0][2]})
 
     for cyc, tick in ticketed.items():
+        if int(cyc) in TRANSFERRED_CYCLES:
+            continue
         if "returned_home" in pos_multi:
             pos_multi["returned_home"] = [
                 item for item in pos_multi["returned_home"] if item.get("cyc") != cyc
@@ -304,7 +329,147 @@ def _cycle_state(conn, now=None) -> dict:
     rows = [cycle_rows[k] for k in sorted(cycle_rows)]
     return {"pos": pos, "pos_multi": pos_multi, "cycle_rows": rows,
             "transit_empty_boxes": te_boxes, "transit_empty_cycs": te_cycs,
-            "confirms": confirms, "trips": trips}
+            "confirms": confirms, "trips": trips,
+            "transferred_cycles": sorted(TRANSFERRED_CYCLES)}
+
+
+def _apply_ops_cycle_override(state: dict) -> dict:
+    """将 OPS_CYCLE_NODES / TRANSFERRED_CYCLES 叠到自动状态机结果上(仅渲染用)。"""
+    if not OPS_CYCLE_NODES:
+        return state
+    rows_by = {int(r["cycle_no"]): r for r in (state.get("cycle_rows") or [])}
+    pos: dict = {}
+    pos_multi: dict = {}
+    te_cycs: list = []
+    te_boxes = 0
+    for cyc, ov in OPS_CYCLE_NODES.items():
+        cyc = int(cyc)
+        row = rows_by.setdefault(cyc, {
+            "cycle_no": cyc, "pool_cars": 0, "trip_cars": 0, "trip_boxes": 0,
+            "ship": "", "latest_departed": "", "latest_arrived": "",
+            "latest_delivered": "", "delivered_boxes": 0,
+            "node_key": "", "node_label": "", "note": "",
+        })
+        nk = ov.get("node_key") or "unknown"
+        row["node_key"] = nk
+        row["node_label"] = ov.get("node_label") or nk
+        if "trip_cars" in ov:
+            row["trip_cars"] = int(ov["trip_cars"] or 0)
+        if "trip_boxes" in ov:
+            row["trip_boxes"] = int(ov["trip_boxes"] or 0)
+        if nk == "transferred":
+            row["note"] = ov.get("note") or "不计入运行中循环列"
+            continue
+        boxes = int(ov.get("trip_boxes") or row.get("trip_boxes") or 0)
+        item = {"cyc": cyc, "boxes": boxes}
+        pos_multi.setdefault(nk, []).append(item)
+        pos[nk] = item
+        if nk == "transit_empty":
+            te_cycs.append(cyc)
+            te_boxes += boxes
+    if te_cycs:
+        pos["transit_empty"] = {"cyc": te_cycs[0], "boxes": te_boxes, "cycs": te_cycs}
+    state = dict(state)
+    state["pos"] = pos
+    state["pos_multi"] = pos_multi
+    state["cycle_rows"] = [rows_by[k] for k in sorted(rows_by)]
+    state["transit_empty_boxes"] = te_boxes
+    state["transit_empty_cycs"] = te_cycs
+    state["transferred_cycles"] = sorted(TRANSFERRED_CYCLES)
+    return state
+
+
+def _load_tracking_cache(path: Path = TRACKING_CACHE, now: datetime | None = None) -> dict:
+    """Load a recent four-probe cache; stale data is metadata only, never a node override."""
+    now = now or datetime.now()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"available": False, "fresh": False, "reason": "轨迹缓存不存在"}
+    generated = _hours_since(str(payload.get("generated_at") or ""), now)
+    fresh = generated is not None and 0 <= generated <= TRACKING_CACHE_MAX_AGE_HOURS
+    payload["available"] = True
+    payload["fresh"] = fresh
+    payload["age_hours"] = generated
+    if not fresh:
+        payload["reason"] = "轨迹缓存超过3小时"
+    return payload
+
+
+def _apply_tracking_cache(state: dict, cache: dict) -> dict:
+    """Overlay fresh per-cycle 95306 probe states onto the legacy inferred state."""
+    state = dict(state)
+    state["tracking_cache"] = {
+        "available": bool(cache.get("available")),
+        "fresh": bool(cache.get("fresh")),
+        "generated_at": cache.get("generated_at") or "",
+        "age_hours": cache.get("age_hours"),
+        "reason": cache.get("reason") or "",
+        "query_count": int(cache.get("query_count") or 0),
+        "error_count": int(cache.get("error_count") or 0),
+    }
+    if not cache.get("fresh"):
+        return state
+
+    rows_by = {int(r["cycle_no"]): dict(r) for r in (state.get("cycle_rows") or [])}
+    pos_multi = {
+        key: [dict(item) for item in items]
+        for key, items in (state.get("pos_multi") or {}).items()
+    }
+    tracked_cycles: set[int] = set()
+    for train in cache.get("trains") or []:
+        cyc = int(train.get("cycle_no") or 0)
+        if not cyc or cyc in TRANSFERRED_CYCLES:
+            continue
+        tracked_cycles.add(cyc)
+        row = rows_by.setdefault(cyc, {
+            "cycle_no": cyc, "pool_cars": 0, "trip_cars": 0, "trip_boxes": 0,
+            "ship": "", "latest_departed": "", "latest_arrived": "",
+            "latest_delivered": "", "delivered_boxes": 0, "note": "",
+        })
+        node_key = str(train.get("node_key") or "unknown")
+        row.update({
+            "ship": train.get("ship_name") or row.get("ship") or "",
+            "trip_cars": int(train.get("car_count") or row.get("trip_cars") or 0),
+            "node_key": node_key,
+            "node_label": train.get("node_label") or node_key,
+            "tracking_updated_at": cache.get("generated_at") or "",
+            "tracking_state_at": train.get("state_at") or "",
+            "tracking_sample_count": int(train.get("sample_count") or 0),
+            "tracking_strategy": train.get("sample_strategy") or "",
+            "tracking_next_transition_at": train.get("next_transition_at") or "",
+        })
+
+    if not tracked_cycles:
+        state["cycle_rows"] = [rows_by[k] for k in sorted(rows_by)]
+        return state
+
+    for key in list(pos_multi):
+        pos_multi[key] = [item for item in pos_multi[key] if int(item.get("cyc") or 0) not in tracked_cycles]
+        if not pos_multi[key]:
+            pos_multi.pop(key)
+    for cyc in sorted(tracked_cycles):
+        row = rows_by[cyc]
+        node_key = row.get("node_key") or "unknown"
+        if node_key == "unknown":
+            continue
+        boxes = int(row.get("trip_boxes") or 0)
+        pos_multi.setdefault(node_key, []).append({"cyc": cyc, "boxes": boxes})
+
+    pos = {key: items[-1] for key, items in pos_multi.items() if items}
+    te_items = pos_multi.get("transit_empty") or []
+    te_cycs = [int(item["cyc"]) for item in te_items]
+    te_boxes = sum(int(item.get("boxes") or 0) for item in te_items)
+    if te_items:
+        pos["transit_empty"] = {"cyc": te_cycs[0], "boxes": te_boxes, "cycs": te_cycs}
+    state.update({
+        "pos": pos,
+        "pos_multi": pos_multi,
+        "cycle_rows": [rows_by[k] for k in sorted(rows_by)],
+        "transit_empty_boxes": te_boxes,
+        "transit_empty_cycs": te_cycs,
+    })
+    return state
 
 
 def _cycle_positions(conn) -> dict[str, dict]:
@@ -358,19 +523,29 @@ def _cycle_detail_lines(state: dict) -> list[str]:
     if not rows:
         return []
     out = [cd._dim("  列状态  列号  池车  本趟        当前节点              关键时间/提示")]
+    transferred = set(state.get("transferred_cycles") or TRANSFERRED_CYCLES)
     for r in rows:
-        cyc = f"#{r['cycle_no']}"
+        cyc_no = int(r["cycle_no"])
+        cyc = f"#{cyc_no}"
         pool = str(r.get("pool_cars") or "-")
         trip = f"{r.get('trip_cars') or 0}车/{r.get('trip_boxes') or 0}箱"
         node = r.get("node_label") or "-"
+        is_out = cyc_no in transferred or r.get("node_key") == "transferred"
+        if is_out:
+            node = cd._red(node if node and node != "-" else "调出")
+            trip = cd._dim("-")
         if r.get("latest_ticketed"):
             when = f"制票 {r['latest_ticketed']}"
-        elif r.get("latest_departed"):
+        elif r.get("tracking_state_at"):
+            when = f"轨迹 {r['tracking_state_at']}"
+        elif r.get("latest_departed") and not is_out:
             when = f"发 {r['latest_departed']}"
         else:
             when = ""
         if r.get("note"):
             when = (when + " " if when else "") + r["note"]
+        if is_out and when:
+            when = cd._dim(when)
         line = (
             "  "
             + cd._fixed(cyc, 6)
@@ -401,7 +576,8 @@ def render_lines() -> list[str]:
         return [cd._dim("(DB 连接失败)")]
     try:
         t, y = _fetch(conn)
-        state = _cycle_state(conn)
+        tracking_cache = _load_tracking_cache()
+        state = _apply_ops_cycle_override(_apply_tracking_cache(_cycle_state(conn), tracking_cache))
         pos = state["pos"]
         bulk = _bulk_active(conn)
     finally:
@@ -415,9 +591,13 @@ def render_lines() -> list[str]:
     # 叠加"哪号列在该节点"(hn)。此前混口径(箱数走95306在装列)致港重显100而非
     # 晨报165、新台子错读 line330_loaded——已收口为纯晨报池。
     n_portL = g("port_loaded")   # 港重(港内待发重箱,晨报港总池)
+    # 途重:有运营覆盖「在途重/到站等待」列时,优先用该列箱数;否则晨报/快照
     n_tranL = g("transit_loaded")  # 途重(在途去程,晨报港总池)
-    # 返空(返程在途空箱)= 95306 循环列状态机**实时**(总池口径,工单 2026-06-29 §返空),
-    # 不再取 snapshot.transit_empty(晨报ingest幂等跳过→当日易停在旧值);实时反映回港推进。
+    if state.get("pos_multi", {}).get("xtz") and not n_tranL:
+        # #2 在新台子站等待时,途重位可空;新台子节点挂列号
+        pass
+    # 若运营把在途重挂在 xtz 但晨报途重有数,保留晨报途重显示
+    # 返空:快照 + 运营覆盖列箱数取大(95306 实时可能滞后)
     n_ret = max(g("transit_empty"), int(state.get("transit_empty_boxes") or 0))
     g330 = g("ground330_loaded") + g("ground330_empty")
     y330 = (int(y.get("ground330_loaded") or 0) + int(y.get("ground330_empty") or 0)) if y else None
@@ -454,14 +634,19 @@ def render_lines() -> list[str]:
     # → 把港位列号**右移到途重位**、港重不再标"装·pm发"(那列其实发走了,95306没出票而已)。
     _plat_pos = pos.get("port_loaded")
     _tran_pos = pos.get("transit_loaded")
-    if n_tranL > 0 and _tran_pos is None and _plat_pos is not None:
+    if n_tranL > 0 and _tran_pos is None and _plat_pos is not None and not OPS_CYCLE_NODES:
         tran_hn = cd._dim(f"#{_plat_pos['cyc']}号列发")   # 列号随实际发车右移到途重
         plat_hn = ""
         port_load_note = cd._dim("(在装列已发)")
     else:
-        tran_hn = hn("transit_loaded") or cd._dim("(无在途列)")
+        tran_hn = hn("transit_loaded") or (cd._dim("(无在途列)") if n_tranL == 0 else "")
         plat_hn = hn("port_loaded")
-        port_load_note = cd._dim("装·pm发")
+        # 运营覆盖时港重旁注用列节点文案
+        _ops1 = OPS_CYCLE_NODES.get(1) or {}
+        if _ops1.get("node_key") == "port_loaded":
+            port_load_note = cd._dim(_ops1.get("node_label") or "港装货")
+        else:
+            port_load_note = cd._dim("装·pm发")
     g330_hn = hn("ground330") or hn("xtz")
     # R1 附属①:集装箱列号(港重在装列 / 途重在途列 / 新台子到达列)+ 港空增量 + 右竖线
     L.append(_compose([
@@ -511,17 +696,32 @@ def render_lines() -> list[str]:
         stale_days = (_d(ty, tm, td) - _d(sy, sm, sd)).days
     except Exception:
         stale_days = 0
-    cycle_count = len(state.get("cycle_rows") or [])
+    transferred = set(state.get("transferred_cycles") or TRANSFERRED_CYCLES)
+    active_rows = [
+        r for r in (state.get("cycle_rows") or [])
+        if int(r.get("cycle_no") or 0) not in transferred
+        and r.get("node_key") != "transferred"
+    ]
+    cycle_count = len(active_rows) if active_rows else max(
+        0, len(state.get("cycle_rows") or []) - len(transferred))
     stale_mark = cd._red(f" ⚠晨报{date}已{stale_days}天") if stale_days >= 1 else ""
     title = (
         f"大豆循环现状 {now_short} | 总箱量: {g('total_pool')} | "
         f"循环车组{cycle_count}列{stale_mark}"
     )
 
+    tracking_meta = state.get("tracking_cache") or {}
+    tracking_stamp = str(tracking_meta.get("generated_at") or "")[5:16]
+    tracking_note = (
+        cd._dim(f"列节点=95306轨迹4车/列·2h更新({tracking_stamp},查询{tracking_meta.get('query_count', 0)}次)")
+        if tracking_meta.get("fresh") else
+        cd._red("⚠ 列轨迹缓存不可用/过期,已回退本地95306状态推断")
+    )
     legend_extra = (cd._red("  ⚠ 箱数节点(港重/途重/港空/三三0…)停在 " + date +
-                            " 手动快照,需补今日晨报 record;返空/#号列/散粮状态=95306 实时")
+                            " 手动快照,需补今日晨报 record;" + cd._strip_ansi(tracking_note))
                     if stale_days >= 1 else
-                    cd._dim("  箱数=晨报港总池;返空+#N号列=95306循环列实时(总池,跨船);散·待发/在途/到站=95306散粮车状态(非循环、不进箱池)"))
+                    cd._dim("  箱数=晨报港总池;") + tracking_note +
+                    cd._dim(";散·待发/在途/到站=95306散粮(非循环)"))
     detail_lines = _cycle_detail_lines(state)
     legend_lines = [*detail_lines, legend_extra]
     # 规则3:返空口径无法自动判定时,醒目挂人工确认(见 _cycle_state)

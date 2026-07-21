@@ -10,6 +10,7 @@
     <string>scripts/sync_active_shipment_status.py</string>
     <string>--apply</string>
     <string>--closeout</string>
+    <string>--jiusan-cycle-tracking</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/qicai21/projects/repos/sop-data-hub</string>
@@ -20,7 +21,7 @@
   </dict>
   <!-- every 2 hours -->
   <key>StartInterval</key><integer>7200</integer>
-  <key>RunAtLoad</key><false/>
+  <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key>
   <string>/Users/qicai21/projects/repos/sop-data-hub/runtime/status_sync.log</string>
   <key>StandardErrorPath</key>

@@ -8,6 +8,7 @@ labels=(
   "com.qicai21.sop-data-hub.jiusan-sync"
   "com.qicai21.sop-data-hub.jiusan-bulk-report-ingest"
   "com.qicai21.sop-data-hub.jiusan-morning-reconcile"
+  "com.qicai21.sop-data-hub.status-sync"
 )
 rc=0
 for label in "${labels[@]}"; do

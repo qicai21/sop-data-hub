@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import os
+import json
 import sqlite3
 import sys
 from datetime import datetime
@@ -218,3 +219,53 @@ def test_current_ticketed_ignores_stale_pre_departure_residue():
 
     assert set(trips) == {2}
     assert trips[2]["cars"] == 1
+
+
+def test_fresh_four_probe_cache_overrides_legacy_cycle_node(tmp_path):
+    state = {
+        "cycle_rows": [{
+            "cycle_no": 1, "trip_boxes": 100, "trip_cars": 50,
+            "node_key": "transit_loaded", "node_label": "途重",
+        }],
+        "pos": {"transit_loaded": {"cyc": 1, "boxes": 100}},
+        "pos_multi": {"transit_loaded": [{"cyc": 1, "boxes": 100}]},
+        "transit_empty_boxes": 0,
+        "transit_empty_cycs": [],
+    }
+    cache = {
+        "available": True, "fresh": True,
+        "generated_at": "2026-07-21 12:00:00", "query_count": 4, "error_count": 0,
+        "trains": [{
+            "cycle_no": 1, "ship_name": "勇气", "car_count": 50,
+            "sample_count": 4, "sample_strategy": "previous_outbound_halves",
+            "node_key": "ground330", "node_label": "三三零线上作业",
+            "state_at": "2026-07-21 11:00:00",
+        }],
+    }
+
+    result = jcb._apply_tracking_cache(state, cache)
+
+    assert "transit_loaded" not in result["pos"]
+    assert result["pos"]["ground330"]["cyc"] == 1
+    assert result["cycle_rows"][0]["node_label"] == "三三零线上作业"
+    assert result["cycle_rows"][0]["tracking_sample_count"] == 4
+
+
+def test_stale_tracking_cache_does_not_override_legacy_state(tmp_path):
+    path = tmp_path / "tracking.json"
+    path.write_text(json.dumps({
+        "generated_at": "2026-07-21 08:00:00",
+        "trains": [{"cycle_no": 1, "node_key": "ground330"}],
+    }), encoding="utf-8")
+    cache = jcb._load_tracking_cache(path, now=datetime(2026, 7, 21, 12, 0, 0))
+    state = {
+        "cycle_rows": [{"cycle_no": 1, "node_key": "transit_loaded"}],
+        "pos": {"transit_loaded": {"cyc": 1, "boxes": 100}},
+        "pos_multi": {"transit_loaded": [{"cyc": 1, "boxes": 100}]},
+    }
+
+    result = jcb._apply_tracking_cache(state, cache)
+
+    assert cache["fresh"] is False
+    assert result["pos"]["transit_loaded"]["cyc"] == 1
+    assert result["tracking_cache"]["fresh"] is False

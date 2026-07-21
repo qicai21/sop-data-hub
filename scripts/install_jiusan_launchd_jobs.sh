@@ -9,6 +9,7 @@ labels=(
   "com.qicai21.sop-data-hub.text-watch"
   "com.qicai21.sop-data-hub.jiusan-sync"
   "com.qicai21.sop-data-hub.jiusan-bulk-report-ingest"
+  "com.qicai21.sop-data-hub.status-sync"
 )
 
 mkdir -p "$agents_dir"

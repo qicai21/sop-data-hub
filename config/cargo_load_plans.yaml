@@ -34,22 +34,11 @@ projects:
         notes: 2026-06-12 用户口径
         effective_from: "2026-06-01"
 
-  zhongtang_special_steel:
-    description: 中唐特钢铁矿粉散运,锦州港 → 汐子
-    unit: ton_per_wagon
-    car_load_plans:
-      - car_model_pattern: "^C70"
-        load_tons: 70.0
-        notes: 2026-06-12 用户口径(C70 整车一律 70)
-        effective_from: "2026-06-01"
-      - marked_weight_eq: 61
-        load_tons: 64.5
-        notes: 2026-06-12 用户口径
-        effective_from: "2026-06-01"
-      - marked_weight_eq: 60
-        load_tons: 63.5
-        notes: 2026-06-12 用户口径
-        effective_from: "2026-06-01"
+  # zhongtang_special_steel:中唐装车重量口径统一为「实装」单一真相,不在此单列。
+  #   唯一来源:config/project_sops/zhongtang.yaml → project_meta.shipped_weight_rule
+  #     标载 70 → 70.2 t / 标载 61 → 64.5 t / 标载 60 → 63.5 t
+  #   读取方:shipped_weight.py / create_wagon_shipments.py / wagon_ingest.py / billing_generate_zhongtang_handling.py
+  #   2026-07-21 按用户要求删除本处配载计划口径(70.0/64.5/63.5),避免与实装口径混淆。
 
   jilin_jingang_jinzhou:
     description: 吉林金钢-锦州港铁矿运输,锦州港 → 四平

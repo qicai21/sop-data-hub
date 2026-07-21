@@ -31,13 +31,19 @@
 
 铁矿粉散运,锦州港 → 汐子,**整车散运**。
 
-| 匹配 | 配载吨 | 生效起 | 备注 |
-|---|---|---|---|
-| 车型 C70 系 | **70.0** | 2026-06-01 | 用户口径 |
-| 标载 = 61 t 的车型 | **64.5** | 2026-06-01 | 用户口径 |
-| 标载 = 60 t 的车型 | **63.5** | 2026-06-01 | 用户口径 |
-
-注:中唐每档都比朝钢高 **+1 吨**(中唐压实度更高/水分更多?)。
+> **⚠️ 2026-07-21 口径统一:中唐不再单列配载吨。**
+> 中唐装车重量口径统一为「实装」单一真相,唯一来源是
+> `config/project_sops/zhongtang.yaml → project_meta.shipped_weight_rule`:
+>
+> | 标载 | 实装吨 |
+> |---|---|
+> | 70 | **70.2** |
+> | 61 | **64.5** |
+> | 60 | **63.5** |
+>
+> 该 rule 是**在跑的活配置**(shipped_weight.py / create_wagon_shipments.py / wagon_ingest.py /
+> billing_generate_zhongtang_handling.py 读取)。原配载计划口径(C70=70.0/61=64.5/60=63.5)
+> 已从 `cargo_load_plans.yaml` 删除,避免与实装口径混淆。
 
 ### jilin_jingang_jinzhou(吉林金钢)
 
@@ -66,6 +72,7 @@
 | 2026-06-12 v1 | zhongtang_special_steel | 初始 C70=69 / 标载61=63.5 / 标载60=62.5 | 早期口径 |
 | 2026-06-12 v2 | zhongtang_special_steel | 改 C70=70 / 标载61=64.5 / 标载60=63.5 | 用户口径 |
 | 2026-06-12 v1 | jilin_jingang_jinzhou | 新增 32.8 t/box | 用户口径 |
+| 2026-07-21 | zhongtang_special_steel | 删除配载计划口径,统一为实装 shipped_weight_rule(70.2/64.5/63.5) | 用户要求,避免混淆 |
 
 ## 程序读取约定
 

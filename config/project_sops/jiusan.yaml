@@ -7,7 +7,7 @@ status: "active"
 # - 不自动跟踪检装车通知单.
 # - 不自动识别或跟踪放货单.
 # - 放货单由用户发送后手动指认项目、路线和发运信息.
-# - 系统后续从 xts 账号 95306 数据查询每日发车动态.
+# - 系统从锦州港综合账号 95306 数据查询每日发车动态.
 
 # ── 项目元(#85 2026-06-06 补全)──────────────────────────────
 # 即便九三 SOP 自动化程度低,跟踪模式跟其他全程项目一致:发车后跟到货。
@@ -29,7 +29,7 @@ project_meta:
     - "美国"
     - "勇气"
   has_inspection_notice: false
-  departure_confirmation_source: "rail95306_xts_account"
+  departure_confirmation_source: "rail95306_jz_port_super_account"
   # 全程跟踪到 confirmed_received。九三大豆结算同样依赖到货,跟 jilin/中唐
   # 同模式。当前 SOP 自动化未实现的部分不影响 lifecycle 语义。
   lifecycle:
@@ -54,7 +54,7 @@ project_meta:
         on_miss: 61
 
 rail95306:
-  account: "xts"
+  account: "jz-port-super"
   cargo_name: "大豆"
   origin_station: "高桥镇"
   primary_routes:

@@ -5,6 +5,7 @@ import sqlite3
 from datetime import datetime, timedelta
 
 from sop_hub.sop.jiusan_cycle_tracking import (
+    DEFAULT_ACCOUNT,
     TRANSFERRED_CYCLES,
     classify_train_state,
     select_four_probes,
@@ -13,6 +14,10 @@ from sop_hub.sop.jiusan_cycle_tracking import (
 
 
 NOW = datetime(2026, 7, 21, 12, 0, 0)
+
+
+def test_default_live_account_uses_jinzhou_port_super_account():
+    assert DEFAULT_ACCOUNT == "jz-port-super"
 
 
 def test_transferred_cycle_register_includes_four_and_five():

@@ -86,7 +86,7 @@ jiusan-sync / jiusan-reconcile:九三集装箱/散粮按台账分船同步 + 每
 | `…wechat-ops-agent` | 长驻 KeepAlive | 拉微信+解码图片→jsonl | wx-ops-agent |
 | `…sop-data-hub.live-service` | 长驻 KeepAlive | jsonl→inbox + VLM分类 + 项目授权 + process_new_image | sop-data-hub |
 | `…sop-data-hub.text-watch` | 长驻 KeepAlive | inbox/任务→**跑 chain(`--run-chains`)** + lifecycle closeout + verifier | sop-data-hub |
-| `…sop-data-hub.dashboard-web` | 长驻 KeepAlive | 局域网认证 Web 页面；当前为连通测试页，端口 8765 | sop-data-hub |
+| `…sop-data-hub.dashboard-web` | 长驻 KeepAlive | 局域网只读货运 Web 看板，端口 8765 | sop-data-hub |
 | `…rail95306-sync` | 长驻 KeepAlive | 5min 同步95306 + pending_match_verifier | rail95306-sync |
 | `…sop-data-hub.jiusan-sync` | 周期 Interval | 九三集装箱/散粮按台账分船同步 | sop-data-hub |
 | `…sop-data-hub.jiusan-reconcile` | 定时 Calendar(周日~五22:00) | 九三对账 `run_reconcile --apply` | sop-data-hub |
@@ -94,7 +94,7 @@ jiusan-sync / jiusan-reconcile:九三集装箱/散粮按台账分船同步 + 每
 
 **⭐ 改了代码哪个要重启**:
 - **长驻(KeepAlive)**:代码只在启动时加载 → 改了它跑的文件**必须** `launchctl kickstart -k`。判 stale = **进程启动时间 < 它跑的文件最后提交时间**(`ps -o lstart= -p <pid>` vs `git log -1 --format=%cd <file>`)。
-- `dashboard-web` 登录凭据只放在 Git 忽略的 `runtime/dashboard_web_credentials.json`；局域网入口为 `http://<Mac局域网IP>:8765`。
+- `dashboard-web` 仅允许配置的局域网网段访问，无登录；入口为 `http://<Mac局域网IP>:8765`。
 - **定时/周期(Interval/Calendar)**:每次起新进程、跑完就退 → **改了也不用重启**(下次定时自动 exec 新代码)。
 - 文件→daemon 速查:`workflow_task_executor`/`executor_runner`/`pending_match_verifier`/`lifecycle_closeout`/`departure_excel`/`factory_verify`/`text_router` → **text-watch**;`runner.py`/`agent.py`/`classifier`/`image_route_promoter` → **live-service**(+text-watch);`reconcile/*`/`sync_jiusan_*` → jiusan-reconcile/sync(定时,不用重启)。
 - 重启:`launchctl kickstart -k "gui/$(id -u)/<Label>"`。**别用老的 nohup & disown**(脱离 launchd、Mac 重启即死)。

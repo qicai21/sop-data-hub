@@ -793,21 +793,28 @@ def panel_paths() -> list[str]:
     return _box("常用数据库 / 路径", rows)
 
 
-def render_once() -> str:
+def render_once(
+    *,
+    refresh_weights: bool = True,
+    include_paths: bool = True,
+    terminal_controls: bool = True,
+) -> str:
     out_lines: list[str] = []
 
-    # 刷新前先把活跃 batch 的装车重量重算准(任何入库路径都兜底)
-    refresh_active_shipped_weights()
+    # 终端主看板重算活跃 batch；局域网 Web 只读视图显式关闭写入。
+    if refresh_weights:
+        refresh_active_shipped_weights()
 
     # 头部
-    out_lines.append(_bold(
-        f"  sop-data-hub 看板  ·  {now_iso_beijing_compact()}  ·  "
-        f"刷新 {REFRESH_SECONDS}s  ·  Ctrl-C 退出"
-    ))
+    heading = f"  sop-data-hub 看板  ·  {now_iso_beijing_compact()}"
+    if terminal_controls:
+        heading += f"  ·  刷新 {REFRESH_SECONDS}s  ·  Ctrl-C 退出"
+    out_lines.append(_bold(heading))
     out_lines.append("")
 
-    out_lines.extend(panel_paths())
-    out_lines.append("")
+    if include_paths:
+        out_lines.extend(panel_paths())
+        out_lines.append("")
 
     by_project = query_projects_with_batches()
     reserved_wagons = query_reserved_wagon_counts()

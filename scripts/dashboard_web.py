@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""Authenticated LAN connectivity page for the future freight dashboard."""
+"""Read-only LAN web view for the sop-data-hub freight dashboard."""
 from __future__ import annotations
 
 import argparse
-import base64
-import hmac
+import html
 import ipaddress
 import json
-import os
-import secrets
-import string
+import re
+import threading
+import time
 from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
+from typing import Callable
+
+import cli_dashboard
 
 
-ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CREDENTIALS = ROOT / "runtime" / "dashboard_web_credentials.json"
+ANSI_RE = re.compile(r"\x1b\[([0-9;]*)m")
 
 PAGE = """<!doctype html>
 <html lang="zh-CN">
@@ -25,59 +25,101 @@ PAGE = """<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
-  <title>货运看板连通测试</title>
+  <title>sop-data-hub 货运看板</title>
   <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111315;
+      --line: #343a40;
+      --text: #edf0f2;
+      --muted: #99a1a8;
+      --green: #57c785;
+      --yellow: #e9bd58;
+      --red: #ed6a5e;
+      --cyan: #65b9d8;
+    }
+    * { box-sizing: border-box; }
     html, body {
-      height: 100%;
+      min-height: 100%;
       margin: 0;
-      background: #f4f6f7;
-      color: #171a1c;
-      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
     }
     body {
-      display: grid;
-      place-items: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "Microsoft YaHei", "PingFang SC", sans-serif;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(17, 19, 21, 0.96);
+    }
+    header strong { font-size: 15px; }
+    #status {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 13px;
     }
     main {
-      font-size: 32px;
-      font-weight: 600;
+      padding: 14px 16px 28px;
+      overflow: auto;
+    }
+    pre {
+      margin: 0;
+      width: max-content;
+      min-width: 100%;
+      font: 14px/1.45 "SFMono-Regular", Consolas, "Liberation Mono",
+        "Microsoft YaHei UI", monospace;
+      letter-spacing: 0;
+      white-space: pre;
+      tab-size: 2;
+    }
+    .bold { font-weight: 700; }
+    .dim { color: var(--muted); }
+    .red { color: var(--red); }
+    .green { color: var(--green); }
+    .yellow { color: var(--yellow); }
+    .cyan { color: var(--cyan); }
+    @media (max-width: 720px) {
+      header { padding: 8px 10px; }
+      main { padding: 10px; }
+      pre { font-size: 12px; }
     }
   </style>
 </head>
 <body>
-  <main>你好 sb</main>
+  <header>
+    <strong>货运看板</strong>
+    <span id="status">正在连接...</span>
+  </header>
+  <main><pre id="dashboard" aria-live="polite"></pre></main>
+  <script>
+    const target = document.getElementById("dashboard");
+    const status = document.getElementById("status");
+    async function refresh() {
+      try {
+        const response = await fetch("/api/dashboard", {cache: "no-store"});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        target.innerHTML = data.html;
+        status.textContent = `已更新 ${data.generated_at}`;
+      } catch (error) {
+        status.textContent = `更新失败: ${error.message}`;
+      }
+    }
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
 </body>
 </html>
 """
-
-
-def initialize_credentials(
-    path: Path,
-    *,
-    username: str = "freight",
-    force: bool = False,
-) -> dict[str, str]:
-    if path.exists() and not force:
-        raise FileExistsError(f"Credentials already exist: {path}")
-    alphabet = string.ascii_letters + string.digits
-    password = "".join(secrets.choice(alphabet) for _ in range(16))
-    payload = {"username": username, "password": password}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    os.chmod(path, 0o600)
-    return payload
-
-
-def load_credentials(path: Path) -> tuple[str, str]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    username = str(payload.get("username") or "")
-    password = str(payload.get("password") or "")
-    if not username or not password:
-        raise ValueError(f"Invalid credentials file: {path}")
-    return username, password
 
 
 def client_is_allowed(address: str, network: ipaddress._BaseNetwork) -> bool:
@@ -85,25 +127,65 @@ def client_is_allowed(address: str, network: ipaddress._BaseNetwork) -> bool:
     return ip.is_loopback or ip in network
 
 
-def basic_auth_matches(
-    authorization: str | None,
-    username: str,
-    password: str,
-) -> bool:
-    if not authorization or not authorization.startswith("Basic "):
-        return False
-    try:
-        decoded = base64.b64decode(
-            authorization.removeprefix("Basic ").strip(),
-            validate=True,
-        ).decode("utf-8")
-        supplied_user, supplied_password = decoded.split(":", 1)
-    except (ValueError, UnicodeDecodeError):
-        return False
-    return hmac.compare_digest(supplied_user, username) and hmac.compare_digest(
-        supplied_password,
-        password,
-    )
+def ansi_to_html(text: str) -> str:
+    """Convert the dashboard's ANSI color subset into escaped HTML."""
+    classes: set[str] = set()
+    parts: list[str] = []
+    cursor = 0
+
+    def emit(chunk: str) -> None:
+        if not chunk:
+            return
+        escaped = html.escape(chunk)
+        if classes:
+            names = " ".join(sorted(classes))
+            parts.append(f'<span class="{names}">{escaped}</span>')
+        else:
+            parts.append(escaped)
+
+    for match in ANSI_RE.finditer(text):
+        emit(text[cursor:match.start()])
+        codes = [int(item or "0") for item in match.group(1).split(";")]
+        for code in codes:
+            if code == 0:
+                classes.clear()
+            elif code == 1:
+                classes.add("bold")
+            elif code == 2:
+                classes.add("dim")
+            elif code == 31:
+                classes.add("red")
+            elif code == 32:
+                classes.add("green")
+            elif code == 33:
+                classes.add("yellow")
+            elif code == 36:
+                classes.add("cyan")
+        cursor = match.end()
+    emit(text[cursor:])
+    return "".join(parts)
+
+
+class SnapshotCache:
+    def __init__(self, renderer: Callable[[], str], ttl_seconds: float = 4.0):
+        self.renderer = renderer
+        self.ttl_seconds = ttl_seconds
+        self._lock = threading.Lock()
+        self._rendered_at = 0.0
+        self._payload: dict[str, str] | None = None
+
+    def get(self) -> dict[str, str]:
+        now = time.monotonic()
+        with self._lock:
+            if self._payload is None or now - self._rendered_at >= self.ttl_seconds:
+                self._payload = {
+                    "html": ansi_to_html(self.renderer()),
+                    "generated_at": datetime.now().astimezone().strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    ),
+                }
+                self._rendered_at = now
+            return dict(self._payload)
 
 
 class DashboardHTTPServer(ThreadingHTTPServer):
@@ -114,14 +196,12 @@ class DashboardHTTPServer(ThreadingHTTPServer):
         self,
         server_address: tuple[str, int],
         *,
-        username: str,
-        password: str,
         allowed_network: ipaddress._BaseNetwork,
+        renderer: Callable[[], str],
     ):
         super().__init__(server_address, DashboardRequestHandler)
-        self.username = username
-        self.password = password
         self.allowed_network = allowed_network
+        self.snapshot_cache = SnapshotCache(renderer)
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
@@ -132,8 +212,6 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         status: HTTPStatus,
         body: bytes,
         content_type: str,
-        *,
-        authenticate: bool = False,
     ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -143,10 +221,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "DENY")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+            "default-src 'self'; style-src 'unsafe-inline'; "
+            "script-src 'unsafe-inline'; frame-ancestors 'none'",
         )
-        if authenticate:
-            self.send_header("WWW-Authenticate", 'Basic realm="sop-data-hub"')
         self.end_headers()
         self.wfile.write(body)
 
@@ -160,23 +237,22 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/healthz":
             self._send(HTTPStatus.OK, b'{"status":"ok"}\n', "application/json")
             return
-        if not basic_auth_matches(
-            self.headers.get("Authorization"),
-            self.server.username,
-            self.server.password,
-        ):
-            self._send(
-                HTTPStatus.UNAUTHORIZED,
-                b"Authentication required\n",
-                "text/plain; charset=utf-8",
-                authenticate=True,
-            )
-            return
         if self.path == "/":
             self._send(
                 HTTPStatus.OK,
                 PAGE.encode("utf-8"),
                 "text/html; charset=utf-8",
+            )
+            return
+        if self.path == "/api/dashboard":
+            body = json.dumps(
+                self.server.snapshot_cache.get(),
+                ensure_ascii=False,
+            ).encode("utf-8")
+            self._send(
+                HTTPStatus.OK,
+                body,
+                "application/json; charset=utf-8",
             )
             return
         self._send(HTTPStatus.NOT_FOUND, b"Not found\n", "text/plain")
@@ -190,16 +266,14 @@ def create_server(
     host: str,
     port: int,
     *,
-    username: str,
-    password: str,
     allowed_network: str,
+    renderer: Callable[[], str],
 ) -> DashboardHTTPServer:
     network = ipaddress.ip_network(allowed_network, strict=False)
     return DashboardHTTPServer(
         (host, port),
-        username=username,
-        password=password,
         allowed_network=network,
+        renderer=renderer,
     )
 
 
@@ -208,31 +282,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--allowed-network", default="10.1.2.0/24")
-    parser.add_argument("--credentials", type=Path, default=DEFAULT_CREDENTIALS)
-    parser.add_argument("--init-credentials", action="store_true")
-    parser.add_argument("--username", default="freight")
-    parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    if args.init_credentials:
-        payload = initialize_credentials(
-            args.credentials,
-            username=args.username,
-            force=args.force,
-        )
-        print(json.dumps(payload, ensure_ascii=False))
-        return 0
-
-    username, password = load_credentials(args.credentials)
     server = create_server(
         args.host,
         args.port,
-        username=username,
-        password=password,
         allowed_network=args.allowed_network,
+        renderer=lambda: cli_dashboard.render_once(
+            refresh_weights=False,
+            include_paths=False,
+            terminal_controls=False,
+        ),
     )
     print(
         f"dashboard-web listening on {args.host}:{args.port}; "

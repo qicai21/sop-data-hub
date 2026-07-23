@@ -14,8 +14,6 @@
     <string>8765</string>
     <string>--allowed-network</string>
     <string>10.1.2.0/24</string>
-    <string>--credentials</string>
-    <string>runtime/dashboard_web_credentials.json</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/qicai21/projects/repos/sop-data-hub</string>

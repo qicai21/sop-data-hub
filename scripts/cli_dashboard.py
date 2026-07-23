@@ -412,21 +412,24 @@ def query_reserved_wagon_counts(
     now: datetime | None = None,
     scopes: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, int]:
-    """Return current-month railway-accepted empty waybills by SOP project.
+    """Return accepted empty waybills usable through the next railway day.
 
     Railway business definition: status 22 (订车成功), not yet ticketed. One
     distinct ydid is one accepted wagon, including container transport where a
-    ticketed wagon may later carry two containers.
+    ticketed wagon may later carry two containers. A railway day rolls over at
+    18:00. An accepted waybill expires at 18:00 five days after its scheduled
+    shipping date (`loaded_at`). The board forecasts availability through the
+    end of the next railway day, so waybills expiring exactly at that boundary
+    are excluded.
     """
     conn = _connect(db_path)
     if conn is None:
         return {}
     now = now or datetime.fromisoformat(now_iso_beijing())
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    if month_start.month == 12:
-        month_end = month_start.replace(year=month_start.year + 1, month=1)
-    else:
-        month_end = month_start.replace(month=month_start.month + 1)
+    railway_date = (now + timedelta(hours=6)).date()
+    # expiry(D) = D + 5 days at 18:00; it must be later than the end of the
+    # next railway day. This simplifies to D >= railway_date - 3 days.
+    minimum_shipping_date = railway_date - timedelta(days=3)
     project_scopes = scopes if scopes is not None else _sop_project_rail_scopes()
     result: dict[str, int] = {}
     try:
@@ -435,8 +438,7 @@ def query_reserved_wagon_counts(
             params: list[Any] = [
                 str(scope.get("origin") or "高桥镇"),
                 str(scope.get("destination") or ""),
-                month_start.strftime("%Y-%m-%d %H:%M:%S"),
-                month_end.strftime("%Y-%m-%d %H:%M:%S"),
+                minimum_shipping_date.strftime("%Y%m%d"),
             ]
             cargo_clause = ""
             if cargo_names:
@@ -454,8 +456,7 @@ def query_reserved_wagon_counts(
                   AND (ticketed_at IS NULL OR TRIM(ticketed_at)='')
                   AND origin_name=?
                   AND destination_name=?
-                  AND accepted_at>=?
-                  AND accepted_at<?
+                  AND REPLACE(SUBSTR(TRIM(loaded_at), 1, 10), '-', '')>=?
                 """
                 + cargo_clause,
                 params,

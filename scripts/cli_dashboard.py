@@ -77,6 +77,14 @@ DAEMONS = [
     ("rail95306", "run_sync_worker.py"),
 ]
 
+OPEN_CANDIDATE_STATUSES = (
+    "candidate",
+    "pending_match",
+    "pending_review",
+    "pending_95306_match",
+    "timeout_manual_review",
+)
+
 
 # ── ANSI 工具 ──────────────────────────────────────────────────────────
 
@@ -493,16 +501,21 @@ def _life_tag(project: str) -> str:
 
 
 def query_pending_candidate_counts() -> dict[str, int]:
+    """Return only candidate states that still require attention."""
     conn = _connect(DB_PATH)
     if conn is None:
         return {}
     try:
         rows = conn.execute(
-            """
+            f"""
             SELECT candidate_status, COUNT(*) AS n
             FROM inspection_ingestion_candidates
+            WHERE candidate_status IN ({
+                ",".join("?" for _ in OPEN_CANDIDATE_STATUSES)
+            })
             GROUP BY candidate_status
-            """
+            """,
+            OPEN_CANDIDATE_STATUSES,
         ).fetchall()
     finally:
         conn.close()
@@ -712,17 +725,10 @@ def panel_system() -> list[str]:
     lines.append("")
     cands = query_pending_candidate_counts()
     if cands:
-        # 横排打包:挂起态优先(黄)、终态其后(灰),按盒宽折行,省竖向空间
-        OPEN = {"candidate", "pending_match", "pending_review",
-                "pending_95306_match", "timeout_manual_review"}
-        open_n = sum(n for st, n in cands.items() if st in OPEN)
-        head = "  检装车候选(挂起 " + (_yellow(str(open_n)) if open_n else _green("0")) + "):  "
-        # 排序:挂起态在前,然后按数量降序
-        ordered = sorted(cands.items(), key=lambda kv: (kv[0] not in OPEN, -kv[1], kv[0]))
-        items = [
-            (f"{_yellow(st)} {_yellow(str(n))}" if st in OPEN else f"{_dim(st)} {n}")
-            for st, n in ordered
-        ]
+        open_n = sum(cands.values())
+        head = f"  {_yellow('待处理检装车')} {_yellow(str(open_n))}:  "
+        ordered = sorted(cands.items(), key=lambda kv: (-kv[1], kv[0]))
+        items = [f"{_yellow(st)} {_yellow(str(n))}" for st, n in ordered]
         content_w = PANEL_WIDTH - 4
         indent = " " * 16  # 续行缩进,跟首行内容对齐
         sep, sep_w = "  ·  ", 5

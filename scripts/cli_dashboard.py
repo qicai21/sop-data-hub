@@ -82,6 +82,7 @@ OPEN_CANDIDATE_STATUSES = (
     "pending_match",
     "pending_review",
     "pending_95306_match",
+    "pending_freight_info",
     "timeout_manual_review",
 )
 
@@ -522,6 +523,23 @@ def query_pending_candidate_counts() -> dict[str, int]:
     return {r["candidate_status"] or "(空)": r["n"] for r in rows}
 
 
+def query_pending_release_notice_count() -> int:
+    """Count recognized release notices still waiting for freight details."""
+    conn = _connect(DB_PATH)
+    if conn is None:
+        return 0
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM release_batches "
+            "WHERE dispatch_status='pending_freight'"
+        ).fetchone()
+        return int(row[0] or 0)
+    except sqlite3.Error:
+        return 0
+    finally:
+        conn.close()
+
+
 # ── 进程发现 ──────────────────────────────────────────────────────────
 
 
@@ -724,9 +742,22 @@ def panel_system() -> list[str]:
             lines.append(f"  {sym} {d['label']:<15} {_red('NOT RUNNING')}")
     lines.append("")
     cands = query_pending_candidate_counts()
+    pending_waybills = sum(cands.values())
+    pending_release_notices = query_pending_release_notice_count()
+    waybill_count = (
+        _yellow(str(pending_waybills)) if pending_waybills else _green("0")
+    )
+    notice_count = (
+        _yellow(str(pending_release_notices))
+        if pending_release_notices
+        else _green("0")
+    )
+    lines.append(
+        f"  挂起运单 {waybill_count}"
+        f"  ·  挂起出港计划通知单 {notice_count}"
+    )
     if cands:
-        open_n = sum(cands.values())
-        head = f"  {_yellow('待处理检装车')} {_yellow(str(open_n))}:  "
+        head = f"  {_yellow('挂起运单明细')}:  "
         ordered = sorted(cands.items(), key=lambda kv: (-kv[1], kv[0]))
         items = [f"{_yellow(st)} {_yellow(str(n))}" for st, n in ordered]
         content_w = PANEL_WIDTH - 4

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.qicai21.sop-data-hub.dashboard-web</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/qicai21/projects/repos/sop-data-hub/.venv/bin/python</string>
+    <string>scripts/dashboard_web.py</string>
+    <string>--host</string>
+    <string>0.0.0.0</string>
+    <string>--port</string>
+    <string>8765</string>
+    <string>--allowed-network</string>
+    <string>10.1.2.0/24</string>
+    <string>--credentials</string>
+    <string>runtime/dashboard_web_credentials.json</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/qicai21/projects/repos/sop-data-hub</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONPATH</key>
+    <string>src</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/Users/qicai21/projects/repos/sop-data-hub/runtime/dashboard_web.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/qicai21/projects/repos/sop-data-hub/runtime/dashboard_web.error.log</string>
+</dict>
+</plist>

@@ -709,6 +709,71 @@ class TestBusinessDataAgent:
         assert updated.batch_quantity == 20000
         assert updated.source_file_name == "malanxingfu_v2.json"
 
+    def test_notice_resend_preserves_existing_freight_fields(self, tmp_db):
+        """累计通知单没有货运字段时，不得清空已补齐的合同、计划和品名。"""
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "project": "zhongtang_special_steel",
+            "header_info": {"通知日期": "2026年7月18日"},
+            "business_info": {"船名": "宝丽", "发货单位": "", "收货单位": ""},
+            "cargo_info": {"货物名称": "铁矿", "运输方式": "铁路"},
+            "special_matter": "到站:汐子",
+            "remarks": [
+                {
+                    "date": "7月18日",
+                    "sequence": "第四次",
+                    "plan": "10000吨（铁路 汐子）",
+                    "raw_line": "7月18日第四次下达计划：10000吨（铁路 汐子）",
+                },
+            ],
+        }
+        recs = agent.ingest_release_batch(payload, source_file_name="baoli_2071.json")
+        lot04 = recs[0]
+        agent.db.execute(
+            """
+            UPDATE release_batches
+            SET contract_id='contract-row-4',
+                contract_no='ZLZT-2026071401',
+                cargo_product_name='麦克粉',
+                plan_id='90260700052',
+                order_id='order-row-4',
+                dispatch_status='enriched'
+            WHERE id=?
+            """,
+            (lot04.id,),
+        )
+        agent.db.commit()
+
+        resent = json.loads(json.dumps(payload))
+        resent["header_info"]["通知日期"] = "2026年7月23日"
+        resent["remarks"].append(
+            {
+                "date": "7月23日",
+                "sequence": "第五次",
+                "plan": "10000吨（铁路 汐子）",
+                "raw_line": "7月23日第五次下达计划：10000吨（铁路 汐子）",
+            }
+        )
+        agent.ingest_release_batch(resent, source_file_name="baoli_2072.json")
+
+        preserved = agent.db.execute(
+            """
+            SELECT contract_id, contract_no, cargo_product_name, plan_id,
+                   order_id, dispatch_status
+            FROM release_batches WHERE id=?
+            """,
+            (lot04.id,),
+        ).fetchone()
+        assert dict(preserved) == {
+            "contract_id": "contract-row-4",
+            "contract_no": "ZLZT-2026071401",
+            "cargo_product_name": "麦克粉",
+            "plan_id": "90260700052",
+            "order_id": "order-row-4",
+            "dispatch_status": "enriched",
+        }
+
     def test_older_source_file_replay_does_not_override_newer_corrected_batch(self, tmp_db):
         agent = BusinessDataAgent()
         payload = {

@@ -612,12 +612,21 @@ class BusinessDataAgent:
                   CURRENT_TIMESTAMP
                 )
                 ON CONFLICT(batch_key) DO UPDATE SET
-                  contract_id = excluded.contract_id,
+                  contract_id = COALESCE(
+                    NULLIF(TRIM(excluded.contract_id), ''),
+                    release_batches.contract_id
+                  ),
                   project = excluded.project,
-                  contract_no = excluded.contract_no,
+                  contract_no = COALESCE(
+                    NULLIF(TRIM(excluded.contract_no), ''),
+                    release_batches.contract_no
+                  ),
                   ship_name = excluded.ship_name,
                   cargo_name = excluded.cargo_name,
-                  cargo_product_name = COALESCE(excluded.cargo_product_name, release_batches.cargo_product_name),
+                  cargo_product_name = COALESCE(
+                    NULLIF(TRIM(excluded.cargo_product_name), ''),
+                    release_batches.cargo_product_name
+                  ),
                   consignor = excluded.consignor,
                   consignee = excluded.consignee,
                   commissioner_identifier = excluded.commissioner_identifier,
@@ -652,8 +661,14 @@ class BusinessDataAgent:
                   source_json = excluded.source_json,
                   source_json = excluded.source_json,
                   searchable_text = excluded.searchable_text,
-                  plan_id = excluded.plan_id,
-                  order_id = excluded.order_id,
+                  plan_id = COALESCE(
+                    NULLIF(TRIM(excluded.plan_id), ''),
+                    release_batches.plan_id
+                  ),
+                  order_id = COALESCE(
+                    NULLIF(TRIM(excluded.order_id), ''),
+                    release_batches.order_id
+                  ),
                   tail_cargo_remark = CASE 
                       WHEN release_batches.batch_quantity != excluded.batch_quantity OR release_batches.batch_date != excluded.batch_date 
                       THEN ifnull(release_batches.tail_cargo_remark, '') || ' | 识别异常/更新: 原日期' || ifnull(release_batches.batch_date, '空') || ' 原重量' || ifnull(release_batches.batch_quantity, '空')

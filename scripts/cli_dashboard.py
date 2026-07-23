@@ -63,6 +63,13 @@ PROJECT_DISPLAY: dict[str, str] = {
     "wulanhaote_steel": "乌兰浩特",
 }
 
+SOP_PROJECT_IDS = frozenset({
+    "jilin_jingang_jinzhou",
+    "chaoyang_steel",
+    "zhongtang_special_steel",
+    "jiusan",
+})
+
 DAEMONS = [
     ("wx-ops-agent", "wechat_ops_agent.cli.main"),
     ("live_service", "run_live_service.py"),
@@ -358,6 +365,101 @@ def _container_business_projects() -> set[str]:
 
 
 @lru_cache(maxsize=1)
+def _sop_project_rail_scopes() -> dict[str, dict[str, Any]]:
+    """Load the four SOP projects' rail matching scopes from their YAML files."""
+    import yaml as _yaml
+
+    result: dict[str, dict[str, Any]] = {}
+    sop_dir = _ROOT / "config" / "project_sops"
+    if not sop_dir.exists():
+        return result
+    for yaml_path in sop_dir.glob("*.yaml"):
+        try:
+            data = _yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
+        project_id = str(data.get("project_id") or "").strip()
+        if project_id not in SOP_PROJECT_IDS or data.get("status") != "active":
+            continue
+        meta = data.get("project_meta") or {}
+        destination = str(meta.get("destination_station") or "").strip()
+        if not destination:
+            continue
+        result[project_id] = {
+            "origin": str(meta.get("origin_station") or "高桥镇").strip(),
+            "destination": destination,
+            "cargo_names": tuple(
+                str(item).strip()
+                for item in (meta.get("cargo_names") or [])
+                if str(item).strip()
+            ),
+        }
+    return result
+
+
+def query_reserved_wagon_counts(
+    *,
+    db_path: Path = RAIL_DB_PATH,
+    now: datetime | None = None,
+    scopes: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, int]:
+    """Return current-month railway-accepted empty waybills by SOP project.
+
+    Railway business definition: status 22 (订车成功), not yet ticketed. One
+    distinct ydid is one accepted wagon, including container transport where a
+    ticketed wagon may later carry two containers.
+    """
+    conn = _connect(db_path)
+    if conn is None:
+        return {}
+    now = now or datetime.fromisoformat(now_iso_beijing())
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if month_start.month == 12:
+        month_end = month_start.replace(year=month_start.year + 1, month=1)
+    else:
+        month_end = month_start.replace(month=month_start.month + 1)
+    project_scopes = scopes if scopes is not None else _sop_project_rail_scopes()
+    result: dict[str, int] = {}
+    try:
+        for project_id, scope in project_scopes.items():
+            cargo_names = tuple(scope.get("cargo_names") or ())
+            params: list[Any] = [
+                str(scope.get("origin") or "高桥镇"),
+                str(scope.get("destination") or ""),
+                month_start.strftime("%Y-%m-%d %H:%M:%S"),
+                month_end.strftime("%Y-%m-%d %H:%M:%S"),
+            ]
+            cargo_clause = ""
+            if cargo_names:
+                cargo_clause = (
+                    " AND cargo_name IN ("
+                    + ",".join("?" for _ in cargo_names)
+                    + ")"
+                )
+                params.extend(cargo_names)
+            row = conn.execute(
+                """
+                SELECT COUNT(DISTINCT ydid)
+                FROM shipments
+                WHERE status_code='22'
+                  AND (ticketed_at IS NULL OR TRIM(ticketed_at)='')
+                  AND origin_name=?
+                  AND destination_name=?
+                  AND accepted_at>=?
+                  AND accepted_at<?
+                """
+                + cargo_clause,
+                params,
+            ).fetchone()
+            result[project_id] = int(row[0] or 0)
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    return result
+
+
+@lru_cache(maxsize=1)
 def _project_lifecycle_modes() -> dict[str, str]:
     """canonical project_id → lifecycle.mode("shipped_is_completed" / "full_track_to_received")
     yaml 没配的默认 "full_track_to_received"(保守 — 跟到底)。
@@ -462,11 +564,16 @@ def _box(title: str, lines: list[str], width: int = PANEL_WIDTH) -> list[str]:
     return [top, *body, bot]
 
 
-def panel_project(project_id: str, batches: list[dict[str, Any]]) -> list[str]:
+def panel_project(
+    project_id: str,
+    batches: list[dict[str, Any]],
+    reserved_wagons: int | None = None,
+) -> list[str]:
     name = PROJECT_DISPLAY.get(project_id, project_id)
     # 标题加 lifecycle 标识:[S]=shipped_is_completed 短链 / [F]=full_track_to_received 全程
     life_tag = _life_tag(project_id)
-    title = f"{name} [{project_id}]  [{life_tag}]  ({len(batches)} 个 batch)"
+    reserved_text = "—" if reserved_wagons is None else str(reserved_wagons)
+    title = f"{name}  承认车 {reserved_text}  [{life_tag}]  ({len(batches)} 个 batch)"
     if not batches:
         return _box(title, [_dim("  (无 in_progress / 近期 completed batch)")])
 
@@ -666,6 +773,7 @@ def render_once() -> str:
     out_lines.append("")
 
     by_project = query_projects_with_batches()
+    reserved_wagons = query_reserved_wagon_counts()
     # 显示顺序:已知的按 PROJECT_DISPLAY 顺序,未知的尾后
     known = [p for p in PROJECT_DISPLAY if p in by_project]
     unknown = [p for p in by_project if p not in PROJECT_DISPLAY]
@@ -675,7 +783,7 @@ def render_once() -> str:
 
     for proj in known + unknown:
         batches = by_project.get(proj, [])
-        out_lines.extend(panel_project(proj, batches))
+        out_lines.extend(panel_project(proj, batches, reserved_wagons.get(proj)))
         out_lines.append("")
         # 九三紧跟其 release_batch 面板,补一张「箱循环流水线」示意图(只读)
         if proj == "jiusan":

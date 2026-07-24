@@ -204,3 +204,43 @@ def test_already_handled_matched_uses_trigger_event_window(tmp_path):
 
     assert (res.get("output_json") or {}).get("stage") != "already_handled_by_notice_chain"
     assert res["status"] in {"pending", "skipped", "failed"}
+
+
+def test_already_handled_requires_exact_wagon_count(tmp_path):
+    import sqlite3
+    from pathlib import Path
+
+    db = tmp_path / "t.db"
+    c = sqlite3.connect(str(db))
+    c.executescript("""
+    CREATE TABLE inspection_ingestion_candidates (
+      id TEXT, message_id TEXT, ship_name TEXT, destination TEXT,
+      candidate_status TEXT, wagon_count INT, created_at TEXT
+    );
+    CREATE TABLE workflow_task_db (id INTEGER, created_at TEXT);
+    CREATE TABLE message_inbox (id INTEGER, received_datetime TEXT);
+    """)
+    c.execute(
+        "INSERT INTO inspection_ingestion_candidates VALUES (?,?,?,?,?,?,?)",
+        ("old50", "wx_old", "宝丽", "汐子", "matched", 50, "2026-07-24 01:11:00"),
+    )
+    c.execute("INSERT INTO workflow_task_db VALUES (1, datetime('now'))")
+    c.execute("INSERT INTO message_inbox VALUES (100, '2026-07-24 21:55:23')")
+    c.commit()
+    c.close()
+
+    res = w._execute_inspection_text_trigger(
+        {
+            "trigger_project": "zhongtang_special_steel",
+            "trigger_ship": "宝丽",
+            "trigger_dest": "汐子",
+            "trigger_expected_count": 51,
+            "message_inbox_id": 100,
+            "received_datetime": "2026-07-24 21:55:23",
+        },
+        "wx_text",
+        db_path=Path(db),
+        task_id=1,
+    )
+
+    assert (res.get("output_json") or {}).get("stage") != "already_handled_by_notice_chain"

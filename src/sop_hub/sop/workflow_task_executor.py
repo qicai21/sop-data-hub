@@ -1180,6 +1180,23 @@ def _execute_inspection_text_trigger(
             q_fallback += "ORDER BY created_at DESC LIMIT 1"
             cand = conn.execute(q_fallback, fallback_params).fetchone()
 
+        if not cand:
+            # The image may have authoritative cars but no top-level context
+            # when two lots of the same ship tie. Join the immediately adjacent
+            # text only under exact, unique and trusted-image constraints.
+            from sop_hub.sop.inspection_text_rendezvous import (
+                enrich_unique_bare_candidate,
+            )
+            cand = enrich_unique_bare_candidate(
+                conn,
+                project_id=project,
+                ship_name=ship,
+                destination=dest,
+                expected_count=expected,
+                group_name=str(input_json.get("group_name") or ""),
+                event_bounds=event_bounds,
+            )
+
         synth_cand_id = None  # Fix C:非空=本次靠 95306 合成的候选(链 skip_upload)
         if not cand:
             # 已被通知单链处理?同船 + 车数对得上 + 时间窗内的**已 matched** 候选 =
@@ -1189,12 +1206,12 @@ def _execute_inspection_text_trigger(
             done = conn.execute(
                 "SELECT id FROM inspection_ingestion_candidates "
                 "WHERE ship_name=? AND candidate_status='matched' "
-                "  AND (? = 0 OR ABS(COALESCE(wagon_count,0) - ?) <= ?) "
+                "  AND (? = 0 OR COALESCE(wagon_count,0) = ?) "
                 + ("  AND created_at BETWEEN ? AND ? " if event_bounds else "  AND created_at >= datetime('now', ?) ")
                 + ("  AND destination=? " if dest else "")
                 + "ORDER BY created_at DESC LIMIT 1",
                 (
-                    ship, expected, expected, _INSPECTION_TEXT_TRIGGER_COUNT_TOL,
+                    ship, expected, expected,
                     *(event_bounds or (f"-{_INSPECTION_TEXT_TRIGGER_CANDIDATE_MAX_AGE_H} hours",)),
                     *((dest,) if dest else ()),
                 ),

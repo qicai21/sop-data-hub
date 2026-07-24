@@ -1580,6 +1580,36 @@ def _execute_chaoyang_inspection_chain(
                     "error_message": "no non-defect car_no in extraction JSON"}
         candidate_source = str(ext_data.get("source") or "")
 
+        from sop_hub.sop.inspection_candidate_batch import (
+            candidate_loading_cars_already_persisted,
+            resolve_preassigned_open_batch,
+        )
+
+        # 延迟验证可能扫到已完成的历史候选。实装车已全部落入候选原批次时，
+        # 事实链已经完成，不应再要求该批次仍处于 open 状态。
+        if candidate_loading_cars_already_persisted(
+            conn, cand_d, loading_car_nos,
+        ):
+            conn.execute(
+                "UPDATE inspection_ingestion_candidates "
+                "SET candidate_status='matched', status='matched', "
+                "    reason='all_loading_cars_already_persisted', "
+                "    updated_at=datetime('now') WHERE id=?",
+                (candidate_id,),
+            )
+            conn.commit()
+            return {
+                "action": "executed",
+                "status": "skipped",
+                "output_json": {
+                    "stage": "already_persisted",
+                    "candidate_id": candidate_id,
+                    "matched_release_batch_id": cand_d.get("release_batch_id"),
+                    "loading_car_count": len(loading_car_nos),
+                    "candidate_status": "matched",
+                },
+            }
+
         # ── 3. Match release_batch ─────────────────────────────────
         manual_batch_id = None
         if manual_context and (
@@ -1588,12 +1618,20 @@ def _execute_chaoyang_inspection_chain(
             and manual_context["destination"] == dest
         ):
             manual_batch_id = manual_context["id"]
+        preassigned_batch_id = resolve_preassigned_open_batch(
+            conn,
+            cand_d,
+            project_id=project_id,
+            ship_name=ship,
+            destination=dest,
+        )
+        selected_batch_id = manual_batch_id or preassigned_batch_id
         m = match_release_batch_by_ship_destination_cargo(
             project_id=project_id, ship_name=ship,
             destination_station=dest, cargo_name=cargo, db_conn=conn,
             allow_pending_freight_for_facts=True,
         )
-        if not manual_batch_id and m.reason in ("no_open_batch", "no_match", "multiple_candidates"):
+        if not selected_batch_id and m.reason in ("no_open_batch", "no_match", "multiple_candidates"):
             conn.execute(
                 "UPDATE inspection_ingestion_candidates "
                 "SET candidate_status='pending_review', reason=?, "
@@ -1613,7 +1651,7 @@ def _execute_chaoyang_inspection_chain(
                 },
             }
 
-        matched_batch_id = manual_batch_id or m.matched_release_batch_id
+        matched_batch_id = selected_batch_id or m.matched_release_batch_id
 
         # ── 4a. 95306 时间窗反推 → 真装车权威列表(治本) ───────────────
         # VLM 可能把真装车误标排车(无理由 defect)→ 通知单 loading 漏算 1 车。

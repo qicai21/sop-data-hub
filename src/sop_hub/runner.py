@@ -828,7 +828,9 @@ def _run_extraction(category: str, image_path: str, settings: Settings, *, group
     if category == "检装车通知单":
         from sop_hub.engines.inspection_slip import InspectionSlipEngine
         engine = InspectionSlipEngine(service_url=service_url, openai_model=openai_model)
-        result = engine.process_image(image_path)
+        # 分类器已通过“检装车通知单”标题硬闸；提取阶段只负责结构化，
+        # 不能再用第二次概率判断否决已确认的文档类型。
+        result = engine.process_image(image_path, trusted_document_type=True)
         if result and result.get("is_inspection"):
             if not _ensure_sop_project(result, category=category):
                 return _mark_sop_skip(result, "non_sop_project_json_only")

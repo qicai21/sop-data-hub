@@ -143,3 +143,53 @@ class TestLooksLikeInspection:
     def test_negative(self):
         layout = {"title_texts": ["出港计划通知单"], "summary": "这是一份计划单据"}
         assert self.engine._looks_like_inspection(layout) is False
+
+
+def test_trusted_document_type_bypasses_entry_vlm_false(tmp_path):
+    image_path = tmp_path / "inspection.jpg"
+    image_path.write_bytes(b"not-read-because-splits-are-mocked")
+
+    engine = InspectionSlipEngine()
+    engine._prepare_preview = MagicMock(return_value=image_path)
+    engine._split_into_pages = MagicMock(return_value=[image_path])
+    engine._split_page_into_sides = MagicMock(
+        return_value={"left": image_path, "right": image_path}
+    )
+    engine._split_side_into_chunks = MagicMock(return_value=[image_path])
+    engine.call_api = MagicMock(
+        side_effect=[
+            ({"is_inspection": False, "summary": "未识别到检车单结构"}, 0.1),
+            (
+                {
+                    "title": "锦州港杂码公司火运货物疏港检、装车通知单",
+                    "meta": {"daoxian": "煤四", "jieshu": 1},
+                    "footer": {"zhuangche_jieshu": 1, "paiche_jieshu": 0},
+                },
+                0.1,
+            ),
+            (
+                [
+                    {
+                        "seq": 1,
+                        "car_type": "70",
+                        "car_no": "1570121",
+                        "cargo_info_raw": "汐子铁矿粉 宝丽",
+                        "remark": "",
+                        "defect": False,
+                    }
+                ],
+                0.1,
+            ),
+            ([], 0.1),
+        ]
+    )
+
+    result = engine.process_image(
+        str(image_path),
+        trusted_document_type=True,
+    )
+
+    assert result["is_inspection"] is True
+    assert result["rows_count"] == 1
+    assert result["car_nos"] == ["1570121"]
+    assert engine.call_api.call_count == 4

@@ -426,7 +426,12 @@ class InspectionSlipEngine:
         ]
         return any(keyword in combined for keyword in keywords)
 
-    def process_image(self, image_path: str) -> Dict[str, Any]:
+    def process_image(
+        self,
+        image_path: str,
+        *,
+        trusted_document_type: bool = False,
+    ) -> Dict[str, Any]:
         img_path = Path(image_path)
         logger.info("[InspectionSlipEngine] Starting pipeline for %s", img_path.name)
         preview_path = self._prepare_preview(img_path)
@@ -435,7 +440,7 @@ class InspectionSlipEngine:
             layout = {}
 
         inferred_inspection = self._looks_like_inspection(layout)
-        if inferred_inspection:
+        if inferred_inspection or trusted_document_type:
             layout["is_inspection"] = True
             if layout.get("doc_type") not in {"normal", "alumina"}:
                 layout["doc_type"] = "alumina" if "氧化铝" in " ".join(layout.get("title_texts", [])) else "normal"

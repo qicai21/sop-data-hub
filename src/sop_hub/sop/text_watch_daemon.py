@@ -47,6 +47,8 @@ DEFAULT_INTERVAL_SECONDS = 5
 DEFAULT_DB = Path("data/sop_agent.db")
 LOADING_LINE_SYNC_INTERVAL_SECONDS = 300
 _last_loading_line_sync_at = 0.0
+PENDING_CANDIDATE_VERIFY_INTERVAL_SECONDS = 60
+_last_pending_candidate_verify_at = 0.0
 
 # 内部安全 task_type:只写本地 sop_agent.db,**无任何对外提交** → daemon 每轮
 # 默认自动 apply,不需要任何 flag。#96 freight_detail_enrichment(填
@@ -144,6 +146,34 @@ def _count_unrouted_sop_rows(db_path: str | Path) -> int:
             return 0
     finally:
         conn.close()
+
+
+def _run_pending_candidate_verifier_if_due(
+    db_path: str | Path,
+    *,
+    enabled: bool,
+    now_monotonic: float | None = None,
+) -> dict[str, Any] | None:
+    """Retry pending inspection candidates on a bounded cadence.
+
+    The verifier can continue into Excel/upload/WeChat after 95306 tickets
+    arrive, so it is enabled only when this daemon was started with
+    ``--run-chains``.
+    """
+    global _last_pending_candidate_verify_at
+    if not enabled:
+        return None
+    now = time.monotonic() if now_monotonic is None else now_monotonic
+    if (
+        now - _last_pending_candidate_verify_at
+        < PENDING_CANDIDATE_VERIFY_INTERVAL_SECONDS
+    ):
+        return None
+    _last_pending_candidate_verify_at = now
+
+    from sop_hub.sop.pending_match_verifier import verify_pending_candidates
+
+    return verify_pending_candidates(db_path=db_path).to_dict()
 
 
 # ── ingest layer ────────────────────────────────────────────────────────
@@ -357,6 +387,29 @@ def run_one_pass(
         except Exception as exc:
             logger.warning("run_pending_workflow_tasks failed: %s", exc)
 
+        # workflow_task 在“95306尚未制票”时会结束，候选转为
+        # pending_95306_match；后续推进归候选验证器，而不是重复创建任务。
+        try:
+            pending_verify = _run_pending_candidate_verifier_if_due(
+                db_path,
+                enabled=True,
+            )
+            if pending_verify is not None:
+                counts["pending_candidates_scanned"] = pending_verify.get(
+                    "scanned", 0
+                )
+                counts["pending_candidates_retried"] = pending_verify.get(
+                    "retried", 0
+                )
+                counts["pending_candidates_succeeded"] = pending_verify.get(
+                    "succeeded", 0
+                )
+                counts["pending_candidates_still_pending"] = pending_verify.get(
+                    "still_pending", 0
+                )
+        except Exception as exc:
+            logger.warning("pending candidate verifier failed: %s", exc)
+
     # ── 作业线路兜底:文本先到、95306 后到时,由定期扫描补齐两个运单库。 ──
     global _last_loading_line_sync_at
     if time.monotonic() - _last_loading_line_sync_at >= LOADING_LINE_SYNC_INTERVAL_SECONDS:
@@ -431,7 +484,8 @@ def run_loop(
             counts = {"errors": 1, "fatal": str(exc)}
         non_silent = sum(counts.get(k, 0) for k in
                          ("ingested", "errors", "sop_routed", "backfilled",
-                          "safe_chains_ran", "chains_ran"))
+                          "safe_chains_ran", "chains_ran",
+                          "pending_candidates_retried"))
         if non_silent or not quiet:
             shown = {k: v for k, v in counts.items() if v}
             logger.info("pass %d: %s", pass_no, shown or "{}")

@@ -9,6 +9,8 @@ source_of_truth: "git"
 project_meta:
   category: "iron_ore"
   dashboard: "normal_freight"
+  release_batch_policy:
+    sequential_lot_match_priority: true
   origin_station: "高桥镇"
   destination_station: "汐子"
   cargo_names:

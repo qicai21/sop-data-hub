@@ -24,6 +24,7 @@ project_meta:
     separate_notice_means_separate_release_batch: true
     same_ship_can_have_multiple_release_batches: true
     do_not_merge_release_batches: true
+    sequential_lot_match_priority: true
 
   # ── 货运信息(2026-06-18 变更)─────────────────────────────────
   # 原规定:朝阳钢铁项目【无货运信息】。现改为【有货运信息】,由用户**单独手工提供**

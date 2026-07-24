@@ -171,6 +171,67 @@ class TestBusinessDataAgent:
         assert rule is not None
         assert rule["status"] == "completed"
 
+    def test_refresh_assigns_unique_sequential_lot_priorities(self, tmp_db):
+        agent = BusinessDataAgent()
+        for lot, batch_date in (("lot05", "2026-07-23"), ("lot06", "2026-07-24")):
+            agent.db.execute(
+                """
+                INSERT INTO release_batches (
+                  id, batch_key, project, ship_name, cargo_name, destination_station,
+                  transport_mode, batch_sequence, notice_date, batch_date,
+                  dispatch_status, source_json, searchable_text
+                ) VALUES (?, ?, 'zhongtang_special_steel', '宝丽', '铁矿', '汐子',
+                          '铁路', ?, ?, ?, 'loading', '{}', '宝丽 汐子 铁矿')
+                """,
+                (lot, f"baoli|{lot}", lot, batch_date, batch_date),
+            )
+        agent.db.commit()
+
+        agent.refresh_release_dispatch_match_rules()
+
+        priorities = agent.db.execute(
+            """
+            SELECT rb.batch_sequence, r.priority
+            FROM release_dispatch_match_rules r
+            JOIN release_batches rb ON rb.id=r.release_batch_id
+            WHERE rb.ship_name='宝丽'
+            ORDER BY rb.batch_sequence
+            """
+        ).fetchall()
+        assert [(row["batch_sequence"], row["priority"]) for row in priorities] == [
+            ("lot05", 500),
+            ("lot06", 600),
+        ]
+
+    def test_refresh_preserves_manual_priority_for_non_sequential_project(self, tmp_db):
+        agent = BusinessDataAgent()
+        agent.db.execute(
+            """
+            INSERT INTO release_batches (
+              id, batch_key, project, ship_name, cargo_name, destination_station,
+              transport_mode, batch_sequence, notice_date, batch_date,
+              dispatch_status, source_json, searchable_text
+            ) VALUES ('courage-bulk', 'courage|lot02', 'jiusan', '勇气', '大豆',
+                      '新台子', '铁路散粮车', 'lot02', '2026-07-17', '2026-07-17',
+                      'loading', '{}', '勇气 新台子 大豆')
+            """
+        )
+        agent.db.commit()
+        agent.refresh_release_dispatch_match_rules()
+        agent.db.execute(
+            "UPDATE release_dispatch_match_rules SET priority=275 "
+            "WHERE release_batch_id='courage-bulk'"
+        )
+        agent.db.commit()
+
+        agent.refresh_release_dispatch_match_rules()
+
+        priority = agent.db.execute(
+            "SELECT priority FROM release_dispatch_match_rules "
+            "WHERE release_batch_id='courage-bulk'"
+        ).fetchone()["priority"]
+        assert priority == 275
+
     def test_non_sop_release_batch_does_not_enter_dispatch_index(self, tmp_db):
         agent = BusinessDataAgent()
         payload = {

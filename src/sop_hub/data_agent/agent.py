@@ -972,6 +972,13 @@ class BusinessDataAgent:
         tokens = self._release_dispatch_rule_tokens(record)
         matching_str = " ".join(token for token in tokens["all"] if token)
         rule_id = hash_text(f"release_dispatch_match_rule|{record.id}")
+        from sop_hub.sop.release_dispatch_priority import (
+            release_dispatch_rule_priority,
+        )
+        rule_priority, priority_is_derived = release_dispatch_rule_priority(
+            sop_project,
+            record.batch_sequence,
+        )
         # #125 lifecycle 8 值 → release_dispatch_match_rules 老 4 值映射
         # (rules.status 仍是 active/completed/suspended/cancelled,只是 chain
         # match 用的缓存,不参与 lifecycle 流转)
@@ -1001,7 +1008,10 @@ class BusinessDataAgent:
               cargo_name=excluded.cargo_name,
               matching_str=excluded.matching_str,
               matching_tokens_json=excluded.matching_tokens_json,
-              priority=excluded.priority,
+              priority=CASE
+                WHEN ?=1 THEN excluded.priority
+                ELSE release_dispatch_match_rules.priority
+              END,
               status=excluded.status,
               completed_at=CASE
                 WHEN excluded.status='completed' THEN COALESCE(release_dispatch_match_rules.completed_at, excluded.completed_at)
@@ -1023,9 +1033,10 @@ class BusinessDataAgent:
                 matching_str,
                 json.dumps(tokens, ensure_ascii=False),
                 _rule_status,
-                100,
+                rule_priority,
                 _rule_status,
                 record.dispatch_status_note,
+                int(priority_is_derived),
             ),
         )
 

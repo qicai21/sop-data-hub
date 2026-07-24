@@ -12,6 +12,8 @@ sop_type: "ordinary_freight"
 project_meta:
   category: "normal_freight"
   dashboard: "normal_freight"
+  release_batch_policy:
+    sequential_lot_match_priority: true
   origin_station: "高桥镇"
   destination_station: "四平"
   # 发车文本解析器靠 known_ships 认船名(空则解析出空船名→链 skip,2026-06-14

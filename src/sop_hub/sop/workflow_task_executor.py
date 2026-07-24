@@ -343,6 +343,20 @@ def _execute_jljg_departure(
     group_id = input_json.get("group_name", "")
     received_at = input_json.get("received_datetime", "")
 
+    # 吉林金钢混列文本必须先按船分段；单批次执行器只认识一个 ship/count，
+    # 直接运行会把整列 45 票与首段 22 车比较后挂 pending_review。
+    from sop_hub.sop.departure_text_parser import parse_jilin_departure_segments
+    mixed_segments = parse_jilin_departure_segments(text_content)
+    if len(mixed_segments) >= 2:
+        from sop_hub.sop.jilin_mixed_departure import execute_jilin_mixed_departure
+
+        return execute_jilin_mixed_departure(
+            input_json=input_json,
+            message_id=message_id,
+            db_path=db_path,
+            task_id=task_id,
+        )
+
     event = MessageEvent(
         message_id=message_id,
         channel="wechat",

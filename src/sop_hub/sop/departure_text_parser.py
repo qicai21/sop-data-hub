@@ -210,6 +210,105 @@ class DepartureCandidate:
         }
 
 
+@dataclass(frozen=True)
+class JilinDepartureSegment:
+    """One ship-owned slice in a mixed Jilin departure text."""
+
+    ship_name: str
+    car_count: int
+    seq_start: int | None = None
+    seq_end: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ship_name": self.ship_name,
+            "car_count": self.car_count,
+            "seq_start": self.seq_start,
+            "seq_end": self.seq_end,
+        }
+
+
+def _jilin_known_ships() -> list[str]:
+    """Load Jilin ships in YAML order; keep a small fallback for tests."""
+    try:
+        import yaml
+        from pathlib import Path
+
+        path = (
+            Path(__file__).resolve().parents[3]
+            / "config"
+            / "project_sops"
+            / "jilin_jingang.yaml"
+        )
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        ships = (data.get("project_meta") or {}).get("known_ships") or []
+        return [str(ship).strip() for ship in ships if str(ship).strip()]
+    except Exception:
+        return ["马兰希望", "富翔7", "海洋征服者", "蓝鳍", "长航滨海"]
+
+
+def parse_jilin_departure_segments(text: str) -> list[JilinDepartureSegment]:
+    """Parse ordered per-ship counts from a Jilin mixed-train message.
+
+    Example:
+      ``马兰希望22节（序号1-22），富翔7 23节（序号23-46）``
+
+    This function only interprets explicit text. It does not infer wagon
+    ownership, query 95306, or write shipment facts.
+    """
+    raw = _strip_chinese_quotes(text or "")
+    if "四平" not in raw:
+        return []
+
+    occurrences: list[tuple[int, str]] = []
+    for ship in _jilin_known_ships():
+        start = raw.find(ship)
+        while start >= 0:
+            occurrences.append((start, ship))
+            start = raw.find(ship, start + len(ship))
+    occurrences.sort(key=lambda item: item[0])
+    if not occurrences:
+        return []
+
+    segments: list[JilinDepartureSegment] = []
+    seen: set[str] = set()
+    for index, (position, ship) in enumerate(occurrences):
+        if ship in seen:
+            continue
+        end = occurrences[index + 1][0] if index + 1 < len(occurrences) else len(raw)
+        territory = raw[position:end]
+        count_match = _RE_CAR_COUNT.search(territory[len(ship):])
+        if not count_match:
+            previous_end = (
+                occurrences[index - 1][0] + len(occurrences[index - 1][1])
+                if index > 0
+                else 0
+            )
+            before = raw[previous_end:position]
+            matches = list(_RE_CAR_COUNT.finditer(before))
+            count_match = matches[-1] if matches else None
+        if not count_match:
+            continue
+
+        count = int(count_match.group(1))
+        if count <= 0:
+            continue
+        seq_match = re.search(
+            r"序号\s*(\d{1,3})\s*[-—~至]\s*(\d{1,3})",
+            territory,
+        )
+        segments.append(
+            JilinDepartureSegment(
+                ship_name=ship,
+                car_count=count,
+                seq_start=int(seq_match.group(1)) if seq_match else None,
+                seq_end=int(seq_match.group(2)) if seq_match else None,
+            )
+        )
+        seen.add(ship)
+    return segments
+
+
 _NO_MATCH = DepartureCandidate(
     message_id="", group_id="", message_time="", raw_text="", status="no_match"
 )

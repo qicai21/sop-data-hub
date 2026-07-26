@@ -1166,7 +1166,7 @@ def _execute_inspection_text_trigger(
         #   ② 车数交叉校验:|候选车数 − 触发预期| ≤ 容差(expected=0 未知时跳过)
         #   ③ 时间窗:只认 MAX_AGE_H 小时内产生的候选,不抓陈年旧候选
         q = (
-            "SELECT id, message_id, candidate_status FROM inspection_ingestion_candidates "
+            "SELECT * FROM inspection_ingestion_candidates "
             "WHERE ship_name=? "
             f"  AND candidate_status NOT IN ({','.join('?' * len(_INACTIVE_CANDIDATE_STATUSES))}) "
             "  AND (? = 0 OR ABS(COALESCE(wagon_count, 0) - ?) <= ?) "
@@ -1188,7 +1188,7 @@ def _execute_inspection_text_trigger(
         cand = conn.execute(q, params).fetchone()
         if not cand and event_bounds:
             q_fallback = (
-                "SELECT id, message_id, candidate_status FROM inspection_ingestion_candidates "
+                "SELECT * FROM inspection_ingestion_candidates "
                 "WHERE ship_name=? "
                 f"  AND candidate_status NOT IN ({','.join('?' * len(_INACTIVE_CANDIDATE_STATUSES))}) "
                 "  AND (? = 0 OR ABS(COALESCE(wagon_count, 0) - ?) <= ?) "
@@ -1204,6 +1204,32 @@ def _execute_inspection_text_trigger(
                 fallback_params.append(dest)
             q_fallback += "ORDER BY created_at DESC LIMIT 1"
             cand = conn.execute(q_fallback, fallback_params).fetchone()
+
+        if cand and (
+            not str(cand["ship_name"] or "").strip()
+            or not str(cand["destination"] or "").strip()
+            or (
+                "project_id" in cand.keys()
+                and not str(cand["project_id"] or "").strip()
+            )
+        ):
+            # Image ingestion can already infer the ship/project/release batch
+            # while still missing the destination. Let the exact adjacent text
+            # fill only missing compatible context before delegating to the
+            # inspection chain.
+            from sop_hub.sop.inspection_text_rendezvous import (
+                enrich_unique_bare_candidate,
+            )
+            enriched = enrich_unique_bare_candidate(
+                conn,
+                project_id=project,
+                ship_name=ship,
+                destination=dest,
+                expected_count=expected,
+                group_name=str(input_json.get("group_name") or ""),
+                event_bounds=event_bounds,
+            )
+            cand = enriched or cand
 
         if not cand:
             # The image may have authoritative cars but no top-level context
@@ -1784,6 +1810,7 @@ def _execute_chaoyang_inspection_chain(
             window_minutes=120,
             min_ticketed_at=min_ticketed_at,
             expected_loading_count=footer_count or None,
+            allow_exact_notice_subset=(project_id == "zhongtang_special_steel"),
             **autocorrect_config_from_env(),
         )
         if recover["status"] == "no_ticket_yet":

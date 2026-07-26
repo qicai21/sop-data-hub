@@ -74,6 +74,29 @@ def test_extract_ignores_fractional_compartment_counts():
     assert extract_inspection_text_triggers(text) == []
 
 
+def test_extract_jintong_copper_cabin_integer_count_gate():
+    """整车「55节 马林铜（金通）贝拉1舱」也是金通铜,不是中唐贝拉发运。"""
+    from sop_hub.sop.text_router import is_jintong_copper_cabin_text
+
+    samples = [
+        "煤六 55节 马林铜（金通）贝拉1舱",
+        "煤六 55节 马林铜（金通）贝拉1舱 标“△”为木板箱 以此为准",
+        "煤六 32节 马林铜（金通）贝拉1舱（1-11后箱）",
+        "煤六 21节 联邦4舱 金通铜",
+    ]
+    for text in samples:
+        assert is_jintong_copper_cabin_text(text), text
+        assert extract_inspection_text_triggers(text) == [], text
+
+
+def test_route_jintong_copper_cabin_not_trigger():
+    """铁晟群金通铜舱位文本不得路由到 inspection_text_trigger_flow。"""
+    r = classify_text_message(_event("煤六 55节 马林铜（金通）贝拉1舱"))
+    assert (r.sop_flow or "") != "inspection_text_trigger_flow"
+    assert (r.sop_node or "") != "inspection_text_trigger"
+    assert r.processing_status in ("ignored", "matched_sop", "")
+
+
 # ── 2. 路由 ──────────────────────────────────────────────────────────────
 def _event(text: str) -> MessageEvent:
     return MessageEvent(
@@ -154,7 +177,7 @@ def db(tmp_path):
     conn.execute(
         "CREATE TABLE inspection_ingestion_candidates ("
         " id TEXT PRIMARY KEY, message_id TEXT, ship_name TEXT,"
-        " destination TEXT, candidate_status TEXT, created_at TEXT,"
+        " destination TEXT, project_id TEXT, candidate_status TEXT, created_at TEXT,"
         " reason TEXT, updated_at TEXT, wagon_count INTEGER)"  # Fix A reason/updated_at;e30a067 wagon_count(车数闸)
     )
     conn.commit()
@@ -261,6 +284,47 @@ def test_rendezvous_delegates_when_candidate_exists(db):
     oj = out.get("output_json") or {}
     assert oj.get("text_trigger", {}).get("delegated_to_candidate") == "cand1"
     assert oj["text_trigger"]["expected_count"] == 5
+
+
+def test_rendezvous_fills_destination_on_partially_enriched_candidate(db):
+    """真实图已推断船/项目但缺目的地时，可信相邻文本应补齐后再委托。"""
+    from sop_hub.sop.workflow_task_executor import run_workflow_task
+
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "INSERT INTO inspection_ingestion_candidates "
+        "(id, message_id, ship_name, destination, project_id, candidate_status, "
+        " wagon_count, created_at) "
+        "VALUES ('cand48','wx_img_48','鞍子河','','zhongtang_special_steel',"
+        "'pending_review',48,'2026-06-13 09:59:00')"
+    )
+    conn.execute(
+        "INSERT INTO message_inbox (id, message_id, group_name, received_datetime, "
+        " inspection_candidate_id, classification_label, is_sop_msg, processing_status) "
+        "VALUES (201,'wx_img_48','铁晟业务工作群','2026-06-13 09:59:00',"
+        "'cand48','检装车通知单',1,'matched_sop')"
+    )
+    conn.commit()
+    conn.close()
+
+    inbox_id = _insert_inbox(
+        db, "煤四 汐子铁 鞍子河 实装48节", inbox_id=103,
+    )
+    res = create_task_from_message_inbox(inbox_id, db_path=db)
+    out = run_workflow_task(res["ids"][0], db_path=db)
+
+    conn = sqlite3.connect(str(db))
+    row = conn.execute(
+        "SELECT destination, candidate_status, reason "
+        "FROM inspection_ingestion_candidates WHERE id='cand48'"
+    ).fetchone()
+    conn.close()
+    assert row[0] == "汐子"
+    assert row[1] == "candidate"
+    assert row[2] == "text_rendezvous_context_enriched"
+    assert out.get("output_json", {}).get("text_trigger", {}).get(
+        "delegated_to_candidate"
+    ) == "cand48"
 
 
 def test_rendezvous_does_not_skip_matched_candidate_outside_event_bounds(db):

@@ -1,4 +1,4 @@
-"""Join a text trigger to one bare inspection-image candidate."""
+"""Join a text trigger to one compatible inspection-image candidate."""
 from __future__ import annotations
 
 import sqlite3
@@ -14,7 +14,7 @@ def enrich_unique_bare_candidate(
     group_name: str,
     event_bounds: tuple[str, str] | None,
 ) -> sqlite3.Row | None:
-    """Fill context only when one trusted image candidate matches exactly."""
+    """Fill missing context only when one trusted image candidate matches exactly."""
     if not (
         project_id
         and ship_name
@@ -31,13 +31,11 @@ def enrich_unique_bare_candidate(
             """
             SELECT c.*
             FROM inspection_ingestion_candidates c
-            WHERE COALESCE(c.ship_name, '') = ''
-              AND COALESCE(c.project_id, '') = ''
-              AND COALESCE(c.destination, '') = ''
+            WHERE (COALESCE(c.ship_name, '') = '' OR c.ship_name = ?)
+              AND (COALESCE(c.project_id, '') = '' OR c.project_id = ?)
+              AND (COALESCE(c.destination, '') = '' OR c.destination = ?)
               AND c.candidate_status IN ('candidate', 'pending_match', 'pending_review')
               AND COALESCE(c.wagon_count, 0) = ?
-              AND datetime(substr(replace(c.created_at, 'T', ' '), 1, 19))
-                  BETWEEN datetime(?) AND datetime(?)
               AND EXISTS (
                   SELECT 1
                   FROM message_inbox m
@@ -47,10 +45,20 @@ def enrich_unique_bare_candidate(
                         m.classification_label = '检装车通知单'
                         OR m.document_type = '检装车通知单'
                     )
+                    AND datetime(substr(replace(m.received_datetime, 'T', ' '), 1, 19))
+                        BETWEEN datetime(?) AND datetime(?)
               )
             ORDER BY datetime(substr(replace(c.created_at, 'T', ' '), 1, 19)) DESC
             """,
-            (expected_count, lo, hi, group_name),
+            (
+                ship_name,
+                project_id,
+                destination,
+                expected_count,
+                group_name,
+                lo,
+                hi,
+            ),
         ).fetchall()
     except sqlite3.OperationalError:
         # Minimal legacy/test schemas may not expose the provenance columns.

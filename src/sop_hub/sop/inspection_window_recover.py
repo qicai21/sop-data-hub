@@ -32,6 +32,7 @@ def recover_loading_cars_via_window(
     window_minutes: int = 120,
     min_ticketed_at: str | None = None,
     expected_loading_count: int | None = None,
+    allow_exact_notice_subset: bool = False,
     auto_correct_car_no: bool = True,
     max_correct_edit_distance: int = 2,
     max_correct_pairs: int = 3,
@@ -53,6 +54,9 @@ def recover_loading_cars_via_window(
       expected_loading_count: 通知单 footer 或文本触发明确给出的装车数。若 95306
         时间窗交集少于该数量,说明只是部分货票先到,必须继续 pending,不能把半窗
         车号回写为权威集合。
+      allow_exact_notice_subset: 中唐可能有多列在同一 95306 制票窗口。若通知单
+        实装车数已齐、每个实装车均有本窗货票，允许只采用通知单精确子集，
+        不把同窗另一列误判为本列漏车。默认关闭，保留朝钢不拼列铁律。
       auto_correct_car_no: 开关 —— 是否启用"通知单错号 vs 95306 自动核对纠错"
         (2026-06-29 #检装车号95306自动核对纠错)。通知单上的车号有时本身录错
         (非 OCR,是单子写错),反推后表现为:真排车数 == 异常数 == N(N≥1)。
@@ -193,6 +197,7 @@ def recover_loading_cars_via_window(
 
         expected = int(expected_loading_count or 0)
         exact_expected_window_recovery = False
+        exact_notice_subset_recovery = False
         if expected > 0 and len(window_cars) == expected and missing_from_notice:
             # 页脚实装数与95306整窗完全一致，且通知单绝大多数车号均命中时，
             # 差异通常来自VLM漏号、重复号或排车标记。此时95306车集是完整
@@ -202,6 +207,17 @@ def recover_loading_cars_via_window(
                 loading = sorted(window_cars)
                 missing_from_notice = []
                 exact_expected_window_recovery = True
+        if (
+            allow_exact_notice_subset
+            and expected > 0
+            and len(loading) == expected
+            and not notice_only
+            and missing_from_notice
+        ):
+            # 中唐会出现两列在同一制票时间窗。通知单自己的实装车已全部
+            # 在95306命中时，以通知单为列边界，窗内其他车留给另一通知单。
+            missing_from_notice = []
+            exact_notice_subset_recovery = True
 
         # ── 4. 异常 sanity ──────────────────────────────────────────────
         status = "ok"
@@ -214,6 +230,11 @@ def recover_loading_cars_via_window(
             msg += (
                 f";页脚实装={expected}=95306窗内车数,"
                 "已按95306完整车集恢复OCR漏号/重复号"
+            )
+        if exact_notice_subset_recovery:
+            msg += (
+                f";通知单实装={expected}且全部命中95306,"
+                "已按通知单精确子集与同窗其他列分开"
             )
         if corrections:
             pairs = ", ".join(
@@ -257,6 +278,7 @@ def recover_loading_cars_via_window(
             "corrections": corrections,
             "auto_corrected": bool(corrections),
             "exact_expected_window_recovery": exact_expected_window_recovery,
+            "exact_notice_subset_recovery": exact_notice_subset_recovery,
             "anchor_attempts": attempts,
             "message": msg,
         }

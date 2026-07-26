@@ -145,6 +145,51 @@ def test_exact_expected_window_recovers_vlm_duplicate_and_missing_car(tmp_path):
     assert "已按95306完整车集恢复" in r["message"]
 
 
+def test_zhongtang_exact_notice_subset_can_split_same_ticket_window(tmp_path):
+    """中唐两列同窗制票时，48车通知单可从61票窗内精确拆出自身。"""
+    db = tmp_path / "rail.sqlite3"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE shipments ("
+        " ydid TEXT PRIMARY KEY, car_no TEXT, destination_name TEXT,"
+        " cargo_name TEXT, ticketed_at TEXT)"
+    )
+    notice_cars = [f"{1700000 + i}" for i in range(48)]
+    other_train = [f"{1800000 + i}" for i in range(13)]
+    conn.executemany(
+        "INSERT INTO shipments VALUES (?,?,?,?,?)",
+        [
+            (f"y{i}", car, "汐子", "铁矿粉", "2026-07-25 21:29:38")
+            for i, car in enumerate(notice_cars + other_train)
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    blocked = recover_loading_cars_via_window(
+        rail_db_path=db,
+        loading_car_nos=notice_cars,
+        all_notice_car_nos=notice_cars,
+        destination="汐子",
+        expected_loading_count=48,
+    )
+    assert blocked["status"] == "anomaly"
+
+    recovered = recover_loading_cars_via_window(
+        rail_db_path=db,
+        loading_car_nos=notice_cars,
+        all_notice_car_nos=notice_cars,
+        destination="汐子",
+        expected_loading_count=48,
+        allow_exact_notice_subset=True,
+    )
+    assert recovered["status"] == "ok"
+    assert recovered["exact_notice_subset_recovery"] is True
+    assert recovered["missing_from_notice"] == []
+    assert set(recovered["loading_car_nos"]) == set(notice_cars)
+    assert "精确子集" in recovered["message"]
+
+
 def test_legacy_no_bound_anchors_old_ticket(rail_db, tmp_path):
     """不带下界(老行为)会锚到旧票 — 文档化 #144 的 bug 形态。"""
     conn = sqlite3.connect(str(rail_db))

@@ -5,6 +5,7 @@ import sqlite3
 
 from sop_hub.sop.workflow_task_executor import (
     _event_excel_batch_specs,
+    _order_authoritative_cars,
     _persist_authoritative_candidate_cars,
     _validated_manual_candidate_context,
 )
@@ -64,6 +65,16 @@ def test_authoritative_95306_cars_overwrite_candidate_count_for_excel_specs(tmp_
     assert all_matched is True
     assert ships == ["马兰幸福"]
     assert specs == [("batch1", authoritative, [f"Y{i+1}" for i in range(46)])]
+
+
+def test_authoritative_order_deduplicates_vlm_repeat_and_appends_missing_true_car():
+    notice = ["4903368", "1741438", "4974853", "4974853", "1703834"]
+    authoritative = ["1703834", "1815155", "4974853", "1741438", "4903368"]
+
+    ordered = _order_authoritative_cars(notice, authoritative)
+
+    assert ordered == ["4903368", "1741438", "4974853", "1703834", "1815155"]
+    assert len(ordered) == len(set(ordered)) == len(authoritative)
 
 
 def test_manual_binding_returns_open_batch_context_for_ocr_candidate(tmp_path):

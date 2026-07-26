@@ -191,6 +191,18 @@ def recover_loading_cars_via_window(
             missing_from_notice = sorted(set(missing_from_notice) - paired_true)
             notice_only = sorted(set(notice_only) - paired_wrong)
 
+        expected = int(expected_loading_count or 0)
+        exact_expected_window_recovery = False
+        if expected > 0 and len(window_cars) == expected and missing_from_notice:
+            # 页脚实装数与95306整窗完全一致，且通知单绝大多数车号均命中时，
+            # 差异通常来自VLM漏号、重复号或排车标记。此时95306车集是完整
+            # 权威事实，可整窗恢复。重合度门槛避免同到站相邻列误并。
+            max_difference = max(2, (expected + 9) // 10)
+            if len(loading) >= expected - max_difference:
+                loading = sorted(window_cars)
+                missing_from_notice = []
+                exact_expected_window_recovery = True
+
         # ── 4. 异常 sanity ──────────────────────────────────────────────
         status = "ok"
         msg = (
@@ -198,6 +210,11 @@ def recover_loading_cars_via_window(
             f" {len(window_cars)} 车;交集(真装车) {len(loading)};"
             f"通知单独有(真排车) {len(notice_only)}"
         )
+        if exact_expected_window_recovery:
+            msg += (
+                f";页脚实装={expected}=95306窗内车数,"
+                "已按95306完整车集恢复OCR漏号/重复号"
+            )
         if corrections:
             pairs = ", ".join(
                 f"{c['notice_car_no']}→{c['window_car_no']}" for c in corrections
@@ -208,13 +225,25 @@ def recover_loading_cars_via_window(
             # 朝阳西按业务铁律不许拼列 → 这种就是异常,挂人工裁决
             status = "anomaly"
             msg += f";异常:95306 窗内 {len(missing_from_notice)} 车不在通知单上"
-        expected = int(expected_loading_count or 0)
+        # 半窗保护:expected 必须是「本段应装」而非整单 footer。
+        # 混装外项目车应在调用方从 all_notice / expected 中剔除。
+        # 应装列表(loading_car_nos)已全部进窗 → 即使 expected 虚高也放行。
         if status == "ok" and expected > 0 and len(loading) < expected:
-            status = "no_ticket_yet"
-            msg += (
-                f";95306 窗口仅匹配 {len(loading)}/{expected} 车,"
-                "疑似货票未同步齐,继续等待"
-            )
+            loading_set = set(loading)
+            still_missing_required = [
+                c for c in (loading_car_nos or []) if c and c not in loading_set
+            ]
+            if loading and not still_missing_required:
+                msg += (
+                    f";应装列表已齐({len(loading_car_nos)}车进窗{len(loading)}),"
+                    f"忽略虚高 expected={expected}"
+                )
+            else:
+                status = "no_ticket_yet"
+                msg += (
+                    f";95306 窗口仅匹配 {len(loading)}/{expected} 车,"
+                    "疑似货票未同步齐,继续等待"
+                )
 
         return {
             "status": status,
@@ -227,6 +256,7 @@ def recover_loading_cars_via_window(
             "notice_only": notice_only,
             "corrections": corrections,
             "auto_corrected": bool(corrections),
+            "exact_expected_window_recovery": exact_expected_window_recovery,
             "anchor_attempts": attempts,
             "message": msg,
         }

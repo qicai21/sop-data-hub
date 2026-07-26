@@ -106,6 +106,45 @@ def test_partial_ticket_window_does_not_finalize_when_notice_count_is_known(tmp_
     assert "15/53" in r["message"]
 
 
+def test_exact_expected_window_recovers_vlm_duplicate_and_missing_car(tmp_path):
+    """页脚51=整窗51且高重合时，以95306整窗恢复VLM重复号和漏号。"""
+    db = tmp_path / "rail.sqlite3"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE shipments ("
+        " ydid TEXT PRIMARY KEY, car_no TEXT, destination_name TEXT,"
+        " cargo_name TEXT, ticketed_at TEXT)"
+    )
+    true_cars = [f"{1700000 + i}" for i in range(51)]
+    conn.executemany(
+        "INSERT INTO shipments VALUES (?,?,?,?,?)",
+        [
+            (f"y{i}", car, "汐子", "铁矿粉", f"2026-07-25 09:27:{i % 10:02d}")
+            for i, car in enumerate(true_cars)
+        ],
+    )
+    conn.commit()
+    conn.close()
+    notice = list(true_cars)
+    notice[-1] = notice[-2]  # VLM把末车误读成上一车，形成重复号+漏号
+    notice.extend(["4902260", "1891463", "1766753"])  # 页脚排车3
+
+    r = recover_loading_cars_via_window(
+        rail_db_path=db,
+        loading_car_nos=notice[:51],
+        all_notice_car_nos=notice,
+        destination="汐子",
+        min_ticketed_at="2026-07-25 00:00:00",
+        expected_loading_count=51,
+    )
+
+    assert r["status"] == "ok"
+    assert r["exact_expected_window_recovery"] is True
+    assert set(r["loading_car_nos"]) == set(true_cars)
+    assert r["missing_from_notice"] == []
+    assert "已按95306完整车集恢复" in r["message"]
+
+
 def test_legacy_no_bound_anchors_old_ticket(rail_db, tmp_path):
     """不带下界(老行为)会锚到旧票 — 文档化 #144 的 bug 形态。"""
     conn = sqlite3.connect(str(rail_db))

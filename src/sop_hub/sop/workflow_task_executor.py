@@ -722,6 +722,31 @@ def _ansteel_upload_biz_key(
     return f"{batch_id}:cars:{digest}:{len(fallback_car_nos)}"
 
 
+def _order_authoritative_cars(
+    notice_car_nos: list[str],
+    authoritative_car_nos: list[str],
+) -> list[str]:
+    """按通知单物理顺序排列95306权威车集，并消除VLM重复号。"""
+    auth_set = {
+        str(car_no).strip()
+        for car_no in authoritative_car_nos
+        if str(car_no or "").strip()
+    }
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for car_no in notice_car_nos:
+        clean = str(car_no or "").strip()
+        if clean in auth_set and clean not in seen:
+            ordered.append(clean)
+            seen.add(clean)
+    for car_no in authoritative_car_nos:
+        clean = str(car_no or "").strip()
+        if clean and clean not in seen:
+            ordered.append(clean)
+            seen.add(clean)
+    return ordered
+
+
 def _find_sent_same_car_set_event(
     *,
     db_path: Path | str,
@@ -1584,14 +1609,45 @@ def _execute_chaoyang_inspection_chain(
             all_rows = ext_data.get("rows") or []
         # 排车 / 缺陷车不入。cargo_info_raw 是手写标注(船名/收货代理等),
         # 不影响是否真车 — 真车的判断是 car_no 非空 + 非 defect。
-        loading_rows = [r for r in all_rows
+        # 2026-07-21:混装单先按候选到站/项目过滤行,避免乌兰浩特等外项目车计入 expected。
+        from sop_hub.sop.inspection_destination_split import (
+            filter_rows_for_project_destination,
+            resolve_authoritative_loading_cars,
+            segment_expected_count,
+        )
+        from sop_hub.sop.inspection_window_recover import apply_footer_loading_cap
+
+        _payload_for_filter = ext_data if isinstance(ext_data, dict) else {}
+        scoped_rows = filter_rows_for_project_destination(
+            all_rows,
+            destination=dest,
+            project_id=project_id,
+            conn=conn,
+        )
+        if not scoped_rows and all_rows:
+            # 过滤后为空则回退全量(防误杀单到站单)
+            scoped_rows = [r for r in all_rows if isinstance(r, dict)]
+        loading_rows = [r for r in scoped_rows
                         if r.get("car_no") and not r.get("defect")]
         loading_car_nos = [str(r.get("car_no") or "").strip()
                            for r in loading_rows if r.get("car_no")]
-        # 页脚实装数优先于 VLM 非 defect 列表（防排车混入导致多 3 车等）
-        from sop_hub.sop.inspection_window_recover import apply_footer_loading_cap
-        _footer = (ext_data.get("footer") or {}) if isinstance(ext_data, dict) else {}
-        loading_car_nos = apply_footer_loading_cap(loading_car_nos, _footer)
+        # ops / 人工权威子集优先
+        _auth = resolve_authoritative_loading_cars(
+            payload=_payload_for_filter,
+            candidate_car_numbers_json=cand_d.get("car_numbers_json"),
+            loading_car_nos=loading_car_nos,
+        )
+        if _auth:
+            loading_car_nos = list(_auth)
+        else:
+            # 页脚实装数优先于 VLM 非 defect 列表（防排车混入导致多 3 车等）
+            # 混装已按到站收窄 scoped_rows 后,footer 应为本段 zhuangche
+            _footer = (ext_data.get("footer") or {}) if isinstance(ext_data, dict) else {}
+            if len(scoped_rows) < len(all_rows):
+                _footer = dict(_footer)
+                _footer["zhuangche_jieshu"] = segment_expected_count(
+                    scoped_rows, _footer)
+            loading_car_nos = apply_footer_loading_cap(loading_car_nos, _footer)
         if not loading_car_nos:
             return {"action": "failed", "status": "failed",
                     "error_message": "no non-defect car_no in extraction JSON"}
@@ -1680,11 +1736,26 @@ def _execute_chaoyang_inspection_chain(
             persist_car_no_corrections,
             recover_loading_cars_via_window,
         )
-        all_notice_car_nos = [
-            str(r.get("car_no") or "").strip()
-            for r in all_rows if r.get("car_no")
-        ]
-        footer_count = int((ext_data.get("footer") or {}).get("zhuangche_jieshu") or 0)
+        # 通知单集合:优先本项目到站 scoped 行;权威子集时仅用子集
+        if _auth:
+            all_notice_car_nos = list(loading_car_nos)
+            footer_count = len(loading_car_nos)
+        else:
+            all_notice_car_nos = [
+                str(r.get("car_no") or "").strip()
+                for r in scoped_rows if r.get("car_no")
+            ]
+            footer_count = segment_expected_count(
+                scoped_rows,
+                (ext_data.get("footer") or {}) if isinstance(ext_data, dict) else {},
+            )
+            if not footer_count:
+                footer_count = int(
+                    (ext_data.get("footer") or {}).get("zhuangche_jieshu") or 0
+                ) if isinstance(ext_data, dict) else 0
+            # 到站过滤后行数 < 整单:expected 不得再用整单 45
+            if len(scoped_rows) < len(all_rows):
+                footer_count = segment_expected_count(scoped_rows, None) or footer_count
         # #144:锚点票时间下界 = 通知时间 - 12h。同车同到站历史有旧票,
         # 不带下界会锚到上一批的票,整窗错位。
         min_ticketed_at = None
@@ -1782,11 +1853,10 @@ def _execute_chaoyang_inspection_chain(
             # 通知单 all_notice_car_nos 的位置。authoritative 里"通知单没有"
             # 的车号(last-minute 换车 / OCR 错字 → 95306 实有 1739479 但
             # 通知单 OCR 成 1799479),没法精准插回原位,追加到末尾。
-            auth_set = set(authoritative_loading)
-            notice_kept = [c for c in all_notice_car_nos if c in auth_set]
-            kept_set = set(notice_kept)
-            extras = [c for c in authoritative_loading if c not in kept_set]
-            loading_car_nos = notice_kept + extras
+            loading_car_nos = _order_authoritative_cars(
+                all_notice_car_nos,
+                authoritative_loading,
+            )
             _persist_authoritative_candidate_cars(
                 conn,
                 candidate_id=candidate_id,

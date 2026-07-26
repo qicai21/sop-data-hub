@@ -1435,7 +1435,23 @@ class BusinessDataAgent:
         # #131 (2026-06-08):unmatched 段(无 rule 命中,如乌兰浩特项目未建)
         #   **直接丢弃**,不建 candidate 占位 pending_review。用户决策:不投资
         #   未建项目的"等手工归属"路径。
+        # 2026-07-21:混装到站拆段(汐子+乌兰浩特)——先按 ship rule,再按行级到站;
+        # 非本项目到站段 _split_group_unmatched 丢弃,expected 收紧为本段非 defect 数。
+        from sop_hub.sop.inspection_destination_split import split_payload_by_destination
+
         groups = self._split_payload_by_ship_rules(payload)
+        dest_expanded: list = []
+        for g in groups:
+            if g.get("_split_group_unmatched"):
+                dest_expanded.append(g)
+                continue
+            g_pid = str(g.get("project") or payload.get("project") or project_id or "").strip()
+            dest_groups = split_payload_by_destination(
+                g, conn=self.db, project_id=g_pid or None,
+            )
+            dest_expanded.extend(dest_groups)
+        groups = dest_expanded
+
         if len(groups) > 1:
             results = []
             dropped = 0
@@ -1455,8 +1471,19 @@ class BusinessDataAgent:
                 "groups": results,
                 "dropped_unmatched_rows": dropped,
             }
+        # 单段也可能是到站拆后的收紧 footer(混装主段)
+        only = groups[0] if groups else payload
+        if only.get("_split_group_unmatched"):
+            return {
+                "status": "ignored",
+                "reason": "ignored_unmanaged_inspection_flow",
+                "candidate_ids": [],
+                "release_batch_ids": [],
+                "wagon_count": len(only.get("rows") or []),
+                "dropped_unmatched_rows": len(only.get("rows") or []),
+            }
         return self._ingest_single_inspection_payload(
-            payload, source_file_name=source_file_name, group_name=group_name,
+            only, source_file_name=source_file_name, group_name=group_name,
             include_completed_release_batches=include_completed_release_batches,
         )
 

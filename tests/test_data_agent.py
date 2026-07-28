@@ -80,6 +80,54 @@ class TestParseRemarks:
 
 class TestBusinessDataAgent:
 
+    def test_inspection_candidate_excludes_defect_cars_from_authoritative_subset(
+        self, tmp_db
+    ):
+        agent = BusinessDataAgent()
+        agent.db.execute(
+            """
+            INSERT INTO release_batches (
+              id, batch_key, project, ship_name, cargo_name, destination_station,
+              notice_date, dispatch_status, source_json, searchable_text
+            ) VALUES (
+              'batch-baoli-defect', 'baoli|defect', 'zhongtang_special_steel',
+              '宝丽', '铁矿', '汐子', '2026-07-28', 'loading', '{}',
+              '宝丽 汐子 铁矿'
+            )
+            """
+        )
+        agent.db.commit()
+
+        payload = {
+            "project": "zhongtang_special_steel",
+            "rows": [
+                {"seq": 1, "car_no": "1000001", "defect": False},
+                {"seq": 2, "car_no": "1000002", "defect": False},
+                {"seq": 3, "car_no": "1000003", "defect": False},
+                {"seq": 4, "car_no": "1000004", "defect": True},
+                {"seq": 5, "car_no": "1000005", "defect": True},
+            ],
+            "_split_group_release_batch_id": "batch-baoli-defect",
+            "_split_group_ship_name": "宝丽",
+        }
+
+        result = agent._ingest_single_inspection_payload(
+            payload,
+            source_file_name="baoli_52_loaded_2_empty.jpg",
+            group_name="铁晟业务工作群",
+        )
+        row = agent.db.execute(
+            "SELECT wagon_count, car_numbers_json, payload_json "
+            "FROM inspection_ingestion_candidates"
+        ).fetchone()
+
+        assert result["wagon_count"] == 3
+        assert row["wagon_count"] == 3
+        assert json.loads(row["car_numbers_json"]) == [
+            "1000001", "1000002", "1000003"
+        ]
+        assert len(json.loads(row["payload_json"])["rows"]) == 5
+
 
 
 

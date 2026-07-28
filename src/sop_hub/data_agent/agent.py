@@ -1496,7 +1496,18 @@ class BusinessDataAgent:
     ) -> Dict[str, Any]:
         rows = payload.get("rows") if isinstance(payload, dict) else []
         rows = rows if isinstance(rows, list) else []
-        car_numbers = [str(row.get("car_no") or "").strip() for row in rows if isinstance(row, dict) and str(row.get("car_no") or "").strip()]
+        # 候选车号是后续 95306 复核的权威实装子集。空排/缺陷行仍保留在
+        # payload_json.rows 供审计，但不能进入 car_numbers_json / wagon_count，
+        # 否则“实装 52 + 空排 2”会被固化成 54 车并永久挂起。
+        car_numbers = [
+            str(row.get("car_no") or "").strip()
+            for row in rows
+            if (
+                isinstance(row, dict)
+                and not row.get("defect")
+                and str(row.get("car_no") or "").strip()
+            )
+        ]
         match = self.match_release_dispatch_rules_for_inspection(
             payload,
             include_completed=include_completed_release_batches,

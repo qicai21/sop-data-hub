@@ -1019,6 +1019,7 @@ class TestProjectKnownShips:
     def test_jiusan_known_ships_loaded_from_yaml(self):
         ships = project_known_ships("jiusan")
         assert "勇气" in ships
+        assert "成功" in ships
 
     def test_jilin_known_ships_loaded_from_yaml(self):
         ships = project_known_ships("jilin_jingang_jinzhou")

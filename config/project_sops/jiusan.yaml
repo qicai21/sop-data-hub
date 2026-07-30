@@ -28,6 +28,7 @@ project_meta:
     - "玛格丽特"
     - "美国"
     - "勇气"
+    - "成功"
   has_inspection_notice: false
   departure_confirmation_source: "rail95306_jz_port_super_account"
   # 全程跟踪到 confirmed_received。九三大豆结算同样依赖到货,跟 jilin/中唐

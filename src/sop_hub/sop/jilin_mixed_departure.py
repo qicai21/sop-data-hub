@@ -114,6 +114,35 @@ def _event_boxes(
     return boxes, keys
 
 
+def _has_complete_unique_portal_evidence(
+    *, total_rows: int, portal_id_count: int, distinct_portal_id_count: int,
+) -> bool:
+    """A persisted portal id per event box is sufficient upload evidence.
+
+    The factory list API returns the entire historical order.  Paging through
+    thousands of old rows only to rediscover records whose portal ids are
+    already stored locally leaves a completed task stuck in ``running``.
+    """
+    return (
+        total_rows > 0
+        and portal_id_count == total_rows
+        and distinct_portal_id_count == total_rows
+    )
+
+
+def _event_portal_evidence(
+    conn: sqlite3.Connection,
+    ydids: list[str],
+) -> tuple[int, int, int]:
+    placeholders = ",".join("?" * len(ydids))
+    row = conn.execute(
+        f"SELECT COUNT(*), COUNT(portal_id), COUNT(DISTINCT portal_id) "
+        f"FROM wagon_container_shipments WHERE ydid IN ({placeholders})",
+        ydids,
+    ).fetchone()
+    return tuple(int(value or 0) for value in row) if row else (0, 0, 0)
+
+
 def execute_jilin_mixed_departure(
     *,
     input_json: dict[str, Any],
@@ -333,24 +362,21 @@ def execute_jilin_mixed_departure(
         from sop_hub.sop.factory_upload import upload_dispatch_event_wagons
         from sop_hub.sop.factory_verify import verify_factory_upload
 
-        placeholders = ",".join("?" * len(all_ydids))
         conn = sqlite3.connect(str(db_path))
         try:
-            portal_row = conn.execute(
-                f"SELECT COUNT(*), SUM(portal_id IS NOT NULL) "
-                f"FROM wagon_container_shipments WHERE ydid IN ({placeholders})",
-                all_ydids,
-            ).fetchone()
+            event_box_count, portal_id_count, distinct_portal_id_count = (
+                _event_portal_evidence(conn, all_ydids)
+            )
         finally:
             conn.close()
-        event_box_count = int((portal_row or (0, 0))[0] or 0)
-        portal_id_count = int((portal_row or (0, 0))[1] or 0)
 
         # 上传后进程可能在反查阶段异常退出。portal_id 是 POST 后从门户回查并
         # 回填的持久证据；若本次 90 箱已全有 portal_id，重跑只做 verify，
         # 禁止再次 POST。
-        recovered_after_upload = (
-            event_box_count > 0 and portal_id_count == event_box_count
+        recovered_after_upload = _has_complete_unique_portal_evidence(
+            total_rows=event_box_count,
+            portal_id_count=portal_id_count,
+            distinct_portal_id_count=distinct_portal_id_count,
         )
         upload = None
         if recovered_after_upload:
@@ -368,45 +394,63 @@ def execute_jilin_mixed_departure(
                 and upload.success_count == upload.total_wagons
             )
         verify_rows: list[dict[str, Any]] = []
+        post_total = event_box_count
+        post_portal_ids = portal_id_count
+        post_distinct_portal_ids = distinct_portal_id_count
         if upload_ok:
             conn = sqlite3.connect(str(db_path))
             conn.row_factory = sqlite3.Row
             try:
-                for item in batch_rows:
-                    bid = item["batch"]["id"]
-                    ydids = [ticket.ydid for ticket in item["tickets"]]
-                    boxes, unique_keys = _event_boxes(conn, bid, ydids)
-                    batch_row = conn.execute(
-                        "SELECT order_identifier FROM release_batches WHERE id=?",
-                        (bid,),
-                    ).fetchone()
-                    order_id = str(
-                        (batch_row["order_identifier"] if batch_row else "") or ""
-                    )
-                    verify = verify_factory_upload(
-                        order_id,
-                        expected_box_numbers=boxes,
-                        expected_unique_keys=unique_keys,
-                        expected_count=len(unique_keys),
-                        db_path=db_path,
-                    )
-                    row = verify.to_dict()
-                    verify_rows.append(row)
-                    upload_ok = (
-                        upload_ok
-                        and bool(row.get("login_ok"))
-                        and not row.get("error")
-                        and int(row.get("missing_box_count") or 0) == 0
-                        and int(row.get("duplicate_box_count") or 0) == 0
-                    )
+                post_total, post_portal_ids, post_distinct_portal_ids = (
+                    _event_portal_evidence(conn, all_ydids)
+                )
+                if _has_complete_unique_portal_evidence(
+                    total_rows=post_total,
+                    portal_id_count=post_portal_ids,
+                    distinct_portal_id_count=post_distinct_portal_ids,
+                ):
+                    verify_rows.append({
+                        "skipped": True,
+                        "reason": "complete_unique_portal_id_evidence",
+                        "event_box_count": post_total,
+                    })
+                else:
+                    for item in batch_rows:
+                        bid = item["batch"]["id"]
+                        ydids = [ticket.ydid for ticket in item["tickets"]]
+                        boxes, unique_keys = _event_boxes(conn, bid, ydids)
+                        batch_row = conn.execute(
+                            "SELECT order_identifier FROM release_batches WHERE id=?",
+                            (bid,),
+                        ).fetchone()
+                        order_id = str(
+                            (batch_row["order_identifier"] if batch_row else "") or ""
+                        )
+                        verify = verify_factory_upload(
+                            order_id,
+                            expected_box_numbers=boxes,
+                            expected_unique_keys=unique_keys,
+                            expected_count=len(unique_keys),
+                            db_path=db_path,
+                        )
+                        row = verify.to_dict()
+                        verify_rows.append(row)
+                        upload_ok = (
+                            upload_ok
+                            and bool(row.get("login_ok"))
+                            and not row.get("error")
+                            and int(row.get("missing_box_count") or 0) == 0
+                            and int(row.get("duplicate_box_count") or 0) == 0
+                        )
             finally:
                 conn.close()
         upload_summary = {
             "recovered_after_upload": recovered_after_upload,
-            "portal_id_count": portal_id_count,
+            "portal_id_count": post_portal_ids,
+            "portal_id_distinct_count": post_distinct_portal_ids,
             "login_success": True if recovered_after_upload else upload.login_success,
-            "payloads": event_box_count if recovered_after_upload else upload.total_wagons,
-            "success": event_box_count if recovered_after_upload else upload.success_count,
+            "payloads": post_total if recovered_after_upload else upload.total_wagons,
+            "success": post_total if recovered_after_upload else upload.success_count,
             "failure": 0 if recovered_after_upload else upload.failure_count,
             "verify": verify_rows,
         }

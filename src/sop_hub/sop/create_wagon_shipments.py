@@ -380,6 +380,27 @@ def create_wagon_shipments_from_candidates(
         insert_plans = [p for p in plans if p.action == "insert"]
         result.planned_insert_count = len(insert_plans)
 
+        # 集装箱事实必须可追溯到 "ydid + 车号"。95306 有时先同步到运单/箱号、
+        # 稍后才回填 car_no；这段时间绝不能把计划数伪报为已入库，也不能推进批次。
+        missing_identity = [
+            plan for plan in insert_plans
+            if (
+                not plan.ydid
+                or not plan.wagon_no
+                or (jilin_container_only and not plan.container_no)
+            )
+        ]
+        if missing_identity:
+            result.status = "pending_review"
+            result.safe_to_apply = False
+            result.warnings.append(
+                "Missing required shipment identity (ydid/car_no"
+                + ("/container_no" if jilin_container_only else "")
+                + "): "
+                + ", ".join(plan.ydid or "<missing-ydid>" for plan in missing_identity)
+            )
+            return result
+
         # ── 6. Determine status ──────────────────────────────────────
         if result.planned_insert_count == expected and expected > 0:
             result.status = "safe_to_apply"
@@ -527,6 +548,7 @@ def create_wagon_shipments_from_candidates(
                 _ensure_wcs(db_path=db_path)
                 import hashlib as _hash
                 import json as _json
+                inserted_container_ydids: set[str] = set()
                 for plan in result.plans:
                     if plan.action not in ("insert", "skip_existing"):
                         continue
@@ -547,7 +569,7 @@ def create_wagon_shipments_from_candidates(
                             f"{plan.wagon_no}|{box}|{plan.ydid}".encode()
                         ).hexdigest()[:24]
                         try:
-                            sop_conn.execute(
+                            cursor = sop_conn.execute(
                                 """INSERT OR IGNORE INTO wagon_container_shipments (
                                     id, car_no, box_no, box_position, ydid, waybill_no,
                                     batch_id, ticketed_at, departed_at, arrived_at, delivered_at,
@@ -566,12 +588,15 @@ def create_wagon_shipments_from_candidates(
                                     departure_candidate.message_id, departure_candidate.group_id,
                                 ),
                             )
+                            if cursor.rowcount == 1:
+                                inserted_container_ydids.add(plan.ydid)
                         except sqlite3.IntegrityError:
                             pass
                 sop_conn.commit()
                 if jilin_container_only:
-                    # result 的计数口径仍是本次入库的运单数，不是箱数。
-                    result.inserted_count = len(insert_plans)
+                    # 吉林金钢没有车级双写；唯一可报告的成功数是本次实际写入
+                    # 箱级事实的独立运单数，绝不能拿计划数冒充。
+                    result.inserted_count = len(inserted_container_ydids)
         except Exception as exc:
             result.warnings.append(f"wagon_container_shipments dual-write failed: {exc}")
 
@@ -596,6 +621,11 @@ def create_wagon_shipments_from_candidates(
             sop_conn.commit()
 
         # ── 11. Write shipment_release_batch_matches to sop_agent.db ─
+        # 吉林金钢的唯一事实源是箱级表；这里的 wagon_shipment_id 无法指向一个
+        # 真实车级行，禁止再造孤儿关联。
+        if jilin_container_only:
+            return result
+
         # Ensure the table exists
         sop_conn.execute("""
             CREATE TABLE IF NOT EXISTS shipment_release_batch_matches (

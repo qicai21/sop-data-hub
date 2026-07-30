@@ -26,7 +26,11 @@ PROJECT = "test_wagon_project"
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
-def _make_departure(car_count: int = 18) -> DepartureCandidate:
+def _make_departure(
+    car_count: int = 18,
+    *,
+    project: str = PROJECT,
+) -> DepartureCandidate:
     return DepartureCandidate(
         message_id="wx_001",
         group_id="GROUP001",
@@ -36,7 +40,7 @@ def _make_departure(car_count: int = 18) -> DepartureCandidate:
         car_count=car_count,
         lane_or_track="煤六",
         optional_ship_name="蓝鳍",
-        project_id=PROJECT,
+        project_id=project,
         status="complete",
     )
 
@@ -78,7 +82,11 @@ def _make_query_result(
     )
 
 
-def _create_sop_db(db_path: str | Path) -> sqlite3.Connection:
+def _create_sop_db(
+    db_path: str | Path,
+    *,
+    project: str = PROJECT,
+) -> sqlite3.Connection:
     """Create test sop_agent.db with release_batches and wagon_shipments."""
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
@@ -110,7 +118,7 @@ def _create_sop_db(db_path: str | Path) -> sqlite3.Connection:
         """INSERT INTO release_batches (id, batch_key, project, ship_name, cargo_name,
            destination_station, notice_date, dispatch_status, source_json, searchable_text)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (BATCH_ID, "蓝鳍|铁矿|四平|2026-05-21", PROJECT,
+        (BATCH_ID, "蓝鳍|铁矿|四平|2026-05-21", project,
          SHIP_NAME, "铁矿", "四平", "2026-05-21", "in_progress", "{}", "蓝鳍 铁矿 四平"),
     )
     conn.commit()
@@ -314,6 +322,69 @@ def test_fewer_candidates_than_expected(tmp_path: Path):
     )
     assert result.status == "pending_review"
     assert result.safe_to_apply is False
+
+
+def test_jilin_container_candidate_without_car_no_is_not_reported_as_ingested(tmp_path: Path):
+    """95306 can expose ydid/boxes before it backfills car_no; do not fake success."""
+    db_path = tmp_path / "test.db"
+    _create_sop_db(db_path, project="jilin_jingang_jinzhou")
+    candidates = _make_candidates(3)
+    candidates[1] = ShipmentCandidate(
+        ydid=candidates[1].ydid,
+        wagon_no="",
+        waybill_no=candidates[1].waybill_no,
+        container_no=candidates[1].container_no,
+        origin_station=candidates[1].origin_station,
+        destination_station=candidates[1].destination_station,
+        cargo_name=candidates[1].cargo_name,
+        ticketed_at=candidates[1].ticketed_at,
+    )
+
+    result = create_wagon_shipments_from_candidates(
+        release_batch_id=BATCH_ID,
+        departure_candidate=_make_departure(3),
+        shipment_query_result=_make_query_result(candidates),
+        db_path=db_path,
+    )
+
+    assert result.status == "pending_review"
+    assert result.safe_to_apply is False
+    assert result.inserted_count == 0
+    assert any("Missing required shipment identity" in warning for warning in result.warnings)
+
+    conn = sqlite3.connect(str(db_path))
+    tables = {
+        row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    assert "wagon_container_shipments" not in tables
+    assert "shipment_release_batch_matches" not in tables
+    conn.close()
+
+
+def test_jilin_container_ingest_reports_actual_ydid_count(tmp_path: Path):
+    db_path = tmp_path / "test.db"
+    _create_sop_db(db_path, project="jilin_jingang_jinzhou")
+
+    result = create_wagon_shipments_from_candidates(
+        release_batch_id=BATCH_ID,
+        departure_candidate=_make_departure(3, project="jilin_jingang_jinzhou"),
+        shipment_query_result=_make_query_result(_make_candidates(3)),
+        db_path=db_path,
+    )
+
+    assert result.status == "safe_to_apply"
+    assert result.inserted_count == 3
+    conn = sqlite3.connect(str(db_path))
+    assert conn.execute(
+        "SELECT COUNT(DISTINCT ydid) FROM wagon_container_shipments"
+    ).fetchone()[0] == 3
+    assert conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master "
+        "WHERE type='table' AND name='shipment_release_batch_matches'"
+    ).fetchone()[0] == 0
+    conn.close()
 
 
 # ── Test 9: candidate_count > car_count, filter reduces to match ───────

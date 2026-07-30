@@ -3,6 +3,7 @@ from __future__ import annotations
 from sop_hub.sop.departure_text_parser import parse_jilin_departure_segments
 from sop_hub.sop.jilin_mixed_departure import partition_ticket_cluster
 from sop_hub.sop.jilin_mixed_departure import select_exact_ticket_cluster
+from sop_hub.sop.jilin_mixed_departure import _has_complete_unique_portal_evidence
 from sop_hub.sop.shipment_query_window import ShipmentCandidate
 
 
@@ -53,6 +54,15 @@ def test_partition_rejects_total_mismatch():
     segments = parse_jilin_departure_segments(TEXT)
     tickets = [ShipmentCandidate(ydid=str(i), wagon_no=str(i)) for i in range(44)]
     assert partition_ticket_cluster(tickets, segments) == []
+
+
+def test_complete_unique_portal_ids_are_sufficient_upload_evidence():
+    assert _has_complete_unique_portal_evidence(
+        total_rows=54, portal_id_count=54, distinct_portal_id_count=54,
+    )
+    assert not _has_complete_unique_portal_evidence(
+        total_rows=54, portal_id_count=54, distinct_portal_id_count=53,
+    )
 
 
 def test_select_exact_ticket_cluster_ignores_other_train():

@@ -138,9 +138,16 @@ def extract_station_segments(text: str) -> list[StationTextSegment]:
 
 
 def _is_prefix_for_next_station(
-    text: str, count_end: int, segment_end: int,
+    text: str, count_start: int, count_end: int, segment_end: int, ship_end: int,
 ) -> bool:
-    """Whether a count is the ``N节<next station>`` prefix, not this segment."""
+    """Whether a count is the ``N节<next station>`` prefix, not this segment.
+
+    ``实装22节乌铁`` is different from ``宝丽，3节乌铁``: the former has an
+    explicit loading verb tied to the preceding ship, so its count remains in
+    the current station segment even when the next station follows directly.
+    """
+    if any(word in text[ship_end:count_start] for word in ("实装", "装车", "发出")):
+        return False
     return text[count_end:segment_end].strip() == ""
 
 
@@ -185,7 +192,9 @@ def extract_station_ship_counts(
                 count for count in forward
                 if not (
                     segment.end < len(normalized)
-                    and _is_prefix_for_next_station(normalized, count.end(), segment.end)
+                    and _is_prefix_for_next_station(
+                        normalized, count.start(), count.end(), segment.end, ship_end,
+                    )
                 )
             ]
             backward = list(_COUNT_RE.finditer(normalized, previous_ship_end, ship_start))

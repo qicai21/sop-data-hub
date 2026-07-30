@@ -59,6 +59,19 @@ def test_same_station_multiple_sop_ships_keep_their_own_counts():
     assert {item["destination"] for item in triggers.values()} == {"汐子"}
 
 
+def test_explicit_loaded_count_before_next_station_belongs_to_previous_ship():
+    triggers = _by_ship("煤四 汐子铁 鞍子河 实装22节乌铁春日莲花25节")
+    assert triggers == {
+        "鞍子河": {
+            "project_id": "zhongtang_special_steel",
+            "ship": "鞍子河",
+            "destination": "汐子",
+            "expected_count": 22,
+            "segment": "煤四 汐子铁 鞍子河 实装22节",
+        }
+    }
+
+
 def test_aliases_are_canonicalised_and_unknown_sop_ship_is_not_inferred():
     segments = extract_station_segments("煤四 乌铁春日莲花25节，沙子铁鞍子河22节")
     assert [(item.alias, item.destination, item.project_id) for item in segments] == [

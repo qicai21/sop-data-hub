@@ -25,6 +25,7 @@ from sop_hub.sop.departure_text_parser import (
 )
 from sop_hub.sop.inspection_source_policy import is_zhongtang_freight_only_group
 from sop_hub.sop.monitoring_plan_matcher import MessageEvent
+from sop_hub.sop.text_station_segments import extract_station_ship_counts
 
 # ── 检验类项目(检装车通知单驱动)──────────────────────────────────────
 # 文本只当触发器:提供 ship + 预期车数;车号顺序 / lot 归属的权威仍归
@@ -258,6 +259,26 @@ def extract_inspection_text_triggers(text: str) -> list[dict[str, Any]]:
     norm = _strip_chinese_quotes(raw)
     ship_map = _inspection_ship_project_map()
     if not ship_map:
+        return []
+
+    station_aware = extract_station_ship_counts(raw, ship_map)
+    if station_aware:
+        return [
+            {
+                "project_id": item.project_id,
+                "ship": item.ship,
+                "destination": item.destination,
+                "expected_count": item.car_count,
+                "segment": item.segment,
+            }
+            for item in station_aware
+        ]
+
+    # No explicit station: retain the historic ship-only fallback for a
+    # genuinely single-stream message.  Explicit non-SOP stations return no
+    # station-aware result and must not fall through to this behaviour.
+    from sop_hub.sop.text_station_segments import extract_station_segments
+    if extract_station_segments(raw):
         return []
 
     # 找所有船名出现位置

@@ -1,0 +1,1841 @@
+{
+  "source": "message_inbox/铁晟业务工作群",
+  "month": "2026-07",
+  "station_aliases": {
+    "朝阳西铁矿": "朝阳西",
+    "朝阳西铁": "朝阳西",
+    "朝阳西": "朝阳西",
+    "朝阳铁": "朝阳西",
+    "四平方向": "四平",
+    "四平镍": "四平",
+    "四平铁": "四平",
+    "四平": "四平",
+    "汐子铁矿": "汐子",
+    "汐子铁": "汐子",
+    "汐子": "汐子",
+    "沙子铁": "汐子",
+    "沙子": "汐子",
+    "新台子": "新台子",
+    "新台": "新台子",
+    "凌源东铁": "凌源东",
+    "凌源东煤": "凌源东",
+    "凌源东": "凌源东",
+    "凌东铁": "凌源东",
+    "凌东煤": "凌源东",
+    "凌东": "凌源东",
+    "乌兰浩特铁": "乌兰浩特",
+    "乌兰浩特": "乌兰浩特",
+    "乌铁": "乌兰浩特",
+    "乌钢": "乌兰浩特",
+    "草市": "草市",
+    "瓢儿屯": "瓢儿屯",
+    "瓢屯": "瓢儿屯",
+    "马林": "马林",
+    "林西": "林西"
+  },
+  "matched_message_count": 202,
+  "unique_pattern_count": 138,
+  "patterns": [
+    {
+      "pattern": "晚班凌东铁装车无交班剩余承认车{N}节现场在装无",
+      "occurrences": 12,
+      "example": {
+        "inbox_id": 100002703,
+        "message_id": "wx_2026-07_219",
+        "received_datetime": "2026-07-03 07:13:17",
+        "text": "晚班凌东铁装车无\n交班剩余承认车13节\n现场在装无"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "煤四汐子铁宝丽{N}节",
+      "occurrences": 7,
+      "example": {
+        "inbox_id": 100003579,
+        "message_id": "wx_2026-07_939",
+        "received_datetime": "2026-07-12 07:01:12",
+        "text": "煤四汐子铁宝丽53节"
+      },
+      "stations": [
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "白班凌东铁装车无点前剩余承认车{N}节点后承认车无现场在装无合计欠车{N}节",
+      "occurrences": 7,
+      "example": {
+        "inbox_id": 100002631,
+        "message_id": "wx_2026-07_162",
+        "received_datetime": "2026-07-02 17:43:12",
+        "text": "白班凌东铁装车无\n点前剩余承认车13节\n点后承认车无\n现场在装无\n合计欠车13节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "煤一{N}节四平铁马兰希望",
+      "occurrences": 5,
+      "example": {
+        "inbox_id": 100002462,
+        "message_id": "wx_2026-07_13",
+        "received_datetime": "2026-07-01 04:13:34",
+        "text": "煤一 54节 四平铁 马兰希望"
+      },
+      "stations": [
+        "四平"
+      ]
+    },
+    {
+      "pattern": "煤四朝阳西铁，马兰幸福{N}节",
+      "occurrences": 4,
+      "example": {
+        "inbox_id": 100003258,
+        "message_id": "wx_2026-07_686",
+        "received_datetime": "2026-07-08 10:41:03",
+        "text": "煤四朝阳西铁，马兰幸福22节"
+      },
+      "stations": [
+        "朝阳西"
+      ]
+    },
+    {
+      "pattern": "白班凌东煤装车无点前剩余承认车无点后承认车{N}节现场在装无合计欠车{N}节",
+      "occurrences": 4,
+      "example": {
+        "inbox_id": 100003760,
+        "message_id": "wx_2026-07_1068",
+        "received_datetime": "2026-07-14 17:35:38",
+        "text": "白班凌东煤装车无\n点前剩余承认车无\n点后承认车53节\n现场在装无\n合计欠车53节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "白班凌东铁装车无点前剩余承认车{N}节点后承认车{N}节现场在装{N}节合计欠车{N}节",
+      "occurrences": 4,
+      "example": {
+        "inbox_id": 100002521,
+        "message_id": "wx_2026-07_63",
+        "received_datetime": "2026-07-01 17:07:42",
+        "text": "白班凌东铁装车无\n点前剩余承认车15节\n点后承认车53节\n现场在装55节\n合计欠车68节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "晚班凌东煤装车无交班剩余承认车{N}节现场在装无",
+      "occurrences": 3,
+      "example": {
+        "inbox_id": 100004999,
+        "message_id": "wx_2026-07_2082",
+        "received_datetime": "2026-07-25 07:04:31",
+        "text": "晚班凌东煤装车无\n交班剩余承认车53节\n现场在装无"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "晚班凌东铁装车{N}节印度粉（艾伦）{N}节交班剩余承认车无现场在装无",
+      "occurrences": 3,
+      "example": {
+        "inbox_id": 100002947,
+        "message_id": "wx_2026-07_416",
+        "received_datetime": "2026-07-05 07:16:44",
+        "text": "晚班凌东铁装车52节\n印度粉（艾伦）52节\n交班剩余承认车无\n现场在装无"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "煤四{N}节汐子铁宝丽",
+      "occurrences": 3,
+      "example": {
+        "inbox_id": 100003025,
+        "message_id": "wx_2026-07_485",
+        "received_datetime": "2026-07-05 20:40:14",
+        "text": "煤四 38节汐子铁 宝丽"
+      },
+      "stations": [
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "煤四汐子铁宝丽实装{N}节",
+      "occurrences": 3,
+      "example": {
+        "inbox_id": 100002871,
+        "message_id": "wx_2026-07_360",
+        "received_datetime": "2026-07-04 15:40:16",
+        "text": "煤四 汐子铁 宝丽 实装53节"
+      },
+      "stations": [
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "十四道凌东铁泰达16实装{N}节",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100003636,
+        "message_id": "wx_2026-07_977",
+        "received_datetime": "2026-07-12 14:21:23",
+        "text": "十四道凌东铁泰达16实装50节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "十四道草市镍长航滨海{N}节",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100005156,
+        "message_id": "wx_2026-07_2202",
+        "received_datetime": "2026-07-26 12:05:25",
+        "text": "十四道草市镍长航滨海53节"
+      },
+      "stations": [
+        "草市"
+      ]
+    },
+    {
+      "pattern": "十四道，凌东煤，白石，实装{N}节",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100004060,
+        "message_id": "wx_2026-07_1335",
+        "received_datetime": "2026-07-17 04:37:12",
+        "text": "十四道，凌东煤，白石，实装20节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "晚班凌东煤装车{N}节埃尔加精煤（白石）{N}节交班剩余承认车无现场在装无",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100005101,
+        "message_id": "wx_2026-07_2175",
+        "received_datetime": "2026-07-26 07:25:42",
+        "text": "晚班凌东煤装车50节\n埃尔加精煤（白石）53节\n交班剩余承认车无\n现场在装无"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "晚班凌东铁装车{N}节印度粉（艾伦）{N}节交班剩余承认车{N}节现场在装无",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100002470,
+        "message_id": "wx_2026-07_21",
+        "received_datetime": "2026-07-01 06:59:56",
+        "text": "晚班凌东铁装车38节\n印度粉（艾伦）38节\n交班剩余承认车15节\n现场在装无"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "晚班凌东铁装车{N}节麦克粉（亚历山大）{N}节交班剩余承认车{N}节现场在装无",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100002583,
+        "message_id": "wx_2026-07_124",
+        "received_datetime": "2026-07-02 07:05:03",
+        "text": "晚班凌东铁装车55节\n麦克粉（亚历山大）55节\n交班剩余承认车13节\n现场在装无"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "晚班凌东铁装车无交班剩余承认车{N}节现场在装{N}节",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100003060,
+        "message_id": "wx_2026-07_514",
+        "received_datetime": "2026-07-06 07:08:36",
+        "text": "晚班凌东铁装车无\n交班剩余承认车53节\n现场在装58节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "煤三{N}节四平铁马兰希望",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100004251,
+        "message_id": "wx_2026-07_1496",
+        "received_datetime": "2026-07-18 15:29:23",
+        "text": "煤三 46节 四平铁 马兰希望"
+      },
+      "stations": [
+        "四平"
+      ]
+    },
+    {
+      "pattern": "煤五朝阳西铁矿马兰幸福{N}节",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100002841,
+        "message_id": "wx_2026-07_336",
+        "received_datetime": "2026-07-04 08:41:22",
+        "text": "煤五 朝阳西铁矿 马兰幸福 46节"
+      },
+      "stations": [
+        "朝阳西"
+      ]
+    },
+    {
+      "pattern": "煤五朝阳西马兰幸福{N}节",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100003006,
+        "message_id": "wx_2026-07_469",
+        "received_datetime": "2026-07-05 18:55:16",
+        "text": "煤五朝阳西马兰幸福38节"
+      },
+      "stations": [
+        "朝阳西"
+      ]
+    },
+    {
+      "pattern": "煤五，凌东铁，亚历山大{N}节，艾伦{N}节，实装{N}节",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100002884,
+        "message_id": "wx_2026-07_371",
+        "received_datetime": "2026-07-04 17:57:16",
+        "text": "煤五，凌东铁，亚历山大29节，艾伦27节，实装64节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "煤五，朝阳西铁，马兰幸福，实装{N}节",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100003855,
+        "message_id": "wx_2026-07_1152",
+        "received_datetime": "2026-07-15 10:11:19",
+        "text": "煤五，朝阳西铁，马兰幸福，实装50节"
+      },
+      "stations": [
+        "朝阳西"
+      ]
+    },
+    {
+      "pattern": "煤六{N}节马林铜（金通）贝拉1舱",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100004542,
+        "message_id": "wx_2026-07_1732",
+        "received_datetime": "2026-07-21 01:47:11",
+        "text": "煤六 63节 马林铜（金通）贝拉1舱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤六马林金通铜精矿“联邦4舱”{N}节，标“△”为木板箱",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100002580,
+        "message_id": "wx_2026-07_123",
+        "received_datetime": "2026-07-02 03:44:44",
+        "text": "煤六   马林金通  铜精矿“联邦4舱”43节，标“△”为木板箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤四凌东铁艾伦实装{N}节",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100002463,
+        "message_id": "wx_2026-07_14",
+        "received_datetime": "2026-07-01 06:08:20",
+        "text": "煤四凌东铁艾伦实装38节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "煤四，汐子铁，宝丽，{N}节",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100004919,
+        "message_id": "wx_2026-07_2019",
+        "received_datetime": "2026-07-24 14:34:13",
+        "text": "煤四，汐子铁，宝丽，62节"
+      },
+      "stations": [
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "白班凌东铁装车{N}节金宝粉（泰达16）{N}节点前剩余承认车{N}节点后承认车无现场在装无合计欠车{N}节",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100003650,
+        "message_id": "wx_2026-07_991",
+        "received_datetime": "2026-07-12 17:54:55",
+        "text": "白班凌东铁装车50节\n金宝粉（泰达16）50节\n点前剩余承认车3节\n点后承认车无\n现场在装无\n合计欠车3节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "白班凌东铁装车无点前剩余承认车{N}节点后承认车{N}节现场在装无合计欠车{N}节",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100003759,
+        "message_id": "wx_2026-07_1067",
+        "received_datetime": "2026-07-14 17:35:16",
+        "text": "白班凌东铁装车无\n点前剩余承认车3节\n点后承认车53节\n现场在装无\n合计欠车56节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "白班凌东铁装车无点前剩余承认车无点后承认车{N}节现场在装无合计欠车{N}节",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100004148,
+        "message_id": "wx_2026-07_1403",
+        "received_datetime": "2026-07-17 17:12:06",
+        "text": "白班凌东铁装车无\n点前剩余承认车无\n点后承认车53节\n现场在装无\n合计欠车53节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "落空{N}节（凌源东煤3、金珠铁矿1、汐子铁矿1）",
+      "occurrences": 2,
+      "example": {
+        "inbox_id": 100005040,
+        "message_id": "wx_2026-07_2119",
+        "received_datetime": "2026-07-25 14:39:34",
+        "text": "落空 5 车（凌源东煤3、金珠铁矿1、汐子铁矿1）"
+      },
+      "stations": [
+        "凌源东",
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "14道{N}节瓢屯铁和风顺远",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004558,
+        "message_id": "wx_2026-07_1742",
+        "received_datetime": "2026-07-21 07:01:22",
+        "text": "14道16节瓢屯铁  和风顺远"
+      },
+      "stations": [
+        "瓢儿屯"
+      ]
+    },
+    {
+      "pattern": "14道{N}节瓢屯镍丰收",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100002684,
+        "message_id": "wx_2026-07_208",
+        "received_datetime": "2026-07-03 01:59:52",
+        "text": "14道20节瓢屯镍  丰收"
+      },
+      "stations": [
+        "瓢儿屯"
+      ]
+    },
+    {
+      "pattern": "14道凌东煤白石，{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003823,
+        "message_id": "wx_2026-07_1123",
+        "received_datetime": "2026-07-15 07:31:26",
+        "text": "14道凌东煤白石，52节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "7月12日需求整车：赤峰南（铁矿粉）{N}节汐子（铁矿粉）{N}节朝阳西（铁矿粉）{N}节合计:{N}节集装箱：四平（铁矿粉）{N}节讷河（返空箱）{N}节嫩江（返空箱）{N}节白城北（返空箱）{N}节白城（返空箱）{N}节章古台（返空箱）{N}节合计:{N}节合计:{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003527,
+        "message_id": "wx_2026-07_896",
+        "received_datetime": "2026-07-11 14:14:14",
+        "text": "7月12日需求\n\n整车：\n赤峰南（铁矿粉）106车\n汐   子（铁矿粉）51车\n朝阳西（铁矿粉）53车\n合计:210车\n\n集装箱：\n四   平（铁矿粉）53车\n讷   河（返空箱）8车\n嫩   江（返空箱）20车\n白城北（返空箱）7车\n白   城（返空箱）7车\n章古台（返空箱）10车\n合计:105车\n\n合计:315车"
+      },
+      "stations": [
+        "朝阳西"
+      ]
+    },
+    {
+      "pattern": "七道{N}节马林铜（云铜）埃娜",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003792,
+        "message_id": "wx_2026-07_1100",
+        "received_datetime": "2026-07-15 00:47:45",
+        "text": "七道 22节 马林铜（云铜）埃娜"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "九道{N}节马林云铜“埃娜2.4舱”",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003950,
+        "message_id": "wx_2026-07_1234",
+        "received_datetime": "2026-07-16 06:27:19",
+        "text": "九道   52节马林云铜“埃娜2.4舱”"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "九道{N}节马林云铜海运自备箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003951,
+        "message_id": "wx_2026-07_1235",
+        "received_datetime": "2026-07-16 06:27:34",
+        "text": "九道  1节马林云铜海运自备箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "九道{N}节马林铜（云铜）埃娜2.4舱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004466,
+        "message_id": "wx_2026-07_1669",
+        "received_datetime": "2026-07-20 12:08:52",
+        "text": "九道  15节  马林铜（云铜）埃娜2.4舱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "十五道瓢屯镍丰收{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004955,
+        "message_id": "wx_2026-07_2043",
+        "received_datetime": "2026-07-24 18:31:58",
+        "text": "十五道 瓢屯镍 丰收20节"
+      },
+      "stations": [
+        "瓢儿屯"
+      ]
+    },
+    {
+      "pattern": "十五道瓢屯镍丰收装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004013,
+        "message_id": "wx_2026-07_1294",
+        "received_datetime": "2026-07-16 14:56:29",
+        "text": "十五道 瓢屯镍 丰收装20节"
+      },
+      "stations": [
+        "瓢儿屯"
+      ]
+    },
+    {
+      "pattern": "十五道，草市镍矿，长航滨海，实装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005413,
+        "message_id": "wx_2026-07_2421",
+        "received_datetime": "2026-07-28 20:53:58",
+        "text": "十五道，草市镍矿，长航滨海，实装35节"
+      },
+      "stations": [
+        "草市"
+      ]
+    },
+    {
+      "pattern": "十四道{N}节凌东铁，泰达16",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004435,
+        "message_id": "wx_2026-07_1648",
+        "received_datetime": "2026-07-20 08:45:30",
+        "text": "十四道5节凌东铁，泰达16"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "十四道{N}节马林铜（云铜）埃娜2.4舱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004263,
+        "message_id": "wx_2026-07_1506",
+        "received_datetime": "2026-07-18 19:27:18",
+        "text": "十四道 52节 马林铜（云铜）埃娜2.4舱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "十四道凌东煤白石实装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005096,
+        "message_id": "wx_2026-07_2169",
+        "received_datetime": "2026-07-26 05:42:32",
+        "text": "十四道 凌东煤 白石 实装50节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "十四道凌东铁实装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004390,
+        "message_id": "wx_2026-07_1607",
+        "received_datetime": "2026-07-19 23:43:43",
+        "text": "十四道凌东铁实装34节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "十四道凌东铁泰达16，{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003291,
+        "message_id": "wx_2026-07_712",
+        "received_datetime": "2026-07-08 19:19:48",
+        "text": "十四道凌东铁泰达16，54节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "十四道瓢儿屯铁，和风顺远{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003668,
+        "message_id": "wx_2026-07_999",
+        "received_datetime": "2026-07-13 00:43:02",
+        "text": "十四道 瓢儿屯铁，和风顺远53节"
+      },
+      "stations": [
+        "瓢儿屯"
+      ]
+    },
+    {
+      "pattern": "十四道瓢儿屯铁，新海兴{N}节，和风顺远{N}节共{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003330,
+        "message_id": "wx_2026-07_741",
+        "received_datetime": "2026-07-09 11:42:36",
+        "text": "十四道 瓢儿屯铁， 新海兴6639节，和风顺远14节共53节"
+      },
+      "stations": [
+        "瓢儿屯"
+      ]
+    },
+    {
+      "pattern": "十四道瓢屯铁和风顺远{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005415,
+        "message_id": "wx_2026-07_2423",
+        "received_datetime": "2026-07-28 21:19:33",
+        "text": "十四道 瓢屯铁 和风顺远 53节"
+      },
+      "stations": [
+        "瓢儿屯"
+      ]
+    },
+    {
+      "pattern": "十四道，{N}节瓢儿屯铁，{N}节和风顺达，{N}节新海星66",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004498,
+        "message_id": "wx_2026-07_1697",
+        "received_datetime": "2026-07-20 16:52:15",
+        "text": "十四道，37节瓢儿屯铁，35节和风顺达，2节新海星66"
+      },
+      "stations": [
+        "瓢儿屯"
+      ]
+    },
+    {
+      "pattern": "十四道，{N}节瓢儿屯铁，{N}节和风顺远，{N}节新海星66",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004504,
+        "message_id": "wx_2026-07_1701",
+        "received_datetime": "2026-07-20 17:12:26",
+        "text": "十四道，37节瓢儿屯铁，35节和风顺远，2节新海星66"
+      },
+      "stations": [
+        "瓢儿屯"
+      ]
+    },
+    {
+      "pattern": "十四道，乌兰浩特镍。长航滨海。实装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003933,
+        "message_id": "wx_2026-07_1222",
+        "received_datetime": "2026-07-16 00:48:08",
+        "text": "十四道，乌兰浩特镍。长航滨海。实装14节"
+      },
+      "stations": [
+        "乌兰浩特"
+      ]
+    },
+    {
+      "pattern": "十四道，凌东铁，泰达16，{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004223,
+        "message_id": "wx_2026-07_1472",
+        "received_datetime": "2026-07-18 10:43:18",
+        "text": "十四道，凌东铁，泰达16，53节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "十四道，瓢屯儿镍，丰收，{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003354,
+        "message_id": "wx_2026-07_762",
+        "received_datetime": "2026-07-09 16:21:27",
+        "text": "十四道，瓢屯儿镍，丰收，20节"
+      },
+      "stations": [
+        "瓢儿屯"
+      ]
+    },
+    {
+      "pattern": "十四道，草市镍矿，长航滨海{N}节瓢屯镍丰收{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005444,
+        "message_id": "wx_2026-07_2450",
+        "received_datetime": "2026-07-29 06:47:51",
+        "text": "十四道，草市镍矿，长航滨海 18节   瓢屯镍  丰收  20节"
+      },
+      "stations": [
+        "瓢儿屯",
+        "草市"
+      ]
+    },
+    {
+      "pattern": "四平承认车还剩{N}节哈？还剩4500多吧，重箱都灌完了么？",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100002525,
+        "message_id": "wx_2026-07_67",
+        "received_datetime": "2026-07-01 17:25:24",
+        "text": "四平承认车还剩 6 车哈？还剩 4500 多吧， 重箱都灌完了么？"
+      },
+      "stations": [
+        "四平"
+      ]
+    },
+    {
+      "pattern": "新台子大豆点前临时{N}节提完",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003157,
+        "message_id": "wx_2026-07_596",
+        "received_datetime": "2026-07-07 10:19:12",
+        "text": "新台子大豆点前临时40车提完"
+      },
+      "stations": [
+        "新台子"
+      ]
+    },
+    {
+      "pattern": "晚班凌东煤装车{N}节白石{N}节交班剩余承认车{N}节现场在装无",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003829,
+        "message_id": "wx_2026-07_1129",
+        "received_datetime": "2026-07-15 07:39:38",
+        "text": "晚班凌东煤装车52节\n白石52节\n交班剩余承认车1节\n现场在装无"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "晚班凌东煤装车{N}节白石{N}节交班剩余承认车无现场在装无",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004067,
+        "message_id": "wx_2026-07_1337",
+        "received_datetime": "2026-07-17 07:22:17",
+        "text": "晚班凌东煤装车20节\n白石20节\n交班剩余承认车无\n现场在装无"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "晚班凌东铁装车{N}节PB粉（宝腾海）{N}节交班剩余承认车{N}节现场在装无",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005534,
+        "message_id": "wx_2026-07_2522",
+        "received_datetime": "2026-07-30 06:40:15",
+        "text": "晚班凌东铁装车51节\nPB粉（宝腾海）51节\n交班剩余承认车2节\n现场在装无"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "晚班凌东铁装车{N}节印度粉（艾伦）{N}节麦克粉（亚历山大）{N}节交班剩余承认车{N}节现场在装无",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003128,
+        "message_id": "wx_2026-07_572",
+        "received_datetime": "2026-07-07 06:45:41",
+        "text": "晚班凌东铁装车49节\n印度粉（艾伦）48节\n麦克粉（亚历山大）1节\n交班剩余承认车4节\n现场在装无"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "晚班凌东铁装车{N}节金宝粉（泰达16）{N}节交班剩余承认车{N}节现场在装{N}节（清底）",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004412,
+        "message_id": "wx_2026-07_1626",
+        "received_datetime": "2026-07-20 07:18:10",
+        "text": "晚班凌东铁装车34节\n金宝粉（泰达16）34节\n交班剩余承认车8节\n现场在装10节（清底）"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "晚班凌东铁装车{N}节金宝粉（泰达16）{N}节交班剩余承认车{N}节现场在装无",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003301,
+        "message_id": "wx_2026-07_719",
+        "received_datetime": "2026-07-09 07:00:17",
+        "text": "晚班凌东铁装车54节\n金宝粉（泰达16）54节\n交班剩余承认车14节\n现场在装无"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "晚班凌东铁装车{N}节金宝粉（泰达16）{N}节交班剩余承认车无现场在装无",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003955,
+        "message_id": "wx_2026-07_1238",
+        "received_datetime": "2026-07-16 06:59:16",
+        "text": "晚班凌东铁装车56节\n金宝粉（泰达16）56节\n交班剩余承认车无\n现场在装无"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "点前临时新台子K车{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005270,
+        "message_id": "wx_2026-07_2304",
+        "received_datetime": "2026-07-27 10:03:33",
+        "text": "点前临时 新台子K车49车"
+      },
+      "stations": [
+        "新台子"
+      ]
+    },
+    {
+      "pattern": "点后临时新台子K车{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005300,
+        "message_id": "wx_2026-07_2330",
+        "received_datetime": "2026-07-27 19:06:13",
+        "text": "点后临时新台子K车11节"
+      },
+      "stations": [
+        "新台子"
+      ]
+    },
+    {
+      "pattern": "点后临时朝阳西铁{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004164,
+        "message_id": "wx_2026-07_1420",
+        "received_datetime": "2026-07-17 20:39:20",
+        "text": "点后临时朝阳西铁 9车"
+      },
+      "stations": [
+        "朝阳西"
+      ]
+    },
+    {
+      "pattern": "煤{N}节乌铁春日莲花",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004437,
+        "message_id": "wx_2026-07_1650",
+        "received_datetime": "2026-07-20 08:46:58",
+        "text": "煤5  24节乌铁春日莲花"
+      },
+      "stations": [
+        "乌兰浩特"
+      ]
+    },
+    {
+      "pattern": "煤一{N}节马林云铜海运自备箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004697,
+        "message_id": "wx_2026-07_1837",
+        "received_datetime": "2026-07-22 16:16:34",
+        "text": "煤一 35节 马林云铜海运自备箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤一{N}节马林铜（金通）联邦1舱，标“△”为木板箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003160,
+        "message_id": "wx_2026-07_599",
+        "received_datetime": "2026-07-07 10:20:22",
+        "text": "煤一   45节 马林铜（金通）联邦1舱，标“△”为木板箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤一四平铁“马兰希望”{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003941,
+        "message_id": "wx_2026-07_1230",
+        "received_datetime": "2026-07-16 02:16:58",
+        "text": "煤一    四平铁 “马兰希望”47节"
+      },
+      "stations": [
+        "四平"
+      ]
+    },
+    {
+      "pattern": "煤三{N}节四平铁{N}节海洋征服者，{N}节马兰希望（序号45-49）",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005232,
+        "message_id": "wx_2026-07_2278",
+        "received_datetime": "2026-07-27 04:32:06",
+        "text": "煤三 58节 四平铁 53节 海洋征服者， 5节 马兰希望（序号45-49）"
+      },
+      "stations": [
+        "四平"
+      ]
+    },
+    {
+      "pattern": "煤三四平铁\"马兰希望\"{N}节（序号1-10），“海洋征服者“{N}节（序号11-30）",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005479,
+        "message_id": "wx_2026-07_2478",
+        "received_datetime": "2026-07-29 10:56:54",
+        "text": "煤三   四平铁\"马兰希望\"7节（序号1-10），“海洋征服者“20节（序号11-30）"
+      },
+      "stations": [
+        "四平"
+      ]
+    },
+    {
+      "pattern": "煤三四平铁“马兰希望”{N}节（序号1-22），”富翔7“{N}节（序号23-46）",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004860,
+        "message_id": "wx_2026-07_1974",
+        "received_datetime": "2026-07-24 07:09:16",
+        "text": "煤三   四平铁 “马兰希望”22节（序号1-22），”富翔7“23节（序号23-46）"
+      },
+      "stations": [
+        "四平"
+      ]
+    },
+    {
+      "pattern": "煤二{N}节四平铁{N}节富翔7（2-11）{N}节海洋征服者（12-62）",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005180,
+        "message_id": "wx_2026-07_2226",
+        "received_datetime": "2026-07-26 16:20:07",
+        "text": "煤二 26节 四平铁 7节 富翔7（2-11）19节 海洋征服者（12-62）"
+      },
+      "stations": [
+        "四平"
+      ]
+    },
+    {
+      "pattern": "煤二{N}节四平铁{N}节海洋征服者，{N}节马兰希望",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004739,
+        "message_id": "wx_2026-07_1877",
+        "received_datetime": "2026-07-23 03:30:47",
+        "text": "煤二 24节 四平铁 14节 海洋征服者，10节马兰希望"
+      },
+      "stations": [
+        "四平"
+      ]
+    },
+    {
+      "pattern": "煤五{N}节乌铁春日莲花",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003049,
+        "message_id": "wx_2026-07_503",
+        "received_datetime": "2026-07-06 00:57:16",
+        "text": "煤五41节  乌铁春日莲花"
+      },
+      "stations": [
+        "乌兰浩特"
+      ]
+    },
+    {
+      "pattern": "煤五{N}节朝阳西铁马兰幸福",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004157,
+        "message_id": "wx_2026-07_1412",
+        "received_datetime": "2026-07-17 20:33:42",
+        "text": "煤五  37节朝阳西铁  马兰幸福"
+      },
+      "stations": [
+        "朝阳西"
+      ]
+    },
+    {
+      "pattern": "煤五{N}节汐子铁宝丽",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004554,
+        "message_id": "wx_2026-07_1740",
+        "received_datetime": "2026-07-21 06:52:42",
+        "text": "煤五44节汐子铁  宝丽"
+      },
+      "stations": [
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "煤五{N}节汐子铁宝丽{N}节乌铁春日莲花",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004506,
+        "message_id": "wx_2026-07_1703",
+        "received_datetime": "2026-07-20 17:14:46",
+        "text": "煤五16节汐子铁   宝丽\n        29节乌铁   春日莲花"
+      },
+      "stations": [
+        "乌兰浩特",
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "煤五乌铁春日莲花{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004973,
+        "message_id": "wx_2026-07_2061",
+        "received_datetime": "2026-07-24 21:53:57",
+        "text": "煤五乌铁春日莲花50节"
+      },
+      "stations": [
+        "乌兰浩特"
+      ]
+    },
+    {
+      "pattern": "煤五凌东铁亚历山大实装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100002795,
+        "message_id": "wx_2026-07_298",
+        "received_datetime": "2026-07-03 20:08:19",
+        "text": "煤五凌东铁亚历山大实装35节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "煤五凌东铁宝腾海{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005527,
+        "message_id": "wx_2026-07_2516",
+        "received_datetime": "2026-07-29 21:34:03",
+        "text": "煤五凌东铁宝腾海51节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "煤五朝阳西铁马兰幸福{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004856,
+        "message_id": "wx_2026-07_1970",
+        "received_datetime": "2026-07-24 06:51:12",
+        "text": "煤五  朝阳西铁  马兰幸福14节"
+      },
+      "stations": [
+        "朝阳西"
+      ]
+    },
+    {
+      "pattern": "煤五朝阳西铁，马兰幸福{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003539,
+        "message_id": "wx_2026-07_908",
+        "received_datetime": "2026-07-11 20:27:21",
+        "text": "煤五朝阳西铁，马兰幸福63节"
+      },
+      "stations": [
+        "朝阳西"
+      ]
+    },
+    {
+      "pattern": "煤五朝阳西铁，马兰幸福，{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003647,
+        "message_id": "wx_2026-07_988",
+        "received_datetime": "2026-07-12 16:49:25",
+        "text": "煤五朝阳西铁，马兰幸福，41节"
+      },
+      "stations": [
+        "朝阳西"
+      ]
+    },
+    {
+      "pattern": "煤五汐子铁宝丽{N}节鞍子河{N}节共{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005353,
+        "message_id": "wx_2026-07_2370",
+        "received_datetime": "2026-07-28 08:14:28",
+        "text": "煤五 汐子铁 宝丽19节 鞍子河10节共29节"
+      },
+      "stations": [
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "煤五汐子铁环球信任{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100002484,
+        "message_id": "wx_2026-07_32",
+        "received_datetime": "2026-07-01 10:47:34",
+        "text": "煤五汐子铁环球信任46节"
+      },
+      "stations": [
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "煤五，{N}节朝阳西铁，马兰幸福",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003578,
+        "message_id": "wx_2026-07_938",
+        "received_datetime": "2026-07-12 07:00:20",
+        "text": "煤五，43节朝阳西铁，马兰幸福"
+      },
+      "stations": [
+        "朝阳西"
+      ]
+    },
+    {
+      "pattern": "煤五，乌铁，春日莲花{N}节。海洋征服者{N}节。共{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003918,
+        "message_id": "wx_2026-07_1211",
+        "received_datetime": "2026-07-15 20:54:24",
+        "text": "煤五，乌铁，春日莲花17节。海洋征服者36节。共53节"
+      },
+      "stations": [
+        "乌兰浩特"
+      ]
+    },
+    {
+      "pattern": "煤五，凌东铁。艾伦{N}节。亚历山大{N}节。共{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003112,
+        "message_id": "wx_2026-07_558",
+        "received_datetime": "2026-07-06 22:48:09",
+        "text": "煤五，凌东铁。艾伦48节。亚历山大1节。共49节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "煤五，凌东铁，艾伦{N}节。朝阳西铁，马兰幸福{N}节。共{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003406,
+        "message_id": "wx_2026-07_808",
+        "received_datetime": "2026-07-10 05:27:59",
+        "text": "煤五，凌东铁，艾伦14节。朝阳西铁，马兰幸福19节。共33节"
+      },
+      "stations": [
+        "凌源东",
+        "朝阳西"
+      ]
+    },
+    {
+      "pattern": "煤五，凌东铁，艾伦，实装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100002943,
+        "message_id": "wx_2026-07_415",
+        "received_datetime": "2026-07-05 06:52:37",
+        "text": "煤五，凌东铁，艾伦，实装52节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "煤五，朝阳铁，马兰幸福，实装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004356,
+        "message_id": "wx_2026-07_1583",
+        "received_datetime": "2026-07-19 14:04:25",
+        "text": "煤五，朝阳铁，马兰幸福，实装52节"
+      },
+      "stations": [
+        "朝阳西"
+      ]
+    },
+    {
+      "pattern": "煤五，汐子铁，环球信任，实装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100002571,
+        "message_id": "wx_2026-07_114",
+        "received_datetime": "2026-07-02 01:43:09",
+        "text": "煤五，汐子铁，环球信任，实装33节"
+      },
+      "stations": [
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "煤五，汐子铁，鞍子河{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005094,
+        "message_id": "wx_2026-07_2167",
+        "received_datetime": "2026-07-26 03:06:57",
+        "text": "煤五，汐子铁，鞍子河  53节"
+      },
+      "stations": [
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "煤五，汐子铁，鞍子河{N}节，朝阳西，马兰幸福{N}节，实装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005062,
+        "message_id": "wx_2026-07_2142",
+        "received_datetime": "2026-07-25 20:01:54",
+        "text": "煤五，汐子铁，鞍子河13节，朝阳西，马兰幸福14节，实装27节"
+      },
+      "stations": [
+        "朝阳西",
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "煤六{N}节四平铁马兰希望",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003457,
+        "message_id": "wx_2026-07_849",
+        "received_datetime": "2026-07-10 20:12:27",
+        "text": "煤六 52节 四平铁 马兰希望"
+      },
+      "stations": [
+        "四平"
+      ]
+    },
+    {
+      "pattern": "煤六{N}节马林金通铜精矿“帕克塔岛1舱”标“△”为木板箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005235,
+        "message_id": "wx_2026-07_2281",
+        "received_datetime": "2026-07-27 04:36:37",
+        "text": "煤六 40节 马林金通铜精矿“帕克塔岛1舱”标“△”为木板箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤六{N}节马林金通铜精矿“贝拉4舱标“△”为木板箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004987,
+        "message_id": "wx_2026-07_2073",
+        "received_datetime": "2026-07-25 00:40:28",
+        "text": "煤六 55节 马林金通铜精矿“贝拉4舱 标“△”为木板箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤六{N}节马林铜（金通）10.{N}节贝拉1舱（1-11后箱），0.{N}节联邦4舱（11前箱），21.{N}节联邦1舱（12-32）标“△”为木板箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004239,
+        "message_id": "wx_2026-07_1484",
+        "received_datetime": "2026-07-18 13:52:51",
+        "text": "煤六 32节 马林铜（金通）10.5节贝拉1舱（1-11后箱），0.5节联邦4舱（11前箱），21.5节 联邦1舱（12-32）标“△”为木板箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤六{N}节马林铜（金通）10.{N}节贝拉1舱（1-11后箱），0.{N}节联邦4舱（11前箱），{N}节联邦1舱（12-32）标“△”为木板箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004246,
+        "message_id": "wx_2026-07_1491",
+        "received_datetime": "2026-07-18 14:07:22",
+        "text": "煤六 32节 马林铜（金通）10.5节贝拉1舱（1-11后箱），0.5节联邦4舱（11前箱），21节 联邦1舱（12-32）标“△”为木板箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤六{N}节马林铜（金通）22.{N}节联邦4舱（1-15，38后箱-45），22.{N}节联邦1舱16-38前箱）",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100002895,
+        "message_id": "wx_2026-07_382",
+        "received_datetime": "2026-07-04 19:10:40",
+        "text": "煤六 45节 马林铜（金通）22.5节 联邦 4舱（1-15，38后箱-45），22.5节 联邦 1舱 16-38前箱）"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤六{N}节马林铜（金通）联邦1舱，标“△”为木板箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003116,
+        "message_id": "wx_2026-07_562",
+        "received_datetime": "2026-07-06 23:51:19",
+        "text": "煤六 41节 马林铜（金通）联邦1舱，标“△”为木板箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤六{N}节马林铜（金通）联邦4舱，标“△”为木板箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100002679,
+        "message_id": "wx_2026-07_202",
+        "received_datetime": "2026-07-03 00:29:42",
+        "text": "煤六 49节 马林铜（金通）联邦4舱，标“△”为木板箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤六{N}节马林铜（金通）贝拉1舱标“△”为木板箱以此为准",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004710,
+        "message_id": "wx_2026-07_1848",
+        "received_datetime": "2026-07-22 18:50:27",
+        "text": "煤六 55节 马林铜（金通）贝拉1舱 标“△”为木板箱 以此为准"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤六四平铁“马兰希望“{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003347,
+        "message_id": "wx_2026-07_758",
+        "received_datetime": "2026-07-09 15:05:01",
+        "text": "煤六   四平铁 “马兰希望“47节"
+      },
+      "stations": [
+        "四平"
+      ]
+    },
+    {
+      "pattern": "煤六四平铁“马兰希望”{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003556,
+        "message_id": "wx_2026-07_917",
+        "received_datetime": "2026-07-12 01:53:14",
+        "text": "煤六  四平铁  “马兰希望”47节"
+      },
+      "stations": [
+        "四平"
+      ]
+    },
+    {
+      "pattern": "煤六马林金通铜精矿“帕克塔岛1舱”{N}节，标“△”为木板箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005314,
+        "message_id": "wx_2026-07_2338",
+        "received_datetime": "2026-07-27 21:35:58",
+        "text": "煤六  马林金通铜精矿“帕克塔岛1舱”59节，标“△”为木板箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤六马林金通铜精矿“联邦1舱”{N}节（序号1-44），“联邦4舱”{N}节（序号45-49），标“△”为木板箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003044,
+        "message_id": "wx_2026-07_500",
+        "received_datetime": "2026-07-05 22:02:44",
+        "text": "煤六   马林金通  铜精矿“联邦1舱”44节（序号1-44），“联邦4舱”5节（序号45-49），标“△”为木板箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤六马林金通铜精矿“贝拉1舱”{N}节，标“△”为木板箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004400,
+        "message_id": "wx_2026-07_1617",
+        "received_datetime": "2026-07-20 05:51:53",
+        "text": "煤六 马林金通铜精矿“贝拉1舱”51节，标“△”为木板箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤六马林金通铜精矿“贝拉4舱”42.{N}节（序号1-43后箱），“帕克塔岛1舱”13.{N}节（序号43前箱-56），标“△”为木板箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005196,
+        "message_id": "wx_2026-07_2245",
+        "received_datetime": "2026-07-26 17:23:08",
+        "text": "煤六   马林金通铜精矿“贝拉4舱”42.5节（序号1-43后箱），“帕克塔岛1舱”13.5节（序号43前箱-56），标“△”为木板箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤六马林金通铜精矿“贝拉4舱”{N}节（序号1-60），“贝拉1舱”{N}节（序号61），标“△”为木板箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005044,
+        "message_id": "wx_2026-07_2123",
+        "received_datetime": "2026-07-25 15:28:46",
+        "text": "煤六   马林金通铜精矿“贝拉4舱”60节（序号1-60），“贝拉1舱”1节（序号61），标“△”为木板箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    },
+    {
+      "pattern": "煤四乌铁海洋征服者实装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003392,
+        "message_id": "wx_2026-07_794",
+        "received_datetime": "2026-07-10 02:37:28",
+        "text": "煤四乌铁海洋征服者实装53节"
+      },
+      "stations": [
+        "乌兰浩特"
+      ]
+    },
+    {
+      "pattern": "煤四凌东铁艾伦{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005227,
+        "message_id": "wx_2026-07_2273",
+        "received_datetime": "2026-07-27 01:40:37",
+        "text": "煤四凌东铁艾伦53节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "煤四汐子铁宝丽装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100002912,
+        "message_id": "wx_2026-07_394",
+        "received_datetime": "2026-07-04 21:30:06",
+        "text": "煤四 汐子铁 宝丽 装53节"
+      },
+      "stations": [
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "煤四汐子铁鞍子河{N}节宝丽{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005397,
+        "message_id": "wx_2026-07_2407",
+        "received_datetime": "2026-07-28 16:21:10",
+        "text": "煤四 汐子铁  鞍子河3节  宝丽52节"
+      },
+      "stations": [
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "煤四汐子铁鞍子河实装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005078,
+        "message_id": "wx_2026-07_2151",
+        "received_datetime": "2026-07-25 23:01:17",
+        "text": "煤四 汐子铁 鞍子河 实装48节"
+      },
+      "stations": [
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "煤四汐子铁鞍子河实装{N}节乌铁春日莲花{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005316,
+        "message_id": "wx_2026-07_2340",
+        "received_datetime": "2026-07-27 23:01:08",
+        "text": "煤四 汐子铁 鞍子河 实装22节乌铁春日莲花25节"
+      },
+      "stations": [
+        "乌兰浩特",
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "煤四，{N}节汐子铁宝丽，{N}节乌铁春日莲花",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005483,
+        "message_id": "wx_2026-07_2482",
+        "received_datetime": "2026-07-29 11:47:56",
+        "text": "煤四，53节汐子铁宝丽，3节乌铁春日莲花"
+      },
+      "stations": [
+        "乌兰浩特",
+        "汐子"
+      ]
+    },
+    {
+      "pattern": "煤四，乌铁，春日莲花，{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100002822,
+        "message_id": "wx_2026-07_321",
+        "received_datetime": "2026-07-04 05:57:47",
+        "text": "煤四，乌铁，春日莲花，51节"
+      },
+      "stations": [
+        "乌兰浩特"
+      ]
+    },
+    {
+      "pattern": "煤四，凌东铁，亚历山大，{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100002803,
+        "message_id": "wx_2026-07_306",
+        "received_datetime": "2026-07-03 22:00:09",
+        "text": "煤四，凌东铁，亚历山大，15节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "煤四，凌东铁，亚历山大，实装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100002562,
+        "message_id": "wx_2026-07_105",
+        "received_datetime": "2026-07-01 22:25:57",
+        "text": "煤四，凌东铁，亚历山大，实装55节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "煤四，凌东铁，艾伦，实装{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003073,
+        "message_id": "wx_2026-07_526",
+        "received_datetime": "2026-07-06 10:31:48",
+        "text": "煤四，凌东铁，艾伦，实装53节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "白班凌东煤装车{N}节埃尔加精煤（白石）{N}节点前剩余承认车无点后承认车无现场在装无合计欠车无",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005407,
+        "message_id": "wx_2026-07_2415",
+        "received_datetime": "2026-07-28 17:18:46",
+        "text": "白班凌东煤装车29节\n埃尔加精煤（白石）29节\n点前剩余承认车无\n点后承认车无\n现场在装无\n合计欠车无"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "白班凌东煤装车无点前剩余承认车{N}节点后承认车无现场在装无合计欠车{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005291,
+        "message_id": "wx_2026-07_2320",
+        "received_datetime": "2026-07-27 17:21:15",
+        "text": "白班凌东煤装车无\n点前剩余承认车29节\n点后承认车无\n现场在装无\n合计欠车29节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "白班凌东铁装车{N}节印度粉（艾伦）{N}节点前剩余承认车全部完成点后承认车{N}节现场在装{N}节合计欠车{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003096,
+        "message_id": "wx_2026-07_544",
+        "received_datetime": "2026-07-06 17:34:03",
+        "text": "白班凌东铁装车53节\n印度粉（艾伦）53节\n点前剩余承认车全部完成\n点后承认车53节\n现场在装49节\n合计欠车53节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "白班凌东铁装车{N}节金宝粉（泰达16）{N}节点前剩余承认车无点后承认车无现场在装无合计欠车无",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004252,
+        "message_id": "wx_2026-07_1497",
+        "received_datetime": "2026-07-18 17:33:03",
+        "text": "白班凌东铁装车53节\n金宝粉（泰达16）53节\n点前剩余承认车无\n点后承认车无\n现场在装无\n合计欠车无"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "白班凌东铁装车{N}节麦克粉（亚历山大）{N}节印度粉（艾伦）{N}节点前剩余承认车全部完成点后提前装出{N}节点后承认车{N}节现场在装无合计欠车{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100002891,
+        "message_id": "wx_2026-07_378",
+        "received_datetime": "2026-07-04 18:38:24",
+        "text": "白班凌东铁装车64节\n麦克粉（亚历山大）37节\n印度粉（艾伦）27节\n点前剩余承认车全部完成\n点后提前装出61节\n点后承认车106节\n现场在装无\n合计欠车45节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "白班凌东铁装车无点前剩余承认车{N}节点后承认车无现场在装{N}节合计欠车{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003902,
+        "message_id": "wx_2026-07_1195",
+        "received_datetime": "2026-07-15 17:26:44",
+        "text": "白班凌东铁装车无\n点前剩余承认车56节\n点后承认车无\n现场在装56节\n合计欠车56节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "白班凌东铁装车无点前剩余承认车全部完成点后承认车{N}节现场在装无合计欠车{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003001,
+        "message_id": "wx_2026-07_464",
+        "received_datetime": "2026-07-05 16:49:27",
+        "text": "白班凌东铁装车无\n点前剩余承认车全部完成\n点后承认车53节\n现场在装无\n合计欠车53节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "白班凌东铁装车无点前剩余承认车无点后承认车{N}节现场在装{N}节合计欠车{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100005511,
+        "message_id": "wx_2026-07_2504",
+        "received_datetime": "2026-07-29 17:16:13",
+        "text": "白班凌东铁装车无\n点前剩余承认车无\n点后承认车53节\n现场在装51节\n合计欠车53节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "白班凌东铁装车无点前承认车{N}节点后承认车无现场在装无合计欠车{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003529,
+        "message_id": "wx_2026-07_898",
+        "received_datetime": "2026-07-11 17:19:39",
+        "text": "白班凌东铁装车无\n点前承认车53节\n点后承认车无\n现场在装无\n合计欠车53节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "白班凌东铁装车无点前承认车全部完成点后承认车{N}节现场在装无合计欠车{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003448,
+        "message_id": "wx_2026-07_843",
+        "received_datetime": "2026-07-10 17:24:51",
+        "text": "白班凌东铁装车无\n点前承认车全部完成\n点后承认车53节\n现场在装无\n合计欠车53节"
+      },
+      "stations": [
+        "凌源东"
+      ]
+    },
+    {
+      "pattern": "码一林西吨袋铜精矿“吉贵”{N}节",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004184,
+        "message_id": "wx_2026-07_1437",
+        "received_datetime": "2026-07-17 23:52:04",
+        "text": "码一    林西吨袋铜精矿“吉贵”20节"
+      },
+      "stations": [
+        "林西"
+      ]
+    },
+    {
+      "pattern": "码二{N}节林西铜精矿吨袋禾盛顺29",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100003298,
+        "message_id": "wx_2026-07_716",
+        "received_datetime": "2026-07-09 06:09:02",
+        "text": "码二  16节   林西铜精矿  吨袋  禾盛顺29"
+      },
+      "stations": [
+        "林西"
+      ]
+    },
+    {
+      "pattern": "码二{N}节马林云铜海运自备箱",
+      "occurrences": 1,
+      "example": {
+        "inbox_id": 100004669,
+        "message_id": "wx_2026-07_1820",
+        "received_datetime": "2026-07-22 09:50:16",
+        "text": "码二 16节 马林云铜海运自备箱"
+      },
+      "stations": [
+        "马林"
+      ]
+    }
+  ]
+}

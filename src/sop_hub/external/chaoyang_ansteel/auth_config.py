@@ -22,7 +22,7 @@ import os
 
 # ── 账号(env 可覆盖)─────────────────────────────────────────────
 USERNAME = os.getenv("ANSTEEL_USER", "CWL20085")
-PASSWORD = os.getenv("ANSTEEL_PASS", "Zhufeng123!")
+PASSWORD = os.getenv("ANSTEEL_PASS", "Zhufeng.123")
 
 # ── 抓包密文(重放兜底;配了公钥就不用它)──────────────────────────
 CAPTURED_ENCRYPTED_USERNAME = (

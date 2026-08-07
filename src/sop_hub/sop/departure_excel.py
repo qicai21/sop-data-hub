@@ -653,6 +653,7 @@ class DispatchEventExcelResult:
 def _fetch_event_wagons_and_batches(
     wagon_ids: list[str] | None = None, *,
     container_ydids: list[str] | None = None,
+    container_batch_id: str | None = None,
     db_path: str | Path | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], str]:
     """Return (wagon_rows ordered by ticketed_at, batch_id→batch_dict, error)."""
@@ -666,10 +667,11 @@ def _fetch_event_wagons_and_batches(
     try:
         if container_ydids:
             in_ph = ",".join("?" * len(container_ydids))
+            batch_filter = " AND batch_id=?" if container_batch_id else ""
             box_rows = conn.execute(
-                f"SELECT * FROM wagon_container_shipments WHERE ydid IN ({in_ph}) "
+                f"SELECT * FROM wagon_container_shipments WHERE ydid IN ({in_ph}){batch_filter} "
                 f"ORDER BY ticketed_at ASC, car_no ASC, box_position ASC",
-                container_ydids,
+                [*container_ydids, *([container_batch_id] if container_batch_id else [])],
             ).fetchall()
             grouped: dict[tuple[str, str], list[sqlite3.Row]] = {}
             for row in box_rows:
@@ -788,6 +790,7 @@ def generate_dispatch_event_excel(
     db_path: str | Path | None = None,
     filename_override: str | None = None,
     container_ydids: list[str] | None = None,
+    container_batch_id: str | None = None,
 ) -> DispatchEventExcelResult:
     """Generate per-dispatch-event excel(跨 batch 合并一张表)。
 
@@ -799,7 +802,10 @@ def generate_dispatch_event_excel(
       filename_override: 不传则用 yaml file_naming.pattern + car_count。
     """
     wagons, batches, err = _fetch_event_wagons_and_batches(
-        wagon_ids, container_ydids=container_ydids, db_path=db_path,
+        wagon_ids,
+        container_ydids=container_ydids,
+        container_batch_id=container_batch_id,
+        db_path=db_path,
     )
     if err:
         return DispatchEventExcelResult(error=err)
@@ -867,16 +873,18 @@ def generate_dispatch_event_excel(
             box_rows: list[dict[str, Any]] = []
             for car_no, ydid in car_ydid_pairs:
                 if ydid:
+                    batch_filter = " AND batch_id=?" if container_batch_id else ""
                     rs = conn.execute(
                         "SELECT * FROM wagon_container_shipments "
-                        "WHERE car_no=? AND ydid=? ORDER BY box_position",
-                        (car_no, ydid),
+                        f"WHERE car_no=? AND ydid=?{batch_filter} ORDER BY box_position",
+                        (car_no, ydid, *([container_batch_id] if container_batch_id else [])),
                     ).fetchall()
                 else:
+                    batch_filter = " AND batch_id=?" if container_batch_id else ""
                     rs = conn.execute(
                         "SELECT * FROM wagon_container_shipments "
-                        "WHERE car_no=? ORDER BY box_position",
-                        (car_no,),
+                        f"WHERE car_no=?{batch_filter} ORDER BY box_position",
+                        (car_no, *([container_batch_id] if container_batch_id else [])),
                     ).fetchall()
                 for r in rs:
                     box_rows.append(dict(r))

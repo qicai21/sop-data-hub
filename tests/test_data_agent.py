@@ -1026,6 +1026,10 @@ class TestProjectKnownShips:
         assert "蓝鳍" in ships
         assert "马兰希望" in ships
 
+    def test_zhongtang_known_ships_includes_huize_qihang(self):
+        """到港船名汇泽启航用于中唐汐子铁路发运文本的项目授权。"""
+        assert "汇泽启航" in project_known_ships("zhongtang_special_steel")
+
     def test_unknown_project_returns_empty(self):
         assert project_known_ships("不存在的项目") == set()
         assert project_known_ships(None) == set()

@@ -42,6 +42,7 @@ project_meta:
     - "贝拉"
     - "环球信任"
     - "宝丽"
+    - "汇泽启航"
   # OCR 常见误识(汐子 ⇄ 沙子),ingest 时归一到汐子。
   destination_aliases:
     汐子: ["沙子"]

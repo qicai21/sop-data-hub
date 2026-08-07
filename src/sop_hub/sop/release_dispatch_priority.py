@@ -9,7 +9,9 @@ import yaml
 
 
 YAML_ROOT = Path(__file__).resolve().parents[3] / "config" / "project_sops"
-_LOT_RE = re.compile(r"^lot0*(\d+)$", re.IGNORECASE)
+# 手工把同一次放货拆成多个可独立匹配的子批次时，使用 lot10_a、lot10_b。
+# 同一主 lot 内必须先承接 a，再承接 b，不能退回默认优先级。
+_LOT_RE = re.compile(r"^lot0*(\d+)(?:_([a-z]))?$", re.IGNORECASE)
 
 
 @lru_cache(maxsize=1)
@@ -45,4 +47,5 @@ def release_dispatch_rule_priority(
     lot_number = int(match.group(1))
     if lot_number <= 0:
         return 100, False
-    return lot_number * 100, True
+    suffix = (match.group(2) or "a").lower()
+    return lot_number * 100 + (ord(suffix) - ord("a")), True

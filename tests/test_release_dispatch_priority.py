@@ -31,3 +31,12 @@ def test_invalid_or_missing_sequence_is_not_derived():
     assert release_dispatch_rule_priority(
         "zhongtang_special_steel", None
     ) == (100, False)
+
+
+def test_split_lots_keep_their_parent_lot_order():
+    assert release_dispatch_rule_priority(
+        "jilin_jingang_jinzhou", "lot10_a"
+    ) == (1000, True)
+    assert release_dispatch_rule_priority(
+        "jilin_jingang_jinzhou", "lot10_b"
+    ) == (1001, True)

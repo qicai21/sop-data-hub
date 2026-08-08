@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+
+"""R82 transport schema contract on SOP open_db (fee_manager source-syncs these tables).
+
+See tests/fixtures/FEE_TEST_BOUNDARY.md.
+"""
+
 import sqlite3
 
 from sop_hub.data_agent import db as db_module

@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "source_issue": "docs/issues historical #144 window anchor old ticket",
+    "captured_at": "2026-06",
+    "project_id": "generic",
+    "notes": "Synthetic cars 1000001-1000003; no real PII."
+  },
+  "input": {
+    "shipments": [
+      {
+        "ydid": "old-1",
+        "car_no": "1000001",
+        "destination_name": "朝阳西",
+        "cargo_name": "铁矿",
+        "ticketed_at": "2026-05-20 10:00:00"
+      },
+      {
+        "ydid": "old-2",
+        "car_no": "1000002",
+        "destination_name": "朝阳西",
+        "cargo_name": "铁矿",
+        "ticketed_at": "2026-05-20 10:01:00"
+      },
+      {
+        "ydid": "new-1",
+        "car_no": "1000001",
+        "destination_name": "朝阳西",
+        "cargo_name": "铁矿",
+        "ticketed_at": "2026-06-11 19:00:00"
+      },
+      {
+        "ydid": "new-2",
+        "car_no": "1000002",
+        "destination_name": "朝阳西",
+        "cargo_name": "铁矿",
+        "ticketed_at": "2026-06-11 19:02:00"
+      },
+      {
+        "ydid": "new-3",
+        "car_no": "1000003",
+        "destination_name": "朝阳西",
+        "cargo_name": "铁矿",
+        "ticketed_at": "2026-06-11 19:05:00"
+      }
+    ],
+    "recover_kwargs": {
+      "loading_car_nos": [
+        "1000001",
+        "1000002"
+      ],
+      "all_notice_car_nos": [
+        "1000001",
+        "1000002",
+        "1000003"
+      ],
+      "destination": "朝阳西",
+      "min_ticketed_at": "2026-06-11 06:00:00"
+    }
+  },
+  "expected": {
+    "status": "ok",
+    "anchor_ticketed_at": "2026-06-11 19:00:00",
+    "loading_car_nos": [
+      "1000001",
+      "1000002",
+      "1000003"
+    ]
+  },
+  "expected_when_new_deleted": {
+    "status": "no_ticket_yet",
+    "anchor_car_no": null
+  }
+}

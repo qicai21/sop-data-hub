@@ -34,62 +34,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 
-# ── fixture 真数据:wx_367 的 50 个 95306 ydid + container 等 ──────
-# 取自实际 95306 query result (2026-06-06 21:24-21:27,高桥镇→四平)
-def _fixture_50_wagons() -> list[dict]:
-    """50 车,前 11 车涉及 split 边界。其余整车简化。
-    box1 / box2 名称跟真实 wx_367 完全一致(便于 split assertion)。"""
-    base_ticketed = "2026-06-06 21:24:"
-    rows = []
-    # 真实头 11 车 + 后 39 车整车,每车 2 box
-    car_no_box_pairs = [
-        ("1886696", "TBJU8783839", "TBJU4948967"),  # split (lot3 box1 + lot5 box2)
-        ("1886730", "TBJU5312157", "TBJU1273181"),
-        ("1886688", "TBJU3105844", "TBJU5611564"),
-        ("1886705", "TBJU8350314", "TBJU0612737"),
-        ("1817915", "TBJU1150227", "TBJU1515006"),
-        ("1763827", "TBJU3428180", "TBJU5447379"),
-        ("1886698", "TBJU1538980", "TBCU0232351"),
-        ("1886679", "TBJU3062110", "TBJU9927329"),
-        ("1886685", "TBJU6506120", "TBJU3297330"),
-        ("1886709", "TBJU6926421", "TBJU6666068"),
-        ("1886708", "TBJU8786870", "TBJU1388540"),  # split (lot5 box1 + lot6 box2)
-    ]
-    # 后 39 整车,box 名 BOXxx
-    for i in range(39):
-        car_no = f"222{i:04d}"
-        car_no_box_pairs.append(
-            (car_no, f"BOX{i*2:04d}", f"BOX{i*2+1:04d}")
-        )
+# ── fixture: tests/fixtures/rail_windows/jilin_lanqi_50_wagons.json ──────
+from tests.support.replay import load_replay
 
-    for idx, (car_no, b1, b2) in enumerate(car_no_box_pairs):
-        rows.append({
-            "ydid": f"5163226{idx:09d}",
-            "czydid": f"czyd{idx:08d}",
-            "car_no": car_no,
-            "car_model": "X1K",
-            "marked_weight": 63.5,
-            "cargo_count": 2,
-            "cargo_name": "铁矿粉",
-            "origin_name": "高桥镇",
-            "destination_name": "四平",
-            "ticketed_at": f"{base_ticketed}{idx:02d}",
-            "departed_at": None,
-            "arrived_at": None,
-            "delivered_at": None,
-            "accepted_at": f"{base_ticketed}{idx:02d}",
-            "loaded_at": f"{base_ticketed}{idx:02d}",
-            "status_name": "已制单",
-            "latest_stage_key": "ticketed",
-            "latest_stage_name": "制票",
-            "latest_event_time": f"{base_ticketed}{idx:02d}",
-            "transport_mode_code": "rail",
-            "transport_mode_name": "铁路",
-            "waybill_no": f"WB{idx:08d}",
-            "container_no_raw": f"{b1}/{b2}",
-            "container_numbers_json": json.dumps([b1, b2]),
-        })
-    return rows
+_JILIN_50_CASE = load_replay("rail_windows/jilin_lanqi_50_wagons.json")
+
+
+def _fixture_50_wagons() -> list[dict]:
+    """50 车 from portable replay fixture (head-11 retain split box ids)."""
+    return list(_JILIN_50_CASE["input"]["wagons"])
 
 
 @pytest.fixture()
@@ -97,6 +50,8 @@ def jilin_e2e_dbs(tmp_path, monkeypatch):
     """临时 sop_agent.db + 95306_collection.sqlite3,装好 fixture 数据。"""
     sop_db = tmp_path / "sop_agent.db"
     rail_db = tmp_path / "95306.db"
+    case = _JILIN_50_CASE
+    wagons = _fixture_50_wagons()
 
     # 95306 fixture
     rc = sqlite3.connect(str(rail_db))
@@ -110,21 +65,23 @@ def jilin_e2e_dbs(tmp_path, monkeypatch):
         transport_mode_code TEXT, transport_mode_name TEXT,
         waybill_no TEXT, container_no_raw TEXT, container_numbers_json TEXT
     )""")
-    for w in _fixture_50_wagons():
+    keys = [
+        "ydid", "czydid", "car_no", "car_model", "marked_weight", "cargo_count",
+        "cargo_name", "origin_name", "destination_name", "ticketed_at", "departed_at",
+        "arrived_at", "delivered_at", "accepted_at", "loaded_at", "status_name",
+        "latest_stage_key", "latest_stage_name", "latest_event_time",
+        "transport_mode_code", "transport_mode_name", "waybill_no",
+        "container_no_raw", "container_numbers_json",
+    ]
+    for w in wagons:
         rc.execute(
             "INSERT INTO shipments VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            tuple(w[k] for k in [
-                "ydid","czydid","car_no","car_model","marked_weight","cargo_count",
-                "cargo_name","origin_name","destination_name","ticketed_at","departed_at",
-                "arrived_at","delivered_at","accepted_at","loaded_at","status_name",
-                "latest_stage_key","latest_stage_name","latest_event_time",
-                "transport_mode_code","transport_mode_name","waybill_no",
-                "container_no_raw","container_numbers_json",
-            ]),
+            tuple(w[k] for k in keys),
         )
-    rc.commit(); rc.close()
+    rc.commit()
+    rc.close()
 
-    # sop_agent fixture:5 lot + dispatch_plan(蓝鳍真实数字)+ 表 schema
+    # sop_agent fixture: lots + dispatch_plan from replay + table schema
     sc = sqlite3.connect(str(sop_db))
     sc.executescript("""
     CREATE TABLE release_batches (
@@ -164,31 +121,49 @@ def jilin_e2e_dbs(tmp_path, monkeypatch):
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     """)
-    # 5 lot — 3 个 active (lot03 差 1 / lot05 差 20 / lot06 差 91)
-    sc.execute(
-        "INSERT INTO release_batches (id, batch_key, project, ship_name, cargo_name, "
-        "contract_no, order_identifier, destination_station, notice_date, batch_sequence, "
-        "dispatch_status) VALUES "
-        "('lot03', 'k3', 'jilin_jingang_jinzhou', '蓝鳍', '铁矿粉', 'C-A', 'O-A', '四平', '2026-05-29', 'lot03', 'loading'),"
-        "('lot05', 'k5', 'jilin_jingang_jinzhou', '蓝鳍', '铁矿粉', 'C-B', 'O-B', '四平', '2026-06-03', 'lot05', 'loading'),"
-        "('lot06', 'k6', 'jilin_jingang_jinzhou', '蓝鳍', '铁矿粉', 'C-C', 'O-C', '四平', '2026-06-03', 'lot06', 'loading')"
-    )
+    ship = case["meta"].get("ship_name") or "蓝鳍"
+    for rb in case["input"]["release_batches"]:
+        sc.execute(
+            "INSERT INTO release_batches (id, batch_key, project, ship_name, cargo_name, "
+            "contract_no, order_identifier, destination_station, notice_date, batch_sequence, "
+            "dispatch_status) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                rb["id"],
+                rb["batch_key"],
+                "jilin_jingang_jinzhou",
+                ship,
+                "铁矿粉",
+                f"C-{rb['id']}",
+                f"O-{rb['id']}",
+                "四平",
+                "2026-05-29",
+                rb["batch_sequence"],
+                rb.get("dispatch_status") or "loading",
+            ),
+        )
     sc.executemany(
         "INSERT INTO release_batch_dispatch_plan (release_batch_id, project_id, ship_name, "
         "planned_box_count, allocated_box_count, priority_order, status) VALUES (?,?,?,?,?,?,?)",
         [
-            ("lot03", "jilin_jingang_jinzhou", "蓝鳍", 92, 91, 3, "active"),
-            ("lot05", "jilin_jingang_jinzhou", "蓝鳍", 92, 72, 5, "active"),
-            ("lot06", "jilin_jingang_jinzhou", "蓝鳍", 91, 0,  6, "active"),
+            (
+                dp["release_batch_id"],
+                "jilin_jingang_jinzhou",
+                ship,
+                dp["planned_box_count"],
+                dp["allocated_box_count"],
+                dp["priority_order"],
+                "active",
+            )
+            for dp in case["input"]["dispatch_plans"]
         ],
     )
-    sc.commit(); sc.close()
+    sc.commit()
+    sc.close()
 
-    # 让代码用这两个 fixture db
     monkeypatch.setenv("BUSINESS_DATA_AGENT_DB_PATH", str(sop_db))
     monkeypatch.setenv("DB_95306_PATH", str(rail_db))
 
-    return {"sop_db": sop_db, "rail_db": rail_db}
+    return {"sop_db": sop_db, "rail_db": rail_db, "case": case}
 
 
 # ──────────────────────────────────────────────────────────────────

@@ -1,0 +1,42 @@
+[
+  {
+    "car_no": "8103798",
+    "car_model": "L18",
+    "business_weight": 60.0,
+    "rail_marked_weight": 60.0,
+    "weight_source": "bulk_wagon_model_rule",
+    "note": "散粮车样本 1 — L18 60吨/车"
+  },
+  {
+    "car_no": "8101469",
+    "car_model": "L18",
+    "business_weight": 60.0,
+    "rail_marked_weight": 60.0,
+    "weight_source": "bulk_wagon_model_rule",
+    "note": "散粮车样本 2 — L18 60吨/车"
+  },
+  {
+    "car_no": "8101431",
+    "car_model": "L18",
+    "business_weight": 60.0,
+    "rail_marked_weight": 60.0,
+    "weight_source": "bulk_wagon_model_rule",
+    "note": "散粮车样本 3 — L18 60吨/车"
+  },
+  {
+    "car_no": "8105474",
+    "car_model": "L70",
+    "business_weight": 69.0,
+    "rail_marked_weight": 69.0,
+    "weight_source": "bulk_wagon_model_rule",
+    "note": "散粮车样本 4 — L70 69吨/车"
+  },
+  {
+    "car_no": "UNKNOWN",
+    "car_model": "UNKNOWN",
+    "business_weight": null,
+    "rail_marked_weight": null,
+    "weight_source": null,
+    "note": "未知车型 — 不得默认按60吨，必须标记unknown"
+  }
+]

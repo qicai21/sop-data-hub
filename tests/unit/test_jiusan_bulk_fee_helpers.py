@@ -1,3 +1,7 @@
+"""Pure helpers for sop_hub.fees.jiusan_bulk (SOP-owned until fee_manager absorbs code).
+
+See tests/fixtures/FEE_TEST_BOUNDARY.md.
+"""
 from pathlib import Path
 
 from sop_hub.fees.jiusan_bulk import (

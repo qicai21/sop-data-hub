@@ -113,10 +113,10 @@ PAGE = """<!doctype html>
     .cycle-loop {
       display: grid;
       grid-template-columns:
-        minmax(9rem, 1fr) 2.5rem minmax(9rem, 1fr) 2.5rem
-        minmax(9rem, 1fr) 2.5rem minmax(9rem, 1fr);
+        minmax(10rem, 1fr) 2.8rem minmax(10rem, 1fr) 2.8rem
+        minmax(10rem, 1fr);
       grid-template-rows: auto 2.6rem auto;
-      min-width: 48rem;
+      min-width: 40rem;
       padding: 12px;
       align-items: stretch;
     }
@@ -137,9 +137,9 @@ PAGE = """<!doctype html>
     .cycle-node.empty { grid-column: 1; grid-row: 1; }
     .cycle-node.loaded { grid-column: 3; grid-row: 1; }
     .cycle-node.transit { grid-column: 5; grid-row: 1; }
-    .cycle-node.station { grid-column: 7; grid-row: 1; }
-    .cycle-node.line330 { grid-column: 7; grid-row: 3; }
-    .cycle-node.returning { grid-column: 3; grid-row: 3; }
+    .cycle-node.station { grid-column: 5; grid-row: 3; }
+    .cycle-node.line330 { grid-column: 3; grid-row: 3; }
+    .cycle-node.returning { grid-column: 1; grid-row: 3; }
     .cycle-node small {
       display: block;
       margin-top: 5px;
@@ -172,12 +172,9 @@ PAGE = """<!doctype html>
     .cycle-link.up::after { content: "▲"; top: -8px; left: calc(50% - 6px); }
     .cycle-link.top-1 { grid-column: 2; grid-row: 1; }
     .cycle-link.top-2 { grid-column: 4; grid-row: 1; }
-    .cycle-link.top-3 { grid-column: 6; grid-row: 1; }
-    .cycle-link.down-right { grid-column: 7; grid-row: 2; }
-    .cycle-link.bottom-1 { grid-column: 4 / span 3; grid-row: 3; }
-    .cycle-link.bottom-2 { grid-column: 1 / span 2; grid-row: 3; }
-    .cycle-link.bottom-2::before { left: 50%; width: 50%; }
-    .cycle-link.bottom-2::after { left: calc(50% - 3px); }
+    .cycle-link.down-right { grid-column: 5; grid-row: 2; }
+    .cycle-link.bottom-1 { grid-column: 4; grid-row: 3; }
+    .cycle-link.bottom-2 { grid-column: 2; grid-row: 3; }
     .cycle-link.up-left { grid-column: 1; grid-row: 2; }
     .bold { font-weight: 700; }
     .dim { color: var(--muted); }
@@ -380,7 +377,6 @@ def _jiusan_panel_body_html(body: list[str]) -> str:
         _cycle_node_html("loaded", "港口重箱", port_loaded, contexts["loaded"]),
         '<div class="cycle-link east top-2"></div>',
         _cycle_node_html("transit", "在途（重）", transit_loaded, contexts["transit"]),
-        '<div class="cycle-link east top-3"></div>',
         _cycle_node_html("station", "新台子站", xtz, contexts["station"]),
         '<div class="cycle-link drop down-right"></div>',
         _cycle_node_html("line330", "三三零专用线", line330, contexts["line330"]),

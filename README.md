@@ -1,10 +1,12 @@
 # sop-data-hub
 
+> 快速入口；完整 onboarding 请先读 [`docs/00-START-HERE.md`](docs/00-START-HERE.md)。日常使用 Web 看板 `http://<Mac局域网IP>:8765`（只读）；`tmux attach -t board` 仅作开发/备用。费用与结算在 sibling `../fee_manager`，运输事实只从 SOP 单向同步过去。
+
 **锦州港铁路+海铁联运业务系统**:微信群消息流 → 业务实体抽取 + 95306 票务交叉 + 自动出港 excel 回群。
 
 多项目并存,SOP yaml 驱动。一切始于 wx-ops-agent 落到磁盘的 jsonl + 图片,终于 wx-ui-bridge 把 excel 发回群。
 
-> **新 session / 接手 / 隔几月回来**:先读 [`docs/00-START-HERE.md`](docs/00-START-HERE.md) — 5 分钟摸清当前架构 + 5 个 daemon 怎么起 + 业务铁律。
+> **新 session / 接手 / 隔几月回来**：先读 [`docs/00-START-HERE.md`](docs/00-START-HERE.md)；它是唯一 onboarding 入口，记录现行架构、服务、跨仓边界和业务铁律。
 
 ---
 
@@ -12,19 +14,17 @@
 
 | 项目 | 状态 |
 |---|---|
-| 吉林金钢(锦州) | 主项目,完整 release_batch + 发运 chain 闭环 |
-| 朝阳钢铁 | 检装车通知单 + 95306 chain(2026-06-02 实测打通) |
-| 中唐特钢 | 历史 batch 完整,在用 |
-| 九三循环运输 | 占位预留(数据待完善) |
-| 乌兰浩特特钢 | 自动发现(有 1 条 batch) |
-| (规划)铜精矿循环 / 氧化铝循环 / 其他循环运输 | — |
+| 吉林金钢(锦州) | 集装箱，完整 release_batch + 箱级发运闭环 |
+| 朝阳钢铁 | 整车，检装车 + 95306 + 鞍钢门户上传/反查 |
+| 中唐特钢 | 整车，汐子方向海铁联运 |
+| 九三大豆 | 集装箱 + 散粮，晨报/台账对账与循环追踪 |
 
 ---
 
-## 2. 5 个常驻进程
+## 2. 运行服务（launchd 管理）
 
 ```
-微信群 → wx-ops-agent run-daemon ──落 jsonl + 解码 jpg到磁盘
+微信群 → wx-ops-agent run-daemon ──落 jsonl + 解码图片到磁盘
                                       ↓
               ┌─── run_live_service.py ───扫 jsonl
               │
@@ -42,18 +42,21 @@
                            ↓
                   chain → match release_batch → 95306 查 → wagon_shipments → excel → 发回群
 
-               rail95306-sync run_sync_worker.py ── 5min/轮 同步 95306 票
+               rail95306-sync run_sync_worker.py ──同步 95306 票
                               ↓ 每轮完调用
                        pending_match_verifier ── 票延迟 1-2h 候选自动重试
                                             ── 6h 超时 → 人工
 ```
 
-**检查健康态:**
+SOP 本仓由 launchd 托管：`live-service`、`text-watch`、`dashboard-web`、`status-sync`、`jiusan-sync`、`jiusan-morning-reconcile`、`jiusan-bulk-report-ingest`。微信与 95306 是相邻仓的独立常驻服务。完整 label 和重启映射见 [`docs/00-START-HERE.md`](docs/00-START-HERE.md#4-daemon-拓扑--重启逻辑改代码必看)。
+
+**检查健康态（只读）：**
 ```bash
 ps aux | grep -E "wechat_ops_agent|run_live_service|text_watch_daemon|run_sync_worker" | grep -v grep
+launchctl print "gui/$(id -u)/com.qicai21.sop-data-hub.dashboard-web" >/dev/null
 ```
 
-应有 4 个进程(看板 cli_dashboard 是手开 tmux,不计)。
+不要用 `nohup` / `disown` 启动生产服务；需要恢复服务时使用对应 launchd label 的 `launchctl kickstart -k`。
 
 ---
 
@@ -66,7 +69,7 @@ ps aux | grep -E "wechat_ops_agent|run_live_service|text_watch_daemon|run_sync_w
 | VLM(分类+抽取) | Qwen3.6-35B-A3B-4bit @ `localhost:8021`(OpenAI `/v1`,单模型兼两职;2026-06-26 起取代旧 VL-8B@8018 / 14B@8020) |
 | VLM 推理后端 | Apple MLX(mlx-vlm.server 0.6.3) |
 | 微信侧 | wx-ui-bridge(自动化 + 文件发送) |
-| 看板 | 终端(stdlib ANSI,无第三方依赖) |
+| 看板 | Web（局域网只读，`:8765`）为主；终端 ANSI 为开发备用 |
 
 **关联仓库:**
 - `~/projects/repos/wx-ops-agent` — 微信消息采集 + 图片解码(单一职责)
@@ -80,10 +83,11 @@ ps aux | grep -E "wechat_ops_agent|run_live_service|text_watch_daemon|run_sync_w
 ```bash
 cd ~/projects/repos/sop-data-hub
 
-# 看当前业务态(终端看板)
-PYTHONPATH=src python3 scripts/cli_dashboard.py
-# 或挂 tmux 后台:
-tmux new -s board -d "cd $(pwd) && PYTHONPATH=src python3 scripts/cli_dashboard.py"
+# 看当前业务态（主入口：浏览器）
+open "http://$(ipconfig getifaddr en0):8765"
+
+# 终端备用看板
+tmux attach -t board
 
 # 看候选挂起情况
 PYTHONPATH=src python3 -m sop_hub.sop.pending_match_verifier --db data/sop_agent.db --once
@@ -91,10 +95,8 @@ PYTHONPATH=src python3 -m sop_hub.sop.pending_match_verifier --db data/sop_agent
 # 手动重算 wx 配置(改了 config/project_sops/*.yaml 后)
 PYTHONPATH=src python3 -m sop_hub.sop.wx_config_exporter
 
-# 启动 text_watch_daemon(若不在跑)
-nohup env PYTHONPATH=src /opt/homebrew/bin/python3.14 \
-  -m sop_hub.sop.text_watch_daemon --db data/sop_agent.db \
-  --interval 5 --quiet >> runtime/text_watch.log 2>&1 & disown
+# 改动 text-watch 加载的代码后重启（其他 label 见 START-HERE）
+launchctl kickstart -k "gui/$(id -u)/com.qicai21.sop-data-hub.text-watch"
 
 # sqlite 直查(无 cache,看实时态)
 sqlite3 data/sop_agent.db \
@@ -107,14 +109,15 @@ CLI 子命令清单见 `python3 -m sop_hub --help`(主要:`process` / `inspect` 
 
 ## 5. 业务铁律
 
-详见 [`docs/00-START-HERE.md` §4](docs/00-START-HERE.md#4-业务铁律memory-备份先读这个)。摘要:
+详见 [`docs/00-START-HERE.md`](docs/00-START-HERE.md)。摘要：
 
 1. **rail95306-sync 数据不可重建** — 其他全部都可以
 2. **时间戳:ISO Beijing +08:00**(`sop_hub.utils.time.now_iso_beijing()`),绝不 `datetime.utcnow()` / 裸 `datetime.now()` / `CURRENT_TIMESTAMP`
 3. **wx-ops-agent → sop-data-hub 单向数据流**:wx 只产 jsonl + 图片,sop 自己消费
-4. **检装车候选无船名 → 必挂起**,不允许往下游传脏数据
-5. **95306 票延迟 1-2 h**:候选 `pending_95306_match` 正常,6h 超时再报警
-6. **多项目通过 yaml 驱动**(`config/project_sops/*.yaml`)
+4. **检装候选**按图、文本 rendezvous、95306 窗口和顺序 lot 优先级闭环；缺证据保持可诊断挂起
+5. **95306 票延迟**是正常业务状态，候选重试不能改挂既有 lot
+6. **多项目通过 yaml 驱动**（`config/project_sops/*.yaml`）
+7. **费用单向同步**：SOP 维护批次、到厂重量与车/箱归属；费用和结算只在 `../fee_manager`
 
 ---
 

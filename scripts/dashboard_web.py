@@ -80,15 +80,16 @@ PAGE = """<!doctype html>
     }
     .panel {
       min-width: 0;
-      border: 1px solid var(--line);
-      border-radius: 4px;
+      border: 1px solid #71808b;
+      border-radius: 0;
       overflow: hidden;
-      background: #15191c;
+      background: #14181b;
     }
     .panel-title {
       margin: 0;
       padding: 8px 12px;
-      border-bottom: 1px solid var(--line);
+      border-bottom: 1px solid #59656f;
+      background: #1b2025;
       font: 700 14px/1.35 "SFMono-Regular", Consolas, "Liberation Mono",
         "Microsoft YaHei UI", monospace;
     }

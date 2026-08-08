@@ -139,8 +139,14 @@ PAGE = """<!doctype html>
     .cycle-node.transit { grid-column: 5; grid-row: 1; }
     .cycle-node.station { grid-column: 7; grid-row: 1; }
     .cycle-node.line330 { grid-column: 7; grid-row: 3; }
-    .cycle-node.returning { grid-column: 5; grid-row: 3; }
-    .cycle-node.returned { grid-column: 3; grid-row: 3; }
+    .cycle-node.returning { grid-column: 3; grid-row: 3; }
+    .cycle-node small {
+      display: block;
+      margin-top: 5px;
+      color: var(--cyan);
+      font: 12px/1.25 "SFMono-Regular", Consolas, "Liberation Mono",
+        "Microsoft YaHei UI", monospace;
+    }
     .cycle-link { position: relative; min-width: 0; }
     .cycle-link::before {
       content: "";
@@ -168,11 +174,10 @@ PAGE = """<!doctype html>
     .cycle-link.top-2 { grid-column: 4; grid-row: 1; }
     .cycle-link.top-3 { grid-column: 6; grid-row: 1; }
     .cycle-link.down-right { grid-column: 7; grid-row: 2; }
-    .cycle-link.bottom-1 { grid-column: 6; grid-row: 3; }
-    .cycle-link.bottom-2 { grid-column: 4; grid-row: 3; }
-    .cycle-link.bottom-3 { grid-column: 1 / span 2; grid-row: 3; }
-    .cycle-link.bottom-3::before { left: 50%; width: 50%; }
-    .cycle-link.bottom-3::after { left: calc(50% - 3px); }
+    .cycle-link.bottom-1 { grid-column: 4 / span 3; grid-row: 3; }
+    .cycle-link.bottom-2 { grid-column: 1 / span 2; grid-row: 3; }
+    .cycle-link.bottom-2::before { left: 50%; width: 50%; }
+    .cycle-link.bottom-2::after { left: calc(50% - 3px); }
     .cycle-link.up-left { grid-column: 1; grid-row: 2; }
     .bold { font-weight: 700; }
     .dim { color: var(--muted); }
@@ -190,6 +195,7 @@ PAGE = """<!doctype html>
       .cycle-node { min-height: 4.2rem; padding: 7px 8px; }
       .cycle-node strong { font-size: 12px; }
       .cycle-node span { font-size: 11px; }
+      .cycle-node small { font-size: 10px; }
     }
   </style>
 </head>
@@ -290,6 +296,57 @@ def _cycle_metric(flow: list[str], label: str, fallback: str = "—") -> str:
     return fallback
 
 
+def _cycle_node_contexts(details: list[str]) -> dict[str, list[str]]:
+    """Map the CLI cycle detail rows to the six visible transport nodes."""
+    contexts: dict[str, list[str]] = {
+        "empty": [], "loaded": [], "transit": [], "station": [],
+        "line330": [], "returning": [],
+    }
+    for line in details:
+        plain = ANSI_RE.sub("", line).strip()
+        match = re.match(r"(#\d+)\s+(?:\d+|-)\s+(\d+车/\d+箱|-)", plain)
+        if not match:
+            continue
+        cycle = match.group(1)
+        trip = (match.group(2) or "").strip()
+        if trip == "-":
+            continue
+        summary = f"{cycle} {trip}"
+        if "三三零" in plain or "330" in plain:
+            key = "line330"
+        elif "返空" in plain:
+            key = "returning"
+        elif "新台子" in plain:
+            key = "station"
+        elif "途重" in plain or "在途" in plain:
+            key = "transit"
+        elif "制票" in plain or "待发" in plain or "港重" in plain:
+            key = "loaded"
+        elif "返港" in plain or "港内" in plain:
+            key = "empty"
+        else:
+            continue
+        if summary not in contexts[key]:
+            contexts[key].append(summary)
+    return contexts
+
+
+def _cycle_node_html(
+    css_class: str,
+    label: str,
+    metric: str,
+    contexts: list[str],
+) -> str:
+    detail = " · ".join(contexts) if contexts else "无循环列"
+    return (
+        f'<div class="cycle-node {css_class}">'
+        f"<strong>{html.escape(label)}</strong>"
+        f"<span>{html.escape(metric)} 箱</span>"
+        f"<small>{html.escape(detail)}</small>"
+        "</div>"
+    )
+
+
 def _jiusan_panel_body_html(body: list[str]) -> str:
     """Give the cycle diagram its own stable browser frame.
 
@@ -315,25 +372,24 @@ def _jiusan_panel_body_html(body: list[str]) -> str:
     xtz = _cycle_metric(flow, "新台子")
     line330 = _cycle_metric(flow, "三三0总")
     transit_empty = _cycle_metric(flow, "返空")
-    flow_html = (
-        '<div class="cycle-loop">'
-        f'<div class="cycle-node empty"><strong>港口空箱</strong><span>{port_empty} 箱</span></div>'
-        '<div class="cycle-link east top-1"></div>'
-        f'<div class="cycle-node loaded"><strong>港口重箱</strong><span>{port_loaded} 箱</span></div>'
-        '<div class="cycle-link east top-2"></div>'
-        f'<div class="cycle-node transit"><strong>在途（重）</strong><span>{transit_loaded} 箱</span></div>'
-        '<div class="cycle-link east top-3"></div>'
-        f'<div class="cycle-node station"><strong>新台子站</strong><span>{xtz} 箱</span></div>'
-        '<div class="cycle-link drop down-right"></div>'
-        f'<div class="cycle-node line330"><strong>三三零专用线作业</strong><span>{line330} 箱</span></div>'
-        '<div class="cycle-link west bottom-1"></div>'
-        f'<div class="cycle-node returning"><strong>返空在途</strong><span>{transit_empty} 箱</span></div>'
-        '<div class="cycle-link west bottom-2"></div>'
-        '<div class="cycle-node returned"><strong>返回锦州港</strong><span>空车待装</span></div>'
-        '<div class="cycle-link west bottom-3"></div>'
-        '<div class="cycle-link up up-left"></div>'
-        "</div>"
-    )
+    contexts = _cycle_node_contexts(details)
+    flow_html = "".join([
+        '<div class="cycle-loop">',
+        _cycle_node_html("empty", "港口空箱", port_empty, contexts["empty"]),
+        '<div class="cycle-link east top-1"></div>',
+        _cycle_node_html("loaded", "港口重箱", port_loaded, contexts["loaded"]),
+        '<div class="cycle-link east top-2"></div>',
+        _cycle_node_html("transit", "在途（重）", transit_loaded, contexts["transit"]),
+        '<div class="cycle-link east top-3"></div>',
+        _cycle_node_html("station", "新台子站", xtz, contexts["station"]),
+        '<div class="cycle-link drop down-right"></div>',
+        _cycle_node_html("line330", "三三零专用线", line330, contexts["line330"]),
+        '<div class="cycle-link west bottom-1"></div>',
+        _cycle_node_html("returning", "在途（返空）", transit_empty, contexts["returning"]),
+        '<div class="cycle-link west bottom-2"></div>',
+        '<div class="cycle-link up up-left"></div>',
+        "</div>",
+    ])
     details_html = "\n".join(ansi_to_html(line) for line in details).rstrip()
     return (
         f'<div class="cycle-flow">{flow_html}</div>'

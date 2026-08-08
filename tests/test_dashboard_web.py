@@ -135,9 +135,18 @@ def test_jiusan_cycle_flow_uses_its_own_stable_web_frame():
     assert 'class="cycle-flow"' in rendered
     assert 'class="cycle-loop"' in rendered
     assert "港口空箱" in rendered
-    assert "三三零专用线作业" in rendered
-    assert "返回锦州港" in rendered
+    assert "三三零专用线" in rendered
+    assert "在途（返空）" in rendered
+    assert "返回锦州港" not in rendered
     assert "新台子 20 ─────┐" not in rendered
+
+
+def test_jiusan_cycle_places_departed_train_in_loaded_transit_node():
+    contexts = dashboard_web._cycle_node_contexts([
+        "#2 50 55车/110箱 途重 轨迹 2026-08-08 12:00:00",
+    ])
+
+    assert contexts["transit"] == ["#2 55车/110箱"]
 
 
 def test_read_only_render_skips_weight_refresh(monkeypatch):

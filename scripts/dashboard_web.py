@@ -110,52 +110,70 @@ PAGE = """<!doctype html>
       background: #111518;
       overflow-x: auto;
     }
-    .cycle-flow-track {
-      width: 54rem;
-      padding: 9px 12px;
-    }
-    .cycle-flow-row {
+    .cycle-loop {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 1px;
-      min-height: 1.45em;
-      font: 14px/1.45 "SFMono-Regular", Consolas, "Liberation Mono",
+      grid-template-columns:
+        minmax(9rem, 1fr) 2.5rem minmax(9rem, 1fr) 2.5rem
+        minmax(9rem, 1fr) 2.5rem minmax(9rem, 1fr);
+      grid-template-rows: auto 2.6rem auto;
+      min-width: 48rem;
+      padding: 12px;
+      align-items: stretch;
+    }
+    .cycle-node {
+      min-height: 4.4rem;
+      padding: 8px 10px;
+      border: 1px solid #59656f;
+      background: #181e23;
+    }
+    .cycle-node strong { display: block; font-size: 13px; }
+    .cycle-node span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font: 13px/1.3 "SFMono-Regular", Consolas, "Liberation Mono",
         "Microsoft YaHei UI", monospace;
-      letter-spacing: 0;
-      white-space: pre;
     }
-    .cycle-flow-content { min-width: 0; }
-    .cycle-flow-edge {
-      position: relative;
-      border-left: 1px solid #9ca8b2;
-    }
-    .cycle-flow-edge.top { border-top: 1px solid #9ca8b2; }
-    .cycle-flow-edge.bottom { border-bottom: 1px solid #9ca8b2; }
-    .cycle-flow-edge.arrow::after {
-      content: "▼";
-      position: absolute;
-      top: -0.48em;
-      left: -0.42em;
-      color: #9ca8b2;
-    }
-    .cycle-flow-row:first-child .cycle-flow-edge::before,
-    .cycle-flow-row:last-child .cycle-flow-edge::before {
+    .cycle-node.empty { grid-column: 1; grid-row: 1; }
+    .cycle-node.loaded { grid-column: 3; grid-row: 1; }
+    .cycle-node.transit { grid-column: 5; grid-row: 1; }
+    .cycle-node.station { grid-column: 7; grid-row: 1; }
+    .cycle-node.line330 { grid-column: 7; grid-row: 3; }
+    .cycle-node.returning { grid-column: 5; grid-row: 3; }
+    .cycle-node.returned { grid-column: 3; grid-row: 3; }
+    .cycle-link { position: relative; min-width: 0; }
+    .cycle-link::before {
       content: "";
       position: absolute;
-      right: 0;
-      width: 0.65rem;
-      border-top: 1px solid #9ca8b2;
+      background: #9ca8b2;
     }
-    .cycle-flow-row:first-child .cycle-flow-edge::before { top: -1px; }
-    .cycle-flow-row:last-child .cycle-flow-edge::before { bottom: -1px; }
-    .cycle-flow pre {
-      margin: 0;
-      min-width: max-content;
-      padding: 9px 12px;
-      font: 14px/1.45 "SFMono-Regular", Consolas, "Liberation Mono",
-        "Microsoft YaHei UI", monospace;
-      letter-spacing: 0;
-      white-space: pre;
+    .cycle-link::after {
+      position: absolute;
+      color: #9ca8b2;
+      font-size: 16px;
     }
+    .cycle-link.east::before,
+    .cycle-link.west::before {
+      top: 50%; left: 0; width: 100%; height: 1px;
+    }
+    .cycle-link.east::after { content: "▶"; top: calc(50% - 12px); right: -3px; }
+    .cycle-link.west::after { content: "◀"; top: calc(50% - 12px); left: -3px; }
+    .cycle-link.drop::before,
+    .cycle-link.up::before {
+      left: 50%; top: 0; width: 1px; height: 100%;
+    }
+    .cycle-link.drop::after { content: "▼"; bottom: -8px; left: calc(50% - 6px); }
+    .cycle-link.up::after { content: "▲"; top: -8px; left: calc(50% - 6px); }
+    .cycle-link.top-1 { grid-column: 2; grid-row: 1; }
+    .cycle-link.top-2 { grid-column: 4; grid-row: 1; }
+    .cycle-link.top-3 { grid-column: 6; grid-row: 1; }
+    .cycle-link.down-right { grid-column: 7; grid-row: 2; }
+    .cycle-link.bottom-1 { grid-column: 6; grid-row: 3; }
+    .cycle-link.bottom-2 { grid-column: 4; grid-row: 3; }
+    .cycle-link.bottom-3 { grid-column: 1 / span 2; grid-row: 3; }
+    .cycle-link.bottom-3::before { left: 50%; width: 50%; }
+    .cycle-link.bottom-3::after { left: calc(50% - 3px); }
+    .cycle-link.up-left { grid-column: 1; grid-row: 2; }
     .bold { font-weight: 700; }
     .dim { color: var(--muted); }
     .red { color: var(--red); }
@@ -168,8 +186,10 @@ PAGE = """<!doctype html>
       .panel-title { padding: 8px 10px; font-size: 12px; }
       .panel-body { padding: 9px 10px 11px; font-size: 12px; }
       .cycle-flow { margin: 10px 10px 0; }
-      .cycle-flow-track { padding: 9px 10px; }
-      .cycle-flow-row { font-size: 12px; }
+      .cycle-loop { padding: 10px; }
+      .cycle-node { min-height: 4.2rem; padding: 7px 8px; }
+      .cycle-node strong { font-size: 12px; }
+      .cycle-node span { font-size: 11px; }
     }
   </style>
 </head>
@@ -261,21 +281,13 @@ def _frame_body_line(line: str) -> str:
     return body.strip()
 
 
-def _cycle_flow_line(line: str) -> str:
-    """Remove only the terminal-drawn right edge of the Jiusan flow chart."""
-    return re.sub(r"\s*[│▼┐┘]\s*$", "", line).rstrip()
-
-
-def _cycle_flow_edge(line: str) -> str:
-    """Classify the rightmost terminal edge for its CSS replacement."""
-    visible = ANSI_RE.sub("", line).rstrip()
-    if visible.endswith("┐"):
-        return "top"
-    if visible.endswith("┘"):
-        return "bottom"
-    if visible.endswith("▼"):
-        return "arrow"
-    return "vertical"
+def _cycle_metric(flow: list[str], label: str, fallback: str = "—") -> str:
+    """Extract a visible node metric from the CLI cycle diagram."""
+    for line in flow:
+        match = re.search(rf"{re.escape(label)}\s*([-]?\d+)", ANSI_RE.sub("", line))
+        if match:
+            return match.group(1)
+    return fallback
 
 
 def _jiusan_panel_body_html(body: list[str]) -> str:
@@ -297,16 +309,34 @@ def _jiusan_panel_body_html(body: list[str]) -> str:
     while flow and not ANSI_RE.sub("", flow[-1]).strip():
         flow.pop()
     details = body[detail_index:]
-    flow_html = "".join(
-        '<div class="cycle-flow-row">'
-        f'<span class="cycle-flow-content">{ansi_to_html(_cycle_flow_line(line))}</span>'
-        f'<span class="cycle-flow-edge {_cycle_flow_edge(line)}"></span>'
+    port_empty = _cycle_metric(flow, "港空")
+    port_loaded = _cycle_metric(flow, "港重")
+    transit_loaded = _cycle_metric(flow, "途重")
+    xtz = _cycle_metric(flow, "新台子")
+    line330 = _cycle_metric(flow, "三三0总")
+    transit_empty = _cycle_metric(flow, "返空")
+    flow_html = (
+        '<div class="cycle-loop">'
+        f'<div class="cycle-node empty"><strong>港口空箱</strong><span>{port_empty} 箱</span></div>'
+        '<div class="cycle-link east top-1"></div>'
+        f'<div class="cycle-node loaded"><strong>港口重箱</strong><span>{port_loaded} 箱</span></div>'
+        '<div class="cycle-link east top-2"></div>'
+        f'<div class="cycle-node transit"><strong>在途（重）</strong><span>{transit_loaded} 箱</span></div>'
+        '<div class="cycle-link east top-3"></div>'
+        f'<div class="cycle-node station"><strong>新台子站</strong><span>{xtz} 箱</span></div>'
+        '<div class="cycle-link drop down-right"></div>'
+        f'<div class="cycle-node line330"><strong>三三零专用线作业</strong><span>{line330} 箱</span></div>'
+        '<div class="cycle-link west bottom-1"></div>'
+        f'<div class="cycle-node returning"><strong>返空在途</strong><span>{transit_empty} 箱</span></div>'
+        '<div class="cycle-link west bottom-2"></div>'
+        '<div class="cycle-node returned"><strong>返回锦州港</strong><span>空车待装</span></div>'
+        '<div class="cycle-link west bottom-3"></div>'
+        '<div class="cycle-link up up-left"></div>'
         "</div>"
-        for line in flow
     )
     details_html = "\n".join(ansi_to_html(line) for line in details).rstrip()
     return (
-        f'<div class="cycle-flow"><div class="cycle-flow-track">{flow_html}</div></div>'
+        f'<div class="cycle-flow">{flow_html}</div>'
         f'<pre class="panel-body">{details_html}</pre>'
     )
 

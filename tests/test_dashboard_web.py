@@ -133,8 +133,10 @@ def test_jiusan_cycle_flow_uses_its_own_stable_web_frame():
     )
 
     assert 'class="cycle-flow"' in rendered
-    assert 'class="cycle-flow-edge top"' in rendered
-    assert "新台子 20 ─────" in rendered
+    assert 'class="cycle-loop"' in rendered
+    assert "港口空箱" in rendered
+    assert "三三零专用线作业" in rendered
+    assert "返回锦州港" in rendered
     assert "新台子 20 ─────┐" not in rendered
 
 

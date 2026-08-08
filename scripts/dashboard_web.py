@@ -67,14 +67,36 @@ PAGE = """<!doctype html>
       color: var(--muted);
       font-size: 13px;
     }
-    main {
-      padding: 14px 16px 28px;
-      overflow: auto;
+    main { padding: 14px 16px 28px; }
+    #dashboard {
+      display: grid;
+      gap: 14px;
+      min-width: 0;
     }
-    pre {
+    .dashboard-heading {
+      color: var(--muted);
+      font: 600 13px/1.35 "SFMono-Regular", Consolas, "Liberation Mono",
+        "Microsoft YaHei UI", monospace;
+    }
+    .panel {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      overflow: hidden;
+      background: #15191c;
+    }
+    .panel-title {
       margin: 0;
-      width: max-content;
-      min-width: 100%;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--line);
+      font: 700 14px/1.35 "SFMono-Regular", Consolas, "Liberation Mono",
+        "Microsoft YaHei UI", monospace;
+    }
+    .panel-body {
+      margin: 0;
+      padding: 9px 12px 11px;
+      overflow-x: auto;
+      margin: 0;
       font: 14px/1.45 "SFMono-Regular", Consolas, "Liberation Mono",
         "Microsoft YaHei UI", monospace;
       letter-spacing: 0;
@@ -90,7 +112,8 @@ PAGE = """<!doctype html>
     @media (max-width: 720px) {
       header { padding: 8px 10px; }
       main { padding: 10px; }
-      pre { font-size: 12px; }
+      .panel-title { padding: 8px 10px; font-size: 12px; }
+      .panel-body { padding: 9px 10px 11px; font-size: 12px; }
     }
   </style>
 </head>
@@ -166,6 +189,60 @@ def ansi_to_html(text: str) -> str:
     return "".join(parts)
 
 
+def _frame_title(line: str) -> str:
+    """Extract a CLI panel title without its terminal-drawn frame."""
+    end = line.rfind("┐")
+    title = line[2:end] if end >= 2 else line[2:]
+    return title.rstrip("─ ").strip()
+
+
+def _frame_body_line(line: str) -> str:
+    """Strip a CLI panel's left/right frame while retaining fixed-width rows."""
+    body = line[1:] if line.startswith("│") else line
+    end = body.rfind("│")
+    if end >= 0:
+        body = body[:end]
+    return body.strip()
+
+
+def dashboard_to_html(text: str) -> str:
+    """Render terminal panels as browser-native sections.
+
+    The CLI uses East Asian terminal cell widths to draw box characters. Browser
+    fonts do not share that metric, so its right edges drift. Keep the CLI data
+    and ANSI colors, but let CSS draw the Web frame.
+    """
+    lines = text.splitlines()
+    parts: list[str] = []
+    index = 0
+    while index < len(lines):
+        visible = ANSI_RE.sub("", lines[index])
+        if visible.startswith("┌─"):
+            title = _frame_title(lines[index])
+            body: list[str] = []
+            index += 1
+            while index < len(lines):
+                current = lines[index]
+                current_visible = ANSI_RE.sub("", current)
+                if current_visible.startswith("└"):
+                    break
+                body.append(_frame_body_line(current))
+                index += 1
+            body_html = "\n".join(ansi_to_html(line) for line in body).rstrip()
+            parts.append(
+                '<section class="panel">'
+                f'<h2 class="panel-title">{ansi_to_html(title)}</h2>'
+                f'<pre class="panel-body">{body_html}</pre>'
+                "</section>"
+            )
+        elif visible.strip():
+            parts.append(
+                f'<div class="dashboard-heading">{ansi_to_html(lines[index])}</div>'
+            )
+        index += 1
+    return "".join(parts)
+
+
 class SnapshotCache:
     def __init__(self, renderer: Callable[[], str], ttl_seconds: float = 4.0):
         self.renderer = renderer
@@ -179,7 +256,7 @@ class SnapshotCache:
         with self._lock:
             if self._payload is None or now - self._rendered_at >= self.ttl_seconds:
                 self._payload = {
-                    "html": ansi_to_html(self.renderer()),
+                    "html": dashboard_to_html(self.renderer()),
                     "generated_at": datetime.now().astimezone().strftime(
                         "%Y-%m-%d %H:%M:%S"
                     ),

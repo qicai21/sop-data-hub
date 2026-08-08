@@ -54,6 +54,7 @@ def test_dashboard_api_returns_colored_snapshot(web_server):
         payload = json.loads(response.read().decode("utf-8"))
 
     assert response.status == 200
+    assert 'class="dashboard-heading"' in payload["html"]
     assert '<span class="bold">看板</span>' in payload["html"]
     assert '<span class="green">正常</span>' in payload["html"]
     assert payload["generated_at"]
@@ -91,8 +92,8 @@ def test_snapshot_cache_avoids_duplicate_rendering():
 
     cache = dashboard_web.SnapshotCache(render, ttl_seconds=60)
 
-    assert cache.get()["html"] == "ok"
-    assert cache.get()["html"] == "ok"
+    assert cache.get()["html"] == '<div class="dashboard-heading">ok</div>'
+    assert cache.get()["html"] == '<div class="dashboard-heading">ok</div>'
     assert calls == 1
 
 
@@ -104,6 +105,21 @@ def test_ansi_conversion_escapes_content():
     assert '<span class="yellow">' in converted
     assert "&lt;script&gt;" in converted
     assert "<script>" not in converted
+
+
+def test_dashboard_web_replaces_terminal_frames_with_css_panels():
+    rendered = dashboard_web.dashboard_to_html(
+        "看板\n"
+        "┌─ 项目 A ───────────────┐\n"
+        "│ \x1b[32m正常\x1b[0m  42 车          │\n"
+        "└─────────────────────────┘"
+    )
+
+    assert 'class="panel"' in rendered
+    assert 'class="panel-title">项目 A</h2>' in rendered
+    assert '<span class="green">正常</span>' in rendered
+    assert "┌" not in rendered
+    assert "┐" not in rendered
 
 
 def test_read_only_render_skips_weight_refresh(monkeypatch):

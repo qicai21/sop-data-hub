@@ -1,11 +1,19 @@
-"""Shared test fixtures."""
+"""Shared test fixtures and portable safety rails.
+
+See docs/issues/2026-08-08-工单-测试体系重构-双端开发与可移植门禁.md §5.
+unit/functional must never write production DBs or open network egress.
+"""
 from __future__ import annotations
 
 import json
+import os
+import sqlite3
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
+
+from tests.support.db import is_production_sop_db_path, production_sop_db_path
 
 
 @pytest.fixture
@@ -23,6 +31,7 @@ def samples_dir(project_root: Path) -> Path:
 @pytest.fixture
 def mock_vlm_response():
     """Factory fixture to create mock VLM API responses."""
+
     def _make_response(json_payload: dict | list | str, status_code: int = 200):
         mock_resp = MagicMock()
         mock_resp.status_code = status_code
@@ -30,28 +39,44 @@ def mock_vlm_response():
         if isinstance(json_payload, str):
             mock_resp.json.return_value = {"text": json_payload}
         else:
-            mock_resp.json.return_value = {"text": json.dumps(json_payload, ensure_ascii=False)}
+            mock_resp.json.return_value = {
+                "text": json.dumps(json_payload, ensure_ascii=False)
+            }
         return mock_resp
+
     return _make_response
 
 
 @pytest.fixture
 def tmp_db(tmp_path: Path):
-    """Create a temporary database for testing."""
-    import os
+    """Create a temporary database path and point BUSINESS_DATA_AGENT_DB_PATH at it."""
     db_path = tmp_path / "test_sop_agent.db"
     os.environ["BUSINESS_DATA_AGENT_DB_PATH"] = str(db_path)
     yield db_path
     os.environ.pop("BUSINESS_DATA_AGENT_DB_PATH", None)
 
 
-@pytest.fixture(autouse=True)
-def _block_real_wechat_send(monkeypatch):
-    """Default safety rail: tests must not send real WeChat messages.
+@pytest.fixture
+def sop_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Temp SOP DB initialized via production open_db schema path."""
+    from tests.support.db import init_sop_db
 
-    Individual tests can still override this monkeypatch when they need to
-    inspect call parameters or emulate failures.
-    """
+    db_path = tmp_path / "sop_agent.db"
+    monkeypatch.setenv("BUSINESS_DATA_AGENT_DB_PATH", str(db_path))
+    return init_sop_db(db_path)
+
+
+@pytest.fixture
+def rail_db(tmp_path: Path) -> Path:
+    """Temp minimal 95306-like DB for portable functional tests."""
+    from tests.support.db import init_min_rail_db
+
+    return init_min_rail_db(tmp_path / "95306_collection.sqlite3")
+
+
+@pytest.fixture(autouse=True)
+def _block_real_wechat_send(monkeypatch: pytest.MonkeyPatch):
+    """Default safety rail: tests must not send real WeChat messages."""
 
     class _FakeSendResult:
         success = True
@@ -61,3 +86,74 @@ def _block_real_wechat_send(monkeypatch):
         "sop_hub.sop.send_excel.send_to_wechat",
         lambda *a, **kw: _FakeSendResult(),
     )
+
+
+_BLOCKED_HOST_SNIPPETS = (
+    "56.ansteel.com.cn",
+    "ansteel.com.cn",
+)
+
+
+@pytest.fixture(autouse=True)
+def _block_ansteel_http_egress(monkeypatch: pytest.MonkeyPatch):
+    """Block real HTTP to Ansteel hosts; keep upload_and_verify logic testable with mocks.
+
+    Do not replace ``upload_and_verify`` / ``login`` wholesale — portable tests call
+    those functions with monkeypatched dependencies. Block at ``requests`` layer.
+    """
+    import requests
+
+    real_request = requests.sessions.Session.request
+
+    def guarded_request(self, method, url, *args, **kwargs):
+        text = str(url)
+        if any(host in text for host in _BLOCKED_HOST_SNIPPETS):
+            raise RuntimeError(
+                "portable tests block live Ansteel HTTP egress "
+                f"({method} {text!r}). Mock session/login/query in-unit instead."
+            )
+        return real_request(self, method, url, *args, **kwargs)
+
+    monkeypatch.setattr(requests.sessions.Session, "request", guarded_request)
+
+    real_top = requests.request
+
+    def guarded_top(method, url, **kwargs):
+        text = str(url)
+        if any(host in text for host in _BLOCKED_HOST_SNIPPETS):
+            raise RuntimeError(
+                "portable tests block live Ansteel HTTP egress "
+                f"({method} {text!r}). Mock session/login/query in-unit instead."
+            )
+        return real_top(method, url, **kwargs)
+
+    monkeypatch.setattr(requests, "request", guarded_top)
+
+
+@pytest.fixture(autouse=True)
+def _forbid_production_sop_db_writes(monkeypatch: pytest.MonkeyPatch, project_root: Path):
+    """Fail if any portable test opens the production sop_agent.db.
+
+    Live tests (SOP_TEST_LIVE=1) may open it only via SQLite URI ``mode=ro``.
+    There is no SOP_TEST_ALLOW_PROD_WRITE switch — writes never allowed.
+    """
+    from tests.support.db import is_readonly_sqlite_uri
+
+    prod = production_sop_db_path(project_root)
+    real_connect = sqlite3.connect
+
+    def guarded_connect(database, *args, **kwargs):
+        if is_production_sop_db_path(database, root=project_root):
+            live_ro = (
+                os.environ.get("SOP_TEST_LIVE") == "1"
+                and is_readonly_sqlite_uri(database)
+            )
+            if not live_ro:
+                raise RuntimeError(
+                    f"tests must not open production SOP DB ({prod}) for write "
+                    "or from portable tests; use tmp_path / sop_db fixture "
+                    "(live readonly: file:...?mode=ro with SOP_TEST_LIVE=1)"
+                )
+        return real_connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", guarded_connect)

@@ -112,20 +112,51 @@ def test_no_zombie_db_names_in_code(tmp_path):
 
 
 def test_data_dir_exists_and_sop_agent_db_present():
-    """R21: sop-data-hub/data/sop_agent.db exists after migration."""
+    """R21: sop-data-hub/data/sop_agent.db exists after migration.
+
+    Portable tests must not open the production DB (write or read). Schema
+    coverage uses production ``open_db`` on a temp path instead.
+    """
     repo_root = Path(__file__).resolve().parents[2]
     db_path = repo_root / "data" / "sop_agent.db"
     assert db_path.exists(), f"Canonical sop_agent.db should exist: {db_path}"
     assert db_path.stat().st_size > 0, "sop_agent.db should not be empty"
 
-    # Verify it has the expected tables
-    import sqlite3
-    conn = sqlite3.connect(str(db_path))
-    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    expected = {"release_batches", "contracts", "release_dispatch_match_rules", "image_ingestion_audit", "inspection_ingestion_candidates"}
+    import os
+    import tempfile
+
+    from sop_hub.data_agent.db import open_db
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td) / "sop_agent.db"
+        previous = os.environ.get("BUSINESS_DATA_AGENT_DB_PATH")
+        os.environ["BUSINESS_DATA_AGENT_DB_PATH"] = str(tmp)
+        try:
+            conn = open_db()
+            try:
+                tables = {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    )
+                }
+            finally:
+                conn.close()
+        finally:
+            if previous is None:
+                os.environ.pop("BUSINESS_DATA_AGENT_DB_PATH", None)
+            else:
+                os.environ["BUSINESS_DATA_AGENT_DB_PATH"] = previous
+
+    expected = {
+        "release_batches",
+        "contracts",
+        "release_dispatch_match_rules",
+        "image_ingestion_audit",
+        "inspection_ingestion_candidates",
+    }
     missing = expected - tables
-    assert not missing, f"Missing tables: {missing}"
-    conn.close()
+    assert not missing, f"Missing tables on schema init: {missing}"
 
 
 def test_default_db_path_uses_sop_agent_db():

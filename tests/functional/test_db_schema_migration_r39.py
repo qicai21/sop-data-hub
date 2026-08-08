@@ -44,34 +44,40 @@ def _copy_schema(source_conn, target_conn):
 
 def _insert_test_data(conn):
     """Insert minimal test rows for wagon_shipments and release_batches."""
+    # dispatch_status must match production lifecycle CHECK (not legacy 'dispatched').
     conn.execute("""
         INSERT OR IGNORE INTO release_batches
         (id, batch_key, project, ship_name, cargo_name, notice_date,
          dispatch_status, source_json, searchable_text)
         VALUES ('rb-test-1', 'bk-test-1', 'jilin_jingang_jinzhou',
-                '测试船', '铁矿', '2026-05-28', 'dispatched',
+                '测试船', '铁矿', '2026-05-28', 'loading',
                 '{}', 'test')
     """)
-    conn.execute("""
-        INSERT OR IGNORE INTO wagon_shipments
-        (id, batch_id, car_no, cargo_name, ticketed_at,
-         departed_at, arrived_at, status_name)
-        VALUES ('ws-1', 'rb-test-1', 'C1234567', '铁矿',
-                '2026-05-28 08:00:00',
-                '2026-05-28 14:00:00',
-                '2026-05-29 02:00:00',
-                '已发车')
-    """)
-    conn.execute("""
-        INSERT OR IGNORE INTO wagon_shipments
-        (id, batch_id, car_no, cargo_name, ticketed_at,
-         departed_at, arrived_at, status_name)
-        VALUES ('ws-2', 'rb-test-1', 'C1234568', '铁矿',
-                '2026-05-28 08:01:00',
-                '2026-05-28 14:01:00',
-                '2026-05-29 02:01:00',
-                '已发车')
-    """)
+    # Match production NOT NULL defaults (departure_id required on current schema).
+    for wid, car, ticketed in (
+        ("ws-1", "C1234567", "2026-05-28 08:00:00"),
+        ("ws-2", "C1234568", "2026-05-28 08:01:00"),
+    ):
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO wagon_shipments
+            (id, departure_id, batch_id, car_no, cargo_name, ticketed_at,
+             departed_at, arrived_at, status_name, detail_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                wid,
+                f"dep-{wid}",
+                "rb-test-1",
+                car,
+                "铁矿",
+                ticketed,
+                "2026-05-28 14:00:00",
+                "2026-05-29 02:00:00",
+                "已发车",
+                "{}",
+            ),
+        )
     conn.commit()
 
 
@@ -83,22 +89,20 @@ def _column_exists(conn, table, column):
 # ── Fixtures ────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def test_db():
-    """Create an isolated test DB with wagon_shipments + release_batches schema."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        db_path = f.name
-    # Copy schema from production DB
-    prod_db = REPO_ROOT / "data" / "sop_agent.db"
-    src_conn = sqlite3.connect(str(prod_db))
-    tgt_conn = sqlite3.connect(db_path)
+def test_db(tmp_path, monkeypatch):
+    """Isolated DB via production open_db schema (no production file open)."""
+    import os
+
+    from sop_hub.data_agent.db import open_db
+
+    db_path = tmp_path / "r39_test.db"
+    monkeypatch.setenv("BUSINESS_DATA_AGENT_DB_PATH", str(db_path))
+    conn = open_db()
     try:
-        _copy_schema(src_conn, tgt_conn)
-        _insert_test_data(tgt_conn)
+        _insert_test_data(conn)
     finally:
-        src_conn.close()
-        tgt_conn.close()
-    yield db_path
-    Path(db_path).unlink(missing_ok=True)
+        conn.close()
+    yield str(db_path)
 
 
 def _run_migration(db_path, dry_run=True):

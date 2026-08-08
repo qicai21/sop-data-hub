@@ -1,18 +1,29 @@
-"""Local report-intent resolver for SOP workflow tasks.
+"""Local report-intent resolver for SOP workflow tasks (DEPRECATED).
 
-This module stays local-only:
-- convert WorkflowTask into a ReportIntent;
-- surface missing fields explicitly;
-- keep report-template / recipient resolution local to functional tests;
-- do not send reports, touch runtime, DB, wx-ops-agent, or delivery.
+**2026-08-08 Phase 0b (portable test gate, strategy C):**
+Production shipping uses ``departure_excel`` / send_excel chains, not Excel
+report templates under ``config/report_templates/`` (those files were never
+committed, and absolute ``/Users/qicai21/...`` paths have been removed).
+
+This module remains only for:
+- local functional simulations (``delivery_result`` closeout helpers);
+- constructing ``ReportIntent`` value objects in tests.
+
+Do not add new production call sites. Prefer departure_excel for real sends.
 """
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
 from sop_hub.sop.workflow_task import WorkflowTask
+
+_DEPRECATION = (
+    "sop_hub.sop.report_intent is deprecated; production shipping uses "
+    "departure_excel. ReportIntent is retained for local simulation/tests only."
+)
 
 
 def _recipient_target_from_yaml(project_id: str) -> dict[str, Any]:
@@ -23,6 +34,7 @@ def _recipient_target_from_yaml(project_id: str) -> dict[str, Any]:
     """
     try:
         from sop_hub.sop.workflow_task_executor import _resolve_send_target
+
         target = _resolve_send_target(project_id)
     except Exception:
         target = None
@@ -32,21 +44,41 @@ def _recipient_target_from_yaml(project_id: str) -> dict[str, Any]:
     return {"type": "contact", "name": g}
 
 
+# template_path is intentionally None: xlsx templates are not in-repo and must
+# not reintroduce machine-local absolute paths. Production uses departure_excel.
 PROJECT_REPORT_CONFIG = {
     "zhongtang_special_steel": {
         "report_type": "departure_report",
-        "template_path": "/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/ztsteel_departure_report_template.xlsx",
-        "required_fields": ["message_id", "group_id", "project_id", "target_sop_node", "watch_item"],
+        "template_path": None,
+        "required_fields": [
+            "message_id",
+            "group_id",
+            "project_id",
+            "target_sop_node",
+            "watch_item",
+        ],
     },
     "chaoyang_steel": {
         "report_type": "departure_report",
-        "template_path": "/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/cysteel_departure_report_template.xlsx",
-        "required_fields": ["message_id", "group_id", "project_id", "target_sop_node", "watch_item"],
+        "template_path": None,
+        "required_fields": [
+            "message_id",
+            "group_id",
+            "project_id",
+            "target_sop_node",
+            "watch_item",
+        ],
     },
     "jilin_jingang_jinzhou": {
         "report_type": "departure_report",
-        "template_path": "/Users/qicai21/projects/repos/sop-data-hub/config/report_templates/jilin_jingang_departure_report_template.xlsx",
-        "required_fields": ["message_id", "group_id", "project_id", "target_sop_node", "watch_item"],
+        "template_path": None,
+        "required_fields": [
+            "message_id",
+            "group_id",
+            "project_id",
+            "target_sop_node",
+            "watch_item",
+        ],
     },
 }
 
@@ -108,12 +140,24 @@ def _missing_required_fields(task: WorkflowTask, required_fields: list[str]) -> 
 
 
 def resolve_report_intent(task: WorkflowTask) -> ReportIntent:
-    """Resolve a local report intent from a workflow task."""
+    """Resolve a local report intent from a workflow task (deprecated).
+
+    Field completeness still drives ``ready`` / ``incomplete`` for simulation
+    closeout tests. ``template_path`` is always ``None`` for known projects —
+    do not assume an on-disk xlsx template exists.
+    """
+    warnings.warn(_DEPRECATION, DeprecationWarning, stacklevel=2)
 
     project_id = (task.project_id or "").strip()
     config = PROJECT_REPORT_CONFIG.get(project_id)
     if config is None:
-        required_fields = ["message_id", "group_id", "project_id", "target_sop_node", "watch_item"]
+        required_fields = [
+            "message_id",
+            "group_id",
+            "project_id",
+            "target_sop_node",
+            "watch_item",
+        ]
         missing_fields = _missing_required_fields(task, required_fields)
         if "project_id" not in missing_fields:
             missing_fields.append("project_id")
@@ -134,7 +178,7 @@ def resolve_report_intent(task: WorkflowTask) -> ReportIntent:
     missing_fields = _missing_required_fields(task, required_fields)
     status = "ready" if not missing_fields else "incomplete"
     return ReportIntent(
-        template_path=config["template_path"],
+        template_path=None,
         recipient_target=_recipient_target_from_yaml(project_id),
         required_fields=required_fields,
         missing_fields=missing_fields,

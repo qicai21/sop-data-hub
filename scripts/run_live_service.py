@@ -9,9 +9,15 @@ It polls `data/chat_records/**/*.jsonl` continuously, writes event snapshots und
 `runtime/events/`, payload JSON under `runtime/dashboard_intents/`, and state JSON
 under `runtime/dashboard_state/`.
 
-Canonical repo root: ~/projects/repos/sop-data-hub.
-Default runtime root: ~/projects/repos/sop-data-hub/runtime/.
-Default chat records root: ~/projects/repos/wx-ops-agent/data/chat_records.
+Canonical (runtime Mac) defaults — overridable by CLI or env:
+
+  runtime root:     CLI --runtime-root      | env SOP_LIVE_RUNTIME_ROOT
+                    | ~/projects/repos/sop-data-hub/runtime
+  chat records:     CLI --chat-records-root | env SOP_LIVE_CHAT_RECORDS_ROOT
+                    | ~/projects/repos/wx-ops-agent/data/chat_records
+  fixture dir:      CLI --fixture-dir       | env SOP_LIVE_FIXTURE_DIR
+                    | <this-repo>/config/project_sops  (preferred when present)
+                    | ~/projects/repos/sop-data-hub/config/project_sops
 """
 
 from __future__ import annotations
@@ -23,7 +29,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
@@ -44,14 +50,54 @@ from sop_hub.sop.workflow_task import build_workflow_task_queue
 # ── R52: executor runner (disabled R69 — now driven by workflow_task_db) ─
 # from sop_hub.sop.executor_runner import run_departure_executor_chain_if_applicable
 
-# ── R18: canonical paths ────────────────────────────────────────────────
+# ── R18: canonical paths (runtime Mac layout; override via CLI/env) ─────
 CANONICAL_REPO_ROOT = Path.home() / "projects" / "repos" / "sop-data-hub"
 DEFAULT_RUNTIME_ROOT = CANONICAL_REPO_ROOT / "runtime"
 DEFAULT_CHAT_RECORDS_ROOT = Path.home() / "projects" / "repos" / "wx-ops-agent" / "data" / "chat_records"
 # ── R27: canonical SOP source → config/project_sops/ (YAML, git-tracked) ──
 DEFAULT_FIXTURE_DIR = CANONICAL_REPO_ROOT / "config" / "project_sops"
+# Prefer the repo that contains this script when present (dev + portable).
+REPO_FIXTURE_DIR = REPO_ROOT / "config" / "project_sops"
 DEFAULT_POLL_INTERVAL = 1.0
 PID_FILE_NAME = "live_service.pid"
+
+ENV_RUNTIME_ROOT = "SOP_LIVE_RUNTIME_ROOT"
+ENV_CHAT_RECORDS_ROOT = "SOP_LIVE_CHAT_RECORDS_ROOT"
+ENV_FIXTURE_DIR = "SOP_LIVE_FIXTURE_DIR"
+
+
+def resolve_live_service_paths(
+    *,
+    runtime_root: Path | str | None = None,
+    chat_records_root: Path | str | None = None,
+    fixture_dir: Path | str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, Path]:
+    """Resolve live-service roots: explicit CLI > env > canonical defaults.
+
+    Defaults keep the production Mac layout under ``~/projects/repos/...``.
+    Portable/dev hosts should pass CLI flags or set the SOP_LIVE_* env vars.
+    """
+    environ = env if env is not None else os.environ
+
+    def _pick(cli: Path | str | None, env_key: str, default: Path) -> Path:
+        if cli is not None and str(cli).strip():
+            return Path(cli).expanduser()
+        raw = (environ.get(env_key) or "").strip()
+        if raw:
+            return Path(raw).expanduser()
+        return default
+
+    # Fixture: prefer this checkout's config when using defaults (no CLI/env).
+    fixture_default = REPO_FIXTURE_DIR if REPO_FIXTURE_DIR.is_dir() else DEFAULT_FIXTURE_DIR
+
+    return {
+        "runtime_root": _pick(runtime_root, ENV_RUNTIME_ROOT, DEFAULT_RUNTIME_ROOT),
+        "chat_records_root": _pick(
+            chat_records_root, ENV_CHAT_RECORDS_ROOT, DEFAULT_CHAT_RECORDS_ROOT
+        ),
+        "fixture_dir": _pick(fixture_dir, ENV_FIXTURE_DIR, fixture_default),
+    }
 
 
 def _utc_now_iso() -> str:
@@ -1147,19 +1193,28 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--chat-records-root",
         type=Path,
         default=None,
-        help="Path to wx-ops-agent data/chat_records root (default: ~/projects/repos/wx-ops-agent/data/chat_records)",
+        help=(
+            "wx-ops-agent data/chat_records root "
+            f"(env {ENV_CHAT_RECORDS_ROOT}; default ~/projects/repos/wx-ops-agent/data/chat_records)"
+        ),
     )
     parser.add_argument(
         "--runtime-root",
         type=Path,
-        default=DEFAULT_RUNTIME_ROOT,
-        help="Output root for runtime/events, runtime/dashboard_intents, runtime/dashboard_state (default: ~/projects/repos/sop-data-hub/runtime)",
+        default=None,
+        help=(
+            "Output root for runtime/events, runtime/dashboard_intents "
+            f"(env {ENV_RUNTIME_ROOT}; default ~/projects/repos/sop-data-hub/runtime)"
+        ),
     )
     parser.add_argument(
         "--fixture-dir",
         type=Path,
-        default=DEFAULT_FIXTURE_DIR,
-        help="SOP fixture directory used to build the monitoring plan",
+        default=None,
+        help=(
+            "SOP yaml directory for monitoring plan "
+            f"(env {ENV_FIXTURE_DIR}; default this-repo/config/project_sops when present)"
+        ),
     )
     parser.add_argument(
         "--poll-interval",
@@ -1246,31 +1301,32 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_arg_parser().parse_args()
+    paths = resolve_live_service_paths(
+        runtime_root=args.runtime_root,
+        chat_records_root=args.chat_records_root,
+        fixture_dir=args.fixture_dir,
+    )
+    runtime_root = paths["runtime_root"]
+    chat_records_root = paths["chat_records_root"]
+    fixture_dir = paths["fixture_dir"]
 
     if args.status:
-        status_command(runtime_root=args.runtime_root, fixture_dir=args.fixture_dir)
+        status_command(runtime_root=runtime_root, fixture_dir=fixture_dir)
         return
 
     if args.check_waiting_media:
         _check_waiting_media_command(
-            runtime_root=args.runtime_root,
-            chat_records_root=args.chat_records_root,
-            fixture_dir=args.fixture_dir,
+            runtime_root=runtime_root,
+            chat_records_root=chat_records_root,
+            fixture_dir=fixture_dir,
             apply_mode=args.apply,
         )
         return
 
-    # Resolve chat_records_root: explicit arg > env var > canonical default
-    if args.chat_records_root:
-        chat_records_root = args.chat_records_root
-    else:
-        watcher = WxOpsSourceWatcher()
-        chat_records_root = DEFAULT_CHAT_RECORDS_ROOT
-
     run_live_service(
         chat_records_root=chat_records_root,
-        runtime_root=args.runtime_root,
-        fixture_dir=args.fixture_dir,
+        runtime_root=runtime_root,
+        fixture_dir=fixture_dir,
         poll_interval=args.poll_interval,
         once=args.once,
         max_iterations=args.max_iterations,

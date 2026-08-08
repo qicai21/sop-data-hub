@@ -54,23 +54,19 @@ def test_status_returns_alive_false_when_no_pid(tmp_path):
     assert "last_log_line" in status
 
 
-def test_runtime_root_uses_sop_data_hub_semantics():
-    """R18: DEFAULT_RUNTIME_ROOT resolves to ~/projects/repos/sop-data-hub/runtime/."""
-    from scripts.run_live_service import DEFAULT_RUNTIME_ROOT
-
-    expected = Path.home() / "projects" / "repos" / "sop-data-hub" / "runtime"
-    assert DEFAULT_RUNTIME_ROOT == expected, (
-        f"DEFAULT_RUNTIME_ROOT should be {expected}, got {DEFAULT_RUNTIME_ROOT}"
+def test_canonical_default_constants_keep_runtime_mac_layout():
+    """R18 form only: canonical defaults stay under ~/projects/repos/... (need not exist)."""
+    from scripts.run_live_service import (
+        DEFAULT_CHAT_RECORDS_ROOT,
+        DEFAULT_RUNTIME_ROOT,
     )
 
-
-def test_default_chat_records_root_points_to_wx_ops_agent():
-    """R18: DEFAULT_CHAT_RECORDS_ROOT points to ~/projects/repos/wx-ops-agent/data/chat_records."""
-    from scripts.run_live_service import DEFAULT_CHAT_RECORDS_ROOT
-
-    expected = Path.home() / "projects" / "repos" / "wx-ops-agent" / "data" / "chat_records"
-    assert DEFAULT_CHAT_RECORDS_ROOT == expected, (
-        f"DEFAULT_CHAT_RECORDS_ROOT should be {expected}, got {DEFAULT_CHAT_RECORDS_ROOT}"
+    # Portable tests assert path *shape*, not that the directory exists on this host.
+    assert DEFAULT_RUNTIME_ROOT == (
+        Path.home() / "projects" / "repos" / "sop-data-hub" / "runtime"
+    )
+    assert DEFAULT_CHAT_RECORDS_ROOT == (
+        Path.home() / "projects" / "repos" / "wx-ops-agent" / "data" / "chat_records"
     )
 
 

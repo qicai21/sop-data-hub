@@ -104,6 +104,58 @@ PAGE = """<!doctype html>
       white-space: pre;
       tab-size: 2;
     }
+    .cycle-flow {
+      margin: 10px 12px 0;
+      border: 1px solid #59656f;
+      background: #111518;
+      overflow-x: auto;
+    }
+    .cycle-flow-track {
+      width: 54rem;
+      padding: 9px 12px;
+    }
+    .cycle-flow-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 1px;
+      min-height: 1.45em;
+      font: 14px/1.45 "SFMono-Regular", Consolas, "Liberation Mono",
+        "Microsoft YaHei UI", monospace;
+      letter-spacing: 0;
+      white-space: pre;
+    }
+    .cycle-flow-content { min-width: 0; }
+    .cycle-flow-edge {
+      position: relative;
+      border-left: 1px solid #9ca8b2;
+    }
+    .cycle-flow-edge.top { border-top: 1px solid #9ca8b2; }
+    .cycle-flow-edge.bottom { border-bottom: 1px solid #9ca8b2; }
+    .cycle-flow-edge.arrow::after {
+      content: "▼";
+      position: absolute;
+      top: -0.48em;
+      left: -0.42em;
+      color: #9ca8b2;
+    }
+    .cycle-flow-row:first-child .cycle-flow-edge::before,
+    .cycle-flow-row:last-child .cycle-flow-edge::before {
+      content: "";
+      position: absolute;
+      right: 0;
+      width: 0.65rem;
+      border-top: 1px solid #9ca8b2;
+    }
+    .cycle-flow-row:first-child .cycle-flow-edge::before { top: -1px; }
+    .cycle-flow-row:last-child .cycle-flow-edge::before { bottom: -1px; }
+    .cycle-flow pre {
+      margin: 0;
+      min-width: max-content;
+      padding: 9px 12px;
+      font: 14px/1.45 "SFMono-Regular", Consolas, "Liberation Mono",
+        "Microsoft YaHei UI", monospace;
+      letter-spacing: 0;
+      white-space: pre;
+    }
     .bold { font-weight: 700; }
     .dim { color: var(--muted); }
     .red { color: var(--red); }
@@ -115,6 +167,9 @@ PAGE = """<!doctype html>
       main { padding: 10px; }
       .panel-title { padding: 8px 10px; font-size: 12px; }
       .panel-body { padding: 9px 10px 11px; font-size: 12px; }
+      .cycle-flow { margin: 10px 10px 0; }
+      .cycle-flow-track { padding: 9px 10px; }
+      .cycle-flow-row { font-size: 12px; }
     }
   </style>
 </head>
@@ -206,6 +261,56 @@ def _frame_body_line(line: str) -> str:
     return body.strip()
 
 
+def _cycle_flow_line(line: str) -> str:
+    """Remove only the terminal-drawn right edge of the Jiusan flow chart."""
+    return re.sub(r"\s*[│▼┐┘]\s*$", "", line).rstrip()
+
+
+def _cycle_flow_edge(line: str) -> str:
+    """Classify the rightmost terminal edge for its CSS replacement."""
+    visible = ANSI_RE.sub("", line).rstrip()
+    if visible.endswith("┐"):
+        return "top"
+    if visible.endswith("┘"):
+        return "bottom"
+    if visible.endswith("▼"):
+        return "arrow"
+    return "vertical"
+
+
+def _jiusan_panel_body_html(body: list[str]) -> str:
+    """Give the cycle diagram its own stable browser frame.
+
+    The first block before the `列状态` header is the seven-line terminal flow
+    diagram. Its right edge must not depend on browser glyph widths.
+    """
+    detail_index = next(
+        (
+            index for index, line in enumerate(body)
+            if "列状态" in ANSI_RE.sub("", line)
+        ),
+        len(body),
+    )
+    flow = body[:detail_index]
+    while flow and not ANSI_RE.sub("", flow[0]).strip():
+        flow.pop(0)
+    while flow and not ANSI_RE.sub("", flow[-1]).strip():
+        flow.pop()
+    details = body[detail_index:]
+    flow_html = "".join(
+        '<div class="cycle-flow-row">'
+        f'<span class="cycle-flow-content">{ansi_to_html(_cycle_flow_line(line))}</span>'
+        f'<span class="cycle-flow-edge {_cycle_flow_edge(line)}"></span>'
+        "</div>"
+        for line in flow
+    )
+    details_html = "\n".join(ansi_to_html(line) for line in details).rstrip()
+    return (
+        f'<div class="cycle-flow"><div class="cycle-flow-track">{flow_html}</div></div>'
+        f'<pre class="panel-body">{details_html}</pre>'
+    )
+
+
 def dashboard_to_html(text: str) -> str:
     """Render terminal panels as browser-native sections.
 
@@ -229,11 +334,21 @@ def dashboard_to_html(text: str) -> str:
                     break
                 body.append(_frame_body_line(current))
                 index += 1
-            body_html = "\n".join(ansi_to_html(line) for line in body).rstrip()
+            is_jiusan_cycle = ANSI_RE.sub("", title).startswith("大豆循环现状")
+            body_html = (
+                _jiusan_panel_body_html(body)
+                if is_jiusan_cycle
+                else "\n".join(ansi_to_html(line) for line in body).rstrip()
+            )
+            body_markup = (
+                body_html
+                if is_jiusan_cycle
+                else f'<pre class="panel-body">{body_html}</pre>'
+            )
             parts.append(
                 '<section class="panel">'
                 f'<h2 class="panel-title">{ansi_to_html(title)}</h2>'
-                f'<pre class="panel-body">{body_html}</pre>'
+                f"{body_markup}"
                 "</section>"
             )
         elif visible.strip():

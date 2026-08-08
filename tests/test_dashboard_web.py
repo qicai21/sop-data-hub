@@ -122,6 +122,22 @@ def test_dashboard_web_replaces_terminal_frames_with_css_panels():
     assert "┐" not in rendered
 
 
+def test_jiusan_cycle_flow_uses_its_own_stable_web_frame():
+    rendered = dashboard_web.dashboard_to_html(
+        "┌─ 大豆循环现状 260808 ─────────┐\n"
+        "│ 港空 100 ──▶ 新台子 20 ─────┐ │\n"
+        "│                              │\n"
+        "│ 列状态  列号                │\n"
+        "│ #1      50                  │\n"
+        "└──────────────────────────────┘"
+    )
+
+    assert 'class="cycle-flow"' in rendered
+    assert 'class="cycle-flow-edge top"' in rendered
+    assert "新台子 20 ─────" in rendered
+    assert "新台子 20 ─────┐" not in rendered
+
+
 def test_read_only_render_skips_weight_refresh(monkeypatch):
     def fail_if_called(*args, **kwargs):
         raise AssertionError("weight refresh must not run for web requests")

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Optional local hook: run portable gate before push.
+# Install: ln -sf ../../scripts/git-hooks/pre-push .git/hooks/pre-push
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+if [[ -x .venv/bin/python ]]; then
+  PYTHONPATH=src .venv/bin/python -m pytest tests/unit tests/functional -q
+else
+  PYTHONPATH=src python3 -m pytest tests/unit tests/functional -q
+fi

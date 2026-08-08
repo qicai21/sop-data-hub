@@ -5,7 +5,7 @@ Work order: `docs/issues/2026-08-08-工单-测试体系重构-双端开发与可
 ## Commands
 
 ```bash
-# Portable gate (dev Mac + runtime Mac after pull)
+# Portable gate (dev Mac + runtime Mac after pull) — same on both machines
 make test
 
 make test-unit
@@ -17,6 +17,17 @@ make test-live-readonly
 # Runtime machine release checks (fail if 95306 readonly DB missing, etc.)
 make smoke-runtime
 ```
+
+### Dual-machine flow
+
+```text
+Dev Mac:  edit → make test → commit → push (after user auth)
+Runtime:  git pull → make test → make smoke-runtime → kickstart daemons (START-HERE §4)
+```
+
+Optional pre-push hook: `ln -sf ../../scripts/git-hooks/pre-push .git/hooks/pre-push`
+
+CI (GitHub Actions): `.github/workflows/test.yml` runs unit+functional on Python **3.12** and **3.14**.
 
 ## Layers
 

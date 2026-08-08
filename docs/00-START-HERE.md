@@ -2,8 +2,8 @@
 
 > 给"接手开发的 Claude(dispatch 模式)/ 新人 / 几个月没碰回来的我自己"看。
 > 读完应能立刻动手做系统开发,不必从 git log 倒查。
-> **最后更新：2026-08-08**（候选链路、Web 看板、九三循环追踪、费用迁移边界）。
-> 配套:开发踩坑见 [`PITFALLS.md`](PITFALLS.md);业务规则细节见 [`business-rules/`](business-rules/);所有问题/变更走 [`issues/`](issues/) 工单。
+> **最后更新：2026-08-08**（候选链路、Web 看板、九三循环、**可移植测试门禁**、费用边界）。
+> 配套:开发踩坑见 [`PITFALLS.md`](PITFALLS.md);业务规则细节见 [`business-rules/`](business-rules/);所有问题/变更走 [`issues/`](issues/) 工单；测试见 [`tests/README.md`](../tests/README.md)。
 >
 > **维护闸**：这里只记心智模型、操作入口与铁律。新增 daemon、改变诊断入口、新增铁律或改变跨仓边界时必须更新本文件；纯 bug 修复只写工单和测试。正文控制在约 250 行，细节拆到相应文档。
 
@@ -186,8 +186,12 @@ pending_freight → enriched → loading → all_loaded → tracking → deliver
 ## 8. 开发工作流(怎么干活)
 
 1. **所有变更立工单**：`docs/issues/<日期>-工单-xxx.md`，现象→根因→改动→验证→执行收尾。工单状态、根目录/`archived/` 纪律以 [`issues/README.md`](issues/README.md) 为准；已完成立即归档。
-2. **测试守门**：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -q`。测试数以 `pytest --collect-only` 实测为准，不能把文档中的历史数字当口径；历史事故必须沉淀为回归测试。
-3. **git 单分支 main**:2026-06-29 起收敛到单一 `main`(已删 codex/老分支)。在 main 上干,改完提交(commit 尾 `Co-Authored-By: Claude …`),用户授权才 push。
+2. **测试守门（可移植）**：开发机与运行机同一命令：
+   - `make test` → 仅 `tests/unit` + `tests/functional`（无 live、无生产库、无外发）。
+   - 可选：`make test-live-readonly`（`SOP_TEST_LIVE=1`）；**不是**发布充分条件。
+   - 运行机发布：`make test && make smoke-runtime`（缺 95306 只读库等则 **fail**），再按 §4 kickstart。
+   - 细节与分层：[`tests/README.md`](../tests/README.md)。测试数以 `pytest --collect-only` 为准；事故必须焊回归/回放 fixture。
+3. **git 单分支 main**:2026-06-29 起收敛到单一 `main`(已删 codex/老分支)。在 main 上干,改完提交,用户授权才 push。CI 跑 portable `make test`（Python 3.12 + 3.14）。
 4. **改完按 §4 重启对应 daemon**;改链 → text-watch;改 agent/runner → live-service+text-watch。
 5. **代码地图（按改动目标）**：
 

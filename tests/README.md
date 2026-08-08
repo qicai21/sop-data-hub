@@ -1,6 +1,6 @@
 # Tests — portable gate
 
-Work order: `docs/issues/2026-08-08-工单-测试体系重构-双端开发与可移植门禁.md`.
+Work order (archived): `docs/issues/archived/2026-08-08-工单-测试体系重构-双端开发与可移植门禁.md`.
 
 ## Commands
 

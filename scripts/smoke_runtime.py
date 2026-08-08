@@ -5,7 +5,7 @@ Portable logic is covered by ``make test``. This script fails when the *runtime*
 host is missing necessities for shipping automation (config, readonly 95306 DB,
 runtime dir). Dev laptops should not use this as a substitute for pytest.
 
-See issue: docs/issues/2026-08-08-工单-测试体系重构-双端开发与可移植门禁.md §0.6
+See issue: docs/issues/archived/2026-08-08-工单-测试体系重构-双端开发与可移植门禁.md §0.6
 """
 from __future__ import annotations
 

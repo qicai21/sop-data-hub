@@ -103,3 +103,24 @@ def test_status_honors_runtime_root_cli(tmp_path: Path):
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
     status = json.loads(result.stdout)
     assert Path(status["runtime_root"]) == runtime_root
+
+
+def test_sop_db_path_prefers_env_over_repo(tmp_path: Path):
+    rls = _load_rls()
+    env_db = tmp_path / "custom" / "sop_agent.db"
+    path = rls.resolve_sop_db_path(
+        env={rls.ENV_SOP_DB: str(env_db)},
+        repo_root=tmp_path / "other-checkout",
+    )
+    assert path == env_db
+
+
+def test_sop_db_path_uses_this_checkout_not_home_canonical(tmp_path: Path):
+    """Non-canonical checkout must not hardcode ~/projects/repos/sop-data-hub."""
+    rls = _load_rls()
+    checkout = tmp_path / "my-sop-data-hub"
+    (checkout / "src").mkdir(parents=True)
+    (checkout / "data").mkdir()
+    path = rls.resolve_sop_db_path(env={}, repo_root=checkout)
+    assert path == checkout / "data" / "sop_agent.db"
+    assert "projects/repos/sop-data-hub" not in str(path)

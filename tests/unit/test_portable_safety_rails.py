@@ -50,11 +50,15 @@ def test_rail_db_has_min_contract_columns(rail_db: Path):
     assert MIN_RAIL_SHIPMENTS_COLUMNS <= cols
 
 
-def test_ansteel_http_is_blocked():
+def test_all_http_egress_is_blocked():
     import requests
 
-    with pytest.raises(RuntimeError, match="block live Ansteel HTTP"):
+    with pytest.raises(RuntimeError, match="block all live HTTP egress"):
         requests.get("https://56.ansteel.com.cn/api/encryptLogin", timeout=1)
+    with pytest.raises(RuntimeError, match="block all live HTTP egress"):
+        requests.get("http://127.0.0.1:8021/v1/chat/completions", timeout=1)
+    with pytest.raises(RuntimeError, match="block all live HTTP egress"):
+        requests.Session().post("https://example.com/api", timeout=1)
 
 
 def test_wechat_send_is_stubbed():

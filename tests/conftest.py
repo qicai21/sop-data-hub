@@ -1,6 +1,6 @@
 """Shared test fixtures and portable safety rails.
 
-See docs/issues/2026-08-08-工单-测试体系重构-双端开发与可移植门禁.md §5.
+See docs/issues/archived/2026-08-08-工单-测试体系重构-双端开发与可移植门禁.md §5.
 unit/functional must never write production DBs or open network egress.
 """
 from __future__ import annotations
@@ -88,45 +88,29 @@ def _block_real_wechat_send(monkeypatch: pytest.MonkeyPatch):
     )
 
 
-_BLOCKED_HOST_SNIPPETS = (
-    "56.ansteel.com.cn",
-    "ansteel.com.cn",
-)
-
-
 @pytest.fixture(autouse=True)
-def _block_ansteel_http_egress(monkeypatch: pytest.MonkeyPatch):
-    """Block real HTTP to Ansteel hosts; keep upload_and_verify logic testable with mocks.
+def _block_all_http_egress(monkeypatch: pytest.MonkeyPatch):
+    """Portable gate: no real HTTP egress (VLM, 95306 APIs, Ansteel, etc.).
 
-    Do not replace ``upload_and_verify`` / ``login`` wholesale — portable tests call
-    those functions with monkeypatched dependencies. Block at ``requests`` layer.
+    unit/functional have no network allow-list. Mock at the call site or patch
+    ``requests`` on the module under test. Live tests also inherit this rail —
+    they must not depend on outbound HTTP either.
     """
     import requests
 
-    real_request = requests.sessions.Session.request
+    def _blocked(method: str, url: object) -> None:
+        raise RuntimeError(
+            "portable tests block all live HTTP egress "
+            f"({method} {url!r}). Mock the client under test instead."
+        )
 
     def guarded_request(self, method, url, *args, **kwargs):
-        text = str(url)
-        if any(host in text for host in _BLOCKED_HOST_SNIPPETS):
-            raise RuntimeError(
-                "portable tests block live Ansteel HTTP egress "
-                f"({method} {text!r}). Mock session/login/query in-unit instead."
-            )
-        return real_request(self, method, url, *args, **kwargs)
-
-    monkeypatch.setattr(requests.sessions.Session, "request", guarded_request)
-
-    real_top = requests.request
+        _blocked(str(method), url)
 
     def guarded_top(method, url, **kwargs):
-        text = str(url)
-        if any(host in text for host in _BLOCKED_HOST_SNIPPETS):
-            raise RuntimeError(
-                "portable tests block live Ansteel HTTP egress "
-                f"({method} {text!r}). Mock session/login/query in-unit instead."
-            )
-        return real_top(method, url, **kwargs)
+        _blocked(str(method), url)
 
+    monkeypatch.setattr(requests.sessions.Session, "request", guarded_request)
     monkeypatch.setattr(requests, "request", guarded_top)
 
 

@@ -64,6 +64,38 @@ PID_FILE_NAME = "live_service.pid"
 ENV_RUNTIME_ROOT = "SOP_LIVE_RUNTIME_ROOT"
 ENV_CHAT_RECORDS_ROOT = "SOP_LIVE_CHAT_RECORDS_ROOT"
 ENV_FIXTURE_DIR = "SOP_LIVE_FIXTURE_DIR"
+ENV_SOP_DB = "BUSINESS_DATA_AGENT_DB_PATH"
+
+
+def resolve_sop_db_path(
+    *,
+    env: Mapping[str, str] | None = None,
+    repo_root: Path | None = None,
+) -> Path:
+    """Resolve sop_agent.db for live-service writes (inbox classification, etc.).
+
+    Precedence:
+      1. ``BUSINESS_DATA_AGENT_DB_PATH`` (same env as the rest of the agent stack)
+      2. ``<this-checkout>/data/sop_agent.db`` (script-relative REPO_ROOT)
+      3. ``sop_hub.data_agent.db.get_db_path()`` (settings / cwd fallback)
+
+    Never hardcode only ``~/projects/repos/sop-data-hub`` — that breaks non-canonical checkouts.
+    """
+    environ = env if env is not None else os.environ
+    raw = (environ.get(ENV_SOP_DB) or "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    root = repo_root if repo_root is not None else REPO_ROOT
+    repo_db = root / "data" / "sop_agent.db"
+    # Prefer this checkout's data/ when the tree exists (or will be created).
+    if (root / "data").is_dir() or (root / "src").is_dir():
+        return repo_db
+    try:
+        from sop_hub.data_agent.db import get_db_path
+
+        return Path(get_db_path())
+    except Exception:
+        return CANONICAL_REPO_ROOT / "data" / "sop_agent.db"
 
 
 def resolve_live_service_paths(
@@ -591,7 +623,7 @@ def _update_inbox_classification(
     """Update message_inbox with classification results after VLM processing."""
     import sqlite3
 
-    db_path = CANONICAL_REPO_ROOT / "data" / "sop_agent.db"
+    db_path = resolve_sop_db_path()
     if not db_path.exists():
         return
 

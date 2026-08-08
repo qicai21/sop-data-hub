@@ -28,7 +28,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Portable tests (make test)
-        run: |
-          # Makefile defaults to .venv/bin/python; use active CI interpreter.
-          PYTHONPATH=src python -m pytest tests/unit tests/functional -q
+      - name: Portable tests via make test
+        env:
+          # Makefile PY defaults to .venv; point at the active CI interpreter.
+          PY: PYTHONPATH=src python
+        run: make test

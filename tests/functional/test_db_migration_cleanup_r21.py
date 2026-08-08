@@ -1,9 +1,8 @@
-"""R21: Database migration and cleanup tests.
+"""R21: Database migration and cleanup tests (portable).
 
-Scope:
-- Zombie DB file deletion verification
-- Legacy agent.db auto-migration to sop_agent.db
-- No remaining references to zombie DB names in codebase
+- Legacy agent.db auto-migration to sop_agent.db (tmp only)
+- No zombie DB *filenames* hard-wired as live paths in src/scripts
+- Does NOT scan sibling repos or require production data/sop_agent.db
 """
 
 from __future__ import annotations
@@ -13,33 +12,13 @@ import sqlite3
 from pathlib import Path
 
 
-def test_zombie_db_files_deleted():
-    """R21: ops_data_hub.db, rail95306.db, message_store.db no longer exist."""
-    zombies = [
-        ("ops-data-hub", "ops_data_hub.db"),
-        ("wx-ops-agent", "message_store.db"),
-    ]
-    repos_root = Path(__file__).resolve().parents[2].parent
-
-    for repo_name, db_name in zombies:
-        db_path = repos_root / repo_name / "data" / db_name
-        assert not db_path.exists(), f"Zombie DB should be deleted: {db_path}"
-
-    # rail95306.db was in ops-data-hub/data/rail95306.db
-    rail_path = repos_root / "ops-data-hub" / "data" / "rail95306.db"
-    assert not rail_path.exists(), f"Zombie DB should be deleted: {rail_path}"
-
-
 def test_legacy_agent_db_auto_migrates_to_sop_agent_db(tmp_path):
     """R21: Legacy agent.db at data/agent.db auto-copies to sop_agent.db on open."""
-    from sop_hub.data_agent.db import _migrate_legacy_db, get_db_path
-    import importlib
-    import sop_hub.data_agent.db as db_module
+    from sop_hub.data_agent.db import _migrate_legacy_db
 
     legacy = tmp_path / "data" / "agent.db"
     legacy.parent.mkdir(parents=True, exist_ok=True)
 
-    # Create a legacy DB with recognizable content
     conn = sqlite3.connect(str(legacy))
     conn.execute("CREATE TABLE test_migration (msg TEXT)")
     conn.execute("INSERT INTO test_migration VALUES ('legacy data')")
@@ -49,19 +28,16 @@ def test_legacy_agent_db_auto_migrates_to_sop_agent_db(tmp_path):
     sop_db = tmp_path / "data" / "sop_agent.db"
     assert not sop_db.exists(), "sop_agent.db should not exist before migration"
 
-    # Run migration
     _migrate_legacy_db(sop_db)
 
     assert sop_db.exists(), "sop_agent.db should exist after migration"
     assert sop_db.stat().st_size > 0, "sop_agent.db should have data"
 
-    # Verify data was copied
     conn2 = sqlite3.connect(str(sop_db))
     row = conn2.execute("SELECT msg FROM test_migration").fetchone()
     assert row[0] == "legacy data", f"Expected 'legacy data', got {row}"
     conn2.close()
 
-    # Re-running migration should NOT overwrite (DB already exists)
     _migrate_legacy_db(sop_db)
     conn3 = sqlite3.connect(str(sop_db))
     row2 = conn3.execute("SELECT msg FROM test_migration").fetchone()
@@ -69,84 +45,52 @@ def test_legacy_agent_db_auto_migrates_to_sop_agent_db(tmp_path):
     conn3.close()
 
 
-def test_no_zombie_db_names_in_code(tmp_path):
-    """R21: Grep for zombie DB names returns zero hits in code/docs (not reports)."""
+def test_no_zombie_db_names_as_active_paths_in_src():
+    """R21: src/ + scripts/ must not still open legacy zombie DB filenames.
+
+    Historical mentions in docs/tests/reports are out of scope for portable gate.
+    """
     repo_root = Path(__file__).resolve().parents[2]
-    zombie_names = ["ops_data_hub.db", "rail95306.db", "message_store.db"]
+    zombie_names = ("ops_data_hub.db", "rail95306.db", "message_store.db")
+    scan_roots = [repo_root / "src", repo_root / "scripts"]
+    hits: list[tuple[str, str]] = []
 
-    skip_paths = {".venv", ".git", "__pycache__", ".pytest_cache", ".db", ".sqlite3"}
-    skip_exts = {".db", ".sqlite3", ".pyc", ".pyo", ".DS_Store"}
-
-    hits = []
-    for f in repo_root.rglob("*"):
-        if f.is_dir():
-            if any(s in f.parts for s in skip_paths):
+    for root in scan_roots:
+        if not root.is_dir():
+            continue
+        for f in root.rglob("*.py"):
+            if "__pycache__" in f.parts:
                 continue
-            continue
-        if f.suffix in skip_exts:
-            continue
-        try:
-            content = f.read_text(errors='ignore')
-        except Exception:
-            continue
-        for name in zombie_names:
-            if name in content:
-                # Allow mentions in R21 report (this one) and updated audit reports
-                rel = str(f.relative_to(repo_root))
-                if "test_db_migration_cleanup_r21" in rel:
-                    continue
-                if "db_cleanup_and_migration_r21" in rel:
-                    continue
-                if rel.startswith("reports/data_persistence_topology_audit") and "已清理僵尸" in content:
-                    continue
-                if rel.startswith("reports/runtime_boundary_audit_r13_5"):
-                    continue
-                if rel.startswith("reports/foundation_finalize_r22"):
-                    continue
-                hits.append((rel, name))
+            try:
+                content = f.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            for name in zombie_names:
+                if name in content:
+                    hits.append((str(f.relative_to(repo_root)), name))
 
-    assert len(hits) == 0, (
-        f"Found {len(hits)} zombie DB name references outside known reports:\n"
+    assert hits == [], (
+        "Found zombie DB name references in src/scripts:\n"
         + "\n".join(f"  {path}: {name}" for path, name in hits)
     )
 
 
-def test_data_dir_exists_and_sop_agent_db_present():
-    """R21: sop-data-hub/data/sop_agent.db exists after migration.
-
-    Portable tests must not open the production DB (write or read). Schema
-    coverage uses production ``open_db`` on a temp path instead.
-    """
-    repo_root = Path(__file__).resolve().parents[2]
-    db_path = repo_root / "data" / "sop_agent.db"
-    assert db_path.exists(), f"Canonical sop_agent.db should exist: {db_path}"
-    assert db_path.stat().st_size > 0, "sop_agent.db should not be empty"
-
-    import os
-    import tempfile
-
+def test_open_db_schema_on_tmp_has_core_tables(tmp_path, monkeypatch):
+    """Schema init works without opening production data/sop_agent.db."""
     from sop_hub.data_agent.db import open_db
 
-    with tempfile.TemporaryDirectory() as td:
-        tmp = Path(td) / "sop_agent.db"
-        previous = os.environ.get("BUSINESS_DATA_AGENT_DB_PATH")
-        os.environ["BUSINESS_DATA_AGENT_DB_PATH"] = str(tmp)
-        try:
-            conn = open_db()
-            try:
-                tables = {
-                    row[0]
-                    for row in conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table'"
-                    )
-                }
-            finally:
-                conn.close()
-        finally:
-            if previous is None:
-                os.environ.pop("BUSINESS_DATA_AGENT_DB_PATH", None)
-            else:
-                os.environ["BUSINESS_DATA_AGENT_DB_PATH"] = previous
+    tmp = tmp_path / "sop_agent.db"
+    monkeypatch.setenv("BUSINESS_DATA_AGENT_DB_PATH", str(tmp))
+    conn = open_db()
+    try:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+    finally:
+        conn.close()
 
     expected = {
         "release_batches",
@@ -163,7 +107,6 @@ def test_default_db_path_uses_sop_agent_db():
     """R21: get_db_path() default resolves to sop_agent.db, not agent.db."""
     from sop_hub.data_agent.db import get_db_path
 
-    # Clear any env var override
     old_env = os.environ.pop("BUSINESS_DATA_AGENT_DB_PATH", None)
     try:
         path = get_db_path()

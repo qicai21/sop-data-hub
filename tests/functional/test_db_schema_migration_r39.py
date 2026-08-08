@@ -294,23 +294,62 @@ class TestMigrationIdempotency:
 class TestShipmentStatusSyncAfterMigration:
     """Verify shipment_status_sync works with new columns."""
 
-    def test_shipment_status_sync_reads_delivered_at(self, test_db):
-        """After migration + sync, wagon_shipments.delivered_at is populated."""
+    def test_shipment_status_sync_reads_delivered_at(self, test_db, tmp_path):
+        """After migration + sync, delivered_at plans come from a temp rail fixture."""
         _run_migration(test_db, dry_run=False)
 
+        from tests.support.db import init_min_rail_db
         from sop_hub.sop.shipment_status_sync import ShipmentStatusSync
 
-        # Use the real 95306 DB but test DB — only works if rail DB exists
-        rail_db = Path.home() / "projects" / "repos" / "rail95306-sync" / "runtime" / "95306_collection.sqlite3"
-        if not rail_db.exists():
-            pytest.skip("95306 rail DB not available")
+        # Clear delivered_at so sync can plan an update; match rail by car_no.
+        conn = sqlite3.connect(test_db)
+        try:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(wagon_shipments)")}
+            if "ydid" in cols:
+                conn.execute(
+                    "UPDATE wagon_shipments SET delivered_at = NULL, ydid = ? WHERE id = 'ws-1'",
+                    ("YD-TEST-1",),
+                )
+            else:
+                conn.execute(
+                    "UPDATE wagon_shipments SET delivered_at = NULL WHERE id = 'ws-1'"
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        rail_db = init_min_rail_db(tmp_path / "rail.sqlite3")
+        rconn = sqlite3.connect(str(rail_db))
+        try:
+            rconn.execute(
+                """
+                INSERT INTO shipments (
+                  ydid, car_no, destination_name, ticketed_at,
+                  departed_at, arrived_at, delivered_at,
+                  status_name, latest_stage_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "YD-TEST-1",
+                    "C1234567",
+                    "汐子",
+                    "2026-05-28 08:00:00",
+                    "2026-05-28 14:00:00",
+                    "2026-05-29 02:00:00",
+                    "2026-05-29 15:00:00",
+                    "货物已交付",
+                    "货物已交付",
+                ),
+            )
+            rconn.commit()
+        finally:
+            rconn.close()
 
         sync = ShipmentStatusSync(sop_db_path=test_db, rail_db_path=rail_db)
         result = sync.sync(ship_name="测试船", dry_run=True)
 
-        # Should have planned delivered_at updates
-        assert result.delivered_update_count >= 0
-        assert result.schema_missing_fields == []  # No missing columns
+        assert result.schema_missing_fields == []
+        assert result.delivered_update_count >= 1
 
     def test_delivered_at_column_writable(self, test_db):
         """After migration, delivered_at can be written directly."""

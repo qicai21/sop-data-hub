@@ -79,17 +79,19 @@ def test_canonical_default_constants_keep_runtime_mac_layout():
 
 
 
-def test_source_watcher_default_resolves_correctly():
-    """R19: _default_wx_ops_agent_root resolves to ~/projects/repos/wx-ops-agent (parents[4], not .parent)."""
+def test_source_watcher_default_resolves_relative_to_package_layout(monkeypatch):
+    """R19: default root is sibling of this repo under parents[4], unless env set.
+
+    Does not require the sibling directory to exist on this host.
+    """
     from sop_hub.sop.source_watcher import _default_wx_ops_agent_root
 
+    monkeypatch.delenv("WX_OPS_AGENT_ROOT", raising=False)
     root = _default_wx_ops_agent_root()
-    # source_watcher.py is at repos/sop-data-hub/src/sop_hub/sop/source_watcher.py
-    # parents[4] of that file = repos/
-    # So expected = <repo_root>/../../wx-ops-agent
-    repo_root = Path(__file__).resolve().parents[2]  # sop-data-hub/
-    expected = repo_root.parent / "wx-ops-agent"  # repos/wx-ops-agent
+    repo_root = Path(__file__).resolve().parents[2]
+    expected = repo_root.parent / "wx-ops-agent"
     assert root == expected, f"Expected {expected}, got {root}"
+
 
 
 # ── R26: Live SOP Runtime Compiler ────────────────────────────────────

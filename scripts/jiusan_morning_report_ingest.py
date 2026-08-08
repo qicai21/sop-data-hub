@@ -122,17 +122,46 @@ def parse_report(text: str) -> dict:
     }
 
 
+# 循环在用箱池:末次制票日 ≥ 此日的 unique 箱(2026-07-20 业务确认)。
+# 等价:最近约3轮活跃循环箱 ∪ 差集中末次落在 7/10|7/11|7/15 的尾箱;
+# 末次 < 7/10 的箱视为调出,不再计入物理池。见 docs/business-rules/jiusan_cycle_ops_log.md。
+CYCLE_POOL_ACTIVE_SINCE = "2026-07-10"
+# 统计末次制票时回看起点(覆盖本阶段即可,与和谐1 开跑对齐)
+CYCLE_POOL_LOOKBACK_SINCE = "2026-06-10"
+
+
+def compute_cycle_pool_unique(conn: sqlite3.Connection) -> int:
+    """当前集装箱循环在用池:unique 箱号。
+
+    规则(2026-07-20):箱在 jiusan 集装箱发运中的**末次制票日** ≥ CYCLE_POOL_ACTIVE_SINCE
+    则计在池内;更早末次视为调出。
+    """
+    return int(conn.execute(
+        """
+        SELECT COUNT(*) FROM (
+          SELECT upper(trim(box_no)) AS b, MAX(ticketed_at) AS last_t
+          FROM wagon_container_shipments
+          WHERE project_id='jiusan'
+            AND box_no IS NOT NULL AND trim(box_no) != ''
+            AND ticketed_at >= ?
+          GROUP BY upper(trim(box_no))
+          HAVING substr(MAX(ticketed_at), 1, 10) >= ?
+        )
+        """,
+        (CYCLE_POOL_LOOKBACK_SINCE, CYCLE_POOL_ACTIVE_SINCE),
+    ).fetchone()[0] or 0)
+
+
 # ── 3. 返空(95306 返空列)+ 物理池(unique 箱号)────────────────────────
 def compute_returns_and_pool(conn: sqlite3.Connection) -> tuple[int, int]:
-    """返空(返程在途空箱)+ 物理池基数,均为**本阶段总池**口径(工单 2026-06-29 §3b):
-    以 PHASE_START_SHIP(和谐1)首发为锚,跨船(和谐1→诚信→…)按 jiusan 车体池统计 unique
-    箱;不限单船,也不回溯到锚船之前。"""
+    """返空(返程在途空箱)+ 循环在用物理池基数。
+
+    池口径 2026-07-20 起改为「末次制票 ≥ CYCLE_POOL_ACTIVE_SINCE 的 unique 箱」,
+    不再用「阶段锚起全部历史 unique」(会把已调出箱算进 710)。
+    返空仍取 95306 循环列实时状态。
+    """
     import jiusan_cycle_board as jcb
-    phase = jcb._phase_start_date(conn)
-    pool = conn.execute(
-        "SELECT COUNT(DISTINCT wcs.box_no) FROM wagon_container_shipments wcs "
-        "JOIN wagon_body_pool wbp ON wcs.car_no=wbp.car_no AND wbp.project='jiusan' "
-        "WHERE wcs.box_no!='' AND wcs.departed_at>=?", (phase,)).fetchone()[0]
+    pool = compute_cycle_pool_unique(conn)
     transit_empty = 0
     try:
         transit_empty = int(jcb._cycle_state(conn).get("transit_empty_boxes", 0) or 0)
@@ -194,7 +223,8 @@ def main(apply: bool = False, dry_run: bool = False) -> None:
     from container_pool_snapshot import record, ensure_schema
     conn = sqlite3.connect(str(SOP_DB))
     ensure_schema(conn)
-    note = (f"auto从GROUP093晨报截止{day}日:返空取95306返空列、330空反推平物理池(unique箱{pool});"
+    note = (f"auto从GROUP093晨报截止{day}日:返空取95306返空列、"
+            f"330空反推平循环在用池(unique箱{pool},末次制票≥{CYCLE_POOL_ACTIVE_SINCE});"
             f"昨装{nodes['_loaded_box']}发{nodes['_shipped_box']}。"
             f"港空/330若按流量口径精修请人工--record覆盖。{date_warn}{warn}")
     record(conn, snapshot_date=snap_date, project="jiusan", ship_name=POOL_KEY,

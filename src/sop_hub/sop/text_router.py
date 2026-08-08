@@ -241,6 +241,41 @@ def _has_fractional_count_immediately_before(text: str, pos: int) -> bool:
     return bool(re.search(r"\d+[.．]\d+\s*(?:车|节)\s*$", text[max(0, pos - 16):pos]))
 
 
+# 金通铜精矿(马林铜)舱位发运文本闸。
+# 铁晟共享群里常见:「煤六 55节 马林铜（金通）贝拉1舱」——「贝拉」是铜精矿舱位
+# 名,不是中唐特钢铁矿船。中唐贝拉已完结,不应再开 inspection_text_trigger。
+# 实证:2026-07-22 该形态误触发 → 等 12h → 数据单发群刷超时告警。
+_JINTONG_COPPER_MARKERS = (
+    "马林铜",
+    "金通铜",
+    "金通）",
+    "金通)",
+    "（金通",
+    "(金通",
+)
+_JINTONG_CABIN_SHIP_RE = re.compile(
+    r"(贝拉|联邦)\s*\d+\s*舱"
+)
+
+
+def is_jintong_copper_cabin_text(text: str) -> bool:
+    """True when text is 金通铜精矿 cabin allocation, not 中唐/朝阳 SOP trigger.
+
+    Matches:
+      - 马林铜 / 金通铜 / （金通） 明确金通铜锚点
+      - 「贝拉1舱」「联邦4舱」舱位写法且无「汐子」(中唐到站)时
+    """
+    t = (text or "").strip()
+    if not t:
+        return False
+    if any(m in t for m in _JINTONG_COPPER_MARKERS):
+        return True
+    # 舱位写法:贝拉1舱 / 联邦4舱。若已带汐子则可能是真中唐,不挡。
+    if _JINTONG_CABIN_SHIP_RE.search(t) and "汐子" not in t:
+        return True
+    return False
+
+
 def extract_inspection_text_triggers(text: str) -> list[dict[str, Any]]:
     """从(可能复合多船的)发运文本里抽出检验类触发器段。
 
@@ -252,9 +287,13 @@ def extract_inspection_text_triggers(text: str) -> list[dict[str, Any]]:
       - 每个船名取其后到下一个船名之间的第一个 "N节/N车";前向找不到再
         在船名前 8 字符内回找一次(兼容 "15节宝腾海" 这种数量前置写法)。
       - 同船多次出现只保留第一段。
+      - 金通铜精矿舱位文本(马林铜/金通/贝拉1舱)整段不抽(闸)。
     """
     raw = text or ""
     if not raw.strip():
+        return []
+    # 闸:金通铜舱位文本不得进入中唐/朝阳 inspection_text_trigger
+    if is_jintong_copper_cabin_text(raw):
         return []
     norm = _strip_chinese_quotes(raw)
     ship_map = _inspection_ship_project_map()

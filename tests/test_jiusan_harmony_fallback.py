@@ -82,3 +82,31 @@ def test_existing_box_keeps_its_batch_when_ledger_has_no_route():
         box_no="TBJU0000001",
         default_ship="勇气",
     ) == "美国"
+
+
+def test_multi_loading_uses_car_last_ship_when_no_ledger():
+    """双船 loading 且无台账时,按车体上趟船落库,不整窗跳过。"""
+    ship = m.resolve_box_ship(
+        taizhang={},
+        existing={},
+        batch_to_ship={"US": "美国", "CQ": "勇气"},
+        car_no="1747158",
+        ydid="YDID_NEW",
+        box_no="TBJU3390802",
+        default_ship=None,  # multi-loading
+        car_last_ship={"1747158": "美国"},
+    )
+    assert ship == "美国"
+
+
+def test_multi_loading_skips_only_when_no_history_either():
+    assert m.resolve_box_ship(
+        taizhang={},
+        existing={},
+        batch_to_ship={},
+        car_no="9999999",
+        ydid="YDID_X",
+        box_no="TBJUX",
+        default_ship=None,
+        car_last_ship={},
+    ) is None

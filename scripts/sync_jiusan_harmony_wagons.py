@@ -113,6 +113,26 @@ def load_taizhang(conn) -> dict[tuple[str, str], str]:
         return {}  # 台账表还没建(首次)
 
 
+def load_car_last_ship(conn) -> dict[str, str]:
+    """车号 → 最近一次已入库的船名(循环车体记忆)。
+
+    多船同时 loading 时 default_ship 故意返回 None,避免把整窗硬堆到新船。
+    但循环列车体跨趟复用:新票未进台账时,可按该车**上一趟**船归属落库,
+    否则 7/21-22 类窗口会整窗跳过,看板/循环列长期卡住。
+    时间升序扫一遍,后写覆盖 = 最近一次。
+    """
+    out: dict[str, str] = {}
+    for car, ship in conn.execute(
+        "SELECT car_no, ship_name FROM wagon_container_shipments "
+        "WHERE project_id=? AND ship_name IS NOT NULL AND ship_name!='' "
+        "ORDER BY ticketed_at ASC, ydid ASC",
+        (PROJECT,),
+    ):
+        if car:
+            out[str(car)] = str(ship)
+    return out
+
+
 def resolve_box_ship(
     *,
     taizhang: dict[tuple[str, str], str],
@@ -122,15 +142,23 @@ def resolve_box_ship(
     ydid: str,
     box_no: str,
     default_ship: str | None,
+    car_last_ship: dict[str, str] | None = None,
 ) -> str | None:
-    """Resolve one box without allowing a later fallback to reroute history."""
+    """Resolve one box without allowing a later fallback to reroute history.
+
+    优先级:台账 ydid+box → 已存在同 id 行 → 全局 default_ship → 车体上趟船名。
+    """
     ledger_ship = taizhang.get((ydid, box_no))
     if ledger_ship:
         return ledger_ship
     existing_batch = existing.get(stable_hash(car_no, box_no, ydid))
     if existing_batch:
         return batch_to_ship.get(existing_batch)
-    return default_ship
+    if default_ship:
+        return default_ship
+    if car_last_ship:
+        return car_last_ship.get(car_no) or None
+    return None
 
 
 def fetch_rail_tickets() -> list[dict]:
@@ -304,19 +332,22 @@ def main() -> None:
         batch_to_ship = {batch_id: ship for ship, batch_id in ship_batches.items()}
         taizhang = load_taizhang(conn)
         default_ship = resolve_default_ship(conn)
+        car_last_ship = load_car_last_ship(conn)
         existing = {r[0]: r[1] for r in conn.execute(
             "SELECT id, batch_id FROM wagon_container_shipments WHERE batch_id IN ({})".format(
                 ",".join("?" * len(ship_batches))), list(ship_batches.values()))}
         print(f"船 lot01: {list(ship_batches)} | 台账 {len(taizhang)} 箱 | 现有 {len(existing)} 箱 "
-              f"| 兜底落点(当前未完结船)={default_ship or '无'}")
+              f"| 兜底落点(当前未完结船)={default_ship or '无'} "
+              f"| 车体上趟记忆 {len(car_last_ship)} 车")
         if default_ship is not None and default_ship not in ship_batches:
             print(f"!! 兜底船 {default_ship} 无 lot01 batch,退出"); return
 
         tot_new = tot_ref = tot_rr = 0
         unmatched_boxes = 0
         skipped_unmatched_boxes = 0
+        history_fallback_boxes = 0
         for w in windows:
-            # 1) 窗口内逐 box 定船(台账;未命中→默认)
+            # 1) 窗口内逐 box 定船:台账 → 已存在行 → default → 车体上趟
             ship_boxes: dict[str, list[tuple]] = defaultdict(list)  # ship → [(t, box, pos)]
             for t in w:
                 for pos, box in enumerate(json.loads(t["container_numbers_json"] or "[]"), 1):
@@ -328,13 +359,20 @@ def main() -> None:
                         ydid=t["ydid"],
                         box_no=box,
                         default_ship=default_ship,
+                        car_last_ship=car_last_ship,
                     )
                     if ship is None:
                         unmatched_boxes += 1
-                        if default_ship is None:
-                            skipped_unmatched_boxes += 1
-                            continue
-                        ship = default_ship
+                        skipped_unmatched_boxes += 1
+                        continue
+                    # 统计:无台账/无 default 时靠车体上趟
+                    if (
+                        (t["ydid"], box) not in taizhang
+                        and stable_hash(t["car_no"], box, t["ydid"]) not in existing
+                        and not default_ship
+                        and car_last_ship.get(t["car_no"]) == ship
+                    ):
+                        history_fallback_boxes += 1
                     ship_boxes[ship].append((t, box, pos))
             # 2) 各船子组:归循环列 + 建行 + upsert
             for ship, items in ship_boxes.items():
@@ -346,6 +384,9 @@ def main() -> None:
                         for (t, box, pos) in items]
                 n, rf, rr = upsert_rows(conn, rows, existing)
                 tot_new += n; tot_ref += rf; tot_rr += rr
+                # 新入库后刷新车体记忆,供同次跑的后续窗口使用
+                for t, _box, _pos in items:
+                    car_last_ship[t["car_no"]] = ship
             print(f"  窗口 {w[0]['ticketed_at']}~{w[-1]['ticketed_at']} "
                   f"({len(w)}车) 船分布={ {s: len(v) for s, v in ship_boxes.items()} }")
         recompute_counters(conn, ship_batches, now)
@@ -363,12 +404,14 @@ def main() -> None:
                 f"补既有列 {len(cycle_pool['attached_to_existing_cycle'])}车 / "
                 f"新列 {len(cycle_pool['created_new_cycle'])}车"
             )
+        if history_fallback_boxes:
+            print(f"  车体上趟归属补入: {history_fallback_boxes} box "
+                  f"(多船 loading 无台账时的循环车体回退)")
         if unmatched_boxes:
-            if default_ship is None:
-                print(f"⚠️ 未命中台账且当前无未完结 lot01: {unmatched_boxes} box "
-                      f"(已跳过 {skipped_unmatched_boxes}) —— 待港方货票清单/新放货批次就绪后再入库")
-            else:
-                print(f"⚠️ 未命中台账(暂落{default_ship}): {unmatched_boxes} box —— 待港方货票清单到后跑 reconcile 纠正")
+            print(f"⚠️ 仍无法定船(无台账/无 default/无上趟记忆): {unmatched_boxes} box "
+                  f"(已跳过 {skipped_unmatched_boxes}) —— 待港方货票清单后再入库")
+        elif default_ship and history_fallback_boxes == 0:
+            pass  # 安静:全走台账或唯一 default
         from sop_hub.sop.shipped_weight import compute_for_release_batch
         for ship, bid in ship_batches.items():
             sw = compute_for_release_batch(bid, db_path=SOP_DB)

@@ -90,7 +90,7 @@ jiusan-sync / morning-reconcile / status-sync:九三集装箱/散粮按台账分
 | `external_action_log` | 对外动作审计(发送/上传)+ 幂等键 | `action_type, action_status(planned/executed), idempotency_key` | idempotency_key |
 | `reconcile_action_log` | 对账更正逐笔日志(reroute/gate/delete) | `action, entity_key, from_value, to_value` | — |
 
-常见批次状态：`pending_freight`（有放货单、待货运信息）、`enriched`（货运信息已补全，尚未产生/归属发运事实）、`loading`、`all_loaded`、`tracking`、`confirmed_received`、`closed`。状态含义与实际 wagon 落库分开判断，不能把 `enriched` 当作“已入库”。
+常见批次状态：`pending_freight`（有放货单、待货运信息）、`enriched`（货运信息已补全，尚未产生/归属发运事实）、`loading`、`all_loaded`、`tracking`、`delivered`、`confirmed_received`、`closed`。状态含义与实际 wagon 落库分开判断，不能把 `enriched` 当作“已入库”。
 
 **唯一标识铁律**:
 - **`ydid`(运单 id)= 每趟唯一**,是 95306 与本系统的统一键。**发运量必按 ydid 计数,绝不按 car_no/box_no**——循环车/箱号会反复复用(九三集装箱 3 列轮转、散粮循环车)。
@@ -127,7 +127,7 @@ jiusan-sync / morning-reconcile / status-sync:九三集装箱/散粮按台账分
 ## 5. Lifecycle 状态机(批次)
 
 ```
-loading → all_loaded → tracking → delivered → confirmed_received → closed
+pending_freight → enriched → loading → all_loaded → tracking → delivered → confirmed_received → closed
 ```
 - 推进由 chain 各步 / `lifecycle_closeout`(text-watch 每轮扫)/ 手工信号驱动,`advance_lifecycle` 幂等+校验不倒退。
 - **mode 分两类**(yaml `project_meta.lifecycle.mode`):
@@ -174,7 +174,7 @@ loading → all_loaded → tracking → delivered → confirmed_received → clo
 |---|---|
 | 分船同步 | `jiusan-sync`，按台账分船 |
 | 晨报与内部群对账 | `jiusan-morning-reconcile`；每日 8/9/10/11 点，成功一次停止 |
-| 在途/关批/循环更新 | `status-sync` 每 2 小时，95306 四探针抽样 |
+| 在途/关批/循环更新 | `status-sync` 每 2 小时，使用 `jz-port-super` 综合账号进行 95306 四探针抽样 |
 | 箱池核算 | `jiusan_cycle_pool` |
 | 看板循环 | 港口空箱 → 港口重箱 → 在途（重） → 新台子站 → 三三零专用线 → 在途（返空） |
 | 散粮报表 | `jiusan-bulk-report-ingest` |
@@ -189,7 +189,18 @@ loading → all_loaded → tracking → delivered → confirmed_received → clo
 2. **测试守门**：`PYTHONPATH=src .venv/bin/python -m pytest tests/ -q`。测试数以 `pytest --collect-only` 实测为准，不能把文档中的历史数字当口径；历史事故必须沉淀为回归测试。
 3. **git 单分支 main**:2026-06-29 起收敛到单一 `main`(已删 codex/老分支)。在 main 上干,改完提交(commit 尾 `Co-Authored-By: Claude …`),用户授权才 push。
 4. **改完按 §4 重启对应 daemon**;改链 → text-watch;改 agent/runner → live-service+text-watch。
-5. 代码地图(关键模块):`sop/workflow_task_executor.py`(各链执行器)、`sop/executor_runner.py`(吉林发运链)、`sop/factory_verify.py`+`external/chaoyang_ansteel/upload_wagons.py`(上传反查)、`sop/lifecycle_closeout.py`、`sop/wagon_ingest.py`(统一入库口 `ingest_wagons`)、`data_agent/agent.py`(建批/OCR归一)、`runner.py`(分类后项目授权)、`reconcile/`(对账)。
+5. **代码地图（按改动目标）**：
+
+   | 要动什么 | 先看 |
+   | --- | --- |
+   | 分类、项目授权、OCR 归一 | `runner.py`、`classifier/`、`data_agent/agent.py` |
+   | 检装候选、挂起与恢复 | `inspection_*`、`pending_match_verifier`、`text_station_segments`、`text_router` |
+   | lot 优先级、吉林混列 | `release_dispatch_priority`、`jilin_mixed_departure`、`config/project_sops/*.yaml` |
+   | 入库、Excel、微信发送 | `wagon_ingest.py`、`workflow_task_executor.py`、`executor_runner.py`、`departure_excel.py` |
+   | 朝钢门户上传与反查 | `factory_verify.py`、`external/chaoyang_ansteel/` |
+   | 生命周期与状态同步 | `lifecycle.py`、`lifecycle_closeout.py`、`active_status_sync.py` |
+   | 九三对账、循环与箱池 | `reconcile/`、`jiusan_cycle_tracking.py`、`jiusan_cycle_pool.py` |
+   | Web 看板 | `scripts/dashboard_web.py`、`scripts/cli_dashboard.py` |
 6. **费用边界与联动**：
    - SOP 是运输事实源：`release_batches`（含批次、`cargo_arrival_weight`）、`shipment_release_batch_matches`、`wagon_shipments`、`wagon_container_shipments` 及台账归属。
    - `fee_manager/data/fee_ledger.db` 是费用与结算事实源：费目/合同费率、`fee_batch`、`fee_record`、`settlement_plan`、发票和正式单证。
@@ -210,7 +221,7 @@ loading → all_loaded → tracking → delivered → confirmed_received → clo
 
 ---
 
-## 10. 自测考题(读完上面,试着答这 5 题)
+## 10. 自测考题(读完上面,试着答这 7 题)
 
 > 答完交给郭东北核对掌握程度。
 
@@ -222,7 +233,7 @@ loading → all_loaded → tracking → delivered → confirmed_received → clo
 
 **Q4.** 朝钢/吉林上传后"反查"原来用"整批对齐"(total==expected 且 extra==0)判成败,为什么这是错的?现在的 present+unique 口径具体校验什么(键是什么)?
 
-**Q5.** 你改了 `lifecycle_closeout.py` 和 `sync_jiusan_all.py`。哪个 daemon 必须重启、哪个不用?你用什么判据决定一个长驻 daemon 是否在跑旧代码?
+**Q5.** 你改了 `lifecycle_closeout.py` 和 `sync_jiusan_all.py`。`lifecycle_closeout` 同时由 text-watch 每轮和 `status-sync --closeout` 调用：哪个 daemon 必须重启以立即加载、哪个等下轮即可？你用什么判据决定一个长驻 daemon 是否在跑旧代码？
 
 **Q6.** 某批次的到厂重量或 lot 归属修正后，为什么不能只改 `fee_ledger.db`？正确的 SOP 与 fee_manager 修复顺序是什么？
 

@@ -4,7 +4,7 @@ import importlib.util
 import sqlite3
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 _spec = importlib.util.spec_from_file_location(
     "sync_jiusan_harmony_wagons", REPO / "scripts" / "sync_jiusan_harmony_wagons.py"
 )

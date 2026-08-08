@@ -8,7 +8,7 @@ import types
 from pathlib import Path
 
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 _spec = importlib.util.spec_from_file_location(
     "run_jiusan_morning_reconcile", REPO / "scripts" / "run_jiusan_morning_reconcile.py"
 )

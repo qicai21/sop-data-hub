@@ -9,10 +9,9 @@ install:
 install-dev:
 	$(PY) -m pip install -e ".[dev]"
 
-# Portable gate. Phase 0–2 transition: all tests except live/support.
-# Target end-state (Phase 2+): only tests/unit tests/functional.
+# Portable gate: unit + functional only (live excluded by path).
 test:
-	$(PYTEST) tests --ignore=tests/live --ignore=tests/support -q
+	$(PYTEST) tests/unit tests/functional -q
 
 test-unit:
 	$(PYTEST) tests/unit -q

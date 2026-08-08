@@ -12,7 +12,7 @@ def _by_ship(text: str) -> dict[str, dict]:
 
 
 def test_july_station_text_corpus_is_versioned_and_deduplicated():
-    path = Path(__file__).parent / "fixtures" / "workgroup_station_text_corpus_2026-07.json"
+    path = Path(__file__).resolve().parents[1] / "fixtures" / "workgroup_station_text_corpus_2026-07.json"
     corpus = json.loads(path.read_text(encoding="utf-8"))
     assert corpus["source"] == "message_inbox/铁晟业务工作群"
     assert corpus["month"] == "2026-07"

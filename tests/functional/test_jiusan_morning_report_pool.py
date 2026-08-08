@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 _spec = importlib.util.spec_from_file_location(
     "jiusan_morning_report_ingest",
     REPO / "scripts" / "jiusan_morning_report_ingest.py",

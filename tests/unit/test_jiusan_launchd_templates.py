@@ -6,7 +6,7 @@ import plistlib
 from pathlib import Path
 
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 
 
 def test_jiusan_launchd_templates_are_valid() -> None:

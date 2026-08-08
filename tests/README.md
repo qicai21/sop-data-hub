@@ -22,14 +22,11 @@ make smoke-runtime
 
 | Layer | Path | Notes |
 |---|---|---|
-| unit | `tests/unit/` | Fast, no network, tmp DBs |
-| functional | `tests/functional/` + legacy `tests/test_*.py` / `tests/functional/test_*.py` during migration | Cross-module + fixtures |
+| unit | `tests/unit/` | Fast, pure/single-module |
+| functional | `tests/functional/` | Cross-module + temp DBs + fixtures |
 | live | `tests/live/` | Requires `SOP_TEST_LIVE=1`; readonly only |
 
-**Migration note (Phase 0–2):** `make test` currently runs the whole `tests/` tree
-except `tests/live` and `tests/support`, so existing files keep working while we
-`git mv` into `unit/` / `functional/`. Target end-state: only `tests/unit` +
-`tests/functional`.
+`make test` runs **only** `tests/unit` + `tests/functional` (portable gate).
 
 ## Safety rails (always on)
 

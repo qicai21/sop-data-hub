@@ -122,6 +122,32 @@ def test_dashboard_web_replaces_terminal_frames_with_css_panels():
     assert "┐" not in rendered
 
 
+def test_project_batch_panel_is_rendered_as_an_html_table():
+    row = (
+        cli_dashboard._pad_disp("马兰希望(金布巴粉)", 22)
+        + cli_dashboard._pad_disp("lot06", 6)
+        + cli_dashboard._pad_disp("2026-07-16", 10)
+        + cli_dashboard._pad_disp("16208", 8, "right")
+        + cli_dashboard._pad_disp("16817.9", 8, "right")
+        + cli_dashboard._pad_disp("-609.9", 8, "right")
+        + cli_dashboard._pad_disp("521", 11, "right")
+        + "  "
+        + cli_dashboard._pad_disp("loading", 15)
+        + "  "
+        + cli_dashboard._pad_disp("CGR20260612094028", 17)
+    )
+    rendered = dashboard_web.dashboard_to_html(
+        "┌─ 吉林金钢 ───────────────────────────┐\n"
+        "│ 船名(品名)              lot   下达日      计划t     已发t     剩 t    箱数(+当日)  状态             计划号 │\n"
+        f"│ {row} │\n"
+        "└──────────────────────────────────────┘"
+    )
+
+    assert 'class="dashboard-table"' in rendered
+    assert "马兰希望(金布巴粉)" in rendered
+    assert '<td class="status green">loading</td>' in rendered
+
+
 def test_jiusan_cycle_flow_uses_its_own_stable_web_frame():
     rendered = dashboard_web.dashboard_to_html(
         "┌─ 大豆循环现状 260808 ─────────┐\n"

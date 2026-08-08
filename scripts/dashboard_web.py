@@ -28,15 +28,15 @@ PAGE = """<!doctype html>
   <title>sop-data-hub 货运看板</title>
   <style>
     :root {
-      color-scheme: dark;
-      --bg: #111315;
-      --line: #343a40;
-      --text: #edf0f2;
-      --muted: #99a1a8;
-      --green: #57c785;
-      --yellow: #e9bd58;
-      --red: #ed6a5e;
-      --cyan: #65b9d8;
+      color-scheme: light;
+      --bg: #f3f5f7;
+      --line: #cfd6dc;
+      --text: #1f2933;
+      --muted: #667583;
+      --green: #18794e;
+      --yellow: #9a6700;
+      --red: #b42318;
+      --cyan: #176b87;
     }
     * { box-sizing: border-box; }
     html, body {
@@ -59,7 +59,7 @@ PAGE = """<!doctype html>
       gap: 16px;
       padding: 8px 16px;
       border-bottom: 1px solid var(--line);
-      background: rgba(17, 19, 21, 0.96);
+      background: rgba(255, 255, 255, 0.96);
     }
     header strong { font-size: 15px; }
     #status {
@@ -80,16 +80,16 @@ PAGE = """<!doctype html>
     }
     .panel {
       min-width: 0;
-      border: 1px solid #71808b;
+      border: 1px solid var(--line);
       border-radius: 0;
       overflow: hidden;
-      background: #14181b;
+      background: #ffffff;
     }
     .panel-title {
       margin: 0;
       padding: 8px 12px;
-      border-bottom: 1px solid #59656f;
-      background: #1b2025;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafb;
       font: 700 14px/1.35 "SFMono-Regular", Consolas, "Liberation Mono",
         "Microsoft YaHei UI", monospace;
     }
@@ -104,10 +104,34 @@ PAGE = """<!doctype html>
       white-space: pre;
       tab-size: 2;
     }
+    .table-wrap { overflow-x: auto; }
+    .dashboard-table {
+      width: 100%;
+      min-width: 840px;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .dashboard-table th,
+    .dashboard-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #e3e8ec;
+      white-space: nowrap;
+      text-align: left;
+    }
+    .dashboard-table th {
+      color: #536270;
+      background: #f4f7f9;
+      font-weight: 600;
+    }
+    .dashboard-table td.numeric,
+    .dashboard-table th.numeric { text-align: right; }
+    .dashboard-table tbody tr:nth-child(even) { background: #fafbfd; }
+    .dashboard-table tbody tr:last-child td { border-bottom: 0; }
+    .status { font-weight: 600; }
     .cycle-flow {
       margin: 10px 12px 0;
-      border: 1px solid #59656f;
-      background: #111518;
+      border: 1px solid var(--line);
+      background: #f8fafb;
       overflow-x: auto;
     }
     .cycle-loop {
@@ -123,8 +147,8 @@ PAGE = """<!doctype html>
     .cycle-node {
       min-height: 4.4rem;
       padding: 8px 10px;
-      border: 1px solid #59656f;
-      background: #181e23;
+      border: 1px solid var(--line);
+      background: #ffffff;
     }
     .cycle-node strong { display: block; font-size: 13px; }
     .cycle-node span {
@@ -151,11 +175,11 @@ PAGE = """<!doctype html>
     .cycle-link::before {
       content: "";
       position: absolute;
-      background: #9ca8b2;
+      background: #7b8794;
     }
     .cycle-link::after {
       position: absolute;
-      color: #9ca8b2;
+      color: #7b8794;
       font-size: 16px;
     }
     .cycle-link.east::before,
@@ -282,6 +306,75 @@ def _frame_body_line(line: str) -> str:
     if end >= 0:
         body = body[:end]
     return body.strip()
+
+
+def _display_slice(text: str, start: int, width: int) -> str:
+    """Slice terminal text by East Asian display cells, not Python indexes."""
+    import unicodedata
+
+    visible = ANSI_RE.sub("", text)
+    current = 0
+    result: list[str] = []
+    end = start + width
+    for char in visible:
+        char_width = 2 if unicodedata.east_asian_width(char) in ("W", "F") else 1
+        next_width = current + char_width
+        if next_width > start and current < end:
+            result.append(char)
+        if current >= end:
+            break
+        current = next_width
+    return "".join(result).strip()
+
+
+def _project_table_html(body: list[str]) -> str | None:
+    """Turn the fixed-width CLI batch rows into a semantic HTML table."""
+    rows = [ANSI_RE.sub("", line).rstrip() for line in body if line.strip()]
+    if len(rows) < 2 or "船名(品名)" not in rows[0] or "lot" not in rows[0]:
+        return None
+
+    unit_label = "箱数" if "箱数" in rows[0] else "车数"
+    headers = ["船名（品名）", "lot", "下达日", "计划 t", "已发 t", "剩余 t", unit_label, "状态", "计划号"]
+    starts = (0, 22, 28, 38, 46, 54, 62, 75, 92)
+    widths = (22, 6, 10, 8, 8, 8, 11, 15, 17)
+    html_rows: list[str] = []
+    for row in rows[1:]:
+        cells = [_display_slice(row, start, width) for start, width in zip(starts, widths)]
+        if not any(cells):
+            continue
+        status = cells[7]
+        status_class = ""
+        if status in {"loading", "enriched"}:
+            status_class = " green"
+        elif status in {"all_loaded", "tracking", "delivered", "pending_freight", "pending_review"}:
+            status_class = " yellow"
+        elif status in {"confirmed_received", "closed"}:
+            status_class = " dim"
+        elif status:
+            status_class = " red"
+        tds = []
+        for index, value in enumerate(cells):
+            classes = []
+            if index in {3, 4, 5, 6}:
+                classes.append("numeric")
+            if index == 7:
+                classes.append("status")
+                classes.extend(status_class.split())
+            class_attr = f' class="{" ".join(classes)}"' if classes else ""
+            tds.append(f"<td{class_attr}>{html.escape(value or '—')}</td>")
+        html_rows.append("<tr>" + "".join(tds) + "</tr>")
+    if not html_rows:
+        return None
+    ths = "".join(
+        f'<th class="numeric">{html.escape(header)}</th>' if index in {3, 4, 5, 6}
+        else f"<th>{html.escape(header)}</th>"
+        for index, header in enumerate(headers)
+    )
+    return (
+        '<div class="table-wrap"><table class="dashboard-table">'
+        f"<thead><tr>{ths}</tr></thead><tbody>{''.join(html_rows)}</tbody>"
+        "</table></div>"
+    )
 
 
 def _cycle_metric(flow: list[str], label: str, fallback: str = "—") -> str:
@@ -417,16 +510,12 @@ def dashboard_to_html(text: str) -> str:
                 body.append(_frame_body_line(current))
                 index += 1
             is_jiusan_cycle = ANSI_RE.sub("", title).startswith("大豆循环现状")
-            body_html = (
-                _jiusan_panel_body_html(body)
-                if is_jiusan_cycle
-                else "\n".join(ansi_to_html(line) for line in body).rstrip()
-            )
-            body_markup = (
-                body_html
-                if is_jiusan_cycle
-                else f'<pre class="panel-body">{body_html}</pre>'
-            )
+            if is_jiusan_cycle:
+                body_markup = _jiusan_panel_body_html(body)
+            else:
+                table_html = _project_table_html(body)
+                body_html = "\n".join(ansi_to_html(line) for line in body).rstrip()
+                body_markup = table_html or f'<pre class="panel-body">{body_html}</pre>'
             parts.append(
                 '<section class="panel">'
                 f'<h2 class="panel-title">{ansi_to_html(title)}</h2>'

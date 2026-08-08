@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.qicai21.sop-data-hub.dashboard-snapshot-cleanup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/qicai21/projects/repos/sop-data-hub/.venv/bin/python</string>
+    <string>scripts/export_dashboard_snapshot.py</string>
+    <string>--cleanup-only</string>
+    <string>--retention-days</string>
+    <string>3</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/qicai21/projects/repos/sop-data-hub</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>20</integer>
+  </dict>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/Users/qicai21/projects/repos/sop-data-hub/runtime/dashboard_snapshot_cleanup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/qicai21/projects/repos/sop-data-hub/runtime/dashboard_snapshot_cleanup.error.log</string>
+</dict>
+</plist>

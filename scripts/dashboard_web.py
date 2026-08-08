@@ -218,6 +218,43 @@ PAGE = """<!doctype html>
       .cycle-node span { font-size: 11px; }
       .cycle-node small { font-size: 10px; }
     }
+    @media print {
+      @page { size: A4 landscape; margin: 8mm; }
+      :root { --bg: #ffffff; --line: #9aa6af; }
+      html, body { min-height: auto; background: #ffffff; }
+      header {
+        position: static;
+        min-height: 0;
+        padding: 0 0 6px;
+        border-bottom: 1px solid var(--line);
+      }
+      header strong { font-size: 11pt; }
+      #status { font-size: 8pt; }
+      main { padding: 6px 0 0; }
+      #dashboard { gap: 6px; }
+      .dashboard-heading { font-size: 8pt; }
+      .panel {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .panel-title { padding: 4px 6px; font-size: 8pt; }
+      .panel-body {
+        padding: 5px 6px;
+        overflow: visible;
+        font-size: 7pt;
+        white-space: pre-wrap;
+      }
+      .table-wrap { overflow: visible; }
+      .dashboard-table { min-width: 0; font-size: 7pt; }
+      .dashboard-table th,
+      .dashboard-table td { padding: 3px 4px; }
+      .cycle-flow { margin: 5px 6px 0; overflow: visible; }
+      .cycle-loop { min-width: 0; padding: 6px; }
+      .cycle-node { min-height: 3rem; padding: 4px 5px; }
+      .cycle-node strong { font-size: 7pt; }
+      .cycle-node span,
+      .cycle-node small { font-size: 6.5pt; }
+    }
   </style>
 </head>
 <body>
@@ -246,6 +283,20 @@ PAGE = """<!doctype html>
 </body>
 </html>
 """
+
+
+def snapshot_page(payload: dict[str, str]) -> str:
+    """Freeze one dashboard payload into a script-free printable page."""
+    page = PAGE.replace(
+        '<span id="status">正在连接...</span>',
+        f'<span id="status">快照 {html.escape(payload["generated_at"])}</span>',
+    ).replace(
+        '<main><pre id="dashboard" aria-live="polite"></pre></main>',
+        f'<main><div id="dashboard">{payload["html"]}</div></main>',
+    )
+    script_start = page.index("  <script>")
+    script_end = page.index("  </script>", script_start) + len("  </script>\n")
+    return page[:script_start] + page[script_end:]
 
 
 def client_is_allowed(address: str, network: ipaddress._BaseNetwork) -> bool:
@@ -605,6 +656,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._send(
                 HTTPStatus.OK,
                 PAGE.encode("utf-8"),
+                "text/html; charset=utf-8",
+            )
+            return
+        if self.path == "/snapshot":
+            self._send(
+                HTTPStatus.OK,
+                snapshot_page(self.server.snapshot_cache.get()).encode("utf-8"),
                 "text/html; charset=utf-8",
             )
             return

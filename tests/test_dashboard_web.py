@@ -67,6 +67,17 @@ def test_health_check_does_not_expose_dashboard(web_server):
     assert payload == {"status": "ok"}
 
 
+def test_print_snapshot_is_static_and_contains_dashboard(web_server):
+    with urllib.request.urlopen(f"{web_server}/snapshot", timeout=2) as response:
+        page = response.read().decode("utf-8")
+
+    assert response.status == 200
+    assert "快照 " in page
+    assert '<div id="dashboard">' in page
+    assert "看板" in page
+    assert "setInterval(refresh, 5000)" not in page
+
+
 def test_unknown_path_returns_not_found(web_server):
     with pytest.raises(urllib.error.HTTPError) as exc:
         urllib.request.urlopen(f"{web_server}/unknown", timeout=2)

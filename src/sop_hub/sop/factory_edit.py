@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -45,6 +46,32 @@ class FactoryEditResult:
     error: str = ""
     before: dict[str, Any] = field(default_factory=dict)
     after: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class FactoryEditTarget:
+    wagon_number: str
+    box_number: str
+    expected_portal_id: int | None = None
+
+
+@dataclass
+class FactoryBatchEditResult:
+    old_order_id: str
+    new_order_id: str
+    requested: int
+    dry_run: bool = True
+    login_ok: bool = False
+    planned: int = 0
+    already_applied: int = 0
+    submitted: int = 0
+    verified: int = 0
+    failed_key: str = ""
+    error: str = ""
+    records: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -214,6 +241,137 @@ def edit_factory_record(
     result.verified = source_is_correct and len(new_after) == 1 and fields_match
     if not result.verified:
         result.error = "post-edit verification mismatch"
+    return result
+
+
+def move_factory_records(
+    *,
+    old_order_id: str,
+    new_order_id: str,
+    targets: list[FactoryEditTarget],
+    form_id: str = DEFAULT_FORM_ID,
+    dry_run: bool = True,
+    interval_seconds: float = 0.1,
+) -> FactoryBatchEditResult:
+    """Move exact records between orders with one login and final full verification.
+
+    The portal still receives one ``POST /edit`` per record. A rerun is
+    idempotent: a target absent from the old order and uniquely present in the
+    new order is treated as already applied. Any ambiguous/missing target or
+    appointed source record fails closed before submitting the next record.
+    """
+    result = FactoryBatchEditResult(
+        old_order_id=old_order_id,
+        new_order_id=new_order_id,
+        requested=len(targets),
+        dry_run=dry_run,
+    )
+    keys = [build_box_wagon_key(t.box_number, t.wagon_number) for t in targets]
+    if len(keys) != len(set(keys)):
+        result.error = "duplicate target keys"
+        return result
+
+    token, error = _login()
+    if error or not token:
+        result.error = f"login failed: {error}"
+        return result
+    result.login_ok = True
+
+    try:
+        old_rows = fetch_full_order_rows(old_order_id, token, form_id=form_id)
+        new_rows = fetch_full_order_rows(new_order_id, token, form_id=form_id)
+    except requests.RequestException as exc:
+        result.error = f"preflight query failed: {exc}"
+        return result
+
+    old_by_key: dict[str, list[dict[str, Any]]] = {}
+    new_by_key: dict[str, list[dict[str, Any]]] = {}
+    for key in keys:
+        box, wagon = key.split("|", 1)
+        old_by_key[key] = _matching_rows(old_rows, wagon, box)
+        new_by_key[key] = _matching_rows(new_rows, wagon, box)
+
+    payloads: list[tuple[str, dict[str, Any], FactoryEditTarget]] = []
+    for target, key in zip(targets, keys, strict=True):
+        old_hits = old_by_key[key]
+        new_hits = new_by_key[key]
+        if not old_hits and len(new_hits) == 1:
+            result.already_applied += 1
+            result.records.append(
+                {"key": key, "status": "already_applied", "new_portal_id": new_hits[0].get("id")}
+            )
+            continue
+        if len(old_hits) != 1 or new_hits:
+            result.failed_key = key
+            result.error = (
+                f"preflight mismatch for {key}: old={len(old_hits)} new={len(new_hits)}"
+            )
+            return result
+        before = old_hits[0]
+        if target.expected_portal_id is not None and before.get("id") != target.expected_portal_id:
+            result.failed_key = key
+            result.error = (
+                f"portal id changed for {key}: expected {target.expected_portal_id}, got {before.get('id')}"
+            )
+            return result
+        if before.get("isAppointment") not in (0, "0", None):
+            result.failed_key = key
+            result.error = f"appointed record blocked for {key}: {before.get('isAppointment')}"
+            return result
+        payload = dict(before)
+        payload["orderId"] = new_order_id
+        payloads.append((key, payload, target))
+    result.planned = len(payloads)
+    if dry_run:
+        result.records.extend(
+            {"key": key, "status": "planned", "old_portal_id": payload.get("id")}
+            for key, payload, _ in payloads
+        )
+        return result
+
+    for key, payload, _ in payloads:
+        try:
+            response = requests.post(
+                f"{FACTORY_ENDPOINT}{EDIT_PATH}",
+                json=payload,
+                headers=_headers(token),
+                timeout=30,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            result.failed_key = key
+            result.error = f"edit failed after {result.submitted} submit(s): {exc}"
+            break
+        result.submitted += 1
+        result.records.append(
+            {"key": key, "status": "submitted", "old_portal_id": payload.get("id")}
+        )
+        if interval_seconds > 0:
+            time.sleep(interval_seconds)
+
+    try:
+        old_after = fetch_full_order_rows(old_order_id, token, form_id=form_id)
+        new_after = fetch_full_order_rows(new_order_id, token, form_id=form_id)
+    except requests.RequestException as exc:
+        result.error = result.error or f"postflight query failed: {exc}"
+        return result
+
+    record_by_key = {record["key"]: record for record in result.records}
+    verification_errors = []
+    for key in keys:
+        box, wagon = key.split("|", 1)
+        old_hits = _matching_rows(old_after, wagon, box)
+        new_hits = _matching_rows(new_after, wagon, box)
+        if not old_hits and len(new_hits) == 1:
+            result.verified += 1
+            record = record_by_key.setdefault(key, {"key": key})
+            record["status"] = "verified"
+            record["new_portal_id"] = new_hits[0].get("id")
+            record["contractNumber"] = new_hits[0].get("contractNumber")
+        else:
+            verification_errors.append(f"{key}:old={len(old_hits)},new={len(new_hits)}")
+    if verification_errors and not result.error:
+        result.error = "postflight mismatch: " + "; ".join(verification_errors[:5])
     return result
 
 

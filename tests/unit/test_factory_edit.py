@@ -169,3 +169,80 @@ def test_http_failure_does_not_report_applied(monkeypatch):
 
     assert "edit request failed" in result.error
     assert not result.applied
+
+
+def test_batch_move_submits_each_row_once_and_verifies(monkeypatch):
+    before1 = _row(id=1, wagonNumber="C1", boxNumber="B1")
+    before2 = _row(id=2, wagonNumber="C2", boxNumber="B2")
+    after1 = _row(id=11, wagonNumber="C1", boxNumber="B1", orderId="NEW")
+    after2 = _row(id=12, wagonNumber="C2", boxNumber="B2", orderId="NEW")
+    calls = {"OLD": 0, "NEW": 0}
+
+    def fetch(order_id, *args, **kwargs):
+        calls[order_id] += 1
+        if order_id == "OLD":
+            return [before1, before2] if calls[order_id] == 1 else []
+        return [] if calls[order_id] == 1 else [after1, after2]
+
+    class Response:
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    posted = []
+    monkeypatch.setattr(factory_edit, "_login", lambda: ("token", ""))
+    monkeypatch.setattr(factory_edit, "fetch_full_order_rows", fetch)
+    monkeypatch.setattr(
+        factory_edit.requests,
+        "post",
+        lambda *args, **kwargs: posted.append(kwargs["json"]) or Response(),
+    )
+
+    result = factory_edit.move_factory_records(
+        old_order_id="OLD",
+        new_order_id="NEW",
+        targets=[
+            factory_edit.FactoryEditTarget("C1", "B1", 1),
+            factory_edit.FactoryEditTarget("C2", "B2", 2),
+        ],
+        dry_run=False,
+        interval_seconds=0,
+    )
+
+    assert not result.error
+    assert result.submitted == 2
+    assert result.verified == 2
+    assert [row["orderId"] for row in posted] == ["NEW", "NEW"]
+    assert {row["new_portal_id"] for row in result.records} == {11, 12}
+
+
+def test_batch_move_treats_unique_target_row_as_already_applied(monkeypatch):
+    after = _row(id=11, wagonNumber="C1", boxNumber="B1", orderId="NEW")
+    responses = {"OLD": [[], []], "NEW": [[after], [after]]}
+    calls = {"OLD": 0, "NEW": 0}
+
+    def fetch(order_id, *args, **kwargs):
+        value = responses[order_id][calls[order_id]]
+        calls[order_id] += 1
+        return value
+
+    monkeypatch.setattr(factory_edit, "_login", lambda: ("token", ""))
+    monkeypatch.setattr(factory_edit, "fetch_full_order_rows", fetch)
+    monkeypatch.setattr(
+        factory_edit.requests,
+        "post",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not post")),
+    )
+
+    result = factory_edit.move_factory_records(
+        old_order_id="OLD",
+        new_order_id="NEW",
+        targets=[factory_edit.FactoryEditTarget("C1", "B1")],
+        dry_run=False,
+        interval_seconds=0,
+    )
+
+    assert not result.error
+    assert result.already_applied == 1
+    assert result.submitted == 0
+    assert result.verified == 1

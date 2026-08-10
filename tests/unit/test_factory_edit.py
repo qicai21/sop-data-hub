@@ -45,7 +45,7 @@ def test_dry_run_preserves_full_portal_payload(monkeypatch):
 
 def test_apply_verifies_old_disappears_and_new_is_unique(monkeypatch):
     before = _row()
-    after = _row(orderId="NEW")
+    after = _row(id=280010, orderId="NEW")
     calls = {"OLD": 0, "NEW": 0}
 
     def fetch(order_id, *args, **kwargs):
@@ -84,6 +84,8 @@ def test_apply_verifies_old_disappears_and_new_is_unique(monkeypatch):
     assert result.applied and result.verified
     assert result.old_order_match_count_after == 0
     assert result.new_order_match_count_after == 1
+    assert result.portal_id == 279903
+    assert result.new_portal_id == 280010
     assert posted["url"].endswith("/sales/transportOrder/edit")
     assert posted["json"]["id"] == 279903
     assert posted["json"]["contractNumber"] == "CONTRACT-A"

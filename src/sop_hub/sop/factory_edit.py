@@ -35,6 +35,7 @@ class FactoryEditResult:
     dry_run: bool = True
     login_ok: bool = False
     portal_id: int | None = None
+    new_portal_id: int | None = None
     source_match_count: int = 0
     old_order_match_count_after: int | None = None
     new_order_match_count_after: int | None = None
@@ -205,6 +206,7 @@ def edit_factory_record(
     result.new_order_match_count_after = len(new_after)
     if len(new_after) == 1:
         result.after = dict(new_after[0])
+        result.new_portal_id = new_after[0].get("id")
     fields_match = bool(new_after) and all(
         new_after[0].get(key) == value for key, value in updates.items()
     )

@@ -56,6 +56,7 @@ class FactoryEditTarget:
     wagon_number: str
     box_number: str
     expected_portal_id: int | None = None
+    updates: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -295,11 +296,27 @@ def move_factory_records(
     for target, key in zip(targets, keys, strict=True):
         old_hits = old_by_key[key]
         new_hits = new_by_key[key]
+        invalid_fields = set(target.updates) - EDITABLE_FIELDS
+        if invalid_fields or "orderId" in target.updates:
+            invalid = invalid_fields | ({"orderId"} if "orderId" in target.updates else set())
+            result.failed_key = key
+            result.error = f"invalid target update fields for {key}: {sorted(invalid)}"
+            return result
         if not old_hits and len(new_hits) == 1:
-            result.already_applied += 1
-            result.records.append(
-                {"key": key, "status": "already_applied", "new_portal_id": new_hits[0].get("id")}
+            fields_match = all(
+                new_hits[0].get(field) == value
+                for field, value in target.updates.items()
             )
+            if fields_match:
+                result.already_applied += 1
+                result.records.append(
+                    {"key": key, "status": "already_applied", "new_portal_id": new_hits[0].get("id")}
+                )
+            else:
+                payload = dict(new_hits[0])
+                payload["orderId"] = new_order_id
+                payload.update(target.updates)
+                payloads.append((key, payload, target))
             continue
         if len(old_hits) != 1 or new_hits:
             result.failed_key = key
@@ -320,6 +337,7 @@ def move_factory_records(
             return result
         payload = dict(before)
         payload["orderId"] = new_order_id
+        payload.update(target.updates)
         payloads.append((key, payload, target))
     result.planned = len(payloads)
     if dry_run:
@@ -358,18 +376,26 @@ def move_factory_records(
 
     record_by_key = {record["key"]: record for record in result.records}
     verification_errors = []
+    target_by_key = dict(zip(keys, targets, strict=True))
     for key in keys:
         box, wagon = key.split("|", 1)
         old_hits = _matching_rows(old_after, wagon, box)
         new_hits = _matching_rows(new_after, wagon, box)
-        if not old_hits and len(new_hits) == 1:
+        target = target_by_key[key]
+        fields_match = len(new_hits) == 1 and all(
+            new_hits[0].get(field) == value
+            for field, value in target.updates.items()
+        )
+        if not old_hits and len(new_hits) == 1 and fields_match:
             result.verified += 1
             record = record_by_key.setdefault(key, {"key": key})
             record["status"] = "verified"
             record["new_portal_id"] = new_hits[0].get("id")
             record["contractNumber"] = new_hits[0].get("contractNumber")
         else:
-            verification_errors.append(f"{key}:old={len(old_hits)},new={len(new_hits)}")
+            verification_errors.append(
+                f"{key}:old={len(old_hits)},new={len(new_hits)},fields={fields_match}"
+            )
     if verification_errors and not result.error:
         result.error = "postflight mismatch: " + "; ".join(verification_errors[:5])
     return result

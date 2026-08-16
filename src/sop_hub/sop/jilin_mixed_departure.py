@@ -83,8 +83,18 @@ def partition_ticket_cluster(
     tickets: list[ShipmentCandidate],
     segments: list[JilinDepartureSegment],
 ) -> list[tuple[JilinDepartureSegment, list[ShipmentCandidate]]]:
-    """Partition a stable ticket sequence by explicit per-ship counts."""
+    """Partition a stable ticket sequence only with explicit segment ranges.
+
+    Counts alone prove the train total but not each wagon's ownership.  Mixed
+    trains can interleave ships, so a count-only message must stay pending for
+    a reviewed wagon list instead of being uploaded by an invented order.
+    """
     if sum(segment.car_count for segment in segments) != len(tickets):
+        return []
+    if any(
+        segment.seq_start is None or segment.seq_end is None
+        for segment in segments
+    ):
         return []
     result: list[tuple[JilinDepartureSegment, list[ShipmentCandidate]]] = []
     offset = 0
@@ -189,6 +199,12 @@ def execute_jilin_mixed_departure(
     )
     partitions = partition_ticket_cluster(cluster, segments)
     if not partitions:
+        reason = "no exact ticket cluster matching segmented total"
+        if cluster and any(
+            segment.seq_start is None or segment.seq_end is None
+            for segment in segments
+        ):
+            reason = "mixed departure lacks explicit sequence ranges; reviewed wagon assignment required"
         return {
             "action": "waiting_95306",
             "status": "pending",
@@ -196,7 +212,7 @@ def execute_jilin_mixed_departure(
                 "segments": [segment.to_dict() for segment in segments],
                 "expected_total": total_expected,
                 "query_total": query.total_candidates,
-                "reason": "no exact ticket cluster matching segmented total",
+                "reason": reason,
             },
         }
 

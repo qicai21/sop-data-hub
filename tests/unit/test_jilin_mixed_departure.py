@@ -31,6 +31,37 @@ def test_parse_jilin_mixed_departure_segments():
     ]
 
 
+def test_parse_jilin_mixed_departure_with_total_and_prefix_counts():
+    segments = parse_jilin_departure_segments(
+        "煤一 32节 四平铁 25节 海洋征服者 ，7节 富翔7"
+    )
+    assert [segment.to_dict() for segment in segments] == [
+        {
+            "ship_name": "海洋征服者",
+            "car_count": 25,
+            "seq_start": None,
+            "seq_end": None,
+        },
+        {
+            "ship_name": "富翔7",
+            "car_count": 7,
+            "seq_start": None,
+            "seq_end": None,
+        },
+    ]
+
+
+def test_count_only_mixed_departure_cannot_invent_ticket_order():
+    segments = parse_jilin_departure_segments(
+        "煤一 32节 四平铁 25节 海洋征服者 ，7节 富翔7"
+    )
+    tickets = [
+        ShipmentCandidate(ydid=str(number), wagon_no=str(1500000 + number))
+        for number in range(32)
+    ]
+    assert partition_ticket_cluster(tickets, segments) == []
+
+
 def test_partition_mixed_ticket_cluster_22_plus_23():
     segments = parse_jilin_departure_segments(TEXT)
     tickets = [

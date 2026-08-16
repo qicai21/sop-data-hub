@@ -270,29 +270,58 @@ def parse_jilin_departure_segments(text: str) -> list[JilinDepartureSegment]:
     if not occurrences:
         return []
 
-    segments: list[JilinDepartureSegment] = []
+    unique_occurrences: list[tuple[int, str]] = []
     seen: set[str] = set()
-    for index, (position, ship) in enumerate(occurrences):
-        if ship in seen:
-            continue
-        end = occurrences[index + 1][0] if index + 1 < len(occurrences) else len(raw)
-        territory = raw[position:end]
-        count_match = _RE_CAR_COUNT.search(territory[len(ship):])
-        if not count_match:
-            previous_end = (
-                occurrences[index - 1][0] + len(occurrences[index - 1][1])
-                if index > 0
-                else 0
-            )
-            before = raw[previous_end:position]
-            matches = list(_RE_CAR_COUNT.finditer(before))
-            count_match = matches[-1] if matches else None
-        if not count_match:
-            continue
+    for position, ship in occurrences:
+        if ship not in seen:
+            unique_occurrences.append((position, ship))
+            seen.add(ship)
 
-        count = int(count_match.group(1))
+    # Messages may contain an overall train count plus per-ship counts, and a
+    # segment count may appear on either side of its ship name.  Pair explicit
+    # counts with the nearest ship one-to-one so a following segment's count
+    # cannot be consumed by the preceding ship.
+    count_scan_text = list(raw)
+    for position, ship in unique_occurrences:
+        count_scan_text[position:position + len(ship)] = " " * len(ship)
+    count_matches = list(_RE_CAR_COUNT.finditer("".join(count_scan_text)))
+    candidate_pairs: list[tuple[int, int, int, int]] = []
+    for ship_index, (position, ship) in enumerate(unique_occurrences):
+        ship_end = position + len(ship)
+        for count_index, count_match in enumerate(count_matches):
+            if count_match.end() <= position:
+                distance = position - count_match.end()
+                side_rank = 0  # Tie: "25节 船名" belongs to this ship.
+            elif count_match.start() >= ship_end:
+                distance = count_match.start() - ship_end
+                side_rank = 1
+            else:
+                distance = 0
+                side_rank = 0
+            candidate_pairs.append((distance, side_rank, ship_index, count_index))
+
+    assignments: dict[int, int] = {}
+    used_counts: set[int] = set()
+    for _distance, _side_rank, ship_index, count_index in sorted(candidate_pairs):
+        if ship_index in assignments or count_index in used_counts:
+            continue
+        assignments[ship_index] = count_index
+        used_counts.add(count_index)
+
+    segments: list[JilinDepartureSegment] = []
+    for index, (position, ship) in enumerate(unique_occurrences):
+        count_index = assignments.get(index)
+        if count_index is None:
+            continue
+        count = int(count_matches[count_index].group(1))
         if count <= 0:
             continue
+        end = (
+            unique_occurrences[index + 1][0]
+            if index + 1 < len(unique_occurrences)
+            else len(raw)
+        )
+        territory = raw[position:end]
         seq_match = re.search(
             r"序号\s*(\d{1,3})\s*[-—~至]\s*(\d{1,3})",
             territory,
@@ -305,7 +334,6 @@ def parse_jilin_departure_segments(text: str) -> list[JilinDepartureSegment]:
                 seq_end=int(seq_match.group(2)) if seq_match else None,
             )
         )
-        seen.add(ship)
     return segments
 
 

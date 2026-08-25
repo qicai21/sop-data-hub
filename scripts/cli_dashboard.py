@@ -300,7 +300,10 @@ def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
                 ), 0) + COALESCE((
                   SELECT COUNT(*)
                   FROM wagon_shipments ws, json_each(ws.container_batch_map) j
-                  WHERE ws.container_batch_map IS NOT NULL AND j.value=rb.id
+                  WHERE ws.container_batch_map IS NOT NULL
+                    AND ws.container_batch_map <> ''
+                    AND json_valid(ws.container_batch_map)
+                    AND j.value=rb.id
                 ), 0)
               END AS box_count,
               -- 计划号(四平=order_identifier订单标识 / 中唐=plan_id计划号 /

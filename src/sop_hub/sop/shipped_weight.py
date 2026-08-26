@@ -232,6 +232,8 @@ def _compute_inner(release_batch_id: str, conn: sqlite3.Connection,
     has_split = bool(conn.execute(
         "SELECT 1 FROM wagon_shipments "
         "WHERE container_batch_map IS NOT NULL "
+        "  AND container_batch_map <> '' "
+        "  AND json_valid(container_batch_map) "
         "  AND (batch_id=? OR EXISTS (SELECT 1 FROM json_each(container_batch_map) j "
         "                              WHERE j.value=?)) LIMIT 1",
         (release_batch_id, release_batch_id),

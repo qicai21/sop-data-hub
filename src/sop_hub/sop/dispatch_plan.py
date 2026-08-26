@@ -576,7 +576,9 @@ def list_lot_containers(
             split_rows = conn.execute(
                 "SELECT ws.car_no, j.key AS box "
                 "  FROM wagon_shipments ws, json_each(ws.container_batch_map) j "
-                " WHERE ws.container_batch_map IS NOT NULL AND j.value=?",
+                " WHERE ws.container_batch_map IS NOT NULL "
+                "   AND ws.container_batch_map <> '' "
+                "   AND json_valid(ws.container_batch_map) AND j.value=?",
                 (release_batch_id,),
             ).fetchall()
             for r in split_rows:

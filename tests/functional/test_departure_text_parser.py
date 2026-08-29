@@ -28,6 +28,17 @@ def test_py_14dao_siping_lanqi():
     assert c.project_id == "jilin_jingang_jinzhou"
 
 
+def test_py_meiyi_55jie_siping_linjiani():
+    """New Jilin ship must be resolved from the departure text."""
+    c = parse_departure_text("煤一 55节 四平铁 林加尼")
+    assert c.status == "complete"
+    assert c.destination == "四平"
+    assert c.car_count == 55
+    assert c.lane_or_track == "煤一"
+    assert c.optional_ship_name == "林加尼"
+    assert c.project_id == "jilin_jingang_jinzhou"
+
+
 def test_py_6dao_siping_direction_changhang():
     """'6道, 四平方向, 长航滨海, 46车' → destination + ship"""
     c = parse_departure_text("6道，四平方向，长航滨海，46车")

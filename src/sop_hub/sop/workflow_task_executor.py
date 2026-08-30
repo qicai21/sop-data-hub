@@ -770,6 +770,13 @@ def _find_sent_same_car_set_event(
     if not expected:
         return None
 
+    # 新格式的 action key 已带当前车集摘要。必须先按这个不可变的历史事实
+    # 判重，不能从会持续补录的 wagon_shipments 反推旧发送事件。
+    expected_digest = _event_send_biz_key(
+        batch_specs,
+        wagon_count=sum(len(cars) for cars in expected.values()),
+    ).split(":cars:", 1)[-1].split(":", 1)[0]
+
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
@@ -801,6 +808,13 @@ def _find_sent_same_car_set_event(
                 (project_id, source_message_id),
             ).fetchone()
             if sent:
+                sent_key = str(sent["idempotency_key"] or "")
+                if ":cars:" in sent_key:
+                    # 新 key 有车集 digest；同一 source_message 的后续补车不能
+                    # 把旧 35 车发送误判成已发送的 53 车更正表。
+                    sent_digest = sent_key.split(":cars:", 1)[-1].split(":", 1)[0]
+                    if sent_digest != expected_digest:
+                        continue
                 return {
                     "source_message_id": source_message_id,
                     "external_action_log_id": sent["id"],

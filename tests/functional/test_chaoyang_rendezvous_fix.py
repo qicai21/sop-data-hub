@@ -98,6 +98,41 @@ def test_sent_same_car_set_event_detects_legacy_key_duplicate(tmp_path):
     assert not_dup is None
 
 
+def test_sent_same_car_set_event_does_not_expand_new_key_after_backfill(tmp_path):
+    """旧发送是35车、新候选补成53车时，必须发送更正表。"""
+    import sqlite3
+
+    db = tmp_path / "t.db"
+    conn = sqlite3.connect(str(db))
+    conn.executescript("""
+    CREATE TABLE wagon_shipments (batch_id TEXT, source_message_id TEXT, car_no TEXT);
+    CREATE TABLE external_action_log (
+      id INTEGER PRIMARY KEY, project_id TEXT, action_type TEXT, action_status TEXT,
+      message_id TEXT, idempotency_key TEXT, executed_at TEXT
+    );
+    """)
+    cars_35 = [f"{1700000 + i}" for i in range(35)]
+    cars_53 = [f"{1700000 + i}" for i in range(53)]
+    conn.executemany(
+        "INSERT INTO wagon_shipments VALUES (?,?,?)",
+        [("batch-1", "wx_same", car) for car in cars_53],
+    )
+    old_key = w._event_send_biz_key([("batch-1", cars_35, None)], 35)
+    conn.execute(
+        "INSERT INTO external_action_log VALUES (?,?,?,?,?,?,?)",
+        (1, "zhongtang_special_steel", "send_shipping_excel_wechat", "executed",
+         "wx_same", old_key, "2026-08-30T07:23:00+08:00"),
+    )
+    conn.commit()
+    conn.close()
+
+    assert w._find_sent_same_car_set_event(
+        db_path=db,
+        project_id="zhongtang_special_steel",
+        batch_specs=[("batch-1", cars_53, None)],
+    ) is None
+
+
 def test_send_idempotency_prefers_ydid_when_available():
     batch = "batch-1"
     first = w._event_send_biz_key(

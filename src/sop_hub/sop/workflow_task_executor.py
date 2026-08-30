@@ -1800,6 +1800,18 @@ def _execute_chaoyang_inspection_chain(
                     "%Y-%m-%d %H:%M:%S")
             except ValueError:
                 min_ticketed_at = None
+        # 图片 OCR 的 footer 可能漏行。仅接受同群、同船、同到站且紧邻的唯一文本
+        # 实装数；recover 内还会要求该数与95306整窗精确相等，才允许扩大图片子集。
+        from sop_hub.sop.inspection_text_rendezvous import (
+            find_adjacent_text_expected_count,
+        )
+        adjacent_text = find_adjacent_text_expected_count(
+            conn,
+            inspection_inbox_id=int(inbox_id),
+            project_id=project_id,
+            ship_name=ship,
+            destination=dest,
+        )
         recover = recover_loading_cars_via_window(
             rail_db_path=str(RAIL_DB),
             loading_car_nos=loading_car_nos,
@@ -1810,6 +1822,9 @@ def _execute_chaoyang_inspection_chain(
             window_minutes=120,
             min_ticketed_at=min_ticketed_at,
             expected_loading_count=footer_count or None,
+            authoritative_text_expected_count=(
+                int(adjacent_text["expected_count"]) if adjacent_text else None
+            ),
             allow_exact_notice_subset=(project_id == "zhongtang_special_steel"),
             **autocorrect_config_from_env(),
         )

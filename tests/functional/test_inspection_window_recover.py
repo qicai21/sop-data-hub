@@ -190,6 +190,43 @@ def test_zhongtang_exact_notice_subset_can_split_same_ticket_window(tmp_path):
     assert "精确子集" in recovered["message"]
 
 
+def test_adjacent_text_exact_window_overrides_truncated_zhongtang_notice(tmp_path):
+    """实装53节+95306整窗53票时，图片漏成35车不得被子集规则吞掉。"""
+    db = tmp_path / "rail.sqlite3"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE shipments ("
+        " ydid TEXT PRIMARY KEY, car_no TEXT, destination_name TEXT,"
+        " cargo_name TEXT, ticketed_at TEXT)"
+    )
+    true_cars = [f"{1700000 + i}" for i in range(53)]
+    conn.executemany(
+        "INSERT INTO shipments VALUES (?,?,?,?,?)",
+        [
+            (f"y{i}", car, "汐子", "铁矿粉", f"2026-08-30 07:04:{i % 4:02d}")
+            for i, car in enumerate(true_cars)
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    r = recover_loading_cars_via_window(
+        rail_db_path=db,
+        loading_car_nos=true_cars[:35],
+        all_notice_car_nos=true_cars[:35],
+        destination="汐子",
+        expected_loading_count=35,
+        authoritative_text_expected_count=53,
+        allow_exact_notice_subset=True,
+    )
+
+    assert r["status"] == "ok"
+    assert r["exact_text_window_recovery"] is True
+    assert r["exact_notice_subset_recovery"] is False
+    assert set(r["loading_car_nos"]) == set(true_cars)
+    assert "紧邻实装文本=53" in r["message"]
+
+
 def test_legacy_no_bound_anchors_old_ticket(rail_db, tmp_path):
     """不带下界(老行为)会锚到旧票 — 文档化 #144 的 bug 形态。"""
     conn = sqlite3.connect(str(rail_db))

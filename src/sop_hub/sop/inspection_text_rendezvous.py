@@ -4,6 +4,68 @@ from __future__ import annotations
 import sqlite3
 
 
+def find_adjacent_text_expected_count(
+    conn: sqlite3.Connection,
+    *,
+    inspection_inbox_id: int,
+    project_id: str,
+    ship_name: str,
+    destination: str,
+    max_distance_minutes: int = 10,
+) -> dict[str, object] | None:
+    """Return one trusted, adjacent inspection-text count for an image candidate.
+
+    The text is only authoritative when it is in the same group and close to the
+    image timestamp.  A unique match is deliberately required: old text messages
+    and a second ship segment must never expand a Zhongtang same-window subset.
+    """
+    if not (inspection_inbox_id and project_id and ship_name and destination):
+        return None
+    try:
+        image = conn.execute(
+            "SELECT group_name, received_datetime FROM message_inbox WHERE id=?",
+            (inspection_inbox_id,),
+        ).fetchone()
+        if not image or not image[0] or not image[1]:
+            return None
+        rows = conn.execute(
+            "SELECT id, message_id, text_content, received_datetime FROM message_inbox "
+            "WHERE id != ? AND group_name=? AND COALESCE(text_content, '') != '' "
+            "AND datetime(substr(replace(received_datetime, 'T', ' '), 1, 19)) "
+            "BETWEEN datetime(substr(replace(?, 'T', ' '), 1, 19), ?) "
+            "AND datetime(substr(replace(?, 'T', ' '), 1, 19), ?) "
+            "ORDER BY id",
+            (
+                inspection_inbox_id, image[0], image[1],
+                f"-{max_distance_minutes} minutes", image[1],
+                f"+{max_distance_minutes} minutes",
+            ),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return None
+
+    from sop_hub.sop.text_router import extract_inspection_text_triggers
+
+    matches: list[dict[str, object]] = []
+    for row in rows:
+        for trigger in extract_inspection_text_triggers(str(row[2] or "")):
+            if (
+                trigger["project_id"] == project_id
+                and trigger["ship"] == ship_name
+                and trigger["destination"] == destination
+                and int(trigger["expected_count"] or 0) > 0
+            ):
+                matches.append({
+                    "expected_count": int(trigger["expected_count"]),
+                    "message_inbox_id": int(row[0]),
+                    "message_id": str(row[1] or ""),
+                    "received_datetime": str(row[3] or ""),
+                })
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
 def enrich_unique_bare_candidate(
     conn: sqlite3.Connection,
     *,

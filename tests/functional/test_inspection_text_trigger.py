@@ -60,6 +60,17 @@ def test_extract_count_far_before_ship():
     assert trs[0]["project_id"] == "chaoyang_steel"
 
 
+def test_extract_delinhuihang_to_zhongtang_trigger():
+    trs = extract_inspection_text_triggers("煤四，汐子铁，德邻惠航 实装53节")
+    assert trs == [{
+        "project_id": "zhongtang_special_steel",
+        "ship": "德邻惠航",
+        "destination": "汐子",
+        "expected_count": 53,
+        "segment": "煤四，汐子铁，德邻惠航 实装53节",
+    }]
+
+
 def test_extract_jilin_not_captured():
     # 吉林四平蓝鳍属 jilin,不是检验类 → 不抽
     assert extract_inspection_text_triggers("煤六 四平铁 蓝鳍 53节") == []

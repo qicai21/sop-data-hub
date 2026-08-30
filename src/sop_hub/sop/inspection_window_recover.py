@@ -32,6 +32,7 @@ def recover_loading_cars_via_window(
     window_minutes: int = 120,
     min_ticketed_at: str | None = None,
     expected_loading_count: int | None = None,
+    authoritative_text_expected_count: int | None = None,
     allow_exact_notice_subset: bool = False,
     auto_correct_car_no: bool = True,
     max_correct_edit_distance: int = 2,
@@ -54,6 +55,9 @@ def recover_loading_cars_via_window(
       expected_loading_count: 通知单 footer 或文本触发明确给出的装车数。若 95306
         时间窗交集少于该数量,说明只是部分货票先到,必须继续 pending,不能把半窗
         车号回写为权威集合。
+      authoritative_text_expected_count: 与检装图同群、同船、同到站且紧邻的实装文本
+        车数。仅当它与 95306 整窗车数完全相等时，允许以整窗恢复图片漏行；不满足
+        则不改变通知单子集边界。
       allow_exact_notice_subset: 中唐可能有多列在同一 95306 制票窗口。若通知单
         实装车数已齐、每个实装车均有本窗货票，允许只采用通知单精确子集，
         不把同窗另一列误判为本列漏车。默认关闭，保留朝钢不拼列铁律。
@@ -196,9 +200,17 @@ def recover_loading_cars_via_window(
             notice_only = sorted(set(notice_only) - paired_wrong)
 
         expected = int(expected_loading_count or 0)
+        text_expected = int(authoritative_text_expected_count or 0)
         exact_expected_window_recovery = False
+        exact_text_window_recovery = False
         exact_notice_subset_recovery = False
-        if expected > 0 and len(window_cars) == expected and missing_from_notice:
+        if text_expected > 0 and len(window_cars) == text_expected and missing_from_notice:
+            # 文本与图片来自同一受控微信群事件，且文本实装数与95306完整窗口精确
+            # 相等。此时图片漏行不能再被中唐的“精确子集”豁免吞掉。
+            loading = sorted(window_cars)
+            missing_from_notice = []
+            exact_text_window_recovery = True
+        elif expected > 0 and len(window_cars) == expected and missing_from_notice:
             # 页脚实装数与95306整窗完全一致，且通知单绝大多数车号均命中时，
             # 差异通常来自VLM漏号、重复号或排车标记。此时95306车集是完整
             # 权威事实，可整窗恢复。重合度门槛避免同到站相邻列误并。
@@ -230,6 +242,11 @@ def recover_loading_cars_via_window(
             msg += (
                 f";页脚实装={expected}=95306窗内车数,"
                 "已按95306完整车集恢复OCR漏号/重复号"
+            )
+        if exact_text_window_recovery:
+            msg += (
+                f";紧邻实装文本={text_expected}=95306窗内车数,"
+                "已按95306完整车集恢复检装图漏行"
             )
         if exact_notice_subset_recovery:
             msg += (
@@ -278,6 +295,7 @@ def recover_loading_cars_via_window(
             "corrections": corrections,
             "auto_corrected": bool(corrections),
             "exact_expected_window_recovery": exact_expected_window_recovery,
+            "exact_text_window_recovery": exact_text_window_recovery,
             "exact_notice_subset_recovery": exact_notice_subset_recovery,
             "anchor_attempts": attempts,
             "message": msg,

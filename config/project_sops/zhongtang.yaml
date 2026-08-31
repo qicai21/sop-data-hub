@@ -44,6 +44,7 @@ project_meta:
     - "宝丽"
     - "汇泽启航"
     - "德邻惠航"
+    - "中联发"
   # OCR 常见误识(汐子 ⇄ 沙子),ingest 时归一到汐子。
   destination_aliases:
     汐子: ["沙子"]

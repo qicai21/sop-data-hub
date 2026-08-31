@@ -1963,10 +1963,26 @@ class BusinessDataAgent:
         notice_date = normalize_chinese_date(
             normalized_payload.get("header_info", {}).get("通知日期")
         )
+        special_matter = normalized_payload.get("special_matter", "")
+        cargo_info = normalized_payload.get("cargo_info", {})
         remarks = parse_remarks(normalized_payload.get("remarks", []), notice_date)
+        # Some single-lot notices put all dispatch facts in 特约事项 and leave
+        # remarks empty. They are still valid release notices: the cargo-table
+        # total supplies the quantity while 特约事项 supplies railway/destination.
+        if not remarks and special_matter.strip():
+            remarks = parse_remarks(
+                [{
+                    "date": notice_date or "",
+                    "sequence": "lot01",
+                    "transport_mode": cargo_info.get("运输方式") or "",
+                    "destination": parse_destination_station(special_matter) or "",
+                    "raw_line": special_matter,
+                }],
+                notice_date,
+            )
         remarks = synthesize_missing_clean_bottom_remarks(
             remarks,
-            normalized_payload.get("cargo_info", {}),
+            cargo_info,
             notice_date,
         )
         # ── 项目 scope 过滤(2026-06-03 蓝鳍 lot4 公路/彰武鑫汇 误入根因) ──
@@ -1991,9 +2007,7 @@ class BusinessDataAgent:
             # because the notice lacks “第一次/lot01” wording.
             remarks[0]["sequence"] = "lot01"
         latest_remark = remarks[-1] if remarks else None
-        special_matter = normalized_payload.get("special_matter", "")
         business_info = normalized_payload.get("business_info", {})
-        cargo_info = normalized_payload.get("cargo_info", {})
 
         header_info = normalized_payload.get("header_info", {})
         project = normalized_payload.get("project") or normalized_payload.get("项目")
@@ -2299,6 +2313,14 @@ class BusinessDataAgent:
 def hydrate_row(row) -> ReleaseBatchRecord:
     # sqlite3.Row doesn't support .get(), so we check keys if needed
     keys = row.keys()
+    raw_source_json = row["source_json"]
+    try:
+        source_json = json.loads(raw_source_json) if raw_source_json else {}
+    except (TypeError, json.JSONDecodeError):
+        # Historical/manual rows can contain a source file path rather than a
+        # JSON blob. They must not prevent unrelated batches from refreshing
+        # their active dispatch rules.
+        source_json = {}
     return ReleaseBatchRecord(
         id=row["id"],
         batch_key=row["batch_key"],
@@ -2336,7 +2358,7 @@ def hydrate_row(row) -> ReleaseBatchRecord:
         tail_cargo_status=row["tail_cargo_status"] if "tail_cargo_status" in keys else None,
         tail_cargo_remark=row["tail_cargo_remark"] if "tail_cargo_remark" in keys else None,
         source_file_name=row["source_file_name"],
-        source_json=json.loads(row["source_json"]),
+        source_json=source_json,
         updated_at=row["updated_at"],
         project=row["project"] if "project" in keys else None,
         commissioner_identifier=row["commissioner_identifier"] if "commissioner_identifier" in keys else None,
@@ -2396,6 +2418,11 @@ def canonicalize_station_text(text: Optional[str]) -> Optional[str]:
     raw = str(text).strip()
     if not raw:
         return None
+    # OCR and notice templates alternately write station names with a trailing
+    # "站". Normalize the physical station token before project alias lookup
+    # (e.g. 沙子站 -> 沙子 -> 汐子).
+    if raw.endswith("站") and len(raw) > 1:
+        raw = raw[:-1].strip()
     raw = STATION_OCR_CORRECTIONS.get(raw, raw)
     alias_map = load_station_alias_map()
     if raw in alias_map:

@@ -43,6 +43,9 @@ class TestParseDestinationStation:
     def test_live_ocr_confusion_zhongtang_station(self):
         assert parse_destination_station("10000吨（铁路 沱子）") == "汐子"
 
+    def test_live_ocr_confusion_zhongtang_station_with_station_suffix(self):
+        assert parse_destination_station("到站：沙子站。") == "汐子"
+
 
 class TestParseRemarks:
     def test_basic_remark(self):
@@ -79,6 +82,46 @@ class TestParseRemarks:
 
 
 class TestBusinessDataAgent:
+
+    def test_invalid_legacy_source_json_does_not_block_batch_hydration(self, tmp_db):
+        agent = BusinessDataAgent()
+        agent.db.execute(
+            """INSERT INTO release_batches (
+                id, batch_key, project, ship_name, cargo_name, notice_date,
+                source_json, searchable_text
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "legacy-invalid-source", "legacy-invalid-source-key",
+                "zhongtang_special_steel", "宝丽", "铁矿", "2026-08-31",
+                "/legacy/path/not-json.json", "legacy invalid source",
+            ),
+        )
+        agent.db.commit()
+
+        record = agent.get("legacy-invalid-source")
+
+        assert record is not None
+        assert record.source_json == {}
+
+    def test_single_lot_notice_without_remarks_uses_special_matter(self, tmp_db):
+        """单批次通知单仅在特约事项写铁路/到站时，仍须建 lot01。"""
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "project": "zhongtang_special_steel",
+            "header_info": {"通知日期": "2026年8月31日"},
+            "business_info": {"船名": "宝丽"},
+            "cargo_info": {"货物名称": "铁矿", "总重里": "17386", "运输方式": "铁路"},
+            "special_matter": "发运货物，火运敞车出港，到站：沙子站。",
+            "remarks": [],
+        }
+
+        records = agent.ingest_release_batch(payload, source_file_name="single_notice.json")
+
+        assert len(records) == 1
+        assert records[0].batch_sequence == "lot01"
+        assert records[0].destination_station == "汐子"
+        assert records[0].batch_quantity == 17386.0
 
     def test_inspection_candidate_excludes_defect_cars_from_authoritative_subset(
         self, tmp_db
@@ -1026,9 +1069,10 @@ class TestProjectKnownShips:
         assert "蓝鳍" in ships
         assert "马兰希望" in ships
 
-    def test_zhongtang_known_ships_includes_huize_qihang(self):
-        """到港船名汇泽启航用于中唐汐子铁路发运文本的项目授权。"""
+    def test_zhongtang_known_ships_include_new_arrival_vessels(self):
+        """中唐到港船名须先登记，才可安全创建批次及授权后续发运文本。"""
         assert "汇泽启航" in project_known_ships("zhongtang_special_steel")
+        assert "中联发" in project_known_ships("zhongtang_special_steel")
 
     def test_unknown_project_returns_empty(self):
         assert project_known_ships("不存在的项目") == set()

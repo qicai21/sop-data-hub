@@ -71,7 +71,9 @@ def test_partition_mixed_ticket_cluster_22_plus_23():
         )
         for number in range(873, 918)
     ]
-    partitions = partition_ticket_cluster(tickets, segments)
+    partitions = partition_ticket_cluster(
+        tickets, segments, allow_inferred_ticket_order=True,
+    )
     assert len(partitions) == 2
     assert len(partitions[0][1]) == 22
     assert partitions[0][1][0].ydid.endswith("873")
@@ -79,6 +81,16 @@ def test_partition_mixed_ticket_cluster_22_plus_23():
     assert len(partitions[1][1]) == 23
     assert partitions[1][1][0].ydid.endswith("895")
     assert partitions[1][1][-1].ydid.endswith("917")
+
+
+def test_partition_does_not_infer_physical_car_order_from_ydid_order():
+    segments = parse_jilin_departure_segments(TEXT)
+    tickets = [
+        ShipmentCandidate(ydid=str(number), wagon_no=str(1500000 + number))
+        for number in range(873, 918)
+    ]
+
+    assert partition_ticket_cluster(tickets, segments) == []
 
 
 def test_partition_rejects_total_mismatch():

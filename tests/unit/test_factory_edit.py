@@ -296,3 +296,12 @@ def test_batch_move_repairs_target_row_with_stale_business_fields(monkeypatch):
     assert result.verified == 1
     assert posted[0]["orderId"] == "NEW"
     assert posted[0]["boatName"] == "NEW-SHIP"
+
+
+def test_portal_canonical_india_fines_matches_short_alias():
+    assert factory_edit._updates_match_portal_row(
+        {"goodName": "印度粉"}, {"goodName": "印粉"}
+    )
+    assert not factory_edit._updates_match_portal_row(
+        {"goodName": "麦克粉"}, {"goodName": "印粉"}
+    )

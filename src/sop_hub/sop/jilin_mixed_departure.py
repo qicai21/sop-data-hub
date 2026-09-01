@@ -82,13 +82,18 @@ def select_exact_ticket_cluster(
 def partition_ticket_cluster(
     tickets: list[ShipmentCandidate],
     segments: list[JilinDepartureSegment],
+    *,
+    allow_inferred_ticket_order: bool = False,
 ) -> list[tuple[JilinDepartureSegment, list[ShipmentCandidate]]]:
-    """Partition a stable ticket sequence only with explicit segment ranges.
+    """Partition tickets only when a caller has verified their physical order.
 
-    Counts alone prove the train total but not each wagon's ownership.  Mixed
-    trains can interleave ships, so a count-only message must stay pending for
-    a reviewed wagon list instead of being uploaded by an invented order.
+    95306's result ordering (including ydid order) is not the physical train
+    sequence.  Even a group message that says "序号 8-18" cannot therefore be
+    mapped to individual cars without an independently verified wagon list.
+    The default path must stay pending rather than upload an inferred split.
     """
+    if not allow_inferred_ticket_order:
+        return []
     if sum(segment.car_count for segment in segments) != len(tickets):
         return []
     if any(
@@ -199,12 +204,7 @@ def execute_jilin_mixed_departure(
     )
     partitions = partition_ticket_cluster(cluster, segments)
     if not partitions:
-        reason = "no exact ticket cluster matching segmented total"
-        if cluster and any(
-            segment.seq_start is None or segment.seq_end is None
-            for segment in segments
-        ):
-            reason = "mixed departure lacks explicit sequence ranges; reviewed wagon assignment required"
+        reason = "mixed departure requires reviewed car-level assignment; do not infer from 95306 ticket order"
         return {
             "action": "waiting_95306",
             "status": "pending",

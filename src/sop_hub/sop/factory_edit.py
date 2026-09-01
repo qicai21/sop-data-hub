@@ -27,6 +27,23 @@ DEFAULT_FORM_ID = "MR07"
 EDITABLE_FIELDS = frozenset({"orderId", "contractNumber", "goodName", "boatName"})
 
 
+def _portal_field_matches(field: str, actual: Any, expected: Any) -> bool:
+    """Compare portal fields while retaining its canonical cargo-name spelling."""
+    if field != "goodName":
+        return actual == expected
+    canonical_names = {"印粉": "印度粉", "印度粉": "印度粉"}
+    return canonical_names.get(str(actual), str(actual)) == canonical_names.get(
+        str(expected), str(expected)
+    )
+
+
+def _updates_match_portal_row(row: dict[str, Any], updates: dict[str, Any]) -> bool:
+    return all(
+        _portal_field_matches(field, row.get(field), value)
+        for field, value in updates.items()
+    )
+
+
 @dataclass
 class FactoryEditResult:
     old_order_id: str
@@ -235,9 +252,7 @@ def edit_factory_record(
     if len(new_after) == 1:
         result.after = dict(new_after[0])
         result.new_portal_id = new_after[0].get("id")
-    fields_match = bool(new_after) and all(
-        new_after[0].get(key) == value for key, value in updates.items()
-    )
+    fields_match = bool(new_after) and _updates_match_portal_row(new_after[0], updates)
     source_is_correct = len(old_after) == (1 if new_order_id == old_order_id else 0)
     result.verified = source_is_correct and len(new_after) == 1 and fields_match
     if not result.verified:
@@ -303,10 +318,7 @@ def move_factory_records(
             result.error = f"invalid target update fields for {key}: {sorted(invalid)}"
             return result
         if not old_hits and len(new_hits) == 1:
-            fields_match = all(
-                new_hits[0].get(field) == value
-                for field, value in target.updates.items()
-            )
+            fields_match = _updates_match_portal_row(new_hits[0], target.updates)
             if fields_match:
                 result.already_applied += 1
                 result.records.append(
@@ -382,9 +394,8 @@ def move_factory_records(
         old_hits = _matching_rows(old_after, wagon, box)
         new_hits = _matching_rows(new_after, wagon, box)
         target = target_by_key[key]
-        fields_match = len(new_hits) == 1 and all(
-            new_hits[0].get(field) == value
-            for field, value in target.updates.items()
+        fields_match = len(new_hits) == 1 and _updates_match_portal_row(
+            new_hits[0], target.updates
         )
         if not old_hits and len(new_hits) == 1 and fields_match:
             result.verified += 1

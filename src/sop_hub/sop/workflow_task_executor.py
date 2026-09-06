@@ -2181,6 +2181,7 @@ def _execute_chaoyang_inspection_chain(
                     from sop_hub.sop.external_action_log import (
                         build_idempotency_key, get_action_by_key,
                         plan_external_action, mark_external_action_executed,
+                        external_action_claimed,
                     )
                     _idem = build_idempotency_key(
                         project_id, "send_shipping_excel_wechat",
@@ -2208,25 +2209,33 @@ def _execute_chaoyang_inspection_chain(
                             if not target:
                                 send_info = {"skipped": True, "reason": "no send_report target in yaml"}
                             else:
-                                plan_external_action(
+                                claim = plan_external_action(
                                     db_path=db_path, workflow_task_id=task_id,
                                     message_id=message_id or "", project_id=project_id,
                                     action_type="send_shipping_excel_wechat",
                                     idempotency_key=_idem, target_system="wechat",
                                     artifact_path=_mb.output_path,
                                 )
-                                msg = (f"发运数据 {'+'.join(_ships)} 共{_mb.wagon_count}车"
-                                       f"(按批次分块,{len(_specs)}船)")
-                                sr = send_to_wechat(target=target, message=msg, file_path=_mb.output_path)
-                                if sr.success:
-                                    mark_external_action_executed(
-                                        _idem, db_path=db_path,
-                                        response_json={"sent": True, "target": target},
-                                        artifact_path=_mb.output_path)
-                                send_info = {"skipped": False, "target": target, "message": msg,
-                                             "success": sr.success,
-                                             "output_tail": (sr.output or "")[-300:],
-                                             "error": sr.error, "idempotency_key": _idem}
+                                if not external_action_claimed(claim):
+                                    send_info = {
+                                        "skipped": True,
+                                        "idempotency_key": _idem,
+                                        "reason": "外发动作已由并发或重放链路认领",
+                                        "claim": claim,
+                                    }
+                                else:
+                                    msg = (f"发运数据 {'+'.join(_ships)} 共{_mb.wagon_count}车"
+                                           f"(按批次分块,{len(_specs)}船)")
+                                    sr = send_to_wechat(target=target, message=msg, file_path=_mb.output_path)
+                                    if sr.success:
+                                        mark_external_action_executed(
+                                            _idem, db_path=db_path,
+                                            response_json={"sent": True, "target": target},
+                                            artifact_path=_mb.output_path)
+                                    send_info = {"skipped": False, "target": target, "message": msg,
+                                                 "success": sr.success,
+                                                 "output_tail": (sr.output or "")[-300:],
+                                                 "error": sr.error, "idempotency_key": _idem}
         except Exception as exc:
             send_info = {"skipped": False, "error": str(exc)}
 

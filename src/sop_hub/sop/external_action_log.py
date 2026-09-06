@@ -156,21 +156,37 @@ def plan_external_action(
         }
 
     now = _now_iso()
-    conn.execute(
-        """INSERT INTO external_action_log
-           (workflow_task_id, message_inbox_id, message_id, project_id,
-            action_type, idempotency_key, action_status,
-            request_json, artifact_path, target_system, target_channel,
-            created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            workflow_task_id, message_inbox_id, message_id, project_id,
-            action_type, idempotency_key, action_status,
-            json.dumps(request_json, ensure_ascii=False) if request_json else None,
-            artifact_path, target_system, target_channel,
-            now, now,
-        ),
-    )
+    try:
+        conn.execute(
+            """INSERT INTO external_action_log
+               (workflow_task_id, message_inbox_id, message_id, project_id,
+                action_type, idempotency_key, action_status,
+                request_json, artifact_path, target_system, target_channel,
+                created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                workflow_task_id, message_inbox_id, message_id, project_id,
+                action_type, idempotency_key, action_status,
+                json.dumps(request_json, ensure_ascii=False) if request_json else None,
+                artifact_path, target_system, target_channel,
+                now, now,
+            ),
+        )
+    except sqlite3.IntegrityError:
+        # Another workflow claimed the key after the pre-insert lookup.  The
+        # caller must treat this as a skip, never as permission to send again.
+        conn.rollback()
+        existing = conn.execute(
+            "SELECT id, action_status FROM external_action_log WHERE idempotency_key = ?",
+            (idempotency_key,),
+        ).fetchone()
+        conn.close()
+        return {
+            "action": "skipped", "reason": "duplicate_key",
+            "id": existing["id"] if existing else None,
+            "idempotency_key": idempotency_key,
+            "action_status": existing["action_status"] if existing else None,
+        }
     conn.commit()
     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.close()
@@ -179,6 +195,16 @@ def plan_external_action(
         "idempotency_key": idempotency_key, "action_status": action_status,
         "fallback_key": fallback_key,
     }
+
+
+def external_action_claimed(plan_result: dict[str, Any]) -> bool:
+    """Whether this workflow owns an external action and may execute it.
+
+    Planning is the idempotency boundary.  A caller that receives an existing
+    action must never perform the side effect itself, even if that action is
+    still only ``planned`` by a concurrent workflow.
+    """
+    return plan_result.get("action") == "created"
 
 
 def mark_external_action_executed(

@@ -596,7 +596,11 @@ def _execute_create_release_batch(
     # 缺陷B / 出港0批次告警(2026-06-27 环球信任工单):授权的出港计划通知单却建出 0 批次,
     # 多半是 VL 误读日期当历史过滤 / scope 全过滤 / 漏建。静默最危险 → 发数据单发群核对。
     # (⚠️ 前缀被 text_router guard 挡,不自激。)
-    if not records:
+    existing_batch_ids = (
+        _existing_batches_cover_release_notice(ext_path, db_path)
+        if not records else []
+    )
+    if not records and not existing_batch_ids:
         try:
             import json as _json
             _ext = _json.loads(ext_path.read_text(encoding="utf-8"))
@@ -618,8 +622,64 @@ def _execute_create_release_batch(
             "batch_ids": [r.id for r in records],
             "batch_sequences": [r.batch_sequence for r in records],
             "ship_names": list({r.ship_name for r in records if r.ship_name}),
+            "idempotent_existing_batch_ids": existing_batch_ids,
         },
     }
+
+
+def _existing_batches_cover_release_notice(
+    extraction_path: Path,
+    db_path: Path,
+) -> list[str]:
+    """Return existing batches when a cumulative notice is an idempotent no-op.
+
+    吉林等项目的累计通知单会重复携带 lot01..lotN。BusinessDataAgent 对已存在
+    或已终态 lot 正确返回零条新增；这不是漏建，不应触发人工告警。只有通知单
+    中所有可识别 lot 都已在同项目、同船名下存在时才判为已覆盖。
+    """
+    try:
+        payload = json.loads(extraction_path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return []
+
+    project_id = str(payload.get("project") or "").strip()
+    ship_name = str(
+        ((payload.get("business_info") or {}).get("船名") or "")
+    ).strip()
+    if not project_id or not ship_name:
+        return []
+
+    from sop_hub.data_agent.agent import normalize_sequence_label
+
+    sequences = {
+        str(normalize_sequence_label(
+            remark.get("sequence"), remark.get("raw_line") or remark.get("plan")
+        ) or "").strip()
+        for remark in (payload.get("remarks") or [])
+        if isinstance(remark, dict)
+    }
+    sequences.discard("")
+    if not sequences:
+        return []
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        placeholders = ",".join("?" for _ in sequences)
+        rows = conn.execute(
+            f"""SELECT id, batch_sequence FROM release_batches
+                WHERE project=? AND ship_name=?
+                  AND batch_sequence IN ({placeholders})""",
+            (project_id, ship_name, *sorted(sequences)),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+    covered = {str(row[1] or "").strip() for row in rows}
+    if not sequences.issubset(covered):
+        return []
+    return sorted(str(row[0]) for row in rows)
 
 
 def _event_excel_batch_specs(

@@ -80,8 +80,53 @@ class TestParseRemarks:
         assert parsed[0]["destination"] == "朝阳西"
         assert parsed[0]["quantity"] == 14500.0
 
+    def test_change_notice_uses_quantity_changed_to_rail(self):
+        remarks = [{
+            "date": "9月9日",
+            "sequence": "lot02",
+            "raw_line": "9月9日变更通知：10000吨公路返库计划有3500吨改为铁路返库，火运敞车出港，到站：汐子。",
+        }]
+
+        parsed = parse_remarks(remarks, "2026-09-03")
+
+        assert parsed[0]["quantity"] == 3500.0
+        assert parsed[0]["transport_mode"] == "铁路"
+        assert parsed[0]["destination"] == "汐子"
+
 
 class TestBusinessDataAgent:
+
+    def test_cumulative_notice_allows_later_change_notice_date(self, tmp_db):
+        agent = BusinessDataAgent()
+        payload = {
+            "project": "zhongtang_special_steel",
+            "header_info": {
+                "通知日期": "2026年9月3日",
+                "计划号": "90260900030",
+                "合同号": "ZLZT-2026083102",
+            },
+            "business_info": {"船名": "利昂之星"},
+            "cargo_info": {
+                "货物名称": "铁矿",
+                "货物品名": "塞矿",
+                "总重里": "10000",
+            },
+            "special_matter": "火运敞车出港，到站：汐子。",
+            "remarks": [{
+                "date": "9月9日",
+                "sequence": "lot02",
+                "raw_line": "9月9日变更通知：10000吨公路返库计划有3500吨改为铁路返库，火运敞车出港，到站：汐子。",
+            }],
+        }
+
+        records = agent.ingest_release_batch(payload, source_file_name="change-notice.jpg")
+
+        assert len(records) == 1
+        assert records[0].batch_sequence == "lot02"
+        assert records[0].batch_date == "2026-09-09"
+        assert records[0].batch_quantity == 3500.0
+        assert records[0].plan_id == "90260900030"
+        assert records[0].contract_no == "ZLZT-2026083102"
 
     def test_invalid_legacy_source_json_does_not_block_batch_hydration(self, tmp_db):
         agent = BusinessDataAgent()
@@ -1074,6 +1119,7 @@ class TestProjectKnownShips:
         """中唐到港船名须先登记，才可安全创建批次及授权后续发运文本。"""
         assert "汇泽启航" in project_known_ships("zhongtang_special_steel")
         assert "中联发" in project_known_ships("zhongtang_special_steel")
+        assert "利昂之星" in project_known_ships("zhongtang_special_steel")
 
     def test_unknown_project_returns_empty(self):
         assert project_known_ships("不存在的项目") == set()

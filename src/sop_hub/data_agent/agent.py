@@ -2275,7 +2275,9 @@ class BusinessDataAgent:
                     "yard_location": parse_yard_location(special_matter),
                     "customs_release_qty": parse_customs_release_qty(special_matter),
                     "notice_date": notice_date,
-                    "batch_date": _sane_batch_date(remark.get("date"), notice_date),
+                    "batch_date": _sane_batch_date(
+                        remark.get("date"), notice_date, remark.get("raw_line")
+                    ),
                     "batch_sequence": remark.get("sequence"),
                     "batch_quantity": remark.get("quantity")
                     or parse_number(cargo_info.get("总重里")),
@@ -2433,7 +2435,11 @@ def canonicalize_station_text(text: Optional[str]) -> Optional[str]:
     return raw
 
 
-def _sane_batch_date(raw: Optional[str], notice_date: Optional[str]) -> Optional[str]:
+def _sane_batch_date(
+    raw: Optional[str],
+    notice_date: Optional[str],
+    raw_line: Optional[str] = None,
+) -> Optional[str]:
     """放货日期(第N次下达计划那行的日期)sanity 闸。
 
     下达计划日 ≤ 检装/通知日(计划先于发运);若解析出的日期**晚于 notice_date**,
@@ -2445,7 +2451,14 @@ def _sane_batch_date(raw: Optional[str], notice_date: Optional[str]) -> Optional
     nd = (notice_date or "").strip()
     if not r:
         return nd or r
-    if nd and r > nd:
+    # 累计通知单会沿用较早的表头日期，并在备注末尾追加后续变更通知。
+    # 明确的变更/补充日期允许晚于表头；普通计划行仍保留未来日期闸，
+    # 防止把 6-27 OCR 成 8-27。
+    is_later_change_notice = any(
+        marker in str(raw_line or "")
+        for marker in ("变更通知", "补充通知")
+    )
+    if nd and r > nd and not is_later_change_notice:
         import logging as _lg
         _lg.getLogger("sop_hub.data_agent").warning(
             "batch_date %r 晚于 notice_date %r — 疑 OCR 月份误读,退回 notice_date", r, nd)
@@ -2632,6 +2645,10 @@ def parse_remarks(
     for remark in remarks:
         raw_line = str(remark.get("raw_line") or remark.get("plan") or "")
         quantity_match = re.search(r"(\d+(?:\.\d+)?)吨", raw_line)
+        changed_to_rail_match = re.search(
+            r"(?:有|其中)?\s*(\d+(?:\.\d+)?)吨\s*(?:改为|调整为)铁路",
+            raw_line,
+        )
         remaining_match = re.search(r"剩余(\d+(?:\.\d+)?)吨", raw_line)
         destination_match = re.search(r"[（(]\s*(?:铁路|公路)?\s*([^\s）)]+)?", raw_line)
 
@@ -2651,7 +2668,9 @@ def parse_remarks(
             {
                 "date": normalize_partial_date(remark.get("date"), notice_date),
                 "sequence": normalize_sequence_label(remark.get("sequence"), raw_line),
-                "quantity": float(quantity_match.group(1)) if quantity_match else None,
+                "quantity": float(changed_to_rail_match.group(1))
+                if changed_to_rail_match
+                else (float(quantity_match.group(1)) if quantity_match else None),
                 "transport_mode": transport_mode,
                 "destination": destination,
                 "remaining_qty": float(remaining_match.group(1)) if remaining_match else None,

@@ -93,6 +93,9 @@ def jilin_e2e_dbs(tmp_path, monkeypatch):
       dispatch_status TEXT NOT NULL DEFAULT 'loading',
       dispatch_status_note TEXT, dispatch_status_updated_at TEXT,
       actual_wagon_count INTEGER DEFAULT 0,
+      shipped_weight_tons REAL, remaining_weight_tons REAL,
+      unresolved_wagon_count INTEGER DEFAULT 0,
+      shipped_weight_last_computed_at TEXT,
       source_json TEXT NOT NULL DEFAULT '{}', searchable_text TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

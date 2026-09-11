@@ -67,6 +67,8 @@ class AllocationResult:
     wagons: list[WagonAllocation] = field(default_factory=list)
     allocations_by_batch: dict[str, int] = field(default_factory=dict)
     closed_batches: list[str] = field(default_factory=list)
+    recomputed_batch_ids: list[str] = field(default_factory=list)
+    recompute_errors: dict[str, str] = field(default_factory=dict)
     error: str = ""
 
 
@@ -507,6 +509,7 @@ def allocate_container_ydids(
             "SELECT release_batch_id FROM release_batch_dispatch_plan "
             "WHERE project_id=? AND ship_name=?", (project_id, ship_name)
         )}
+        affected_batch_ids: set[str] = set()
         head = 0
         for row in boxes:
             if not force_overwrite and row["batch_id"] in all_plan_ids:
@@ -519,6 +522,10 @@ def allocate_container_ydids(
                 )
                 return result
             target = queue[head]["release_batch_id"]
+            if row["batch_id"] != target:
+                if row["batch_id"]:
+                    affected_batch_ids.add(row["batch_id"])
+                affected_batch_ids.add(target)
             conn.execute(
                 "UPDATE wagon_container_shipments SET batch_id=?, updated_at=? WHERE id=?",
                 (target, _now_iso(), row["id"]),
@@ -541,6 +548,21 @@ def allocate_container_ydids(
             if status == "completed" and item["newly_allocated"]:
                 result.closed_batches.append(bid)
         conn.commit()
+
+        # `release_batches.shipped_weight_tons` is the dashboard's persisted
+        # summary. Box-level reallocation changes its source facts, so refresh
+        # every lot that actually gained or lost a box after the commit.
+        # Recalculation must not roll back a correct box assignment: expose a
+        # problem to the caller instead of silently leaving a stale dashboard.
+        if affected_batch_ids:
+            from sop_hub.sop.shipped_weight import compute_for_release_batch
+
+            for batch_id in sorted(affected_batch_ids):
+                weight = compute_for_release_batch(batch_id, db_path=db_path)
+                if weight.get("ok"):
+                    result.recomputed_batch_ids.append(batch_id)
+                else:
+                    result.recompute_errors[batch_id] = str(weight.get("error") or "unknown")
         return result
     finally:
         conn.close()

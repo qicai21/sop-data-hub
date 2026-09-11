@@ -1127,6 +1127,7 @@ def generate_multibatch_departure_excel(
     total_wagons: set[str] = set()
     used_batch_ids: list[str] = []
     ships_used: list[str] = []
+    event_ticket_dates: list[str] = []
 
     for rbid, car_nos, ydids in batch_specs:
         rows, ctx, err = _extract_rows(
@@ -1146,6 +1147,9 @@ def generate_multibatch_departure_excel(
         data_start = cur + 1
         # 数据行
         for ro, row in enumerate(rows):
+            ticketed_at = str(row.get("ticketed_at_raw") or "").strip()
+            if len(ticketed_at) >= 10:
+                event_ticket_dates.append(ticketed_at[:10])
             er = data_start + ro
             for ci, col in enumerate(tpl.columns, 1):
                 cell = ws.cell(row=er, column=ci, value=_resolve_cell_value(col, row))
@@ -1171,18 +1175,9 @@ def generate_multibatch_departure_excel(
     for ci in range(1, n_cols + 1):
         ws.column_dimensions[get_column_letter(ci)].width = 14
 
-    # 发运日 = 这批车实际制票日(发运事件日);绕开可能解析错的 batch_date(如马兰幸福 8-27)。
-    dispatch_date = ""
-    try:
-        _ph = ",".join("?" * len(used_batch_ids))
-        _c = sqlite3.connect(str(Path(db_path) if db_path else SOP_DB))
-        _row = _c.execute(
-            f"SELECT max(substr(ticketed_at,1,10)) FROM wagon_shipments WHERE batch_id IN ({_ph})",
-            used_batch_ids).fetchone()
-        _c.close()
-        dispatch_date = (_row[0] or "").strip() if _row else ""
-    except Exception:
-        dispatch_date = ""
+    # 发运日取本次导出车组的实际制票日。不能按 batch 查最大日期，否则历史
+    # 候选补跑时会被该 batch 后续列车的日期污染文件名和归档目录。
+    dispatch_date = max(event_ticket_dates, default="")
 
     out_dir = Path(output_dir) if output_dir else _resolve_archive_dir(
         project_id, used_batch_ids[0], db_path=db_path, date_override=dispatch_date or None)

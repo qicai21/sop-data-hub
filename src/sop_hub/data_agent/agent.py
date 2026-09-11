@@ -2006,6 +2006,9 @@ class BusinessDataAgent:
             # archives and dispatch rules do not fall into lotunknown solely
             # because the notice lacks “第一次/lot01” wording.
             remarks[0]["sequence"] = "lot01"
+        # This is the notice-wide total, not the sum of only the rows that remain
+        # after deduplicating batches already present in the database.
+        total_planned_quantity = sum(item.get("quantity") or 0 for item in remarks)
         latest_remark = remarks[-1] if remarks else None
         business_info = normalized_payload.get("business_info", {})
 
@@ -2233,7 +2236,6 @@ class BusinessDataAgent:
             str(item).strip()
             for item in [ship_name, cargo_name]
         )
-        total_planned_quantity = sum(item.get("quantity") or 0 for item in remarks)
         rows = []
 
         for remark in remarks:
@@ -2644,6 +2646,17 @@ def parse_remarks(
     parsed = []
     for remark in remarks:
         raw_line = str(remark.get("raw_line") or remark.get("plan") or "")
+        sequence = normalize_sequence_label(remark.get("sequence"), raw_line)
+        # 累计通知单会把后续运输方式调整也放进备注。例如“货主通知：
+        # 20000吨铁路计划有10000吨改为汽运”是对既有计划的说明，不是新的
+        # 第N次铁路放货。没有明确 lot 序号的改汽运说明保留在原始 JSON，
+        # 但不得生成一个无序号的额外 release batch。
+        if (
+            "改为汽运" in raw_line
+            and "改为铁路" not in raw_line
+            and not str(sequence or "").lower().startswith("lot")
+        ):
+            continue
         quantity_match = re.search(r"(\d+(?:\.\d+)?)吨", raw_line)
         changed_to_rail_match = re.search(
             r"(?:有|其中)?\s*(\d+(?:\.\d+)?)吨\s*(?:改为|调整为)铁路",
@@ -2667,7 +2680,7 @@ def parse_remarks(
         parsed.append(
             {
                 "date": normalize_partial_date(remark.get("date"), notice_date),
-                "sequence": normalize_sequence_label(remark.get("sequence"), raw_line),
+                "sequence": sequence,
                 "quantity": float(changed_to_rail_match.group(1))
                 if changed_to_rail_match
                 else (float(quantity_match.group(1)) if quantity_match else None),

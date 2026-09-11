@@ -199,14 +199,21 @@ def recover_loading_cars_via_window(
             missing_from_notice = sorted(set(missing_from_notice) - paired_true)
             notice_only = sorted(set(notice_only) - paired_wrong)
 
-        expected = int(expected_loading_count or 0)
         text_expected = int(authoritative_text_expected_count or 0)
+        # 同群紧邻的“实装N节”文本是装车数量权威；图片 footer/VLM 仅为兜底。
+        # 这不仅覆盖图片漏车，也覆盖排车/破损车被 VLM 误留在非 defect 集合。
+        expected = text_expected or int(expected_loading_count or 0)
         exact_expected_window_recovery = False
         exact_text_window_recovery = False
         exact_notice_subset_recovery = False
-        if text_expected > 0 and len(window_cars) == text_expected and missing_from_notice:
+        if (
+            text_expected > 0
+            and len(window_cars) == text_expected
+            and (missing_from_notice or notice_only)
+        ):
             # 文本与图片来自同一受控微信群事件，且文本实装数与95306完整窗口精确
-            # 相等。此时图片漏行不能再被中唐的“精确子集”豁免吞掉。
+            # 相等。此时图片漏行或误把排车留在实装集合，都以95306整窗为准；
+            # notice_only 仍保留作排车/破损车审计。
             loading = sorted(window_cars)
             missing_from_notice = []
             exact_text_window_recovery = True

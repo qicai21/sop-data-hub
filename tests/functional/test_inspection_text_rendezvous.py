@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from sop_hub.sop.inspection_text_rendezvous import enrich_unique_bare_candidate
@@ -13,7 +14,7 @@ def _conn() -> sqlite3.Connection:
         CREATE TABLE inspection_ingestion_candidates (
           id TEXT, message_id TEXT, project_id TEXT, ship_name TEXT,
           destination TEXT, candidate_status TEXT, wagon_count INTEGER,
-          reason TEXT, created_at TEXT, updated_at TEXT
+          reason TEXT, created_at TEXT, updated_at TEXT, payload_json TEXT
         );
         CREATE TABLE message_inbox (
           message_id TEXT, inspection_candidate_id TEXT, group_name TEXT,
@@ -35,8 +36,8 @@ def _add(
     conn.execute(
         "INSERT INTO inspection_ingestion_candidates VALUES "
         "(?, ?, '', '', '', 'pending_review', ?, 'missing', "
-        "'2026-07-24T22:08:40+08:00', '')",
-        (candidate_id, f"wx_{candidate_id}", count),
+        "'2026-07-24T22:08:40+08:00', '', ?)",
+        (candidate_id, f"wx_{candidate_id}", count, "{}"),
     )
     conn.execute(
         "INSERT INTO message_inbox VALUES (?, ?, ?, ?, '', ?)",
@@ -106,6 +107,36 @@ def test_enriches_unique_candidate_that_only_lacks_destination():
     assert row["project_id"] == "zhongtang_special_steel"
     assert row["ship_name"] == "鞍子河"
     assert row["destination"] == "汐子"
+    assert row["candidate_status"] == "candidate"
+
+
+def test_footer_loading_count_can_rendezvous_when_vlm_keeps_rejected_wagon():
+    """实装55节 + VLM非缺陷56行仍应与55节文本会合，再交95306校正。"""
+    conn = _conn()
+    _add(conn, "cand56", count=56)
+    conn.execute(
+        "UPDATE inspection_ingestion_candidates SET payload_json=?, created_at=? "
+        "WHERE id='cand56'",
+        (json.dumps({"footer": {"zhuangche_jieshu": 55}}),
+         "2026-09-07T18:15:21+08:00"),
+    )
+    conn.execute(
+        "UPDATE message_inbox SET received_datetime='2026-09-07 18:15:21' "
+        "WHERE inspection_candidate_id='cand56'"
+    )
+
+    row = enrich_unique_bare_candidate(
+        conn,
+        project_id="chaoyang_steel",
+        ship_name="欧律狄克",
+        destination="朝阳西",
+        expected_count=55,
+        group_name="铁晟业务工作群",
+        event_bounds=("2026-09-07 17:00:00", "2026-09-08 01:00:00"),
+    )
+
+    assert row is not None
+    assert row["id"] == "cand56"
     assert row["candidate_status"] == "candidate"
 
 

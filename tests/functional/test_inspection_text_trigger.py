@@ -143,6 +143,14 @@ def test_route_baoli_to_trigger():
     assert r.sop_project_id == "zhongtang_special_steel"
 
 
+def test_route_chaoyang_oulvdike_to_trigger():
+    """New Chaoyang ships must rendezvous with the inspection image chain."""
+    r = classify_text_message(_event("煤四朝阳西欧律狄克53节"))
+    assert r.sop_node == "inspection_text_trigger"
+    assert r.sop_flow == "inspection_text_trigger_flow"
+    assert r.sop_project_id == "chaoyang_steel"
+
+
 def test_zhongtang_freight_only_group_ignores_inspection_text():
     r = classify_text_message(
         MessageEvent(

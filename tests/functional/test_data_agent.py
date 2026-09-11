@@ -93,6 +93,26 @@ class TestParseRemarks:
         assert parsed[0]["transport_mode"] == "铁路"
         assert parsed[0]["destination"] == "汐子"
 
+    def test_cumulative_notice_does_not_create_batch_for_change_to_road_note(self):
+        remarks = [
+            {
+                "date": "9月4日",
+                "sequence": "第三次",
+                "raw_line": "9月4日第三次下达计划：20000吨（铁路 朝阳西）",
+            },
+            {
+                "date": "9月4日",
+                "sequence": "货主通知",
+                "raw_line": "9月4日货主通知：20000吨铁路返库计划有10000吨改为汽运返库",
+            },
+        ]
+
+        parsed = parse_remarks(remarks, "2026-09-04")
+
+        assert len(parsed) == 1
+        assert parsed[0]["sequence"] == "lot03"
+        assert parsed[0]["quantity"] == 20000.0
+
 
 class TestBusinessDataAgent:
 
@@ -850,6 +870,42 @@ class TestBusinessDataAgent:
         locked = after[first.id]
         assert locked.dispatch_status == "confirmed_received"    # 状态没被动
         assert locked.batch_quantity == 9000                     # 数量没被改成 8888(锁死)
+
+    def test_cumulative_total_keeps_existing_batches_during_dedup(self, tmp_db):
+        """The notice-wide total must include lots skipped as already ingested."""
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "project": "jilin_jingang_jinzhou",
+            "header_info": {"通知日期": "2026年9月4日"},
+            "business_info": {"船名": "海洋征服者", "发货单位": "", "收货单位": ""},
+            "cargo_info": {"货物名称": "铁矿", "运输方式": "铁路"},
+            "special_matter": "到站:四平",
+            "remarks": [
+                {"date": "8月14日", "sequence": "第一次", "plan": "7500吨（铁路 四平）", "raw_line": ""},
+                {"date": "8月21日", "sequence": "第二次", "plan": "2500吨（铁路 四平）", "raw_line": ""},
+                {"date": "9月4日", "sequence": "第三次", "plan": "20000吨（铁路 四平）", "raw_line": ""},
+            ],
+        }
+        rows = agent.normalize_release_batch_payloads(
+            payload,
+            source_file_name="cumulative.json",
+            contract_id=None,
+            contract_no=None,
+            existing_batches=[
+                {
+                    "batch_sequence": "lot01",
+                    "batch_date": "2026-08-14",
+                    "batch_quantity": 7500.0,
+                    "notice_date": "2026-09-04",
+                    "dispatch_status": "closed",
+                }
+            ],
+        )
+
+        assert [row["batch_sequence"] for row in rows] == ["lot02", "lot03"]
+        assert [row["batch_quantity"] for row in rows] == [2500.0, 20000.0]
+        assert {row["total_planned_quantity"] for row in rows} == {30000.0}
 
     def test_in_progress_batch_not_locked_on_resend(self, tmp_db):
         """对照组:loading(进行中)批次不在锁定集,重发不会被 lock 跳过——避免误伤。

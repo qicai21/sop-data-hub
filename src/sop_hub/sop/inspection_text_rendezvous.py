@@ -89,15 +89,35 @@ def enrich_unique_bare_candidate(
 
     lo, hi = event_bounds
     try:
-        rows = conn.execute(
+        candidate_columns = {
+            str(row[1])
+            for row in conn.execute(
+                "PRAGMA table_info(inspection_ingestion_candidates)"
+            ).fetchall()
+        }
+        if "payload_json" in candidate_columns:
+            count_clause = """
+              AND (
+                COALESCE(c.wagon_count, 0) = ?
+                OR CAST(
+                  json_extract(c.payload_json, '$.footer.zhuangche_jieshu')
+                  AS INTEGER
+                ) = ?
+              )
             """
+            count_params = (expected_count, expected_count)
+        else:
+            count_clause = "AND COALESCE(c.wagon_count, 0) = ?"
+            count_params = (expected_count,)
+        rows = conn.execute(
+            f"""
             SELECT c.*
             FROM inspection_ingestion_candidates c
             WHERE (COALESCE(c.ship_name, '') = '' OR c.ship_name = ?)
               AND (COALESCE(c.project_id, '') = '' OR c.project_id = ?)
               AND (COALESCE(c.destination, '') = '' OR c.destination = ?)
               AND c.candidate_status IN ('candidate', 'pending_match', 'pending_review')
-              AND COALESCE(c.wagon_count, 0) = ?
+              {count_clause}
               AND EXISTS (
                   SELECT 1
                   FROM message_inbox m
@@ -116,7 +136,7 @@ def enrich_unique_bare_candidate(
                 ship_name,
                 project_id,
                 destination,
-                expected_count,
+                *count_params,
                 group_name,
                 lo,
                 hi,

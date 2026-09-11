@@ -227,6 +227,42 @@ def test_adjacent_text_exact_window_overrides_truncated_zhongtang_notice(tmp_pat
     assert "紧邻实装文本=53" in r["message"]
 
 
+def test_adjacent_text_exact_window_excludes_vlm_false_loading_wagon(tmp_path):
+    """图片56行但文本/95306均为55车时，多出的破损车应作为排车保留审计。"""
+    db = tmp_path / "rail.sqlite3"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE shipments ("
+        " ydid TEXT PRIMARY KEY, car_no TEXT, destination_name TEXT,"
+        " cargo_name TEXT, ticketed_at TEXT)"
+    )
+    true_cars = [f"{1800000 + i}" for i in range(55)]
+    conn.executemany(
+        "INSERT INTO shipments VALUES (?,?,?,?,?)",
+        [
+            (f"y{i}", car, "朝阳西", "铁矿粉", f"2026-09-07 19:48:{i % 4:02d}")
+            for i, car in enumerate(true_cars)
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    rejected = "4927325"
+    r = recover_loading_cars_via_window(
+        rail_db_path=db,
+        loading_car_nos=[*true_cars, rejected],
+        all_notice_car_nos=[*true_cars, rejected],
+        destination="朝阳西",
+        expected_loading_count=56,
+        authoritative_text_expected_count=55,
+    )
+
+    assert r["status"] == "ok"
+    assert r["exact_text_window_recovery"] is True
+    assert set(r["loading_car_nos"]) == set(true_cars)
+    assert r["notice_only"] == [rejected]
+
+
 def test_legacy_no_bound_anchors_old_ticket(rail_db, tmp_path):
     """不带下界(老行为)会锚到旧票 — 文档化 #144 的 bug 形态。"""
     conn = sqlite3.connect(str(rail_db))

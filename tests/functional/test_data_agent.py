@@ -93,7 +93,7 @@ class TestParseRemarks:
         assert parsed[0]["transport_mode"] == "铁路"
         assert parsed[0]["destination"] == "汐子"
 
-    def test_cumulative_notice_does_not_create_batch_for_change_to_road_note(self):
+    def test_cumulative_notice_applies_change_to_road_to_previous_batch(self):
         remarks = [
             {
                 "date": "9月4日",
@@ -111,7 +111,8 @@ class TestParseRemarks:
 
         assert len(parsed) == 1
         assert parsed[0]["sequence"] == "lot03"
-        assert parsed[0]["quantity"] == 20000.0
+        assert parsed[0]["quantity"] == 10000.0
+        assert parsed[0]["road_conversion_tons"] == 10000.0
 
 
 class TestBusinessDataAgent:

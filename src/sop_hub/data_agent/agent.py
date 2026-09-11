@@ -2656,6 +2656,21 @@ def parse_remarks(
             and "改为铁路" not in raw_line
             and not str(sequence or "").lower().startswith("lot")
         ):
+            road_change = re.search(
+                r"(\d+(?:\.\d+)?)吨.*?(?:有|其中)\s*"
+                r"(\d+(?:\.\d+)?)吨\s*(?:改为|调整为)汽运",
+                raw_line,
+            )
+            if road_change and parsed:
+                original = float(road_change.group(1))
+                changed = float(road_change.group(2))
+                if 0 < changed <= original:
+                    for previous in reversed(parsed):
+                        if previous.get("quantity") == original:
+                            previous["quantity"] = original - changed
+                            previous["road_conversion_tons"] = changed
+                            previous["road_conversion_raw_line"] = raw_line
+                            break
             continue
         quantity_match = re.search(r"(\d+(?:\.\d+)?)吨", raw_line)
         changed_to_rail_match = re.search(

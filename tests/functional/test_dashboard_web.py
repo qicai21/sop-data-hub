@@ -186,14 +186,17 @@ def test_jiusan_cycle_places_departed_train_in_loaded_transit_node():
     assert contexts["transit"] == ["#2 55车/110箱"]
 
 
-def test_read_only_render_skips_weight_refresh(monkeypatch):
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("weight refresh must not run for web requests")
+def test_web_render_refreshes_active_weight_projection(monkeypatch):
+    calls = 0
+
+    def refresh(*args, **kwargs):
+        nonlocal calls
+        calls += 1
 
     monkeypatch.setattr(
         cli_dashboard,
         "refresh_active_shipped_weights",
-        fail_if_called,
+        refresh,
     )
     monkeypatch.setattr(cli_dashboard, "query_projects_with_batches", lambda: {})
     monkeypatch.setattr(cli_dashboard, "query_reserved_wagon_counts", lambda: {})
@@ -201,12 +204,9 @@ def test_read_only_render_skips_weight_refresh(monkeypatch):
     monkeypatch.setattr(cli_dashboard, "panel_system", lambda: [])
     monkeypatch.setattr(cli_dashboard, "PROJECT_DISPLAY", {})
 
-    rendered = cli_dashboard.render_once(
-        refresh_weights=False,
-        include_paths=False,
-        terminal_controls=False,
-    )
+    rendered = dashboard_web.render_dashboard()
 
+    assert calls == 1
     assert "sop-data-hub 看板" in cli_dashboard._strip_ansi(rendered)
     assert "常用数据库 / 路径" not in rendered
     assert "Ctrl-C 退出" not in rendered

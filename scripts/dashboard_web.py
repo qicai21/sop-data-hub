@@ -699,6 +699,20 @@ def create_server(
     )
 
 
+def render_dashboard() -> str:
+    """Render the LAN dashboard with fresh active-batch derived totals.
+
+    The renderer never changes box/wagon facts or release allocation. It only
+    refreshes the persisted shipment-weight projection that the dashboard
+    displays, with the CLI helper's 30-second throttle.
+    """
+    return cli_dashboard.render_once(
+        refresh_weights=True,
+        include_paths=False,
+        terminal_controls=False,
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="0.0.0.0")
@@ -713,11 +727,7 @@ def main() -> int:
         args.host,
         args.port,
         allowed_network=args.allowed_network,
-        renderer=lambda: cli_dashboard.render_once(
-            refresh_weights=False,
-            include_paths=False,
-            terminal_controls=False,
-        ),
+        renderer=render_dashboard,
     )
     print(
         f"dashboard-web listening on {args.host}:{args.port}; "

@@ -137,6 +137,7 @@ def test_complete_candidate_generates_planned_updates(tmp_path: Path):
     assert result.status == "dry_run"
     assert result.planned_updates["order_identifier"] == "CGR20260520095954"
     assert result.planned_updates["contract_no"] == "HNMC20260520-1X-1"
+    assert result.planned_updates["cargo_product_name"] == "印粉"
     assert result.planned_updates["cargo_name_detail"] == "印粉"
     assert result.planned_updates["quantity_tons"] == 3000
     assert result.schema_missing_fields == []
@@ -225,7 +226,35 @@ def test_apply_writes_cargo_name_detail(tmp_path: Path):
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT * FROM release_batches WHERE id=?", (_BATCH_ID,)).fetchone()
+    assert row["cargo_product_name"] == "印粉"
     assert row["cargo_name_detail"] == "印粉"
+    conn.close()
+
+
+def test_manual_enrichment_promotes_existing_detail_to_display_product(tmp_path: Path):
+    """A prior manual write must repair the empty dashboard product field."""
+    db_path = tmp_path / "test.db"
+    conn = _create_test_db(db_path)
+    conn.execute(
+        "UPDATE release_batches SET cargo_name='铁矿', cargo_name_detail='金布巴粉' WHERE id=?",
+        (_BATCH_ID,),
+    )
+    conn.commit()
+    conn.close()
+
+    result = enrich_release_batch_with_freight_detail(
+        _make_complete_candidate(), _BATCH_ID, dry_run=False, db_path=db_path,
+    )
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT cargo_product_name, cargo_name_detail FROM release_batches WHERE id=?",
+        (_BATCH_ID,),
+    ).fetchone()
+    assert result.applied_fields["cargo_product_name"] == "印粉"
+    assert row["cargo_product_name"] == "印粉"
+    assert row["cargo_name_detail"] == "金布巴粉"
     conn.close()
 
 

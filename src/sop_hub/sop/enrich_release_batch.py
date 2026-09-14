@@ -39,6 +39,7 @@ _ALWAYS_PRESENT_COLUMNS = frozenset({"contract_no", "updated_at"})
 # Fields that may be absent (added via migration); checked at runtime.
 _MIGRATION_COLUMNS = frozenset({
     "order_identifier",
+    "cargo_product_name",
     "cargo_name_detail",
     "quantity_tons",
     "source_message_id",
@@ -195,21 +196,26 @@ def enrich_release_batch_with_freight_detail(
 
         # ── Build field mapping: candidate field → DB column ─────────
         # Maps FreightDetailCandidate fields to release_batches columns.
-        field_mapping: dict[str, str] = {
-            "order_identifier": "order_identifier",
-            "contract_no": "contract_no",
-            "cargo_name_detail": "cargo_name_detail",
-            "quantity_tons": "quantity_tons",
-            "message_id": "source_message_id",
-            "group_id": "source_group_id",
-        }
+        # ``cargo_name_detail`` is the operator-confirmed specific product
+        # (e.g. 金布巴粉), not the generic release category (铁矿).  Keep the
+        # raw detail field, but always populate the canonical display/export
+        # field too so manual and auto enrichment have identical semantics.
+        field_mapping: tuple[tuple[str, str], ...] = (
+            ("order_identifier", "order_identifier"),
+            ("contract_no", "contract_no"),
+            ("cargo_name_detail", "cargo_product_name"),
+            ("cargo_name_detail", "cargo_name_detail"),
+            ("quantity_tons", "quantity_tons"),
+            ("message_id", "source_message_id"),
+            ("group_id", "source_group_id"),
+        )
 
         # ── Compute planned_updates ──────────────────────────────────
         planned_updates: dict[str, Any] = {}
         skipped_fields: dict[str, Any] = {}
         applied_fields: dict[str, Any] = {}
 
-        for candidate_field, db_column in field_mapping.items():
+        for candidate_field, db_column in field_mapping:
             if db_column not in available:
                 continue  # already guarded above, but be safe
 

@@ -30,6 +30,10 @@ DISPLAY = "九三大豆·锦州港集装箱总池"  # 看板口径:项目整体�
 INNER = cd.PANEL_WIDTH - 4  # 内容显示宽
 TRACKING_CACHE = REPO / "runtime" / "jiusan_cycle_tracking_latest.json"
 TRACKING_CACHE_MAX_AGE_HOURS = 3
+RAIL_DB = Path("/Users/qicai21/projects/repos/rail95306-sync/runtime/95306_collection.sqlite3")
+LIVE_CYCLE_SINCE = "2026-09-01"
+LIVE_SHIPPER = "锦州新铁晟港口物流有限公司"
+LIVE_CONSIGNEE = "辽宁诚信集装箱储运有限公司"
 
 # ── 运营覆盖(仅人工纠偏用,默认空) ─────────────────────────────────────
 # 列位置默认走 95306 实时自动状态机(_cycle_state);「调出」列由 TRANSFERRED_CYCLES
@@ -126,6 +130,97 @@ def _col_latest_trips(conn) -> list[dict]:
         out.append({"cyc": cyc, "ship": ship or "", "dep": dep or "", "arr": arr or "",
                     "cars": int(cars or 0), "total": total, "deliv": deliv, "last_deliv": last_deliv or "",
                     "full": total > 0 and deliv == total})
+    # 9 月起的新循环车体尚未拿到逐箱“船名/lot”台账，不能强行写入
+    # wagon_container_shipments。看板仍须显示其实际发运位置，因此以只读
+    # 95306 实时票据覆盖同列的旧分船趟次，并明确标记为“实时未分船”。
+    live = _live_rail_latest_trips(conn)
+    by_cycle = {int(item["cyc"]): item for item in out}
+    for item in live:
+        cyc = int(item["cyc"])
+        # 车体池已在 9 月实时窗口中确认时，95306 是该车当前趟次的唯一权威；
+        # 本地分船表可能含同车旧船的后补时间，不能反向覆盖实时行程。
+        by_cycle[cyc] = item
+    return [by_cycle[cyc] for cyc in sorted(by_cycle)]
+
+
+def _live_rail_latest_trips(conn) -> list[dict]:
+    """读取尚未分船的新循环列的当前 95306 趟次。
+
+    该函数只服务循环看板，绝不向结算事实表写入“实时未分船”运单。车体归列
+    已经由整列制票窗口确认；这里仅补齐其最近一趟的节点和箱数。
+    """
+    if not RAIL_DB.exists():
+        return []
+    try:
+        pool_rows = conn.execute(
+            "SELECT car_no, home_cycle_no FROM wagon_body_pool "
+            "WHERE project='jiusan' AND home_cycle_no IS NOT NULL"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    home_by_car = {str(car): int(cyc) for car, cyc in pool_rows if car and cyc is not None}
+    if not home_by_car:
+        return []
+    try:
+        rail = sqlite3.connect(f"file:{RAIL_DB}?mode=ro", uri=True)
+        rows = rail.execute(
+            """
+            SELECT ydid, car_no, ticketed_at, departed_at, arrived_at, delivered_at,
+                   status_name, container_numbers_json
+            FROM shipments
+            WHERE origin_name='高桥镇' AND destination_name='新台子'
+              AND transport_mode_name LIKE '%集装箱%'
+              AND shipper_name=? AND consignee_name=?
+              AND ticketed_at >= ?
+            ORDER BY ticketed_at, car_no
+            """,
+            (LIVE_SHIPPER, LIVE_CONSIGNEE, LIVE_CYCLE_SINCE),
+        ).fetchall()
+        rail.close()
+    except sqlite3.Error:
+        return []
+
+    by_cycle: dict[int, list[tuple]] = {}
+    for row in rows:
+        if str(row[1] or "") in home_by_car:
+            by_cycle.setdefault(home_by_car[str(row[1])], []).append(row)
+    out: list[dict] = []
+    for cyc, cycle_rows in by_cycle.items():
+        ordered = sorted(cycle_rows, key=lambda row: str(row[2] or ""))
+        windows: list[list[tuple]] = []
+        previous: datetime | None = None
+        for row in ordered:
+            try:
+                current = datetime.strptime(str(row[2] or "")[:19], "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                current = None
+            if previous is None or current is None or (current - previous).total_seconds() > 2 * 3600:
+                windows.append([])
+            windows[-1].append(row)
+            if current is not None:
+                previous = current
+        trip_rows = windows[-1]
+        latest_ticket = max(str(row[2] or "") for row in trip_rows)
+        # 同一整列制票可跨数十分钟，按 2 小时窗口而非末次制票分钟聚合。
+        boxes: set[str] = set()
+        delivered_boxes: set[str] = set()
+        for row in trip_rows:
+            try:
+                row_boxes = {str(box) for box in json.loads(row[7] or "[]") if box}
+                boxes.update(row_boxes)
+                if row[5] or str(row[6] or "") == "货物已交付":
+                    delivered_boxes.update(row_boxes)
+            except (TypeError, json.JSONDecodeError):
+                continue
+        out.append({
+            "cyc": cyc, "ship": "实时未分船", "ticketed": latest_ticket,
+            "dep": min((str(row[3] or "") for row in trip_rows if row[3]), default=""),
+            "arr": max((str(row[4] or "") for row in trip_rows if row[4]), default=""),
+            "cars": len({str(row[1]) for row in trip_rows if row[1]}),
+            "total": len(boxes), "deliv": len(delivered_boxes),
+            "last_deliv": max((str(row[5] or "") for row in trip_rows if row[5]), default=""),
+            "full": bool(boxes) and len(delivered_boxes) == len(boxes),
+        })
     return out
 
 

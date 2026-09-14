@@ -18,7 +18,9 @@ DEFAULT_CACHE = REPO_ROOT / "runtime" / "jiusan_cycle_tracking_latest.json"
 DEFAULT_ACCOUNT = "jz-port-super"
 RETURN_EMPTY_HOURS = 10
 PROBES_PER_TRAIN = 4
-TRANSFERRED_CYCLES = frozenset({4, 5})
+# 2026-09-14 实时 95306 校对：#1--#5 的最后集装箱制票均早于当前
+# 新循环车体池；五列均已调出。保留历史车体和趟次，仅从运行中列排除。
+TRANSFERRED_CYCLES = frozenset({1, 2, 3, 4, 5})
 
 
 def _parse_time(value: str | None) -> datetime | None:

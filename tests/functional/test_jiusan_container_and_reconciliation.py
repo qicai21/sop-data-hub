@@ -24,6 +24,10 @@ def test_route_a_metro_fee_uses_marked_weight_not_box_count():
 
 def test_jiusan_container_type_ranges():
     assert classify_container_type("TBCU0405966") == OPEN_TOP
+    assert classify_container_type("TBCU3169999") == OPEN_TOP
+    assert classify_container_type("TBCU3170000") == TOP_OPEN
+    assert classify_container_type("TBCU3199999") == TOP_OPEN
+    assert classify_container_type("TBCU3200000") == OPEN_TOP
     assert classify_container_type("TBJU5939999") == OPEN_TOP
     assert classify_container_type("TBJU5940000") == TOP_OPEN
     assert classify_container_type("TBJU6209999") == TOP_OPEN

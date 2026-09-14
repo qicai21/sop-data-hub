@@ -66,33 +66,33 @@ def _state(trips):
 
 def test_rule1_full_delivered_over_5h_returns_home():
     # 唯一列全交付,末交付 7h 前(>5h)→ 返空回港,返空=0,该列=在装(港重)
-    st = _state({1: ("2026-06-28 10:00:00", "2026-06-28 14:00:00", 100, 100, "2026-06-29 06:00:00")})
+    st = _state({6: ("2026-06-28 10:00:00", "2026-06-28 14:00:00", 100, 100, "2026-06-29 06:00:00")})
     assert st["transit_empty_boxes"] == 0
-    assert st["pos"]["port_loaded"]["cyc"] == 1
+    assert st["pos"]["port_loaded"]["cyc"] == 6
 
 
 def test_rule1_full_delivered_under_5h_in_transit():
     # 全交付仅 2h(<5h)且无更新列 → 返空在途=100
-    st = _state({1: ("2026-06-29 03:00:00", "2026-06-29 07:00:00", 100, 100, "2026-06-29 11:00:00")})
+    st = _state({6: ("2026-06-29 03:00:00", "2026-06-29 07:00:00", 100, 100, "2026-06-29 11:00:00")})
     assert st["transit_empty_boxes"] == 100
-    assert st["transit_empty_cycs"] == [1]
+    assert st["transit_empty_cycs"] == [6]
 
 
 def test_rule2_older_under_5h_superseded_returns_home():
     # 旧列<5h,但有更新进站列已开卸 → 旧列也算回港(规则2);返空=0,旧列=在装
     st = _state({
-        1: ("2026-06-29 03:00:00", "2026-06-29 07:00:00", 100, 100, "2026-06-29 11:00:00"),
-        2: ("2026-06-29 05:00:00", "2026-06-29 09:00:00", 100, 30, "2026-06-29 12:00:00"),
+        6: ("2026-06-29 03:00:00", "2026-06-29 07:00:00", 100, 100, "2026-06-29 11:00:00"),
+        7: ("2026-06-29 05:00:00", "2026-06-29 09:00:00", 100, 30, "2026-06-29 12:00:00"),
     })
     assert st["transit_empty_boxes"] == 0
-    assert st["pos"]["port_loaded"]["cyc"] == 1
+    assert st["pos"]["port_loaded"]["cyc"] == 6
 
 
 def test_rule3_partial_with_newer_prompts_confirm():
     # 旧列到站仅部分交付(30/100)且有更新进站列开卸 → 不计返空 + 人工确认
     st = _state({
-        1: ("2026-06-27 10:00:00", "2026-06-27 14:00:00", 100, 30, "2026-06-28 02:00:00"),
-        2: ("2026-06-28 10:00:00", "2026-06-28 14:00:00", 100, 50, "2026-06-29 06:00:00"),
+        6: ("2026-06-27 10:00:00", "2026-06-27 14:00:00", 100, 30, "2026-06-28 02:00:00"),
+        7: ("2026-06-28 10:00:00", "2026-06-28 14:00:00", 100, 50, "2026-06-29 06:00:00"),
     })
     assert st["transit_empty_boxes"] == 0
     assert len(st["confirms"]) == 1
@@ -101,22 +101,22 @@ def test_rule3_partial_with_newer_prompts_confirm():
 
 def test_transit_loaded_departed_not_arrived():
     # 已发车未到站 → 途重,不计返空
-    st = _state({1: ("2026-06-29 10:00:00", "", 100, 0, "")})
+    st = _state({6: ("2026-06-29 10:00:00", "", 100, 0, "")})
     assert st["transit_empty_boxes"] == 0
-    assert st["pos"]["transit_loaded"]["cyc"] == 1
+    assert st["pos"]["transit_loaded"]["cyc"] == 6
 
 
 def test_phase_anchor_excludes_pre_anchor_ships():
     # 阶段锚(工单 §3b):锚船=和谐1,总池跨船但不回溯锚船之前。
-    # cyc1=和谐1(锚,6/10起);cyc2=锚前旧船(3月)→ 必须被排除,不进循环列状态。
+    # cyc6=和谐1(锚,6/10起);cyc7=锚前旧船(3月)→ 必须被排除,不进循环列状态。
     db = _mkdb(
-        {1: ("2026-06-10 18:00:00", "2026-06-10 23:00:00", 100, 100, "2026-06-29 06:00:00"),
-         2: ("2026-03-01 10:00:00", "2026-03-01 15:00:00", 50, 50, "2026-03-02 06:00:00")},
-        ships={1: jcb.PHASE_START_SHIP, 2: "旧船3月"},
+        {6: ("2026-06-10 18:00:00", "2026-06-10 23:00:00", 100, 100, "2026-06-29 06:00:00"),
+         7: ("2026-03-01 10:00:00", "2026-03-01 15:00:00", 50, 50, "2026-03-02 06:00:00")},
+        ships={6: jcb.PHASE_START_SHIP, 7: "旧船3月"},
     )
     assert jcb._phase_start_date(db) == "2026-06-10 18:00:00"
     cycs = {t["cyc"] for t in jcb._col_latest_trips(db)}
-    assert cycs == {1}            # 锚前的 cyc2 被阶段锚排除
+    assert cycs == {6}            # 锚前的 cyc7 被阶段锚排除
 
 
 def test_pool_key_is_project_level():
@@ -130,6 +130,38 @@ def test_board_uses_shared_transferred_cycle_register():
     from sop_hub.sop.jiusan_cycle_tracking import TRANSFERRED_CYCLES
 
     assert jcb.TRANSFERRED_CYCLES is TRANSFERRED_CYCLES
+
+
+def test_live_rail_trip_overrides_old_local_cycle_trip(monkeypatch, tmp_path):
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE wagon_body_pool(car_no TEXT,project TEXT,home_cycle_no INT)")
+    db.execute(
+        "CREATE TABLE wagon_container_shipments("
+        "car_no TEXT,box_no TEXT,ship_name TEXT,departed_at TEXT,arrived_at TEXT,delivered_at TEXT)"
+    )
+    db.execute("INSERT INTO wagon_body_pool VALUES('8100001','jiusan',6)")
+    db.execute("INSERT INTO wagon_container_shipments VALUES('8100001','OLD','旧船','2026-08-01 01:00:00','2026-08-02 01:00:00','2026-08-02 08:00:00')")
+    rail_path = tmp_path / "rail.db"
+    rail = sqlite3.connect(rail_path)
+    rail.execute("""CREATE TABLE shipments(
+        ydid TEXT, car_no TEXT, ticketed_at TEXT, departed_at TEXT, arrived_at TEXT,
+        delivered_at TEXT, status_name TEXT, container_numbers_json TEXT,
+        origin_name TEXT, destination_name TEXT, transport_mode_name TEXT,
+        shipper_name TEXT, consignee_name TEXT)""")
+    rail.execute("""INSERT INTO shipments VALUES(
+        'Y1','8100001','2026-09-14 05:32:12','2026-09-14 06:00:00','','',
+        '已发车','[\"TBCU3170000\",\"TBCU3170001\"]','高桥镇','新台子','集装箱运输',
+        '锦州新铁晟港口物流有限公司','辽宁诚信集装箱储运有限公司')""")
+    rail.commit(); rail.close()
+    monkeypatch.setattr(jcb, "RAIL_DB", rail_path)
+
+    trips = jcb._col_latest_trips(db)
+
+    assert trips == [{
+        "cyc": 6, "ship": "实时未分船", "ticketed": "2026-09-14 05:32:12",
+        "dep": "2026-09-14 06:00:00", "arr": "", "cars": 1, "total": 2,
+        "deliv": 0, "last_deliv": "", "full": False,
+    }]
 
 
 def test_pool_cycles_keeps_transferred_car_count_for_history_display():
@@ -211,11 +243,11 @@ def test_dashboard_hides_only_june_all_loaded_batches():
 def test_concurrent_returns_summed_not_overwritten():
     # 两列同时到站(互不 supersede)且均<5h → 返空箱**求和**(根治旧版覆盖只剩末列的 bug)
     st = _state({
-        1: ("2026-06-29 03:00:00", "2026-06-29 07:00:00", 100, 100, "2026-06-29 11:00:00"),
-        2: ("2026-06-29 03:00:00", "2026-06-29 07:00:00", 88, 88, "2026-06-29 10:00:00"),
+        6: ("2026-06-29 03:00:00", "2026-06-29 07:00:00", 100, 100, "2026-06-29 11:00:00"),
+        7: ("2026-06-29 03:00:00", "2026-06-29 07:00:00", 88, 88, "2026-06-29 10:00:00"),
     })
     assert st["transit_empty_boxes"] == 188
-    assert sorted(st["transit_empty_cycs"]) == [1, 2]
+    assert sorted(st["transit_empty_cycs"]) == [6, 7]
 
 
 def test_current_ticketed_ignores_stale_pre_departure_residue():
@@ -230,29 +262,29 @@ def test_current_ticketed_ignores_stale_pre_departure_residue():
     )
     db.executemany("INSERT INTO wagon_body_pool VALUES(?,?,?)", [
         ("old4", "jiusan", 4), ("latest4", "jiusan", 4),
-        ("old2", "jiusan", 2), ("pending2", "jiusan", 2),
+        ("old6", "jiusan", 6), ("pending6", "jiusan", 6),
     ])
     db.executemany("INSERT INTO wagon_container_shipments VALUES(?,?,?,?,?,?,?,?)", [
         ("old4", "b1", "y1", "美国", "jiusan", "2026-07-03 12:00:00", "", "集装箱"),
         ("latest4", "b2", "y2", "美国", "jiusan", "2026-07-11 14:00:00", "2026-07-11 22:56:00", "集装箱"),
-        ("old2", "b3", "y3", "美国", "jiusan", "2026-07-10 09:00:00", "2026-07-10 14:04:00", "集装箱"),
-        ("pending2", "b4", "y4", "美国", "jiusan", "2026-07-13 02:00:00", "", "集装箱"),
+        ("old6", "b3", "y3", "美国", "jiusan", "2026-07-10 09:00:00", "2026-07-10 14:04:00", "集装箱"),
+        ("pending6", "b4", "y4", "美国", "jiusan", "2026-07-13 02:00:00", "", "集装箱"),
     ])
 
     trips = jcb._current_ticketed_trips(db)
 
-    assert set(trips) == {2}
-    assert trips[2]["cars"] == 1
+    assert set(trips) == {6}
+    assert trips[6]["cars"] == 1
 
 
 def test_fresh_four_probe_cache_overrides_legacy_cycle_node(tmp_path):
     state = {
         "cycle_rows": [{
-            "cycle_no": 1, "trip_boxes": 100, "trip_cars": 50,
+            "cycle_no": 6, "trip_boxes": 100, "trip_cars": 50,
             "node_key": "transit_loaded", "node_label": "途重",
         }],
-        "pos": {"transit_loaded": {"cyc": 1, "boxes": 100}},
-        "pos_multi": {"transit_loaded": [{"cyc": 1, "boxes": 100}]},
+        "pos": {"transit_loaded": {"cyc": 6, "boxes": 100}},
+        "pos_multi": {"transit_loaded": [{"cyc": 6, "boxes": 100}]},
         "transit_empty_boxes": 0,
         "transit_empty_cycs": [],
     }
@@ -260,7 +292,7 @@ def test_fresh_four_probe_cache_overrides_legacy_cycle_node(tmp_path):
         "available": True, "fresh": True,
         "generated_at": "2026-07-21 12:00:00", "query_count": 4, "error_count": 0,
         "trains": [{
-            "cycle_no": 1, "ship_name": "勇气", "car_count": 50,
+            "cycle_no": 6, "ship_name": "勇气", "car_count": 50,
             "sample_count": 4, "sample_strategy": "previous_outbound_halves",
             "node_key": "ground330", "node_label": "三三零线上作业",
             "state_at": "2026-07-21 11:00:00",
@@ -270,7 +302,7 @@ def test_fresh_four_probe_cache_overrides_legacy_cycle_node(tmp_path):
     result = jcb._apply_tracking_cache(state, cache)
 
     assert "transit_loaded" not in result["pos"]
-    assert result["pos"]["ground330"]["cyc"] == 1
+    assert result["pos"]["ground330"]["cyc"] == 6
     assert result["cycle_rows"][0]["node_label"] == "三三零线上作业"
     assert result["cycle_rows"][0]["tracking_sample_count"] == 4
 

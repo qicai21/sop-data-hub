@@ -20,8 +20,8 @@ def test_default_live_account_uses_jinzhou_port_super_account():
     assert DEFAULT_ACCOUNT == "jz-port-super"
 
 
-def test_transferred_cycle_register_includes_four_and_five():
-    assert TRANSFERRED_CYCLES == frozenset({4, 5})
+def test_transferred_cycle_register_includes_one_through_five():
+    assert TRANSFERRED_CYCLES == frozenset({1, 2, 3, 4, 5})
 
 
 def _sample(**overrides):
@@ -110,7 +110,7 @@ def test_update_cache_queries_exactly_four_per_active_cycle(tmp_path):
     )
     for i in range(1, 9):
         car = f"10000{i:02d}"
-        conn.execute("INSERT INTO wagon_body_pool VALUES('jiusan',?,1)", (car,))
+        conn.execute("INSERT INTO wagon_body_pool VALUES('jiusan',?,6)", (car,))
         conn.execute(
             "INSERT INTO wagon_container_shipments VALUES('jiusan','勇气',?,?,?,?)",
             (f"old{i}", car, f"2026-07-19 01:{i:02d}:00", "2026-07-19 06:00:00"),

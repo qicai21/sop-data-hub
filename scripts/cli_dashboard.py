@@ -291,10 +291,9 @@ def query_projects_with_batches() -> dict[str, list[dict[str, Any]]]:
                       WHERE wcs.batch_id=rb.id)
                 ELSE COALESCE((
                   SELECT SUM(json_array_length(
-                    CASE WHEN ws.container_numbers_json IS NULL
-                              OR ws.container_numbers_json=''
-                         THEN '[]'
-                         ELSE ws.container_numbers_json END))
+                    CASE WHEN json_valid(ws.container_numbers_json)
+                         THEN ws.container_numbers_json
+                         ELSE '[]' END))
                   FROM wagon_shipments ws
                   WHERE ws.batch_id=rb.id AND ws.container_batch_map IS NULL
                 ), 0) + COALESCE((

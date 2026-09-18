@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import signal
@@ -10,14 +11,13 @@ import shutil
 import subprocess
 import tempfile
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable
+
+import dashboard_snapshot
 
 
-DEFAULT_URL = "http://127.0.0.1:8765/"
 DEFAULT_OUTPUT_DIR = Path.home() / "Library/Caches/Codex/sop-dashboard-snapshots"
 SNAPSHOT_GLOB = "freight-dashboard-*.pdf"
 CHROME_CANDIDATES = (
@@ -61,34 +61,6 @@ def find_chrome(explicit: str | None = None) -> Path:
     raise FileNotFoundError("Google Chrome or Chromium was not found")
 
 
-def dashboard_health_url(url: str) -> str:
-    parsed = urllib.parse.urlsplit(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError(f"invalid dashboard URL: {url}")
-    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/healthz", "", ""))
-
-
-def dashboard_snapshot_url(url: str) -> str:
-    parsed = urllib.parse.urlsplit(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError(f"invalid dashboard URL: {url}")
-    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/snapshot", "", ""))
-
-
-def require_healthy_dashboard(url: str, *, timeout: float = 5.0) -> None:
-    request = urllib.request.Request(
-        dashboard_health_url(url),
-        headers={"Accept": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"dashboard health check failed: {exc}") from exc
-    if payload.get("status") != "ok":
-        raise RuntimeError(f"dashboard health check returned: {payload!r}")
-
-
 def build_chrome_command(
     chrome: Path,
     *,
@@ -107,7 +79,7 @@ def build_chrome_command(
         "--disable-default-apps",
         f"--user-data-dir={profile_dir}",
         f"--print-to-pdf={output_path}",
-        dashboard_snapshot_url(url),
+        url,
     ]
 
 
@@ -145,22 +117,85 @@ def stop_process_group(process: subprocess.Popen[bytes]) -> None:
         process.wait(timeout=3)
 
 
+def _number(value: Any) -> str:
+    if value is None or value == "":
+        return "—"
+    if isinstance(value, float):
+        return f"{value:,.2f}".rstrip("0").rstrip(".")
+    return str(value)
+
+
+def _cell(value: Any) -> str:
+    return html.escape(str(value or "—"))
+
+
+def render_snapshot_html(payload: dict[str, Any]) -> str:
+    """Render the versioned local snapshot; never fetch the dashboard web server."""
+    if payload.get("schema_version") != dashboard_snapshot.SCHEMA_VERSION:
+        raise ValueError("incompatible dashboard snapshot schema")
+    rows: list[str] = []
+    for project in payload.get("projects") or []:
+        project_name = _cell(project.get("display_name") or project.get("id"))
+        batches = project.get("batches") or []
+        if not batches:
+            rows.append(f"<tr><td>{project_name}</td><td colspan=8>当前无活跃批次</td></tr>")
+        for batch in batches:
+            rows.append(
+                "<tr>"
+                f"<td>{project_name}</td>"
+                f"<td>{_cell(batch.get('ship_name'))} · {_cell(batch.get('batch_sequence'))}</td>"
+                f"<td>{_cell(batch.get('cargo_product_name') or batch.get('cargo_name'))}</td>"
+                f"<td>{_number(batch.get('planned_tons'))}</td>"
+                f"<td>{_number(batch.get('shipped_tons'))}</td>"
+                f"<td>{_number(batch.get('remaining_tons'))}</td>"
+                f"<td>{_number(batch.get('unit_count'))} {_cell(batch.get('unit'))}</td>"
+                f"<td>{_cell(batch.get('dispatch_status'))}</td>"
+                f"<td>{_cell(batch.get('plan_number'))}</td>"
+                "</tr>"
+            )
+    pending = payload.get("pending_items") or {}
+    cycle = payload.get("jiusan_cycle") or {}
+    return f"""<!doctype html>
+<html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><title>货运看板快照</title>
+<style>
+@page {{ size: A4 landscape; margin: 8mm; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, \"Microsoft YaHei\", sans-serif; color:#1f2933; font-size:9pt; }}
+h1 {{ font-size:18pt; margin:0 0 3mm; }} .meta {{ color:#52616b; margin-bottom:4mm; }}
+.summary {{ display:flex; gap:6mm; margin:3mm 0 5mm; }} .card {{ border:1px solid #cfd6dc; border-radius:4px; padding:3mm 4mm; min-width:38mm; }}
+table {{ border-collapse:collapse; width:100%; }} th,td {{ border:1px solid #cfd6dc; padding:2mm; text-align:left; vertical-align:top; }} th {{ background:#edf2f5; }}
+td:nth-child(n+4) {{ text-align:right; }}
+</style></head><body>
+<h1>货运看板快照</h1>
+<div class=\"meta\">数据生成：{_cell(payload.get('generated_at'))} · 数据契约：{_cell(payload.get('schema_version'))}</div>
+<div class=\"summary\"><div class=\"card\">挂起候选<br><strong>{_number(pending.get('candidate_total'))}</strong></div>
+<div class=\"card\">待货运信息<br><strong>{_number(pending.get('pending_release_notices'))}</strong></div>
+<div class=\"card\">九三循环<br><strong>{_cell(cycle.get('status'))}</strong></div></div>
+<table><thead><tr><th>项目</th><th>船名 / lot</th><th>货物</th><th>计划吨</th><th>已发吨</th><th>剩余吨</th><th>车 / 箱</th><th>状态</th><th>计划号</th></tr></thead>
+<tbody>{''.join(rows)}</tbody></table></body></html>"""
+
+
+def write_snapshot_html(path: Path, snapshot_builder: Callable[[], dict[str, Any]]) -> None:
+    path.write_text(render_snapshot_html(snapshot_builder()), encoding="utf-8")
+
+
 def export_snapshot(
     *,
-    url: str,
     output_dir: Path,
     chrome: Path,
+    snapshot_builder: Callable[[], dict[str, Any]] = dashboard_snapshot.build_snapshot,
 ) -> Path:
-    require_healthy_dashboard(url)
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
     output_path = output_dir / f"freight-dashboard-{timestamp}.pdf"
-    with tempfile.TemporaryDirectory(prefix="sop-dashboard-chrome-") as profile:
+    with tempfile.TemporaryDirectory(prefix="sop-dashboard-pdf-") as temp:
+        temp_path = Path(temp)
+        html_path = temp_path / "freight-dashboard.html"
+        write_snapshot_html(html_path, snapshot_builder)
         command = build_chrome_command(
             chrome,
-            url=url,
+            url=html_path.as_uri(),
             output_path=output_path,
-            profile_dir=Path(profile),
+            profile_dir=temp_path / "chrome-profile",
         )
         process = subprocess.Popen(
             command,
@@ -194,7 +229,6 @@ def export_snapshot(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--url", default=DEFAULT_URL)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--retention-days", type=float, default=3.0)
     parser.add_argument("--chrome")
@@ -215,7 +249,6 @@ def main() -> int:
     output_path = None
     if not args.cleanup_only:
         output_path = export_snapshot(
-            url=args.url,
             output_dir=output_dir,
             chrome=find_chrome(args.chrome),
         )
@@ -223,7 +256,7 @@ def main() -> int:
         "output_path": str(output_path) if output_path else None,
         "removed": [str(path) for path in removed],
         "retention_hours": retention_seconds // 3600,
-        "source_url": args.url,
+        "source": dashboard_snapshot.SCHEMA_VERSION,
     }, ensure_ascii=False))
     return 0
 

@@ -8,7 +8,6 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts"))
 
-import dashboard_web  # noqa: E402
 import export_dashboard_snapshot as snapshot  # noqa: E402
 
 
@@ -37,23 +36,34 @@ def test_cleanup_only_removes_owned_expired_pdf_files(tmp_path):
     assert unrelated_file.exists()
 
 
-def test_chrome_command_uses_static_snapshot_and_suppresses_headers(tmp_path):
+def test_chrome_command_uses_local_static_page_and_suppresses_headers(tmp_path):
     command = snapshot.build_chrome_command(
         Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
-        url="http://127.0.0.1:8765/",
+        url=(tmp_path / "snapshot.html").as_uri(),
         output_path=tmp_path / "snapshot.pdf",
         profile_dir=tmp_path / "profile",
     )
 
     assert "--no-pdf-header-footer" in command
     assert f"--print-to-pdf={tmp_path / 'snapshot.pdf'}" in command
-    assert command[-1] == "http://127.0.0.1:8765/snapshot"
+    assert command[-1] == (tmp_path / "snapshot.html").as_uri()
 
 
-def test_dashboard_page_has_landscape_print_contract():
-    assert "@media print" in dashboard_web.PAGE
-    assert "@page { size: A4 landscape; margin: 8mm; }" in dashboard_web.PAGE
-    assert ".dashboard-table { min-width: 0; font-size: 7pt; }" in dashboard_web.PAGE
+def test_structured_snapshot_page_has_landscape_print_contract_and_escapes_values():
+    page = snapshot.render_snapshot_html({
+        "schema_version": "freight-dashboard.v1", "generated_at": "2026-09-18T18:00:00+08:00",
+        "pending_items": {"candidate_total": 1, "pending_release_notices": 2},
+        "jiusan_cycle": {"status": "ok"},
+        "projects": [{"id": "p", "display_name": "项目<&>", "batches": [{
+            "ship_name": "船<&>", "batch_sequence": "lot1", "cargo_name": "矿石",
+            "planned_tons": 10, "shipped_tons": 4, "remaining_tons": 6,
+            "unit_count": 1, "unit": "wagons", "dispatch_status": "loading", "plan_number": "P1",
+        }]}],
+    })
+    assert "@page { size: A4 landscape; margin: 8mm; }" in page
+    assert "项目&lt;&amp;&gt;" in page
+    assert "船&lt;&amp;&gt;" in page
+    assert "http://127.0.0.1:8765" not in page
 
 
 def test_pdf_completion_requires_header_size_and_eof(tmp_path):

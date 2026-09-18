@@ -96,6 +96,8 @@ def main() -> int:
             )
         if d.get("closeout"):
             print(f"closeout={ {k:v for k,v in d['closeout'].items() if k!='advanced_batches'} }")
+        if d.get("weight_projection"):
+            print(f"weight_projection={d['weight_projection']}")
         if d.get("report_path"):
             print(f"report={d['report_path']}")
         if cycle_tracking is not None:

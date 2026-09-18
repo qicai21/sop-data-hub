@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from types import SimpleNamespace
 from pathlib import Path
 
+import sop_hub.sop.active_status_sync as active_status_sync
+from sop_hub.sop import shipped_weight
 from sop_hub.sop.active_status_sync import (
     discover_active_ships,
     run_active_status_sync,
@@ -75,3 +78,46 @@ def test_run_active_status_sync_dry_run_writes_report(tmp_path, monkeypatch):
     data = json.loads(Path(report.report_path).read_text(encoding="utf-8"))
     assert data["dry_run"] is True
     assert data["totals"]["errors"] >= 1
+
+
+def test_apply_refreshes_weight_projection_outside_dashboard(tmp_path, monkeypatch):
+    db = _db(tmp_path)
+    rail = tmp_path / "rail.sqlite3"
+    rail.touch()
+    calls = []
+
+    class FakeSyncer:
+        def __init__(self, **kwargs):
+            pass
+
+        def sync(self, **kwargs):
+            return SimpleNamespace(
+                total_wagons=1,
+                matched_count=1,
+                unmatched_count=0,
+                update_count=0,
+                departed_update_count=0,
+                arrived_update_count=0,
+                delivered_update_count=0,
+            )
+
+    monkeypatch.setattr(active_status_sync, "ShipmentStatusSync", FakeSyncer)
+    monkeypatch.setattr(
+        shipped_weight,
+        "refresh_active_weight_projections",
+        lambda *, db_path: calls.append(Path(db_path)) or {
+            "attempted": 3, "updated": 2, "skipped": 1, "errors": [],
+        },
+    )
+
+    report = run_active_status_sync(
+        sop_db=db,
+        rail_db=rail,
+        dry_run=False,
+        report_dir=None,
+    )
+
+    assert calls == [db]
+    assert report.weight_projection == {
+        "attempted": 3, "updated": 2, "skipped": 1, "errors": [],
+    }

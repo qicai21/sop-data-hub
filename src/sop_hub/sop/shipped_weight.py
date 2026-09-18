@@ -285,6 +285,45 @@ def compute_all(
         conn.close()
 
 
+def refresh_active_weight_projections(
+    *,
+    db_path: Path | str | None = None,
+    sop_dir: Path | None = None,
+) -> dict:
+    """Refresh persisted weight projections for active dashboard batches.
+
+    This is intentionally an SOP maintenance operation, not a dashboard read.
+    It is invoked by the periodic status-sync job so retiring a display surface
+    cannot silently stop the derived totals it used to refresh on demand.
+    """
+    conn = _open_conn(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT id FROM release_batches "
+            "WHERE dispatch_status NOT IN ('confirmed_received', 'closed') "
+            "ORDER BY id"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    results = [
+        compute_for_release_batch(
+            str(row["id"]), db_path=db_path, sop_dir=sop_dir, write_basis=False
+        )
+        for row in rows
+    ]
+    return {
+        "attempted": len(results),
+        "updated": sum(1 for result in results if result.get("ok")),
+        "skipped": sum(1 for result in results if result.get("error") == "no_shipped_weight_rule"),
+        "errors": [
+            {"release_batch_id": result.get("release_batch_id"), "error": result.get("error")}
+            for result in results
+            if not result.get("ok") and result.get("error") != "no_shipped_weight_rule"
+        ],
+    }
+
+
 if __name__ == "__main__":
     import argparse
     p = argparse.ArgumentParser()

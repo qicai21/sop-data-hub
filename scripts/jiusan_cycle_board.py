@@ -655,6 +655,87 @@ def _cycle_detail_lines(state: dict) -> list[str]:
     return out
 
 
+def build_snapshot() -> dict:
+    """Return the Jiusan cycle read model without terminal presentation.
+
+    Container-pool numbers originate from the latest morning snapshot. Train
+    positions originate from a fresh tracking cache when available, otherwise
+    from the local 95306-derived state machine. Those sources stay explicit so
+    a consumer cannot mistake an operational position for a pool fact.
+    """
+    conn = cd._connect(cd.DB_PATH)
+    if conn is None:
+        return {
+            "status": "unavailable",
+            "warning": "SOP 业务库不可读取",
+            "nodes": [],
+            "cycles": [],
+            "tracking": {"available": False, "fresh": False},
+        }
+    try:
+        today, yesterday = _fetch(conn)
+        tracking_cache = _load_tracking_cache()
+        state = _apply_ops_cycle_override(
+            _apply_tracking_cache(_cycle_state(conn), tracking_cache)
+        )
+        bulk = _bulk_active(conn)
+    finally:
+        conn.close()
+
+    tracking = dict(state.get("tracking_cache") or {
+        "available": False,
+        "fresh": False,
+        "reason": "轨迹缓存不可用",
+    })
+    if not today:
+        return {
+            "status": "unavailable",
+            "warning": "无九三晨报箱池快照",
+            "nodes": [],
+            "cycles": list(state.get("cycle_rows") or []),
+            "tracking": tracking,
+            "confirmations": list(state.get("confirms") or []),
+        }
+
+    def count(key: str) -> int:
+        return int(today.get(key) or 0)
+
+    rail_returning_boxes = int(state.get("transit_empty_boxes") or 0)
+    ground_330 = count("ground330_loaded") + count("ground330_empty")
+    nodes = [
+        {"key": "port_empty", "label": "港空", "boxes": count("port_empty"),
+         "source": "morning_container_pool"},
+        {"key": "port_loaded", "label": "港重", "boxes": count("port_loaded"),
+         "source": "morning_container_pool"},
+        {"key": "transit_loaded", "label": "途重", "boxes": count("transit_loaded"),
+         "source": "morning_container_pool"},
+        {"key": "xtz_loaded", "label": "新台子", "boxes": count("xtz_loaded"),
+         "source": "morning_container_pool"},
+        {"key": "ground_330", "label": "三三零专用线", "boxes": ground_330,
+         "source": "morning_container_pool"},
+        {"key": "transit_empty", "label": "返空",
+         "boxes": max(count("transit_empty"), rail_returning_boxes),
+         "source": "morning_container_pool_or_rail_state"},
+        {"key": "bulk_ticketed", "label": "散粮待发",
+         "wagons": int(bulk.get("已制单") or 0), "source": "sop_business_db"},
+        {"key": "bulk_in_transit", "label": "散粮在途",
+         "wagons": int(bulk.get("已发车") or 0), "source": "sop_business_db"},
+        {"key": "bulk_arrived", "label": "散粮到站",
+         "wagons": int(bulk.get("已到达") or 0), "source": "sop_business_db"},
+    ]
+    return {
+        "status": "ok",
+        "morning_snapshot_date": str(today.get("snapshot_date") or ""),
+        "previous_morning_snapshot_date": str(yesterday.get("snapshot_date") or ""),
+        "total_pool_boxes": count("total_pool"),
+        "nodes": nodes,
+        "cycles": list(state.get("cycle_rows") or []),
+        "tracking": tracking,
+        "confirmations": list(state.get("confirms") or []),
+        "transferred_cycles": list(state.get("transferred_cycles") or []),
+    }
+
+
 def _delta(today, yest, key) -> str:
     """净变化 ▲N/▼N(快照今昨差;gross +进/-出 待 95306/晨报流量子系统,暂用净)。"""
     if not yest or today.get(key) is None or yest.get(key) is None:

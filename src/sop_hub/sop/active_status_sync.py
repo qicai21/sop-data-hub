@@ -63,6 +63,7 @@ class ActiveStatusSyncReport:
     run_closeout: bool = False
     ships: list[ShipSyncOutcome] = field(default_factory=list)
     closeout: dict[str, Any] = field(default_factory=dict)
+    weight_projection: dict[str, Any] = field(default_factory=dict)
     report_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -74,6 +75,7 @@ class ActiveStatusSyncReport:
             "ship_count": len(self.ships),
             "ships": [asdict(s) for s in self.ships],
             "closeout": self.closeout,
+            "weight_projection": self.weight_projection,
             "report_path": self.report_path,
             "totals": {
                 "units": sum(s.total_units for s in self.ships),
@@ -195,6 +197,16 @@ def run_active_status_sync(
                 ]
         except Exception as exc:  # noqa: BLE001
             report.closeout = {"error": str(exc)}
+
+    if not dry_run:
+        try:
+            from sop_hub.sop.shipped_weight import refresh_active_weight_projections
+
+            report.weight_projection = refresh_active_weight_projections(
+                db_path=sop_path
+            )
+        except Exception as exc:  # noqa: BLE001 — status sync remains observable
+            report.weight_projection = {"error": str(exc)}
 
     report.finished_at = datetime.now().isoformat(timespec="seconds")
     return _write_report(report, report_dir)

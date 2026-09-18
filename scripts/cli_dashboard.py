@@ -197,27 +197,11 @@ def refresh_active_shipped_weights(throttle_s: int = 30) -> None:
     if now - _last_sw_recompute < throttle_s:
         return
     _last_sw_recompute = now
-    conn = _connect(DB_PATH)
-    if conn is None:
-        return
     try:
-        ids = [r[0] for r in conn.execute(
-            "SELECT id FROM release_batches "
-            "WHERE dispatch_status NOT IN ('confirmed_received','closed')"
-        ).fetchall()]
-    except sqlite3.Error:
-        return
-    finally:
-        conn.close()
-    try:
-        from sop_hub.sop.shipped_weight import compute_for_release_batch
+        from sop_hub.sop.shipped_weight import refresh_active_weight_projections
+        refresh_active_weight_projections(db_path=DB_PATH)
     except Exception:
         return
-    for bid in ids:
-        try:
-            compute_for_release_batch(bid, db_path=DB_PATH, write_basis=False)
-        except Exception:
-            continue
 
 
 def _railway_plan_day_window() -> tuple[str, str]:

@@ -260,10 +260,16 @@ def infer_candidate_context(
         # Step B
         fusion = _try_text_fusion(group_name, received_datetime, conn)
         if fusion:
+            # Lifecycle v2 marks a freight-complete batch as ``enriched``
+            # before the first inspection slip is matched.  The historical
+            # in_progress/suspended filter made text fusion name the ship but
+            # then discard the already-authorized lot, leaving a bare
+            # candidate with no destination/cargo for the executor.
             rb_row = conn.execute(
                 "SELECT id, project, ship_name, destination_station, cargo_name "
                 "FROM release_batches "
-                "WHERE ship_name=? AND dispatch_status IN ('in_progress','suspended') "
+                "WHERE ship_name=? AND dispatch_status IN "
+                "('pending_freight','enriched','loading') "
                 "ORDER BY notice_date DESC LIMIT 1",
                 (fusion["ship_name"],),
             ).fetchone()

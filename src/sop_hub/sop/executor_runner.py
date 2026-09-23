@@ -373,6 +373,19 @@ def find_release_batch_with_reason(
 
 # ── Core runner ─────────────────────────────────────────────────────────
 
+def _verification_order_id(release_batch: dict[str, Any]) -> str:
+    """Return the portal query scope for one release batch.
+
+    吉林门户的列表接口在 orderId 为空时会返回全量历史记录。反查必须优先
+    使用已确认的订单标识，才能保持 per-event present+unique 校验有界。
+    """
+    return str(
+        release_batch.get("order_identifier")
+        or release_batch.get("order_id")
+        or release_batch.get("plan_id")
+        or ""
+    ).strip()
+
 def run_departure_executor_chain(
     event: MessageEvent,
     *,
@@ -756,7 +769,8 @@ def run_departure_executor_chain(
                             )
                             _cv.close()
                         verify = verify_factory_upload(
-                            order_id="", release_batch_id=preview.release_batch_id,
+                            order_id=_verification_order_id(rb),
+                            release_batch_id=preview.release_batch_id,
                             expected_box_numbers=event_boxes or None,
                             expected_unique_keys=event_box_wagon_keys or None,
                             expected_count=(len(event_box_wagon_keys) or len(event_boxes) or None),

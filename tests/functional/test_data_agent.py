@@ -1171,6 +1171,7 @@ class TestProjectKnownShips:
         assert "蓝鳍" in ships
         assert "马兰希望" in ships
         assert "锦泰远盛" in ships
+        assert "高栏309" in ships
 
     def test_zhongtang_known_ships_include_new_arrival_vessels(self):
         """中唐到港船名须先登记，才可安全创建批次及授权后续发运文本。"""

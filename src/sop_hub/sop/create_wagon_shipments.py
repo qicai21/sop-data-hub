@@ -575,8 +575,8 @@ def create_wagon_shipments_from_candidates(
                                     batch_id, ticketed_at, departed_at, arrived_at, delivered_at,
                                     origin_name, destination_name, cargo_name,
                                     project_id, ship_name, dispatch_status,
-                                    source_message_id, source_group_id
-                                ) VALUES (?,?,?,?,?,?, ?, ?,?,?,?, ?,?,?, ?,?,?, ?,?)""",
+                                    source_message_id, source_group_id, loading_line
+                                ) VALUES (?,?,?,?,?,?, ?, ?,?,?,?, ?,?,?, ?,?,?, ?,?,?)""",
                                 (
                                     row_id, plan.wagon_no, box, idx, plan.ydid, plan.waybill_no,
                                     release_batch_id,
@@ -585,13 +585,23 @@ def create_wagon_shipments_from_candidates(
                                     plan.origin_station, plan.destination_station,
                                     plan.cargo_name,
                                     departure_candidate.project_id, ship_name, "in_progress",
-                                    departure_candidate.message_id, departure_candidate.group_id,
+                                    departure_candidate.message_id, departure_candidate.group_id, loading_line,
                                 ),
                             )
                             if cursor.rowcount == 1:
                                 inserted_container_ydids.add(plan.ydid)
                         except sqlite3.IntegrityError:
                             pass
+                # 同一条文本的补跑可能只遇到既有箱级行；该事件的道线仍应补齐，
+                # 但绝不触碰其它来源/其它批次的历史记录。
+                if loading_line:
+                    sop_conn.execute(
+                        """UPDATE wagon_container_shipments
+                           SET loading_line=?
+                         WHERE batch_id=? AND source_message_id=?
+                           AND COALESCE(loading_line, '')=''""",
+                        (loading_line, release_batch_id, departure_candidate.message_id),
+                    )
                 sop_conn.commit()
                 if jilin_container_only:
                     # 吉林金钢没有车级双写；唯一可报告的成功数是本次实际写入

@@ -238,6 +238,16 @@ def test_e2e_jilin_lanqi_50cars_chain_step1_to_step5(jilin_e2e_dbs):
     conn.close()
     assert n_wagons == 0, f"吉林不应写老表 (got {n_wagons})"
     assert n_boxes == 100, f"新表应有 100 box (got {n_boxes})"
+    conn = sqlite3.connect(str(sop_db))
+    loading_lines = {
+        row[0]
+        for row in conn.execute(
+            "SELECT DISTINCT loading_line FROM wagon_container_shipments "
+            "WHERE project_id='jilin_jingang_jinzhou'"
+        )
+    }
+    conn.close()
+    assert loading_lines == {"煤六"}
 
     # ── Step 4b: allocate_container_ydids ─────────────────────────
     from sop_hub.sop.dispatch_plan import allocate_container_ydids

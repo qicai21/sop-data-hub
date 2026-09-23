@@ -137,6 +137,7 @@ def test_departure_text_parser_examples_per_project_all_complete():
             "十四道 41节 四平铁 厦门世纪",
             "煤六  四平铁\"蓝鳍\"18节",
             "九道   四平镍\"长航滨海\"46节",
+            "七道 51节 四平铁 高栏309",
         ],
         # 中唐用 inspection chain(图),text "煤五汐子铁鞍子河实装54节" 也走 freight
         # 但 parser 是 jilin 的 departure;此处不测中唐。

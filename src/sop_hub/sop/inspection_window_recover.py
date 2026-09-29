@@ -34,6 +34,7 @@ def recover_loading_cars_via_window(
     expected_loading_count: int | None = None,
     authoritative_text_expected_count: int | None = None,
     allow_exact_notice_subset: bool = False,
+    allow_empty_head_ticket_recovery: bool = False,
     auto_correct_car_no: bool = True,
     max_correct_edit_distance: int = 2,
     max_correct_pairs: int = 3,
@@ -61,6 +62,9 @@ def recover_loading_cars_via_window(
       allow_exact_notice_subset: 中唐可能有多列在同一 95306 制票窗口。若通知单
         实装车数已齐、每个实装车均有本窗货票，允许只采用通知单精确子集，
         不把同窗另一列误判为本列漏车。默认关闭，保留朝钢不拼列铁律。
+      allow_empty_head_ticket_recovery: 仅用于已确认存在空头票的项目。允许将
+        同一承认车需求号、已装车但尚无货票号的通知单精确车号并入当前制票
+        窗口；必须与制票车共同精确闭合通知单实装数，默认关闭。
       auto_correct_car_no: 开关 —— 是否启用"通知单错号 vs 95306 自动核对纠错"
         (2026-06-29 #检装车号95306自动核对纠错)。通知单上的车号有时本身录错
         (非 OCR,是单子写错),反推后表现为:真排车数 == 异常数 == N(N≥1)。
@@ -91,6 +95,7 @@ def recover_loading_cars_via_window(
              "source": "95306_window"}, ...
         ],
         "auto_corrected": bool,        ← 本次是否发生了自动纠错
+        "empty_head_ticket_car_nos": [...], ← 经严格校验并入的空头票车号
         "anchor_attempts": int,
         "message": "...",
       }
@@ -161,8 +166,12 @@ def recover_loading_cars_via_window(
             }
 
         # ── 2. 用锚点 ticketed_at 建窗,查窗内所有 dest+cargo 制票车号 ──
+        shipment_columns = {
+            str(row[1]) for row in rail.execute("PRAGMA table_info(shipments)").fetchall()
+        }
+        raw_core_column = "raw_core_json" if "raw_core_json" in shipment_columns else "''"
         rows = rail.execute(
-            "SELECT DISTINCT car_no FROM shipments "
+            f"SELECT DISTINCT car_no, {raw_core_column} AS raw_core_json FROM shipments "
             "WHERE destination_name=? AND cargo_name LIKE ? "
             "  AND ticketed_at IS NOT NULL AND ticketed_at != '' "
             "  AND ticketed_at BETWEEN datetime(?, ?) AND datetime(?, ?)",
@@ -206,6 +215,8 @@ def recover_loading_cars_via_window(
         exact_expected_window_recovery = False
         exact_text_window_recovery = False
         exact_notice_subset_recovery = False
+        empty_head_ticket_car_nos: list[str] = []
+        empty_head_request_ids: list[str] = []
         if (
             text_expected > 0
             and len(window_cars) == text_expected
@@ -238,6 +249,39 @@ def recover_loading_cars_via_window(
             missing_from_notice = []
             exact_notice_subset_recovery = True
 
+        # 空头票并非没有 95306 事实：铁路可先将车号填入承认车记录，随后再
+        # 生成货票号/制票时间。默认不采纳这种记录，只有当前制票窗已有锚点、
+        # 两类车共享同一承认车需求号，且两者恰好闭合通知单实装数时才放行。
+        # 这避免把同车历史趟或未发的承认车误并入当前发运。
+        if (
+            allow_empty_head_ticket_recovery
+            and expected > len(loading)
+            and anchor_ts
+        ):
+            empty_head_ticket_car_nos, empty_head_request_ids = (
+                _find_exact_empty_head_ticket_cars(
+                    rail,
+                    ticket_window_rows=rows,
+                    candidate_car_nos=loading_car_nos,
+                    existing_loading_cars=loading,
+                    destination=destination,
+                    cargo_pattern=cargo_pattern,
+                    anchor_ticketed_at=anchor_ts,
+                )
+            )
+            recovered = set(loading) | set(empty_head_ticket_car_nos)
+            required = {c for c in loading_car_nos if c}
+            if (
+                len(loading_car_nos) == len(required)
+                and len(recovered) == expected
+                and recovered == required
+            ):
+                loading = sorted(recovered)
+                notice_only = sorted(set(notice_only) - set(empty_head_ticket_car_nos))
+            else:
+                empty_head_ticket_car_nos = []
+                empty_head_request_ids = []
+
         # ── 4. 异常 sanity ──────────────────────────────────────────────
         status = "ok"
         msg = (
@@ -259,6 +303,11 @@ def recover_loading_cars_via_window(
             msg += (
                 f";通知单实装={expected}且全部命中95306,"
                 "已按通知单精确子集与同窗其他列分开"
+            )
+        if empty_head_ticket_car_nos:
+            msg += (
+                f";空头票严格恢复 {len(empty_head_ticket_car_nos)} 车"
+                f"(承认车需求号 {','.join(empty_head_request_ids)})"
             )
         if corrections:
             pairs = ", ".join(
@@ -304,11 +353,93 @@ def recover_loading_cars_via_window(
             "exact_expected_window_recovery": exact_expected_window_recovery,
             "exact_text_window_recovery": exact_text_window_recovery,
             "exact_notice_subset_recovery": exact_notice_subset_recovery,
+            "empty_head_ticket_car_nos": empty_head_ticket_car_nos,
+            "empty_head_ticket_request_ids": empty_head_request_ids,
             "anchor_attempts": attempts,
             "message": msg,
         }
     finally:
         rail.close()
+
+
+def _find_exact_empty_head_ticket_cars(
+    rail: sqlite3.Connection,
+    *,
+    ticket_window_rows: list[sqlite3.Row],
+    candidate_car_nos: list[str],
+    existing_loading_cars: list[str],
+    destination: str,
+    cargo_pattern: str,
+    anchor_ticketed_at: str,
+) -> tuple[list[str], list[str]]:
+    """Return only rigorously linked empty-head cars for the current ticket window.
+
+    An empty-head record has a real YDID and loaded car number but no ticket date
+    or waybill yet. It is admissible only when its request number matches a
+    ticketed row in the active window and its acceptance is within the railway's
+    five-day usable-request window ending at the ticket anchor.
+    """
+    columns = {
+        str(row[1])
+        for row in rail.execute("PRAGMA table_info(shipments)").fetchall()
+    }
+    required_columns = {
+        "ydid", "car_no", "destination_name", "cargo_name", "ticketed_at",
+        "accepted_at", "latest_stage_key", "status_name", "raw_core_json",
+    }
+    if not required_columns.issubset(columns):
+        return [], []
+
+    request_ids: set[str] = set()
+    for row in ticket_window_rows:
+        try:
+            raw = json.loads(row["raw_core_json"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            raw = {}
+        request_id = str(raw.get("xqslh") or "").strip()
+        if request_id:
+            request_ids.add(request_id)
+    if not request_ids:
+        return [], []
+
+    existing = {str(car).strip() for car in existing_loading_cars if car}
+    wanted = sorted({str(car).strip() for car in candidate_car_nos if car} - existing)
+    if not wanted:
+        return [], []
+
+    placeholders = ",".join("?" for _ in wanted)
+    rows = rail.execute(
+        f"""
+        SELECT ydid, car_no, accepted_at, latest_stage_key, status_name,
+               raw_core_json
+        FROM shipments
+        WHERE car_no IN ({placeholders})
+          AND destination_name=?
+          AND cargo_name LIKE ?
+          AND (ticketed_at IS NULL OR ticketed_at='')
+          AND accepted_at IS NOT NULL
+          AND accepted_at BETWEEN datetime(?, '-5 days') AND datetime(?)
+          AND (latest_stage_key='loading_completed' OR status_name='已装车')
+        """,
+        [*wanted, destination, cargo_pattern, anchor_ticketed_at, anchor_ticketed_at],
+    ).fetchall()
+
+    cars: list[str] = []
+    matched_request_ids: set[str] = set()
+    for row in rows:
+        try:
+            raw = json.loads(row["raw_core_json"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            raw = {}
+        request_id = str(raw.get("xqslh") or "").strip()
+        if request_id not in request_ids:
+            continue
+        car_no = str(row["car_no"] or "").strip()
+        if car_no:
+            cars.append(car_no)
+            matched_request_ids.add(request_id)
+
+    return sorted(set(cars)), sorted(matched_request_ids)
 
 
 # ── 通知单错号 vs 95306 自动核对纠错 ────────────────────────────────────────

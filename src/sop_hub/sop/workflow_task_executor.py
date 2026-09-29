@@ -1901,6 +1901,9 @@ def _execute_chaoyang_inspection_chain(
                 int(adjacent_text["expected_count"]) if adjacent_text else None
             ),
             allow_exact_notice_subset=(project_id == "zhongtang_special_steel"),
+            # 朝钢允许“当期制票 + 同承认车需求号已装车空头票”严格闭合；
+            # 其他项目仍只认可常规制票时间窗，避免把承认车误当发运事实。
+            allow_empty_head_ticket_recovery=(project_id == "chaoyang_steel"),
             **autocorrect_config_from_env(),
         )
         if recover["status"] == "no_ticket_yet":

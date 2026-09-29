@@ -106,6 +106,69 @@ def test_partial_ticket_window_does_not_finalize_when_notice_count_is_known(tmp_
     assert "15/53" in r["message"]
 
 
+def test_exact_empty_head_tickets_complete_notice_only_when_same_request(tmp_path):
+    """朝钢 31 张制票加 22 张同需求号空头票，严格闭合 53 车才放行。"""
+    db = tmp_path / "rail.sqlite3"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE shipments ("
+        " ydid TEXT PRIMARY KEY, car_no TEXT, destination_name TEXT,"
+        " cargo_name TEXT, ticketed_at TEXT, accepted_at TEXT,"
+        " latest_stage_key TEXT, status_name TEXT, raw_core_json TEXT)"
+    )
+    ticketed = [f"17{i:05d}" for i in range(31)]
+    empty_head = [f"18{i:05d}" for i in range(22)]
+    request = "202609TY677956"
+    conn.executemany(
+        "INSERT INTO shipments VALUES (?,?,?,?,?,?,?,?,?)",
+        [
+            (
+                f"ticket-{i}", car, "朝阳西", "铁矿粉",
+                f"2026-09-29 07:06:{i % 10:02d}", "2026-09-28 09:26:00",
+                "departed", "已发车", json.dumps({"xqslh": request}),
+            )
+            for i, car in enumerate(ticketed)
+        ]
+        + [
+            (
+                f"empty-{i}", car, "朝阳西", "铁矿粉", None,
+                "2026-09-24 10:00:00", "loading_completed", "已装车",
+                json.dumps({"xqslh": request}),
+            )
+            for i, car in enumerate(empty_head)
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    recovered = recover_loading_cars_via_window(
+        rail_db_path=db,
+        loading_car_nos=[*ticketed, *empty_head],
+        all_notice_car_nos=[*ticketed, *empty_head, "1551649"],
+        destination="朝阳西",
+        min_ticketed_at="2026-09-28 18:00:00",
+        expected_loading_count=53,
+        allow_empty_head_ticket_recovery=True,
+    )
+
+    assert recovered["status"] == "ok"
+    assert set(recovered["loading_car_nos"]) == set(ticketed + empty_head)
+    assert set(recovered["empty_head_ticket_car_nos"]) == set(empty_head)
+    assert recovered["empty_head_ticket_request_ids"] == [request]
+
+    blocked = recover_loading_cars_via_window(
+        rail_db_path=db,
+        loading_car_nos=[*ticketed, *empty_head],
+        all_notice_car_nos=[*ticketed, *empty_head],
+        destination="朝阳西",
+        min_ticketed_at="2026-09-28 18:00:00",
+        expected_loading_count=53,
+        allow_empty_head_ticket_recovery=False,
+    )
+    assert blocked["status"] == "no_ticket_yet"
+    assert blocked["empty_head_ticket_car_nos"] == []
+
+
 def test_exact_expected_window_recovers_vlm_duplicate_and_missing_car(tmp_path):
     """页脚51=整窗51且高重合时，以95306整窗恢复VLM重复号和漏号。"""
     db = tmp_path / "rail.sqlite3"

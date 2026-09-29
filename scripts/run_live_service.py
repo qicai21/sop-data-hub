@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Mapping
@@ -399,12 +400,30 @@ def _validate_startup(
 # 旧用 event.message_id (wx_<seq>),seq 每月归 0,跨月撞同名 → retry path 拿到
 # 过期月份的 source_file → 永远找不到 payload → 死循环 retry。
 # 新 key 直接锁定 jsonl 文件 + 文件内 local_id,全局唯一,无碰撞。
-# 同时加 max_retries 阈值,超阈值直接标 abandoned,避免历史死任务占用 retry 轮。
-_WAITING_MEDIA_MAX_RETRIES = 200
+# 图片下载是异步 UI 操作，live-service 却以秒级轮询运行。若按轮数上限计算，
+# 一条正常等待下载的图片会在数分钟内被误判放弃。改为限频检查，并按实际等待时长
+# 才放弃；历史的 ``retries`` 字段保留作诊断，不再是终止条件。
+_WAITING_MEDIA_RETRY_INTERVAL_SECONDS = 60
+_WAITING_MEDIA_ABANDON_AFTER_SECONDS = 6 * 60 * 60
 
 
 def _waiting_media_index_path(runtime_root: Path) -> Path:
     return runtime_root / "waiting_media_index.json"
+
+
+def _elapsed_seconds(value: Any) -> float | None:
+    """Return elapsed seconds from an ISO timestamp, or None for malformed data."""
+    if not value:
+        return None
+    try:
+        from datetime import UTC, datetime
+
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return max(0.0, (datetime.now(UTC) - parsed.astimezone(UTC)).total_seconds())
+    except (TypeError, ValueError):
+        return None
 
 
 def _compute_todo_key(source_file: str | Path, local_id: Any) -> str:
@@ -433,10 +452,15 @@ def _load_waiting_media_index(runtime_root: Path) -> dict[str, Any]:
 
 def _save_waiting_media_index(runtime_root: Path, index: dict[str, Any]) -> Path:
     path = _waiting_media_index_path(runtime_root)
-    tmp = path.with_suffix(path.suffix + ".tmp")
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tmp.open("w", encoding="utf-8") as f:
+    # A manual check may overlap the long-running service. A fixed ``.tmp`` name
+    # lets one writer replace the other writer's staging file mid-write.
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=path.parent,
+        prefix=f".{path.name}.", suffix=".tmp", delete=False,
+    ) as f:
         json.dump(index, f, ensure_ascii=False, indent=2)
+        tmp = Path(f.name)
     tmp.replace(path)
     return path
 
@@ -505,17 +529,22 @@ def _retry_waiting_media(
         if entry.get("status") in ("done", "abandoned"):
             continue
 
-        # #109:retry 超阈值 → 标 abandoned。绝大多数死任务是跨月 source_file 撞名
-        # (旧版 wx_<seq> key)或 jsonl 已轮转 — 无脑 retry 永远不会成功。
         retries_now = int(entry.get("retries") or 0)
-        if retries_now >= _WAITING_MEDIA_MAX_RETRIES:
+        waiting_age = _elapsed_seconds(entry.get("added_at"))
+        if waiting_age is not None and waiting_age >= _WAITING_MEDIA_ABANDON_AFTER_SECONDS:
             logger.warning(
-                "waiting_media_retry: max retries reached (%d) for mid=%s, marking abandoned",
-                retries_now, mid,
+                "waiting_media_retry: media unavailable for %.0fs (%d checks) mid=%s, marking abandoned",
+                waiting_age, retries_now, mid,
             )
             entry["status"] = "abandoned"
             entry["abandoned_at"] = _utc_now_iso()
+            entry["abandoned_reason"] = "media_unavailable_timeout"
             dirty = True
+            continue
+
+        # Do not turn the 1-second polling loop into 60 retry records per minute.
+        last_check_age = _elapsed_seconds(entry.get("last_checked_at"))
+        if last_check_age is not None and last_check_age < _WAITING_MEDIA_RETRY_INTERVAL_SECONDS:
             continue
 
         source_file = entry.get("source_file", "")
@@ -565,7 +594,7 @@ def _retry_waiting_media(
                 "waiting_media_retry: media ready mid=%s media_status=%s -> %s",
                 mid, entry.get("media_status"), new_ms,
             )
-            process_event_once(
+            result = process_event_once(
                 event=new_event,
                 monitoring_plan=monitoring_plan,
                 runtime_root=runtime_root,
@@ -574,6 +603,21 @@ def _retry_waiting_media(
                 cursor=None,  # do NOT regress cursor
                 cursor_path_override=cursor_path_override,
             )
+            image_auto = result.get("image_auto") or {}
+            if image_auto.get("category") == "error":
+                # Media succeeded but classification did not. In particular MLX
+                # may reject a transient concurrent vision batch; preserve the
+                # item for the next serialized poll instead of falsely closing it.
+                entry["retries"] = retries_now + 1
+                entry["last_checked_at"] = _utc_now_iso()
+                entry["last_error"] = image_auto.get("error", "VLM classification failed")
+                entry["status"] = "waiting"
+                dirty = True
+                logger.warning(
+                    "waiting_media_retry: classification failed mid=%s; retaining for retry: %s",
+                    mid, entry["last_error"],
+                )
+                continue
             index = _mark_waiting_media_done(runtime_root, mid, logger, index=index)
             retried += 1
             dirty = True

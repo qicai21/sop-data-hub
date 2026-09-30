@@ -1,6 +1,6 @@
 import sqlite3
 
-from sop_hub.sop.dispatch_plan import set_plan
+from sop_hub.sop.dispatch_plan import list_active_plans, set_plan
 
 
 def test_set_plan_seeds_allocated_count_from_existing_container_rows(tmp_path):
@@ -95,3 +95,33 @@ def test_set_plan_marks_completed_when_existing_boxes_reach_plan(tmp_path):
 
     assert rows[0].allocated_box_count == 306
     assert rows[0].status == "completed"
+
+
+def test_closed_release_batch_excludes_stale_active_plan(tmp_path):
+    db = tmp_path / "sop.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE release_batches (
+          id TEXT PRIMARY KEY, dispatch_status TEXT
+        );
+        CREATE TABLE release_batch_dispatch_plan (
+          release_batch_id TEXT PRIMARY KEY, project_id TEXT, ship_name TEXT,
+          planned_box_count INTEGER, allocated_box_count INTEGER,
+          priority_order INTEGER, status TEXT, notes TEXT
+        );
+        INSERT INTO release_batches VALUES ('closed_lot', 'closed');
+        INSERT INTO release_batches VALUES ('loading_lot', 'loading');
+        INSERT INTO release_batch_dispatch_plan VALUES
+          ('closed_lot','jilin_jingang_jinzhou','林加尼',308,54,1,'active',''),
+          ('loading_lot','jilin_jingang_jinzhou','林加尼',308,10,2,'active','');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    plans = list_active_plans(
+        "jilin_jingang_jinzhou", "林加尼", db_path=db,
+    )
+
+    assert [plan.release_batch_id for plan in plans] == ["loading_lot"]

@@ -227,7 +227,8 @@ def mark_external_action_executed(
     now = _now_iso()
     conn.execute(
         "UPDATE external_action_log SET action_status = 'executed', "
-        "response_json = ?, artifact_path = ?, executed_at = ?, updated_at = ? "
+        "response_json = ?, artifact_path = ?, error_message = NULL, "
+        "executed_at = ?, updated_at = ? "
         "WHERE idempotency_key = ?",
         (json.dumps(response_json, ensure_ascii=False) if response_json else None,
          artifact_path, now, now, idempotency_key),

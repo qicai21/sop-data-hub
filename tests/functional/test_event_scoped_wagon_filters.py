@@ -5,6 +5,7 @@ import sqlite3
 from sop_hub.external.chaoyang_ansteel.upload_wagons import fetch_wagons
 from sop_hub.sop.departure_excel import _extract_rows
 from sop_hub.sop.executor_runner import (
+    _fetch_container_event_ydids,
     _fetch_event_boxes_for_batch,
     _fetch_event_wagon_ids,
 )
@@ -202,6 +203,39 @@ def test_executor_runner_fetch_event_boxes_prefers_ydids(tmp_path):
 
     assert boxes == {"NEW-BOX-1", "NEW-BOX-2"}
     assert keys == {"NEW-BOX-1|1644106", "NEW-BOX-2|1664992"}
+
+
+def test_jilin_container_event_scope_excludes_old_window_tickets(tmp_path):
+    db = tmp_path / "sop.db"
+    _seed_db(db)
+
+    conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        CREATE TABLE wagon_container_shipments (
+          batch_id TEXT, car_no TEXT, box_no TEXT, ydid TEXT,
+          source_message_id TEXT, ticketed_at TEXT
+        );
+        """
+    )
+    conn.executemany(
+        "INSERT INTO wagon_container_shipments VALUES (?,?,?,?,?,?)",
+        [
+            ("batch1", "1644106", "OLD-BOX", "YD-old", "wx_old", "2026-07-05 18:26:31"),
+            ("batch1", "1664992", "NEW-BOX", "YD-new", "wx_new", "2026-07-08 10:51:15"),
+        ],
+    )
+    conn.commit()
+    try:
+        ydids = _fetch_container_event_ydids(
+            conn, "batch1", source_message_id="wx_new",
+            ydids=["YD-old", "YD-new"],
+        )
+    finally:
+        conn.close()
+
+    assert ydids == ["YD-new"]
 
 
 def test_workflow_event_count_rejects_car_only_fallback_for_wagon_projects(tmp_path):

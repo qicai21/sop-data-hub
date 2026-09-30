@@ -87,6 +87,43 @@ def _now_iso() -> str:
     return now_iso_beijing()
 
 
+def _active_plan_rows(
+    conn: sqlite3.Connection,
+    project_id: str,
+    ship_name: str | None = None,
+) -> list[sqlite3.Row]:
+    """Return plans whose own and parent-batch states are both dispatchable."""
+    batch_columns = {
+        str(row["name"])
+        for row in conn.execute("PRAGMA table_info(release_batches)").fetchall()
+    }
+    clauses = [
+        "p.project_id=?",
+        "p.status='active'",
+    ]
+    values: list[str] = [project_id]
+    if ship_name:
+        clauses.append("p.ship_name=?")
+        values.append(ship_name)
+    if "dispatch_status" not in batch_columns:
+        # Small legacy/replay schemas model plans but not lifecycle.  Keep
+        # their historical active-plan behavior; production has this column.
+        return conn.execute(
+            "SELECT p.* FROM release_batch_dispatch_plan p WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY p.priority_order ASC, p.release_batch_id ASC",
+            values,
+        ).fetchall()
+    clauses.append("b.dispatch_status IN ('enriched', 'loading')")
+    return conn.execute(
+        "SELECT p.* FROM release_batch_dispatch_plan p "
+        "JOIN release_batches b ON b.id=p.release_batch_id WHERE "
+        + " AND ".join(clauses)
+        + " ORDER BY p.priority_order ASC, p.release_batch_id ASC",
+        values,
+    ).fetchall()
+
+
 # ── Plan management ─────────────────────────────────────────────────────
 
 
@@ -160,20 +197,7 @@ def list_active_plans(
     """Return active plans for (project, ship), priority ASC then remaining DESC."""
     conn = _conn(db_path)
     try:
-        if ship_name:
-            rows = conn.execute(
-                "SELECT * FROM release_batch_dispatch_plan "
-                "WHERE project_id=? AND ship_name=? AND status='active' "
-                "ORDER BY priority_order ASC, release_batch_id ASC",
-                (project_id, ship_name),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM release_batch_dispatch_plan "
-                "WHERE project_id=? AND status='active' "
-                "ORDER BY priority_order ASC, release_batch_id ASC",
-                (project_id,),
-            ).fetchall()
+        rows = _active_plan_rows(conn, project_id, ship_name)
     finally:
         conn.close()
     return [
@@ -292,12 +316,7 @@ def allocate_wagons(
             result.error = "no wagon_shipments found for given ids"
             return result
 
-        plans = conn.execute(
-            "SELECT * FROM release_batch_dispatch_plan "
-            "WHERE project_id=? AND ship_name=? AND status='active' "
-            "ORDER BY priority_order ASC, release_batch_id ASC",
-            (project_id, ship_name),
-        ).fetchall()
+        plans = _active_plan_rows(conn, project_id, ship_name)
         if not plans:
             result.error = (
                 f"no active plans for project={project_id} ship={ship_name}"
@@ -461,12 +480,7 @@ def allocate_container_ydids(
             result.error = "no wagon_container_shipments found for given ydids"
             return result
 
-        plans = conn.execute(
-            "SELECT * FROM release_batch_dispatch_plan "
-            "WHERE project_id=? AND ship_name=? AND status='active' "
-            "ORDER BY priority_order ASC, release_batch_id ASC",
-            (project_id, ship_name),
-        ).fetchall()
+        plans = _active_plan_rows(conn, project_id, ship_name)
         if not plans:
             return result  # no explicit box plan: retain the matched release batch
 

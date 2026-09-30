@@ -268,6 +268,31 @@ def _fetch_event_wagon_ids(
     return []
 
 
+def _fetch_container_event_ydids(
+    conn: sqlite3.Connection,
+    batch_id: str,
+    *,
+    source_message_id: str,
+    ydids: list[str],
+) -> list[str]:
+    """Return only container YDIDs bound to this message's dispatch event.
+
+    A 24-hour rail query may retain prior tickets as ``skip_existing``. Those
+    old tickets must not be rendered, uploaded, or sent again for a later
+    message that happens to use the same lot.
+    """
+    if not source_message_id or not ydids:
+        return []
+    placeholders = ",".join("?" * len(ydids))
+    rows = conn.execute(
+        "SELECT DISTINCT ydid FROM wagon_container_shipments "
+        f"WHERE batch_id=? AND source_message_id=? AND ydid IN ({placeholders}) "
+        "ORDER BY ticketed_at ASC, car_no ASC",
+        (batch_id, source_message_id, *ydids),
+    ).fetchall()
+    return [str(row["ydid"]) for row in rows if row["ydid"]]
+
+
 def _fetch_event_boxes_for_batch(
     conn: sqlite3.Connection,
     batch_id: str,
@@ -560,7 +585,23 @@ def run_departure_executor_chain(
                     if p.action in ("insert", "skip_existing") and p.ydid
                 ]
                 event_container_ydids = inserted_ydids
-                if (inserted_ydids or inserted_car_nos) and candidate.project_id != "jilin_jingang_jinzhou":
+                if candidate.project_id == "jilin_jingang_jinzhou" and inserted_ydids:
+                    import sqlite3 as _sql
+                    _c = _sql.connect(str(db_path))
+                    _c.row_factory = _sql.Row
+                    event_container_ydids = _fetch_container_event_ydids(
+                        _c,
+                        preview.release_batch_id,
+                        source_message_id=event.message_id,
+                        ydids=inserted_ydids,
+                    )
+                    _c.close()
+                    if not event_container_ydids:
+                        preview.error += (
+                            "container_event_scope: 当前消息未绑定任何箱级 YDID,"
+                            "拒绝按整批生成或上传; "
+                        )
+                elif inserted_ydids or inserted_car_nos:
                     import sqlite3 as _sql
                     _c = _sql.connect(str(db_path))
                     _c.row_factory = _sql.Row

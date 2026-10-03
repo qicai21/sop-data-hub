@@ -87,6 +87,44 @@ def _validated_manual_candidate_context(
     }
 
 
+def _resolve_inspection_event_time(
+    conn: sqlite3.Connection,
+    *,
+    inbox_id: int,
+    candidate: dict[str, Any],
+) -> tuple[str, str]:
+    """Return the audited event time used to bound 95306 recovery.
+
+    Ordinary notices use their inbox receive time to prevent a recycled car
+    number from anchoring a historical ticket. A late forwarded image may carry
+    a manually confirmed original notice time in
+    ``payload_json._manual_event_time``. It is accepted only with a parseable
+    timestamp and a non-empty operator note; otherwise this remains the normal
+    receive-time path.
+    """
+    inbox_row = conn.execute(
+        "SELECT received_datetime FROM message_inbox WHERE id=?", (inbox_id,)
+    ).fetchone()
+    inbox_time = str((inbox_row[0] if inbox_row else "") or "").strip()
+    try:
+        payload = json.loads(candidate.get("payload_json") or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        payload = {}
+    manual = payload.get("_manual_event_time") if isinstance(payload, dict) else {}
+    if not isinstance(manual, dict):
+        return inbox_time, "inbox_received_time"
+
+    event_time = str(manual.get("event_time") or "").strip()
+    note = str(manual.get("operator_note") or "").strip()
+    if not event_time or not note:
+        return inbox_time, "inbox_received_time"
+    try:
+        datetime.strptime(event_time.replace("T", " ")[:19], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return inbox_time, "inbox_received_time"
+    return event_time, "manual_confirmed_event_time"
+
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_ROOT = REPO_ROOT / "runtime"
 
@@ -1872,12 +1910,10 @@ def _execute_chaoyang_inspection_chain(
         # #144:锚点票时间下界 = 通知时间 - 12h。同车同到站历史有旧票,
         # 不带下界会锚到上一批的票,整窗错位。
         min_ticketed_at = None
-        notice_ts = (
-            conn.execute(
-                "SELECT received_datetime FROM message_inbox WHERE id=?",
-                (inbox_id,),
-            ).fetchone() or [None]
-        )[0] or cand_d.get("created_at") or ""
+        notice_ts, notice_time_source = _resolve_inspection_event_time(
+            conn, inbox_id=int(inbox_id), candidate=cand_d,
+        )
+        notice_ts = notice_ts or cand_d.get("created_at") or ""
         if notice_ts:
             from datetime import datetime as _dt, timedelta as _td
             try:
@@ -1924,6 +1960,7 @@ def _execute_chaoyang_inspection_chain(
                     "matched_release_batch_id": matched_batch_id,
                     "candidate_id": candidate_id,
                     "candidate_status": "pending_95306_match",
+                    "notice_time_source": notice_time_source,
                 },
             }
         if recover["status"] == "anomaly":
@@ -2452,6 +2489,7 @@ def _execute_chaoyang_inspection_chain(
             "output_json": {
                 "matched_release_batch_id": matched_batch_id,
                 "candidate_id": candidate_id,
+                "notice_time_source": notice_time_source,
                 "superseded_synth_candidate_ids": superseded_synth_ids,
                 "ship_name": ship,
                 "nth_loading": nth,

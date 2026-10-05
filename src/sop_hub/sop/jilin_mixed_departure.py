@@ -610,27 +610,45 @@ def execute_jilin_mixed_departure(
     send_ok = bool(existing_send and existing_send.get("action_status") == "executed")
     send_summary: dict[str, Any] = {"skipped": send_ok}
     if not send_ok:
-        from sop_hub.sop.send_excel import send_to_wechat
+        # A process can stop after WeChat has accepted the attachment but
+        # before action_status is written.  A retry must first use recipient
+        # history as the evidence source; otherwise the same planned action
+        # sends a duplicate file.
+        from sop_hub.sop.wechat_delivery_evidence import find_group013_file_evidence
 
-        sent = send_to_wechat(
-            target="[GROUP013]",
-            message=(
-                f"吉林金钢发运数据 共{total_expected}车"
-                f"（{' + '.join(f'{s.ship_name}{s.car_count}车' for s in segments)}）"
-            ),
-            file_path=excel.output_path,
+        evidence = find_group013_file_evidence(
+            Path(excel.output_path).name,
+            not_before=str((existing_send or {}).get("created_at") or ""),
         )
-        send_ok = sent.success
-        send_summary = sent.__dict__
-        if send_ok:
+        if evidence:
+            send_ok = True
+            send_summary = {"recovered_from_group013": True, "evidence": evidence}
             mark_external_action_executed(
                 send_key, db_path=db_path, response_json=send_summary,
                 artifact_path=excel.output_path,
             )
         else:
-            mark_external_action_failed(
-                send_key, sent.error or sent.output[-500:], db_path=db_path,
+            from sop_hub.sop.send_excel import send_to_wechat
+
+            sent = send_to_wechat(
+                target="[GROUP013]",
+                message=(
+                    f"吉林金钢发运数据 共{total_expected}车"
+                    f"（{' + '.join(f'{s.ship_name}{s.car_count}车' for s in segments)}）"
+                ),
+                file_path=excel.output_path,
             )
+            send_ok = sent.success
+            send_summary = sent.__dict__
+            if send_ok:
+                mark_external_action_executed(
+                    send_key, db_path=db_path, response_json=send_summary,
+                    artifact_path=excel.output_path,
+                )
+            else:
+                mark_external_action_failed(
+                    send_key, sent.error or sent.output[-500:], db_path=db_path,
+                )
 
     return {
         "action": "applied" if upload_ok and send_ok else "failed",

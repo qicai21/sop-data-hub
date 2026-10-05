@@ -385,7 +385,11 @@ def _execute_jljg_departure(
     # 直接运行会把整列 45 票与首段 22 车比较后挂 pending_review。
     from sop_hub.sop.departure_text_parser import parse_jilin_departure_segments
     mixed_segments = parse_jilin_departure_segments(text_content)
-    if len(mixed_segments) >= 2:
+    # A reviewed car-level split is an explicit correction to a lossy text
+    # parse.  Route it to the mixed executor even when the text parser only
+    # extracts one quoted ship segment; that executor validates the complete
+    # current 95306 cluster before any write or external action.
+    if input_json.get("_manual_car_assignments") is not None or len(mixed_segments) >= 2:
         from sop_hub.sop.jilin_mixed_departure import execute_jilin_mixed_departure
 
         return execute_jilin_mixed_departure(

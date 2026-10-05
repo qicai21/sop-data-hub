@@ -109,6 +109,72 @@ def partition_ticket_cluster(
     return result
 
 
+def partition_ticket_cluster_by_manual_cars(
+    tickets: list[ShipmentCandidate],
+    assignments: dict[str, list[str]] | Any,
+) -> tuple[list[tuple[JilinDepartureSegment, list[ShipmentCandidate]]], str]:
+    """Partition a mixed train from an explicit, complete car-level decision.
+
+    The 95306 result sequence is never a train sequence.  A caller may bypass
+    the normal pending-review path only by providing every current ticket car,
+    exactly once, grouped under the intended ship names.  Returning a reason
+    rather than guessing keeps malformed operator input from reaching the
+    portal or WeChat side effects.
+    """
+    if not isinstance(assignments, dict) or not assignments:
+        return [], "manual car assignments are missing"
+
+    by_car: dict[str, ShipmentCandidate] = {}
+    for ticket in tickets:
+        car_no = str(ticket.wagon_no or "").strip()
+        if not car_no:
+            return [], "current ticket cluster has an empty car number"
+        if car_no in by_car:
+            return [], f"current ticket cluster repeats car {car_no}"
+        by_car[car_no] = ticket
+
+    assigned: list[str] = []
+    normalized: list[tuple[str, list[str]]] = []
+    for raw_ship, raw_cars in assignments.items():
+        ship_name = str(raw_ship or "").strip()
+        if not ship_name or not isinstance(raw_cars, list) or not raw_cars:
+            return [], "each manual assignment requires a ship name and cars"
+        cars = [str(car or "").strip() for car in raw_cars]
+        if any(not car for car in cars):
+            return [], f"manual assignment for {ship_name} contains an empty car"
+        normalized.append((ship_name, cars))
+        assigned.extend(cars)
+
+    if len(assigned) != len(set(assigned)):
+        return [], "manual assignments repeat a car number"
+    assigned_set = set(assigned)
+    ticket_set = set(by_car)
+    missing = sorted(ticket_set - assigned_set)
+    unexpected = sorted(assigned_set - ticket_set)
+    if missing or unexpected:
+        details: list[str] = []
+        if missing:
+            details.append(f"unassigned current cars: {','.join(missing)}")
+        if unexpected:
+            details.append(f"cars outside current ticket cluster: {','.join(unexpected)}")
+        return [], "; ".join(details)
+
+    partitions: list[tuple[JilinDepartureSegment, list[ShipmentCandidate]]] = []
+    for ship_name, cars in normalized:
+        partitions.append(
+            (
+                JilinDepartureSegment(
+                    ship_name=ship_name,
+                    car_count=len(cars),
+                    seq_start=None,
+                    seq_end=None,
+                ),
+                [by_car[car] for car in cars],
+            )
+        )
+    return partitions, ""
+
+
 def _event_boxes(
     conn: sqlite3.Connection,
     batch_id: str,
@@ -174,14 +240,37 @@ def execute_jilin_mixed_departure(
     received_at = str(input_json.get("received_datetime") or "")
     group_name = str(input_json.get("group_name") or "")
     segments = parse_jilin_departure_segments(raw_text)
-    if len(segments) < 2:
+    manual_assignments = input_json.get("_manual_car_assignments")
+    manual_assignment_note = str(input_json.get("_manual_assignment_note") or "").strip()
+    if manual_assignments is not None:
+        if not isinstance(manual_assignments, dict) or len(manual_assignments) < 2:
+            return {
+                "action": "failed",
+                "status": "failed",
+                "error_message": "manual mixed departure requires at least two ship assignments",
+            }
+        try:
+            manual_total = sum(len(cars) for cars in manual_assignments.values())
+        except TypeError:
+            manual_total = 0
+        if manual_total <= 0:
+            return {
+                "action": "failed",
+                "status": "failed",
+                "error_message": "manual mixed departure has no assigned cars",
+            }
+        # Text extraction may miss one quoted segment.  In this audited manual
+        # path the complete car list, not the partial parse, sets the expected
+        # cluster size; the helper below still requires exact coverage.
+        total_expected = manual_total
+    elif len(segments) < 2:
         return {
             "action": "failed",
             "status": "failed",
             "error_message": "mixed departure requires at least two explicit ship segments",
         }
-
-    total_expected = sum(segment.car_count for segment in segments)
+    else:
+        total_expected = sum(segment.car_count for segment in segments)
     base = parse_departure_text(
         raw_text,
         group_id=group_name,
@@ -202,7 +291,28 @@ def execute_jilin_mixed_departure(
         expected_count=total_expected,
         reference_time=received_at,
     )
-    partitions = partition_ticket_cluster(cluster, segments)
+    if manual_assignments is not None:
+        partitions, partition_error = partition_ticket_cluster_by_manual_cars(
+            cluster, manual_assignments,
+        )
+        if not manual_assignment_note:
+            partition_error = partition_error or "manual assignment requires an operator note"
+        if partition_error:
+            return {
+                "action": "waiting_95306",
+                "status": "pending",
+                "output_json": {
+                    "segments": [segment.to_dict() for segment in segments],
+                    "expected_total": total_expected,
+                    "query_total": query.total_candidates,
+                    "reason": partition_error,
+                },
+            }
+        # Retain the operator-approved ship/count summary in every artifact and
+        # action ledger entry rather than the provisional text-only segments.
+        segments = [item[0] for item in partitions]
+    else:
+        partitions = partition_ticket_cluster(cluster, segments)
     if not partitions:
         reason = "mixed departure requires reviewed car-level assignment; do not infer from 95306 ticket order"
         return {

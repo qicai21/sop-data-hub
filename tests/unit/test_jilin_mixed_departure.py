@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sop_hub.sop.departure_text_parser import parse_jilin_departure_segments
 from sop_hub.sop.jilin_mixed_departure import partition_ticket_cluster
+from sop_hub.sop.jilin_mixed_departure import partition_ticket_cluster_by_manual_cars
 from sop_hub.sop.jilin_mixed_departure import select_exact_ticket_cluster
 from sop_hub.sop.jilin_mixed_departure import _has_complete_unique_portal_evidence
 from sop_hub.sop.shipment_query_window import ShipmentCandidate
@@ -91,6 +92,61 @@ def test_partition_does_not_infer_physical_car_order_from_ydid_order():
     ]
 
     assert partition_ticket_cluster(tickets, segments) == []
+
+
+def test_manual_car_assignment_partitions_only_an_exact_complete_cluster():
+    tickets = [
+        ShipmentCandidate(ydid="ydid-1", wagon_no="1817398"),
+        ShipmentCandidate(ydid="ydid-2", wagon_no="5317394"),
+        ShipmentCandidate(ydid="ydid-3", wagon_no="1735852"),
+        ShipmentCandidate(ydid="ydid-4", wagon_no="1842181"),
+    ]
+
+    partitions, error = partition_ticket_cluster_by_manual_cars(
+        tickets,
+        {
+            "高栏309": ["1817398", "5317394", "1735852"],
+            "智港526": ["1842181"],
+        },
+    )
+
+    assert error == ""
+    assert [(segment.ship_name, segment.car_count) for segment, _ in partitions] == [
+        ("高栏309", 3),
+        ("智港526", 1),
+    ]
+    assert [ticket.ydid for ticket in partitions[0][1]] == ["ydid-1", "ydid-2", "ydid-3"]
+
+
+def test_manual_car_assignment_rejects_incomplete_or_outside_cluster_cars():
+    tickets = [
+        ShipmentCandidate(ydid="ydid-1", wagon_no="1817398"),
+        ShipmentCandidate(ydid="ydid-2", wagon_no="5317394"),
+    ]
+
+    partitions, error = partition_ticket_cluster_by_manual_cars(
+        tickets,
+        {"高栏309": ["1817398"], "智港526": ["0000000"]},
+    )
+
+    assert partitions == []
+    assert "unassigned current cars: 5317394" in error
+    assert "cars outside current ticket cluster: 0000000" in error
+
+
+def test_manual_car_assignment_rejects_repeated_car_numbers():
+    tickets = [
+        ShipmentCandidate(ydid="ydid-1", wagon_no="1817398"),
+        ShipmentCandidate(ydid="ydid-2", wagon_no="5317394"),
+    ]
+
+    partitions, error = partition_ticket_cluster_by_manual_cars(
+        tickets,
+        {"高栏309": ["1817398", "1817398"], "智港526": ["5317394"]},
+    )
+
+    assert partitions == []
+    assert error == "manual assignments repeat a car number"
 
 
 def test_partition_rejects_total_mismatch():

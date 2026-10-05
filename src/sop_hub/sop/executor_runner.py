@@ -30,6 +30,41 @@ from sop_hub.sop.create_wagon_shipments import (
 from sop_hub.sop.shipment_query_window import ShipmentQueryResult
 
 
+def _restrict_jilin_to_exact_ticket_cluster(
+    query_result: ShipmentQueryResult,
+    candidate: DepartureCandidate,
+) -> bool:
+    """Keep a single-ship Jilin event to its exact nearby ticket cluster.
+
+    The broad 95306 lookup is intentionally retained for delayed ticketing,
+    but a four-ping message must never ingest every four-ping ticket inside
+    that 24-hour window.  Mixed trains use the same selector in
+    ``jilin_mixed_departure``; single-ship events need the guard as well.
+    """
+    if (
+        candidate.project_id != "jilin_jingang_jinzhou"
+        or candidate.car_count <= 0
+        or not candidate.message_time
+    ):
+        return False
+
+    from sop_hub.sop.jilin_mixed_departure import select_exact_ticket_cluster
+
+    cluster = select_exact_ticket_cluster(
+        query_result.candidates,
+        expected_count=candidate.car_count,
+        reference_time=candidate.message_time,
+    )
+    if len(cluster) != candidate.car_count:
+        return False
+
+    query_result.candidates = cluster
+    query_result.total_candidates = len(cluster)
+    query_result.exact_match_count = len(cluster)
+    query_result.ambiguous_count = 0
+    return True
+
+
 # ── Data model ──────────────────────────────────────────────────────────
 
 @dataclass
@@ -526,6 +561,9 @@ def run_departure_executor_chain(
                 expected_car_count=candidate.car_count,
                 project_id=candidate.project_id,
             )
+            jilin_exact_cluster_selected = _restrict_jilin_to_exact_ticket_cluster(
+                query_result, candidate,
+            )
             query_dict = {
                 "origin_station": origin,
                 "destination_station": dest,
@@ -534,6 +572,7 @@ def run_departure_executor_chain(
                 "exact_match_count": query_result.exact_match_count,
                 "ambiguous_count": query_result.ambiguous_count,
                 "expected_car_count": candidate.car_count,
+                "exact_ticket_cluster_selected": jilin_exact_cluster_selected,
                 "window": {
                     "start": query_result.window.start_time,
                     "end": query_result.window.end_time,

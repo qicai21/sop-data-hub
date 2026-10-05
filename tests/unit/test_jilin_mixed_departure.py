@@ -5,6 +5,10 @@ from sop_hub.sop.jilin_mixed_departure import partition_ticket_cluster
 from sop_hub.sop.jilin_mixed_departure import partition_ticket_cluster_by_manual_cars
 from sop_hub.sop.jilin_mixed_departure import select_exact_ticket_cluster
 from sop_hub.sop.jilin_mixed_departure import _has_complete_unique_portal_evidence
+from sop_hub.sop.executor_runner import _restrict_jilin_to_exact_ticket_cluster
+from sop_hub.sop.departure_text_parser import DepartureCandidate
+from sop_hub.sop.shipment_query_window import QueryWindow
+from sop_hub.sop.shipment_query_window import ShipmentQueryResult
 from sop_hub.sop.shipment_query_window import ShipmentCandidate
 
 
@@ -189,3 +193,41 @@ def test_select_exact_ticket_cluster_ignores_other_train():
     assert [ticket.ydid for ticket in selected] == [
         ticket.ydid for ticket in current
     ]
+
+
+def test_single_ship_jilin_event_restricts_broad_window_to_its_train():
+    first_train = [
+        ShipmentCandidate(
+            ydid=f"A-{index}", wagon_no=f"A-{index}",
+            ticketed_at=f"2026-10-05 14:25:{index:02d}",
+        )
+        for index in range(37)
+    ]
+    later_train = [
+        ShipmentCandidate(
+            ydid=f"B-{index}", wagon_no=f"B-{index}",
+            ticketed_at=f"2026-10-05 14:51:{index:02d}",
+        )
+        for index in range(41)
+    ]
+    result = ShipmentQueryResult(
+        window=QueryWindow.from_reference("2026-10-05 14:25:54", window_before_minutes=720, window_after_minutes=720),
+        origin_station="高桥镇",
+        destination_station="四平",
+        expected_car_count=37,
+        total_candidates=78,
+        exact_match_count=37,
+        ambiguous_count=41,
+        candidates=first_train + later_train,
+    )
+    candidate = DepartureCandidate(
+        message_id="wx_37", group_id="铁晟业务工作群",
+        message_time="2026-10-05 14:25:54", raw_text="煤二 四平铁 林加尼37节",
+        destination="四平", car_count=37, optional_ship_name="林加尼",
+        project_id="jilin_jingang_jinzhou", status="complete",
+    )
+
+    assert _restrict_jilin_to_exact_ticket_cluster(result, candidate)
+    assert [row.ydid for row in result.candidates] == [row.ydid for row in first_train]
+    assert result.total_candidates == result.exact_match_count == 37
+    assert result.ambiguous_count == 0

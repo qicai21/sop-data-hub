@@ -1292,10 +1292,16 @@ def _execute_inspection_text_trigger(
             expected, expected, _INSPECTION_TEXT_TRIGGER_COUNT_TOL,
         ]
         if event_bounds:
-            q += "  AND created_at BETWEEN ? AND ? "
+            # SQLite stores historical candidates in both ``YYYY-MM-DD HH:MM:SS``
+            # and ISO-8601 ``YYYY-MM-DDTHH:MM:SS+08:00`` forms.  Comparing the
+            # raw strings makes the latter sort after every space-separated
+            # timestamp on the same date, so an adjacent image candidate is
+            # incorrectly missed by the text trigger.  Normalize the shared
+            # first 19 local-time chars before comparing.
+            q += "  AND replace(substr(created_at, 1, 19), 'T', ' ') BETWEEN ? AND ? "
             params.extend(event_bounds)
         else:
-            q += "  AND created_at >= datetime('now', ?) "
+            q += "  AND replace(substr(created_at, 1, 19), 'T', ' ') >= datetime('now', ?) "
             params.append(f"-{_INSPECTION_TEXT_TRIGGER_CANDIDATE_MAX_AGE_H} hours")
         if dest:
             q += "  AND (destination=? OR destination='' OR destination IS NULL) "
@@ -1308,7 +1314,7 @@ def _execute_inspection_text_trigger(
                 "WHERE ship_name=? "
                 f"  AND candidate_status NOT IN ({','.join('?' * len(_INACTIVE_CANDIDATE_STATUSES))}) "
                 "  AND (? = 0 OR ABS(COALESCE(wagon_count, 0) - ?) <= ?) "
-                "  AND created_at >= datetime('now', ?) "
+                "  AND replace(substr(created_at, 1, 19), 'T', ' ') >= datetime('now', ?) "
             )
             fallback_params: list[Any] = [
                 ship, *_INACTIVE_CANDIDATE_STATUSES,
@@ -1374,7 +1380,7 @@ def _execute_inspection_text_trigger(
                 "SELECT id FROM inspection_ingestion_candidates "
                 "WHERE ship_name=? AND candidate_status='matched' "
                 "  AND (? = 0 OR COALESCE(wagon_count,0) = ?) "
-                + ("  AND created_at BETWEEN ? AND ? " if event_bounds else "  AND created_at >= datetime('now', ?) ")
+                + ("  AND replace(substr(created_at, 1, 19), 'T', ' ') BETWEEN ? AND ? " if event_bounds else "  AND replace(substr(created_at, 1, 19), 'T', ' ') >= datetime('now', ?) ")
                 + ("  AND destination=? " if dest else "")
                 + "ORDER BY created_at DESC LIMIT 1",
                 (

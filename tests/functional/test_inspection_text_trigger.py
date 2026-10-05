@@ -305,6 +305,47 @@ def test_rendezvous_delegates_when_candidate_exists(db):
     assert oj["text_trigger"]["expected_count"] == 5
 
 
+def test_rendezvous_matches_iso8601_candidate_inside_event_window(db, monkeypatch):
+    """An image candidate written with an ISO timezone suffix is still adjacent.
+
+    wx ingestion writes this form while older rows use a space-separated local
+    timestamp.  The text trigger must compare their common local timestamp,
+    rather than raw strings where ``T`` breaks the time-window predicate.
+    """
+    from sop_hub.sop.workflow_task_executor import run_workflow_task
+    import sop_hub.sop.inspection_text_rendezvous as rendezvous
+
+    # Keep this test focused on the trigger query.  If it misses the ISO row,
+    # the later bare-candidate recovery must not mask the defect.
+    monkeypatch.setattr(
+        rendezvous, "enrich_unique_bare_candidate", lambda *args, **kwargs: None,
+    )
+
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "INSERT INTO inspection_ingestion_candidates "
+        "(id, message_id, ship_name, destination, candidate_status, wagon_count, created_at) "
+        "VALUES ('cand_iso','wx_img_iso','鞍子河','汐子','candidate',5,"
+        "'2026-06-13T10:02:00+08:00')"
+    )
+    conn.execute(
+        "INSERT INTO message_inbox (id, message_id, group_name, received_datetime, "
+        " inspection_candidate_id, is_sop_msg, processing_status) "
+        "VALUES (202,'wx_img_iso','铁晟业务工作群','2026-06-13 10:02:00',"
+        "'cand_iso',1,'matched_sop')"
+    )
+    conn.commit()
+    conn.close()
+
+    inbox_id = _insert_inbox(db, "十四道汐子铁鞍子河5节", inbox_id=104)
+    task_id = create_task_from_message_inbox(inbox_id, db_path=db)["ids"][0]
+    out = run_workflow_task(task_id, db_path=db)
+
+    assert out.get("output_json", {}).get("text_trigger", {}).get(
+        "delegated_to_candidate"
+    ) == "cand_iso"
+
+
 def test_rendezvous_fills_destination_on_partially_enriched_candidate(db):
     """真实图已推断船/项目但缺目的地时，可信相邻文本应补齐后再委托。"""
     from sop_hub.sop.workflow_task_executor import run_workflow_task

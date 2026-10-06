@@ -2098,9 +2098,15 @@ class BusinessDataAgent:
                     _y = _yaml.safe_load(_f) or {}
                 if _y.get("project_id") != project:
                     continue
-                # 优先 release_batch_policy(顶层),其次 chaoyang 嵌在
-                # release_notice_flow.steps[].rule 里也有,简化只看顶层。
-                _pol = _y.get("release_batch_policy", {}) or {}
+                # 项目策略可放在顶层或 project_meta。顶层若显式给出则优先；
+                # 朝钢的策略位于 project_meta，漏读会把不同通知单的同名 lot
+                # 错误去重为同一批次。
+                _pol = _y.get("release_batch_policy")
+                if _pol is None:
+                    _pol = (_y.get("project_meta") or {}).get(
+                        "release_batch_policy", {}
+                    )
+                _pol = _pol or {}
                 _scope_by_notice = bool(_pol.get("do_not_merge_release_batches", False))
                 break
         except Exception:

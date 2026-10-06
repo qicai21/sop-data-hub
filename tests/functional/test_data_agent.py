@@ -189,6 +189,40 @@ class TestBusinessDataAgent:
         assert records[0].destination_station == "汐子"
         assert records[0].batch_quantity == 17386.0
 
+    def test_chaoyang_new_notice_reuses_lot01_without_merging_old_voyage(self, tmp_db):
+        """朝钢同船新通知可合法复用 lot01，不能被已关闭旧航次去重。"""
+        agent = BusinessDataAgent()
+        payload = {
+            "is_target": True,
+            "project": "chaoyang_steel",
+            "header_info": {"通知日期": "2026年10月3日"},
+            "business_info": {"船名": "宝腾海"},
+            "cargo_info": {"货物名称": "铁矿", "总重里": "15697", "运输方式": "铁路"},
+            "special_matter": "火运敞车出港，到站：朝阳西。",
+            "remarks": [],
+        }
+
+        rows = agent.normalize_release_batch_payloads(
+            payload,
+            source_file_name="baotenghai_20261003.jpg",
+            contract_id=None,
+            contract_no=None,
+            existing_batches=[
+                {
+                    "batch_sequence": "lot01",
+                    "batch_date": "2026-05-11",
+                    "batch_quantity": 15687.0,
+                    "notice_date": "2026-05-11",
+                    "dispatch_status": "confirmed_received",
+                }
+            ],
+        )
+
+        assert len(rows) == 1
+        assert rows[0]["batch_sequence"] == "lot01"
+        assert rows[0]["notice_date"] == "2026-10-03"
+        assert rows[0]["batch_quantity"] == 15697.0
+
     def test_inspection_candidate_excludes_defect_cars_from_authoritative_subset(
         self, tmp_db
     ):

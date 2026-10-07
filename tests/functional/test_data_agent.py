@@ -1212,6 +1212,7 @@ class TestProjectKnownShips:
         assert "汇泽启航" in project_known_ships("zhongtang_special_steel")
         assert "中联发" in project_known_ships("zhongtang_special_steel")
         assert "利昂之星" in project_known_ships("zhongtang_special_steel")
+        assert "德邻惠达" in project_known_ships("zhongtang_special_steel")
 
     def test_unknown_project_returns_empty(self):
         assert project_known_ships("不存在的项目") == set()

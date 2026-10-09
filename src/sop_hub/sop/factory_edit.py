@@ -15,6 +15,7 @@ from typing import Any
 
 import requests
 
+from sop_hub.sop.factory_http import request as factory_request
 from sop_hub.sop.factory_verify import (
     FACTORY_ENDPOINT,
     LIST_PATH,
@@ -115,7 +116,8 @@ def fetch_full_order_rows(
     """Return complete portal rows without dropping fields required by edit."""
     rows: list[dict[str, Any]] = []
     for page in range(1, max_pages + 1):
-        response = requests.get(
+        response = factory_request(
+            "GET",
             f"{FACTORY_ENDPOINT}{LIST_PATH}",
             params={
                 "pageNum": page,
@@ -215,7 +217,8 @@ def edit_factory_record(
         return result
 
     try:
-        response = requests.post(
+        response = factory_request(
+            "POST",
             f"{FACTORY_ENDPOINT}{EDIT_PATH}",
             json=payload,
             headers=_headers(token),
@@ -361,7 +364,8 @@ def move_factory_records(
 
     for key, payload, _ in payloads:
         try:
-            response = requests.post(
+            response = factory_request(
+                "POST",
                 f"{FACTORY_ENDPOINT}{EDIT_PATH}",
                 json=payload,
                 headers=_headers(token),

@@ -85,27 +85,29 @@ def _patch_portal(monkeypatch, returned_box_counts: Counter, total: int):
     for bn, cnt in returned_box_counts.items():
         rows.extend({"boxNumber": bn} for _ in range(cnt))
 
-    def _fake_get(url, params=None, headers=None, timeout=None):
+    def _fake_get(method, url, params=None, headers=None, timeout=None):
+        assert method == "GET"
         # 真实门户分页:按 pageNum/pageSize 切片(否则每页全量会重复计数)
         params = params or {}
         size = int(params.get("pageSize", 100))
         page = int(params.get("pageNum", 1))
         return _FakeResp({"total": total, "rows": rows[(page - 1) * size: page * size]})
 
-    monkeypatch.setattr(factory_verify.requests, "get", _fake_get)
+    monkeypatch.setattr(factory_verify, "factory_request", _fake_get)
 
 
 def _patch_portal_rows(monkeypatch, rows: list[dict], total: int):
     """让 verify_factory_upload 读取自定义门户行,支持 box+wagon 复合键场景。"""
     monkeypatch.setattr(factory_verify, "_login", lambda: ("tok", ""))
 
-    def _fake_get(url, params=None, headers=None, timeout=None):
+    def _fake_get(method, url, params=None, headers=None, timeout=None):
+        assert method == "GET"
         params = params or {}
         size = int(params.get("pageSize", 100))
         page = int(params.get("pageNum", 1))
         return _FakeResp({"total": total, "rows": rows[(page - 1) * size: page * size]})
 
-    monkeypatch.setattr(factory_verify.requests, "get", _fake_get)
+    monkeypatch.setattr(factory_verify, "factory_request", _fake_get)
 
 
 def test_verify_passes_with_history_extra(monkeypatch):

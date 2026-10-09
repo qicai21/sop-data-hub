@@ -35,18 +35,24 @@ def _patch(monkeypatch, rows_seq):
     calls = {"get": 0, "post": []}
     state = {"rows": list(rows_seq)}
 
-    def fake_get(url, params=None, headers=None, timeout=None):
+    def fake_get(method, url, params=None, headers=None, timeout=None):
+        assert method == "GET"
         idx = min(calls["get"], len(state["rows"]) - 1)
         calls["get"] += 1
         return _Resp(200, {"rows": state["rows"][idx], "total": len(state["rows"][idx])})
 
-    def fake_post(url, json=None, headers=None, timeout=None):
+    def fake_post(method, url, json=None, headers=None, timeout=None):
+        assert method == "POST"
         calls["post"].append(json)
         return _Resp(200, {})
 
     monkeypatch.setattr(fr, "_login", lambda: ("tok", ""))
-    monkeypatch.setattr(fr.requests, "get", fake_get)
-    monkeypatch.setattr(fr.requests, "post", fake_post)
+    def fake_request(method, url, **kwargs):
+        if method == "GET":
+            return fake_get(method, url, **kwargs)
+        return fake_post(method, url, **kwargs)
+
+    monkeypatch.setattr(fr, "factory_request", fake_request)
     monkeypatch.setattr(fr.time, "sleep", lambda *_: None)
     return calls
 

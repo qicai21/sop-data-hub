@@ -33,6 +33,8 @@ from pathlib import Path
 from typing import Any
 
 import requests
+
+from sop_hub.sop.factory_http import request as factory_request
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -161,7 +163,8 @@ def login_to_factory(config: FactoryUploadConfig | None = None) -> tuple[str | N
         config = _load_factory_config()
 
     try:
-        resp = requests.post(
+        resp = factory_request(
+            "POST",
             config.login_url,
             json={"username": config.username, "password": FACTORY_PASSWORD},
             timeout=15,
@@ -316,7 +319,8 @@ def upload_one_wagon(
     }
 
     try:
-        resp = requests.post(
+        resp = factory_request(
+            "POST",
             config.upload_url,
             json=[w.payload],  # factory expects array, even for single wagon
             headers=headers,

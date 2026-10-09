@@ -28,6 +28,7 @@ from typing import Any
 
 import requests
 
+from sop_hub.sop.factory_http import request as factory_request
 # ── Canonical paths ──────────────────────────────────────────────────────
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -100,7 +101,8 @@ class VerifySummary:
 
 def _login() -> tuple[str | None, str]:
     try:
-        resp = requests.post(
+        resp = factory_request(
+            "POST",
             f"{FACTORY_ENDPOINT}{LOGIN_PATH}",
             json={"username": FACTORY_USERNAME, "password": FACTORY_PASSWORD},
             timeout=15,
@@ -281,7 +283,8 @@ def verify_factory_upload(
     total = 0
 
     while True:
-        resp = requests.get(
+        resp = factory_request(
+            "GET",
             f"{FACTORY_ENDPOINT}{LIST_PATH}",
             params={
                 "pageNum": page,

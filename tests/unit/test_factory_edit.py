@@ -63,14 +63,15 @@ def test_apply_verifies_old_disappears_and_new_is_unique(monkeypatch):
 
     posted = {}
 
-    def post(url, *, json, **kwargs):
+    def post(method, url, *, json, **kwargs):
+        assert method == "POST"
         posted["url"] = url
         posted["json"] = json
         return Response()
 
     monkeypatch.setattr(factory_edit, "_login", lambda: ("token", ""))
     monkeypatch.setattr(factory_edit, "fetch_full_order_rows", fetch)
-    monkeypatch.setattr(factory_edit.requests, "post", post)
+    monkeypatch.setattr(factory_edit, "factory_request", post)
 
     result = factory_edit.edit_factory_record(
         old_order_id="OLD",
@@ -157,7 +158,9 @@ def test_http_failure_does_not_report_applied(monkeypatch):
     monkeypatch.setattr(
         factory_edit, "fetch_full_order_rows", lambda *args, **kwargs: [_row()]
     )
-    monkeypatch.setattr(factory_edit.requests, "post", lambda *args, **kwargs: Response())
+    monkeypatch.setattr(
+        factory_edit, "factory_request", lambda *args, **kwargs: Response()
+    )
 
     result = factory_edit.edit_factory_record(
         old_order_id="OLD",
@@ -193,8 +196,8 @@ def test_batch_move_submits_each_row_once_and_verifies(monkeypatch):
     monkeypatch.setattr(factory_edit, "_login", lambda: ("token", ""))
     monkeypatch.setattr(factory_edit, "fetch_full_order_rows", fetch)
     monkeypatch.setattr(
-        factory_edit.requests,
-        "post",
+        factory_edit,
+        "factory_request",
         lambda *args, **kwargs: posted.append(kwargs["json"]) or Response(),
     )
 
@@ -230,8 +233,8 @@ def test_batch_move_treats_unique_target_row_as_already_applied(monkeypatch):
     monkeypatch.setattr(factory_edit, "_login", lambda: ("token", ""))
     monkeypatch.setattr(factory_edit, "fetch_full_order_rows", fetch)
     monkeypatch.setattr(
-        factory_edit.requests,
-        "post",
+        factory_edit,
+        "factory_request",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not post")),
     )
 
@@ -273,8 +276,8 @@ def test_batch_move_repairs_target_row_with_stale_business_fields(monkeypatch):
     monkeypatch.setattr(factory_edit, "_login", lambda: ("token", ""))
     monkeypatch.setattr(factory_edit, "fetch_full_order_rows", fetch)
     monkeypatch.setattr(
-        factory_edit.requests,
-        "post",
+        factory_edit,
+        "factory_request",
         lambda *args, **kwargs: posted.append(kwargs["json"]) or Response(),
     )
 

@@ -27,6 +27,7 @@ from pathlib import Path
 
 import requests
 
+from sop_hub.sop.factory_http import request as factory_request
 from sop_hub.sop.factory_verify import (
     FACTORY_ENDPOINT,
     LIST_PATH,
@@ -75,7 +76,8 @@ def fetch_order_rows(order_id: str, token: str, *, form_id: str = DEFAULT_FORM_I
                "Cookie": f"Admin-Token={token}", "Accept": "application/json"}
     out: list[dict] = []
     for page in range(1, max_pages + 1):
-        resp = requests.get(
+        resp = factory_request(
+            "GET",
             f"{FACTORY_ENDPOINT}{LIST_PATH}",
             params={"pageNum": page, "pageSize": page_size,
                     "orderId": order_id, "formId": form_id},
@@ -107,7 +109,7 @@ def remove_ids(ids: list[int], token: str, *, batch_size: int = 40) -> int:
     sent = 0
     for i in range(0, len(ids), batch_size):
         chunk = ids[i:i + batch_size]
-        resp = requests.post(f"{FACTORY_ENDPOINT}{REMOVE_PATH}", json=chunk,
+        resp = factory_request("POST", f"{FACTORY_ENDPOINT}{REMOVE_PATH}", json=chunk,
                              headers=_headers(token), timeout=30)
         if resp.status_code == 200:
             sent += len(chunk)

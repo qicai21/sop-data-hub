@@ -39,6 +39,17 @@ def test_py_meiyi_55jie_siping_linjiani():
     assert c.project_id == "jilin_jingang_jinzhou"
 
 
+def test_py_shidao_siping_zhigang526_55jie():
+    """Known Jilin ships in Chinese quotes must drive the text workflow."""
+    c = parse_departure_text("十道   四平铁\u201c智港526\u201d55节")
+    assert c.status == "complete"
+    assert c.destination == "四平"
+    assert c.car_count == 55
+    assert c.lane_or_track == "十道"
+    assert c.optional_ship_name == "智港526"
+    assert c.project_id == "jilin_jingang_jinzhou"
+
+
 def test_py_6dao_siping_direction_changhang():
     """'6道, 四平方向, 长航滨海, 46车' → destination + ship"""
     c = parse_departure_text("6道，四平方向，长航滨海，46车")
